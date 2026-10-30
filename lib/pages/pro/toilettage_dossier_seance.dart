@@ -21,6 +21,7 @@ import 'package:PetsMatch/pages/pro/toilettage_seance_page.dart';
 import 'package:PetsMatch/widgets/contact_canaux.dart';
 import 'package:PetsMatch/utils/consignes_rdv.dart';
 import 'package:PetsMatch/pages/rdv_consignes_page.dart';
+import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro, signerEtEnregistrer;
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1F2A2E);
@@ -145,8 +146,10 @@ Future<void> genererContratToilettage(BuildContext context, Map<String, dynamic>
         'prestation_nom': pr.nom,
         if (pr.prix != null) 'prix_total': pr.prix!.toStringAsFixed(2),
       },
-    }).select('token').single();
+    }).select('id, token').single();
     token = row['token'] as String?;
+    // Ma signature apposée d'office (côté professionnel) ; sinon la dessiner.
+    if (context.mounted) await signerContratAvecSignaturePro(context, row['id'].toString());
     final clientUid = rdv['client_uid']?.toString() ?? '';
     if (clientUid.isNotEmpty && token != null) {
       try {
@@ -167,6 +170,21 @@ Future<void> genererContratToilettage(BuildContext context, Map<String, dynamic>
   }
   if (token == null || !ouvrir || !context.mounted) return;
   await Navigator.push(context, MaterialPageRoute(builder: (_) => ContratSignaturePage(token: token!)));
+}
+
+/// Contrat généré par le pro : sa signature enregistrée (signatures_pro) y est
+/// apposée d'office, côté « professionnel » ; à défaut, il la dessine (elle est
+/// enregistrée pour les prochains). Miroir site : signerContratAvecSignaturePro.
+Future<void> signerContratAvecSignaturePro(BuildContext context, String docId) async {
+  var sig = await maSignaturePro();
+  if (sig == null && context.mounted) sig = await signerEtEnregistrer(context);
+  if (sig == null) return;
+  try {
+    await http.post(Uri.parse('$kSiteBaseUrl/api/contracts/$docId/sign'),
+        headers: {...await siteApiHeaders(), 'Content-Type': 'application/json'},
+        body: jsonEncode({'role': 'eleveur', 'signature': sig, 'actorUid': User_Info.uid,
+            'actorNom': '${User_Info.firstname} ${User_Info.lastname}'.trim()}));
+  } catch (_) {}
 }
 
 /// Facture de la prestation : prix TTC affiché (HT déduit selon le régime de

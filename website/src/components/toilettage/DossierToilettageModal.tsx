@@ -14,6 +14,8 @@ import ConsignesRdvForm from '@/components/ConsignesRdvForm';
 import { apiFetch } from '@/lib/api-fetch';
 import { reponsesAffichables } from '@/lib/consignes-rdv';
 import { envoyerContratParEmail } from '@/lib/contrat-email';
+import { signerContratAvecSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
+import SignatureProModal from '@/components/signature/SignatureProModal';
 
 const TEAL = '#0C5C6C';
 const AMBRE = '#D97706';
@@ -54,6 +56,8 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
   const [saisirConsignes, setSaisirConsignes] = useState(false);
   const [message, setMessage] = useState('');
   const [enCours, setEnCours] = useState('');
+  // Contrat généré sans signature enregistrée : la dessiner, elle est apposée.
+  const [signerContrat, setSignerContrat] = useState<string | null>(null);
   const [now, setNow] = useState(0);
 
   const charger = useCallback(async () => {
@@ -127,8 +131,12 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
         prestation_nom: prestation.nom, prix_total: prestation.prix != null ? Number(prestation.prix).toFixed(2) : null },
     }).select('id, token, statut').single();
     if (error) { setMessage(error.message); return; }
-    const c = data as Contrat;
+    const c = (data as Contrat & { id: string });
     setContrat(c);
+    // Ma signature apposée d'office (côté professionnel) ; sinon la dessiner.
+    const nomPro = user.displayName ?? '';
+    if (await signerContratAvecSignaturePro(c.id, user.uid, nomPro)) setContrat({ ...c, statut: 'partiellement_signe' });
+    else setSignerContrat(c.id);
     if (r.client_uid) {
       await notifier('contrat_invite', 'Contrat de prestation à signer', 'Votre toiletteur vous envoie le contrat de votre rendez-vous — vérifiez et signez',
         { token: c.token, url: `/signer-contrat/${c.token}` });
@@ -256,6 +264,16 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
         </div>
         <button onClick={onClose} className="w-full mt-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
       </div>
+      {signerContrat && user && (
+        <SignatureProModal onClose={() => setSignerContrat(null)} onValider={async dataUrl => {
+          await enregistrerSignaturePro(user.uid, dataUrl);
+          if (await signerContratAvecSignaturePro(signerContrat, user.uid, user.displayName ?? '', dataUrl)) {
+            setContrat(c => c ? { ...c, statut: 'partiellement_signe' } : c);
+            setMessage('Votre signature est apposée sur le contrat (et enregistrée pour les prochains).');
+          }
+          setSignerContrat(null);
+        }} />
+      )}
       {saisirConsignes && (
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={e => { e.stopPropagation(); setSaisirConsignes(false); }}>
           <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-lg p-5 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>

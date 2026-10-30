@@ -100,7 +100,7 @@ export default function SeanceToilettageModal({ animalId, animalNom, proUid, pro
     setUploading(true);
     try {
       const fid = await assurerFiche();
-      const url = await uploadPhoto(file, `fiches_toilettage/${fid}_${type}_${horodatage()}.jpg`, { maxDim: 1600 });
+      const url = await uploadPhoto(file, `fiches_toilettage/${fid}_${type}_${horodatage()}.jpg`, { maxDim: 1200 });
       const { data, error } = await supabase.from('fiches_toilettage_photos')
         .insert({ fiche_id: fid, ...(rdvId ? { rdv_id: rdvId } : {}), type, url }).select('id, type, url, rdv_id').single();
       if (error) throw error;
