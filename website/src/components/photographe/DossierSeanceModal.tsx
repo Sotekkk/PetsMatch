@@ -455,7 +455,7 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
         <button onClick={onClose} className="w-full mt-3 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
       </div>
       {monContrat && (
-        <DocumentProModal mode="contrat" rdv={{ ...r, pro_profile_id: pid || null }} clientNom={nomClient} animalNom={animaux || undefined}
+        <DocumentProModal mode="contrat" catPro="photographe" rdv={{ ...r, pro_profile_id: pid || null }} clientNom={nomClient} animalNom={animaux || undefined}
           proNom={user?.displayName ?? ''} onClose={() => setMonContrat(false)}
           onDone={() => { setMonContrat(false); setMessage('Contrat envoyé au client pour signature.'); charger(); onChanged?.(); }} />
       )}

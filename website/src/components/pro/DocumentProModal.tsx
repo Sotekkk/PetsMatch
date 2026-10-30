@@ -19,9 +19,11 @@ import {
 
 const TEAL = '#0C5C6C';
 
-export default function DocumentProModal({ rdv, mode, clientNom, animalNom, proNom, onClose, onDone }: {
+export default function DocumentProModal({ rdv, mode, clientNom, animalNom, proNom, catPro, onClose, onDone }: {
   rdv: RdvDocumentPro & { client_email_manuel?: string | null };
   mode: 'compte_rendu' | 'contrat';
+  /** Métier du pro (abonnements.profil_type) : contrat = formule payante, comme le contrat PetsMatch. */
+  catPro: string;
   clientNom: string; animalNom?: string; proNom: string;
   onClose: () => void;
   /** Après dépôt : [id] du document créé. */
@@ -52,6 +54,13 @@ export default function DocumentProModal({ rdv, mode, clientNom, animalNom, proN
     if (!user || !fichier) { setErreur('Choisissez un fichier (PDF ou photo).'); return; }
     setEnCours(true); setErreur(null);
     try {
+      if (!cr) {
+        const { data: ab } = await supabase.from('abonnements').select('plan_code').eq('uid', user.uid).eq('profil_type', catPro)
+          .eq('statut', 'actif').order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (((ab as { plan_code?: string } | null)?.plan_code ?? 'free') === 'free') {
+          setErreur('La signature électronique des contrats est disponible avec les formules payantes.'); setEnCours(false); return;
+        }
+      }
       const blob = await fichierEnPdf(fichier);
       const proProfileId = rdv.pro_profile_id ?? null;
       const titreOk = titre.trim() || (cr ? 'Compte rendu' : 'Contrat');

@@ -288,7 +288,7 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
           onClose={() => setFinSeance(false)} onDone={() => { setFinSeance(false); charger(); onChanged?.(); }} />
       )}
       {monContrat && (
-        <DocumentProModal mode="contrat" rdv={{ ...r, pro_profile_id: pid || null }} clientNom={nomClient} animalNom={animalNom || undefined}
+        <DocumentProModal mode="contrat" catPro="toilettage" rdv={{ ...r, pro_profile_id: pid || null }} clientNom={nomClient} animalNom={animalNom || undefined}
           proNom={user?.displayName ?? ''} onClose={() => setMonContrat(false)}
           onDone={() => { setMonContrat(false); setMessage('Contrat envoyé au client pour signature.'); charger(); onChanged?.(); }} />
       )}

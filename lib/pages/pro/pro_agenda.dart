@@ -2129,7 +2129,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _documentPro(Map<String, dynamic> rdv, String mode) async {
     final proNom = User_Info.nameElevage.trim().isNotEmpty ? User_Info.nameElevage.trim() : '${User_Info.firstname} ${User_Info.lastname}'.trim();
     if (await showDocumentProSheet(context, rdv: {...rdv, 'pro_profile_id': rdv['pro_profile_id'] ?? _resolveProProfileId()}, mode: mode,
-        clientNom: rdv['_client_name']?.toString() ?? 'Client', animalNom: rdv['_animal_nom']?.toString() ?? '', proNom: proNom)) {
+        clientNom: rdv['_client_name']?.toString() ?? 'Client', animalNom: rdv['_animal_nom']?.toString() ?? '', proNom: proNom,
+        catPro: AgendaContexte.catPro)) {
       _loadRdvs();
     }
   }

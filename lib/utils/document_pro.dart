@@ -25,6 +25,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart'
     show coordonneesClientRdv, envoyerContratParEmail, signerContratAvecSignaturePro;
 import 'package:PetsMatch/pages/pro/transmission_document.dart' show envoyerDocumentsParEmail;
+import 'package:PetsMatch/services/plan_service.dart' show PlanService;
 import 'package:PetsMatch/utils/document_prive.dart' show lienDocument;
 import 'package:PetsMatch/utils/storage_helper.dart' show uploadDocumentBytes;
 
@@ -242,11 +243,19 @@ Future<Uint8List> contratProSigne(Uint8List original, {
 /// Depuis un RDV (tous les pros) : charger mon compte rendu ou mon contrat.
 /// [mode] 'compte_rendu' | 'contrat'. Renvoie true si un document a été créé.
 /// Miroir site : DocumentProModal.
+/// [catPro] : métier (abonnements.profil_type) — contrat = formule payante, comme le contrat PetsMatch.
 Future<bool> showDocumentProSheet(BuildContext context, {
   required Map<String, dynamic> rdv, required String mode, required String clientNom, String animalNom = '', String proNom = '',
+  required String catPro,
 }) async {
   final cr = mode == 'compte_rendu';
   final messenger = ScaffoldMessenger.of(context);
+  if (!cr && await PlanService.getPlanCode(FirebaseAuth.instance.currentUser?.uid ?? '', profilType: catPro) == 'free') {
+    messenger.showSnackBar(const SnackBar(content: Text('La signature électronique des contrats est disponible avec les formules payantes.',
+        style: TextStyle(fontFamily: 'Galey')), behavior: SnackBarBehavior.floating));
+    return false;
+  }
+  if (!context.mounted) return false;
   final titreCtrl = TextEditingController(text: cr ? 'Compte rendu${animalNom.isNotEmpty ? ' — $animalNom' : ''}' : 'Contrat — $clientNom');
   Uint8List? pdf;
   var envoyer = true;

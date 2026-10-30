@@ -2396,7 +2396,7 @@ export default function MesRdvPage() {
       {docPro && (
         <DocumentProModal rdv={{ ...docPro.rdv, pro_profile_id: docPro.rdv.pro_profile_id ?? (activeProfileId || null) }} mode={docPro.mode}
           clientNom={docPro.rdv.clientName ?? docPro.rdv.client_nom_manuel ?? 'Client'} animalNom={docPro.rdv.animalNom ?? docPro.rdv.animal_nom_manuel ?? undefined}
-          proNom={proName} onClose={() => setDocPro(null)} onDone={() => { setDocPro(null); fetchRdvs(true); }} />
+          proNom={proName} catPro={catPro} onClose={() => setDocPro(null)} onDone={() => { setDocPro(null); fetchRdvs(true); }} />
       )}
       {historiqueRdv?.animal_id && activeProfileId && (
         <HistoriquePatient animalId={String(historiqueRdv.animal_id)} animalNom={historiqueRdv.animalNom ?? 'Patient'}
