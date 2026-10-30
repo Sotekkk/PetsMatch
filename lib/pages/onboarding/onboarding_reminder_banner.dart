@@ -1,5 +1,6 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_flow_page.dart';
+import 'package:PetsMatch/utils/contexte_pro.dart' show AgendaContexte;
 import 'package:PetsMatch/pages/onboarding/onboarding_registry.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_theme.dart';
 import 'package:PetsMatch/services/onboarding_service.dart';
@@ -70,7 +71,8 @@ class _OnboardingReminderBannerState extends State<OnboardingReminderBanner> {
 
   @override
   Widget build(BuildContext context) {
-    if (_remaining <= 0) return const SizedBox.shrink();
+    // Espace employé d'une clinique : pas de guide de démarrage.
+    if (_remaining <= 0 || AgendaContexte.espaceEmploye) return const SizedBox.shrink();
     final label = _remaining == 1 ? '1 étape restante' : '$_remaining étapes restantes';
     return Material(
       color: Colors.transparent,

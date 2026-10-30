@@ -2253,7 +2253,10 @@ function EmployeursLink({ uid }: { uid: string }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ProfilPage() {
-  const { user, userData, loading, refreshUserData, activeProfileId: authProfileId } = useAuth();
+  const { user, userData, loading, refreshUserData, activeProfileId: authProfileId, availableProfiles } = useAuth();
+  // Espace employé : le profil est celui de la clinique, géré par son titulaire.
+  const espaceEmploye = (availableProfiles.find(p => p.id === authProfileId) as { _is_employe_clinique?: boolean } | undefined)
+    ?._is_employe_clinique === true;
   const router = useRouter();
   // Profil actif : loaded=false tant que localStorage n'a pas été lu
   const { loaded: activeProfileLoaded, id: activeProfileId } = useActiveProfileState();
@@ -2598,6 +2601,15 @@ export default function ProfilPage() {
       setAllBreeds(prev => ({ ...prev, [espece]: [] }));
     }
   }, [allBreeds]);
+
+  if (espaceEmploye) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-16 text-center" style={{ fontFamily: 'Galey, sans-serif' }}>
+        <h1 className="text-xl font-bold text-[#1F2A2E]">Profil de la clinique</h1>
+        <p className="text-sm text-gray-500 mt-2">Le profil de la clinique est géré par son titulaire. En tant qu&apos;employé, vous ne pouvez pas le modifier.</p>
+      </div>
+    );
+  }
 
   // Attendre que localStorage soit lu + type résolu (évite l'affichage du profil primaire par erreur)
   if (!activeProfileLoaded || resolvedType === null || loading) {

@@ -17,7 +17,7 @@ registerAllOnboardingFlows();
  * une seule fois pour tout le site (comme CookieBanner dans SiteShell).
  */
 export default function OnboardingGate() {
-  const { user, userData, activeProfileId, loading } = useAuth();
+  const { user, userData, activeProfileId, loading, availableProfiles } = useAuth();
   const [open, setOpen] = useState(false);
   const [resume, setResume] = useState(false);
   const [remaining, setRemaining] = useState(0);
@@ -26,7 +26,10 @@ export default function OnboardingGate() {
   const checkedProfileIdRef = useRef('');
 
   const profileType = userData?.profileType ?? '';
-  const supported = profileType in onboardingRegistry;
+  // Espace employé d'une clinique : pas d'onboarding (celui du titulaire).
+  const espaceEmploye = (availableProfiles.find(p => p.id === activeProfileId) as { _is_employe_clinique?: boolean } | undefined)
+    ?._is_employe_clinique === true;
+  const supported = profileType in onboardingRegistry && !espaceEmploye;
 
   const refreshRemaining = useCallback(async () => {
     if (!supported || !activeProfileId) {

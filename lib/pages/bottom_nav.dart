@@ -1,5 +1,6 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/utils/contexte_pro.dart' show AgendaContexte;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/association/association_nav.dart';
 import 'package:PetsMatch/pages/eleveur/eleveur_nav.dart';
@@ -124,6 +125,8 @@ class _BottomNavState extends State<BottomNav> {
 
     final profileId = User_Info.activeProfileId;
     final profileType = User_Info.activeType;
+    // Espace employé d'une clinique : pas d'onboarding (celui du titulaire).
+    if (AgendaContexte.espaceEmploye) return;
     if (profileId.isEmpty || !onboardingRegistry.containsKey(profileType)) return;
 
     final shouldLaunch = await OnboardingService.shouldAutoLaunch(profileId, profileType);

@@ -1,5 +1,6 @@
 import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart';
+import 'package:PetsMatch/utils/contexte_pro.dart' show AgendaContexte;
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
@@ -1095,6 +1096,18 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Espace employé : le profil (fiche, tarifs, horaires…) est celui de la
+    // clinique, géré par son titulaire.
+    if (AgendaContexte.espaceEmploye) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Profil de la clinique', style: TextStyle(fontFamily: 'Galey'))),
+        body: const Center(child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Text('Le profil de la clinique est géré par son titulaire. En tant qu\u2019employé, vous ne pouvez pas le modifier.',
+              textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', fontSize: 15)),
+        )),
+      );
+    }
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       body: CustomScrollView(
