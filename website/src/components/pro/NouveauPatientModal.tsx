@@ -19,24 +19,29 @@ const ESPECES = [['chien', 'Chien'], ['chat', 'Chat'], ['cheval', 'Cheval / équ
 
 interface Client { id: string; nom: string; prenom: string | null; telephone: string | null; email: string | null }
 
-export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree, estClinique = true, titre: titreModal }: {
+export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree, estClinique = true, titre: titreModal,
+  puceInitiale, rattacherAnimalId }: {
   cliniqueProfileId: string; onClose: () => void; onCree: (animalId: string) => void;
   /** Titre selon le métier (« Nouvel animal suivi », « Nouvel équidé »…). */
   titre?: string;
   /** Vocabulaire : « patient » (vétérinaire) ou « client » (toiletteur, maréchal-ferrant, ostéopathe, éducateur). */
   estClinique?: boolean;
+  /** Puce déjà vérifiée introuvable (Nouveau RDV) : l'étape 1 est passée. */
+  puceInitiale?: string;
+  /** Fiche d'un autre pro retrouvée par la puce : seul le propriétaire est à saisir. */
+  rattacherAnimalId?: string;
 }) {
   const [clients, setClients] = useState<Client[]>([]);
   const [rechercheClient, setRechercheClient] = useState('');
   const [clientExistant, setClientExistant] = useState<Client | null>(null);
   const [c, setC] = useState({ nom: '', prenom: '', telephone: '', email: '', adresse: '', code_postal: '', ville: '' });
-  const [a, setA] = useState({ nom: '', espece: 'chien', race: '', sexe: '', date_naissance: '', identification: '', poids: '', couleur: '' });
+  const [a, setA] = useState({ nom: '', espece: 'chien', race: '', sexe: '', date_naissance: '', identification: puceInitiale ?? '', poids: '', couleur: '' });
   const [saving, setSaving] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   // Étape 1 franchie : puce vérifiée (aucune fiche) ou animal sans puce.
-  const [puceOk, setPuceOk] = useState(false);
+  const [puceOk, setPuceOk] = useState(!!puceInitiale || !!rattacherAnimalId);
   /** Fiche d'un autre pro à rattacher : on ne saisit que le client. */
-  const [rattacherA, setRattacherA] = useState<string | null>(null);
+  const [rattacherA, setRattacherA] = useState<string | null>(rattacherAnimalId ?? null);
   const [doublon, setDoublon] = useState<{ type: 'animal' | 'compte' | 'pro'; texte: string; animalId?: string } | null>(null);
   const mot = estClinique ? 'patients' : 'clients';
 

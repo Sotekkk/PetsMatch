@@ -2956,21 +2956,56 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         setModal(() { puceCherche = false; puceIntrouvable = true; });
       }
     }
+    // Client choisi dans mes clients : compte PetsMatch → RDV à son nom, sinon
+    // coordonnées du fichier.
+    void choisirClient(Map<String, dynamic> p, void Function(void Function()) setModal) {
+      setModal(() {
+        patientAnimalId = p['animal_id']?.toString();
+        animalNomCtrl.text = p['animal_nom']?.toString() ?? '';
+        if (p['client_uid'] != null && p['client_profile_id'] != null) {
+          linkedUid = p['client_uid'].toString();
+          linkedProfileId = p['client_profile_id'].toString();
+          final nom = p['client_nom']?.toString() ?? '';
+          linkedNom = nom.isEmpty ? 'Client' : nom;
+        } else {
+          linkedUid = null; linkedProfileId = null; linkedNom = null;
+          clientNomCtrl.text = p['client_nom']?.toString() ?? '';
+          clientTelCtrl.text = p['telephone']?.toString() ?? '';
+          clientEmailCtrl.text = p['email']?.toString() ?? '';
+        }
+      });
+    }
+    // Fiche créée ou rattachée (nouveau client, puce) : sélectionnée d'office.
+    Future<void> ouvrirFiche(void Function(void Function()) setModal, {String? puce, String? rattacher}) async {
+      final id = await Navigator.push<String?>(context, MaterialPageRoute(
+          builder: (_) => NouveauPatientCliniquePage(cliniqueProfileId: _resolveProProfileId(), estClinique: _estClinique,
+              puceInitiale: puce, rattacherAnimalId: rattacher)));
+      if (id == null || id.isEmpty) return;
+      final p = await _patientParAnimal(id);
+      setModal(() { puceRes = null; puceIntrouvable = false; puceCtrl.clear(); });
+      if (p != null) choisirClient(p, setModal);
+    }
     Future<void> utiliserPuce(void Function(void Function()) setModal) async {
       final h = puceRes;
       if (h == null) return;
       final aVous = h['a_vous'] == true, dejaLie = h['deja_lie'] == true;
-      if (h['owner_uid'] != null && h['owner_profile_id'] != null && !aVous) {
+      if (aVous || dejaLie) {
+        // Déjà dans mes clients : animal et propriétaire repris de la fiche.
+        final p = await _patientParAnimal(h['animal_id'].toString());
+        if (p != null) {
+          choisirClient(p, setModal);
+          setModal(() { puceRes = null; puceCtrl.clear(); });
+          return;
+        }
+      } else if (h['owner_uid'] != null && h['owner_profile_id'] != null) {
         // Compte PetsMatch : RDV au nom du propriétaire (il l'a demandé par téléphone).
         linkedUid = h['owner_uid'].toString();
         linkedProfileId = h['owner_profile_id'].toString();
         linkedNom = h['_owner_nom'].toString();
-      } else if (h['detenteur'] == 'pro' && !dejaLie) {
-        // Fiche créée par un autre pro : rattachée à mes patients.
-        try {
-          await Supabase.instance.client.rpc('pm_rattacher_fiche_pro', params: {
-            'p_profile': _resolveProProfileId(), 'p_animal': h['animal_id'], 'p_client_id': null, 'p_client': null});
-        } catch (_) {}
+      } else if (h['detenteur'] == 'pro') {
+        // Fiche créée par un autre pro : ajoutée à mes clients, propriétaire à saisir.
+        await ouvrirFiche(setModal, rattacher: h['animal_id'].toString());
+        return;
       }
       setModal(() {
         patientAnimalId = h['animal_id']?.toString();
@@ -3083,7 +3118,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text('${puceRes!['nom'] ?? 'Animal'}${(puceRes!['espece'] ?? '').toString().isNotEmpty ? ' · ${puceRes!['espece']}' : ''}',
                           style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-                      Text(puceRes!['a_vous'] == true || puceRes!['deja_lie'] == true ? 'Déjà dans mon fichier.'
+                      Text(puceRes!['a_vous'] == true || puceRes!['deja_lie'] == true ? 'Déjà dans mes clients.'
                           : puceRes!['owner_uid'] != null ? 'Propriétaire : ${puceRes!['_owner_nom']} (compte PetsMatch)'
                           : puceRes!['detenteur'] == 'pro' ? 'Fiche créée par un autre professionnel : propriétaire à renseigner.' : '',
                           style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
@@ -3091,34 +3126,42 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       SizedBox(width: double.infinity, child: OutlinedButton(
                         onPressed: () => utiliserPuce(setModal),
                         style: OutlinedButton.styleFrom(foregroundColor: _teal),
-                        child: Text(puceRes!['owner_uid'] != null && puceRes!['a_vous'] != true ? 'Créer le RDV pour ce propriétaire'
-                            : puceRes!['detenteur'] == 'pro' && puceRes!['deja_lie'] != true ? 'Rattacher à mes patients et l’utiliser' : 'Utiliser cet animal',
+                        child: Text(puceRes!['a_vous'] == true || puceRes!['deja_lie'] == true ? 'Utiliser cet animal'
+                            : puceRes!['owner_uid'] != null ? 'Créer le RDV pour ce propriétaire'
+                            : puceRes!['detenteur'] == 'pro' ? 'Ajouter à mes clients' : 'Utiliser cet animal',
                             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
                       )),
                     ]),
                   )
                 else if (puceIntrouvable)
-                  Padding(padding: const EdgeInsets.only(top: 6),
-                      child: Text('Aucun animal avec cette puce sur PetsMatch : saisissez le client ci-dessous.',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600))),
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: _teal.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _teal.withValues(alpha: 0.2))),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Aucun animal avec cette puce sur PetsMatch.',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+                      const SizedBox(height: 6),
+                      SizedBox(width: double.infinity, child: ElevatedButton(
+                        onPressed: () => ouvrirFiche(setModal, puce: puceCtrl.text.replaceAll(RegExp(r'[\s-]'), '')),
+                        style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white),
+                        child: const Text('Créer sa fiche (propriétaire et animal)',
+                            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                      )),
+                    ]),
+                  ),
                 const SizedBox(height: 12),
               ],
-              if (_fichierClients && linkedUid == null) ...[
+              if (linkedUid == null) ...[
                 OutlinedButton.icon(
                   onPressed: () async {
                     final p = await _choisirPatientClinique();
-                    if (p == null) return;
-                    setModal(() {
-                      patientAnimalId = p['animal_id'] as String?;
-                      animalNomCtrl.text = p['animal_nom'] as String? ?? '';
-                      clientNomCtrl.text = p['client_nom'] as String? ?? '';
-                      clientTelCtrl.text = p['telephone'] as String? ?? '';
-                      clientEmailCtrl.text = p['email'] as String? ?? '';
-                    });
+                    if (p != null) choisirClient(p, setModal);
                   },
-                  icon: Icon(_estClinique ? Icons.local_hospital_outlined : Icons.contacts_outlined, size: 18),
+                  icon: const Icon(Icons.search, size: 18),
                   label: Text(patientAnimalId == null
-                      ? (_estClinique ? 'Choisir un patient de la clinique' : 'Choisir un client de mon fichier')
+                      ? 'Rechercher dans mes clients'
                       : '${_estClinique ? 'Patient' : 'Client'} : ${animalNomCtrl.text} — changer',
                       style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
                   style: OutlinedButton.styleFrom(foregroundColor: _teal, minimumSize: const Size(double.infinity, 44),
@@ -3127,20 +3170,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 // Client sans appli : fiche client + animal créée par le pro
                 // (même fichier que les patients de la clinique).
                 TextButton.icon(
-                  onPressed: () async {
-                    final id = await Navigator.push<String?>(context, MaterialPageRoute(
-                        builder: (_) => NouveauPatientCliniquePage(cliniqueProfileId: _resolveProProfileId(), estClinique: _estClinique)));
-                    if (id == null || id.isEmpty) return;
-                    final p = await _patientParAnimal(id);
-                    if (p == null) return;
-                    setModal(() {
-                      patientAnimalId = p['animal_id'] as String?;
-                      animalNomCtrl.text = p['animal_nom'] as String? ?? '';
-                      clientNomCtrl.text = p['client_nom'] as String? ?? '';
-                      clientTelCtrl.text = p['telephone'] as String? ?? '';
-                      clientEmailCtrl.text = p['email'] as String? ?? '';
-                    });
-                  },
+                  onPressed: () => ouvrirFiche(setModal),
                   icon: const Icon(Icons.person_add_alt_outlined, size: 18),
                   label: Text(_estClinique ? 'Nouveau patient (propriétaire sans appli)' : 'Nouveau client (sans appli)',
                       style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
@@ -3478,58 +3508,45 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     );
   }
 
-  /// Métiers qui tiennent un fichier clients (clients sans appli).
-  bool get _fichierClients => _estClinique
-      || const {'toilettage', 'marechal_ferrant', 'sante', 'education', 'garde', 'pension'}.contains(AgendaContexte.catPro);
-
-  /// Client du fichier pour un animal qu'on vient de créer.
-  Future<Map<String, dynamic>?> _patientParAnimal(String animalId) async {
+  /// Mes clients (tous métiers, pm_mes_clients — miroir site NouveauRdvModal) :
+  /// fichier, animaux suivis et clients des RDV passés. Chaque ligne : animal_id
+  /// (null = client de RDV sans fiche), animal_nom, espece, identification,
+  /// client_nom, telephone, email, client_uid / client_profile_id (compte PetsMatch).
+  Future<List<Map<String, dynamic>>> _mesClients() async {
     try {
-      final a = await Supabase.instance.client.from('animaux').select('id, nom, client_clinique_id').eq('id', animalId).maybeSingle();
-      if (a == null) return null;
-      final c = a['client_clinique_id'] == null ? null
-          : await Supabase.instance.client.from('clients_clinique').select('nom, prenom, telephone, email').eq('id', a['client_clinique_id']).maybeSingle();
-      return {
-        'animal_id': a['id'].toString(), 'animal_nom': a['nom'] ?? '',
-        'client_nom': '${c?['prenom'] ?? ''} ${c?['nom'] ?? ''}'.trim(),
-        'telephone': c?['telephone'] ?? '', 'email': c?['email'] ?? '',
-      };
+      final rows = await Supabase.instance.client.rpc('pm_mes_clients', params: {'p_profile': _resolveProProfileId()});
+      return [for (final r in rows as List) Map<String, dynamic>.from(r as Map)];
     } catch (_) {
-      return null;
+      return [];
     }
   }
 
-  /// Patients / clients créés par le pro (fiche + client) — recherche par nom de
-  /// l'animal ou du client. Renvoie animal_id, animal_nom, client_nom, telephone, email.
+  /// Client de mes clients pour un animal (fiche qu'on vient de créer ou de rattacher).
+  Future<Map<String, dynamic>?> _patientParAnimal(String animalId) async {
+    final liste = await _mesClients();
+    for (final p in liste) {
+      if (p['animal_id']?.toString() == animalId) return p;
+    }
+    return null;
+  }
+
+  static String _sansAccents(String s) {
+    const de = 'àâäáãçéèêëíìîïñóòôöõúùûüÿ', vers = 'aaaaaceeeeiiiinooooouuuuy';
+    final b = StringBuffer();
+    for (final c in s.toLowerCase().split('')) {
+      final i = de.indexOf(c);
+      b.write(i >= 0 ? vers[i] : c);
+    }
+    return b.toString();
+  }
+
+  /// Recherche dans mes clients : nom de l'animal, du propriétaire, téléphone, puce.
   Future<Map<String, dynamic>?> _choisirPatientClinique() async {
-    final pid = _resolveProProfileId();
-    List<Map<String, dynamic>> patients = [];
-    try {
-      final grants = await Supabase.instance.client.from('animal_access').select('animal_id')
-          .eq('pro_profile_id', pid).eq('statut', 'active');
-      final ids = [for (final g in grants as List) g['animal_id'].toString()];
-      if (ids.isNotEmpty) {
-        final an = await Supabase.instance.client.from('animaux')
-            .select('id, nom, espece, client_clinique_id').inFilter('id', ids).not('client_clinique_id', 'is', null);
-        final cIds = {for (final a in an as List) a['client_clinique_id'].toString()};
-        final cl = cIds.isEmpty ? const [] : await Supabase.instance.client.from('clients_clinique')
-            .select('id, nom, prenom, telephone, email').inFilter('id', cIds.toList());
-        final parId = {for (final c in cl as List) c['id'].toString(): c};
-        patients = [
-          for (final a in an)
-            {
-              'animal_id': a['id'].toString(), 'animal_nom': a['nom'] ?? '', 'espece': a['espece'] ?? '',
-              'client_nom': '${parId[a['client_clinique_id'].toString()]?['prenom'] ?? ''} ${parId[a['client_clinique_id'].toString()]?['nom'] ?? ''}'.trim(),
-              'telephone': parId[a['client_clinique_id'].toString()]?['telephone'] ?? '',
-              'email': parId[a['client_clinique_id'].toString()]?['email'] ?? '',
-            },
-        ]..sort((x, y) => x['animal_nom'].toString().compareTo(y['animal_nom'].toString()));
-      }
-    } catch (_) {}
+    final patients = await _mesClients();
     if (!mounted) return null;
     if (patients.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Aucun client dans votre fichier : utilisez « Nouveau client (sans appli) ».', style: TextStyle(fontFamily: 'Galey')),
+          content: Text('Aucun client pour l\'instant : recherchez par puce ou utilisez « Nouveau client ».', style: TextStyle(fontFamily: 'Galey')),
           behavior: SnackBarBehavior.floating));
       return null;
     }
@@ -3538,22 +3555,29 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       context: context, isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
-        final liste = patients.where((p) => q.isEmpty ||
-            '${p['animal_nom']} ${p['client_nom']}'.toLowerCase().contains(q.toLowerCase())).toList();
+        final qn = _sansAccents(q.trim());
+        final chiffres = qn.replaceAll(RegExp(r'[^0-9]'), '');
+        final liste = patients.where((p) => qn.isEmpty
+            || _sansAccents('${p['animal_nom']} ${p['client_nom']} ${p['email']}').contains(qn)
+            || (chiffres.length >= 3 && '${(p['telephone'] ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '')} '
+                '${(p['identification'] ?? '').toString().replaceAll(RegExp(r'[^0-9A-Za-z]'), '')}'.contains(chiffres))).toList();
         return SizedBox(
           height: MediaQuery.of(ctx).size.height * 0.75,
           child: Column(children: [
             Padding(
               padding: EdgeInsets.fromLTRB(16, 16, 16, 8 + MediaQuery.of(ctx).viewInsets.bottom * 0),
               child: TextField(autofocus: true, onChanged: (v) => setM(() => q = v),
-                  decoration: const InputDecoration(hintText: 'Rechercher (animal, client)', prefixIcon: Icon(Icons.search),
+                  decoration: const InputDecoration(hintText: 'Animal, propriétaire, téléphone…', prefixIcon: Icon(Icons.search),
                       border: OutlineInputBorder(), isDense: true)),
             ),
             Expanded(child: ListView(children: [
               for (final p in liste) ListTile(
                 leading: const Icon(Icons.pets_outlined, color: _teal),
-                title: Text(p['animal_nom'].toString(), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-                subtitle: Text([p['espece'], p['client_nom']].where((x) => x.toString().isNotEmpty).join(' · ')),
+                title: Text('${(p['animal_nom'] ?? '').toString().isEmpty ? 'Animal non renseigné' : p['animal_nom']}'
+                    '${(p['espece'] ?? '').toString().isEmpty ? '' : ' · ${p['espece']}'}',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                subtitle: Text([p['client_nom'] ?? '', p['telephone'] ?? '', p['client_uid'] != null ? 'compte PetsMatch' : '']
+                    .where((x) => x.toString().isNotEmpty).join(' · ')),
                 onTap: () => Navigator.pop(ctx, p),
               ),
             ])),

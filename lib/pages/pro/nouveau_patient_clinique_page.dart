@@ -29,7 +29,12 @@ class NouveauPatientCliniquePage extends StatefulWidget {
   final bool estClinique;
   /// Titre selon le métier (« Nouvel animal suivi », « Nouvel équidé »…).
   final String? titre;
-  const NouveauPatientCliniquePage({super.key, required this.cliniqueProfileId, this.estClinique = true, this.titre});
+  /// Puce déjà vérifiée introuvable (Nouveau RDV) : l'étape 1 est passée.
+  final String? puceInitiale;
+  /// Fiche d'un autre pro retrouvée par la puce : seul le propriétaire est à saisir.
+  final String? rattacherAnimalId;
+  const NouveauPatientCliniquePage({super.key, required this.cliniqueProfileId, this.estClinique = true, this.titre,
+      this.puceInitiale, this.rattacherAnimalId});
 
   @override
   State<NouveauPatientCliniquePage> createState() => _NouveauPatientCliniquePageState();
@@ -59,6 +64,9 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
   @override
   void initState() {
     super.initState();
+    if (widget.puceInitiale != null) _ident.text = widget.puceInitiale!;
+    _rattacherA = widget.rattacherAnimalId;
+    _puceVerifiee = widget.puceInitiale != null || widget.rattacherAnimalId != null;
     _chargerClients();
   }
 

@@ -618,6 +618,13 @@ function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
 
 const DUREES_MANUEL = [15, 30, 45, 60, 90];
 
+/** Ligne de pm_mes_clients : animal (null = client de RDV sans fiche) et
+ *  client — compte PetsMatch (clientUid) ou coordonnées saisies par le pro. */
+type ClientFichier = { animalId: string | null; animalNom: string; espece: string; puce: string; clientNom: string;
+  tel: string; email: string; clientUid: string | null; clientProfileId: string | null };
+
+const sansAccents = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
 function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose, onDone }: {
   proUid: string; profileId: string; proName: string; catPro: string;
   /** Depuis le planning : date-heure, praticien ('' = titulaire) et salle ;
@@ -647,13 +654,15 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
   const [salles, setSalles] = useState<{ id: string; nom: string }[]>([]);
   const [praticien, setPraticien] = useState(initial?.praticien ?? '');
   const [salle, setSalle] = useState(initial?.salle ?? '');
-  // Fichier clients (patients de la clinique, clients sans appli du toiletteur,
-  // maréchal-ferrant, ostéopathe, éducateur) → RDV rattaché à la fiche.
-  const [patients, setPatients] = useState<{ animalId: string; animalNom: string; clientNom: string; tel: string; email: string }[]>([]);
+  // Mes clients (tous métiers, pm_mes_clients) : fichier, animaux suivis et
+  // clients des RDV passés — recherche par animal, propriétaire, téléphone, puce.
+  const [patients, setPatients] = useState<ClientFichier[]>([]);
   const [patientId, setPatientId] = useState('');
-  const [nouveauClient, setNouveauClient] = useState(false);
+  const [recherche, setRecherche] = useState('');
+  // Création / rattachement d'une fiche (puce introuvable, fiche d'un autre pro).
+  const [ficheModal, setFicheModal] = useState<{ puce?: string; rattacher?: string } | null>(null);
+  const [aSelectionner, setASelectionner] = useState<string | null>(null);
   const [rechargerFichier, setRechargerFichier] = useState(0);
-  const fichierClients = ['veterinaire', 'toilettage', 'marechal_ferrant', 'sante', 'education', 'garde', 'pension'].includes(catPro);
   // Puce : retrouve l'animal (une puce = une fiche) et son propriétaire —
   // compte PetsMatch → RDV à son nom (client qui appelle) ; fiche d'un autre
   // pro → rattachée à mes patients.
@@ -710,37 +719,46 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
     setPuceCherche(false);
   }
 
-  async function utiliserPuce() {
+  /** Client choisi dans mes clients : compte PetsMatch → RDV à son nom, sinon coordonnées du fichier. */
+  function choisirClient(p: ClientFichier) {
+    setPatientId(p.animalId ?? '');
+    setAnimalNom(p.animalNom);
+    if (p.clientUid && p.clientProfileId) {
+      setLinked({ uid: p.clientUid, nom: p.clientNom || 'Client', profileId: p.clientProfileId });
+    } else {
+      setLinked(null);
+      setClientNom(p.clientNom); setClientTel(p.tel); setClientEmail(p.email);
+    }
+    setRecherche('');
+  }
+
+  function utiliserPuce() {
     if (!puceRes) return;
-    if (puceRes.ownerUid && puceRes.ownerProfileId && !puceRes.aVous) {
+    if (puceRes.aVous || puceRes.dejaLie) {
+      // Déjà dans mes clients : animal et propriétaire repris de la fiche.
+      const p = patients.find(x => x.animalId === puceRes.animalId);
+      if (p) choisirClient(p); else { setPatientId(puceRes.animalId); setAnimalNom(puceRes.nom); }
+    } else if (puceRes.ownerUid && puceRes.ownerProfileId) {
       // Compte PetsMatch : RDV au nom du propriétaire (il l'a demandé par téléphone).
       setLinked({ uid: puceRes.ownerUid, nom: puceRes.ownerNom, profileId: puceRes.ownerProfileId });
-    } else if (puceRes.detenteur === 'pro' && !puceRes.dejaLie && profileId) {
-      // Fiche créée par un autre pro : rattachée à mes patients.
-      const { error: er } = await supabase.rpc('pm_rattacher_fiche_pro', { p_profile: profileId, p_animal: puceRes.animalId, p_client_id: null, p_client: null });
-      if (er) { setError(er.message); return; }
-      setRechargerFichier(n => n + 1);
+      setPatientId(puceRes.animalId);
+      setAnimalNom(puceRes.nom);
+    } else if (puceRes.detenteur === 'pro') {
+      // Fiche créée par un autre pro : ajoutée à mes clients, propriétaire à saisir.
+      setFicheModal({ rattacher: puceRes.animalId });
+      return;
     }
-    setPatientId(puceRes.animalId);
-    setAnimalNom(puceRes.nom);
     setPuceRes(null); setPuce('');
   }
   useEffect(() => {
-    if (!fichierClients || !profileId) return;
-    (async () => {
-      const { data: g } = await supabase.from('animal_access').select('animal_id').eq('pro_profile_id', profileId).eq('statut', 'active');
-      const ids = (g ?? []).map(x => x.animal_id as string);
-      if (!ids.length) return;
-      const { data: an } = await supabase.from('animaux').select('id, nom, client_clinique_id').in('id', ids).not('client_clinique_id', 'is', null);
-      const cIds = [...new Set((an ?? []).map(x => x.client_clinique_id as string))];
-      const { data: cl } = cIds.length ? await supabase.from('clients_clinique').select('id, nom, prenom, telephone, email').in('id', cIds) : { data: [] };
-      const parId = new Map(((cl ?? []) as { id: string; nom: string; prenom: string | null; telephone: string | null; email: string | null }[]).map(c => [c.id, c]));
-      setPatients(((an ?? []) as { id: string; nom: string; client_clinique_id: string }[]).map(x => {
-        const c = parId.get(x.client_clinique_id);
-        return { animalId: x.id, animalNom: x.nom ?? '', clientNom: c ? `${c.prenom ?? ''} ${c.nom}`.trim() : '', tel: c?.telephone ?? '', email: c?.email ?? '' };
-      }).sort((a, b) => a.animalNom.localeCompare(b.animalNom)));
-    })();
-  }, [fichierClients, profileId, rechargerFichier]);
+    if (!profileId) return;
+    supabase.rpc('pm_mes_clients', { p_profile: profileId }).then(({ data }) => {
+      setPatients(((data ?? []) as { animal_id: string | null; animal_nom: string; espece: string; identification: string; client_nom: string;
+        telephone: string; email: string; client_uid: string | null; client_profile_id: string | null }[]).map(r => ({
+        animalId: r.animal_id, animalNom: r.animal_nom, espece: r.espece, puce: r.identification, clientNom: r.client_nom,
+        tel: r.telephone, email: r.email, clientUid: r.client_uid, clientProfileId: r.client_profile_id })));
+    });
+  }, [profileId, rechargerFichier]);
 
   // Depuis la fiche d'un patient : animal + propriétaire (client du dernier
   // RDV chez moi, sinon propriétaire principal, sinon fiche client de la
@@ -780,13 +798,22 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
     return () => { annule = true; };
   }, [initial?.animalId, profileId]);
 
-  // Fiche créée depuis « Nouveau client » : sélectionnée d'office.
+  // Fiche créée ou rattachée (nouveau client, puce) : sélectionnée d'office.
   useEffect(() => {
-    if (!patientId) return;
-    const p = patients.find(x => x.animalId === patientId);
+    if (!aSelectionner) return;
+    const p = patients.find(x => x.animalId === aSelectionner);
+    if (!p) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (p) { setAnimalNom(p.animalNom); setClientNom(p.clientNom); setClientTel(p.tel); setClientEmail(p.email); }
-  }, [patients, patientId]);
+    choisirClient(p); setASelectionner(null);
+  }, [patients, aSelectionner]);
+
+  const resultats = (() => {
+    const q = sansAccents(recherche.trim());
+    if (!q) return [];
+    const chiffres = q.replace(/[^0-9]/g, '');
+    return patients.filter(p => sansAccents(`${p.animalNom} ${p.clientNom} ${p.email}`).includes(q)
+      || (chiffres.length >= 3 && `${p.tel.replace(/[^0-9]/g, '')} ${p.puce.replace(/[^0-9A-Za-z]/g, '')}`.includes(chiffres))).slice(0, 8);
+  })();
 
   useEffect(() => {
     if (catPro !== 'veterinaire' || !profileId) return;
@@ -917,40 +944,62 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
               <div className="mt-2 rounded-xl p-3 space-y-2" style={{ background: '#0C5C6C0C', border: '1px solid #0C5C6C33' }}>
                 <p className="text-sm"><span className="font-semibold">{puceRes.nom}</span>{puceRes.espece ? ` · ${puceRes.espece}` : ''}</p>
                 <p className="text-xs text-gray-600">
-                  {puceRes.aVous || puceRes.dejaLie ? 'Déjà dans mon fichier.'
+                  {puceRes.aVous || puceRes.dejaLie ? 'Déjà dans mes clients.'
                     : puceRes.ownerUid ? `Propriétaire : ${puceRes.ownerNom} (compte PetsMatch)`
                     : puceRes.detenteur === 'pro' ? 'Fiche créée par un autre professionnel : propriétaire à renseigner.' : ''}
                 </p>
                 <button type="button" onClick={utiliserPuce} className="w-full py-2 rounded-xl text-xs font-bold border" style={{ borderColor: TEAL, color: TEAL }}>
-                  {puceRes.ownerUid && !puceRes.aVous ? 'Créer le RDV pour ce propriétaire'
-                    : puceRes.detenteur === 'pro' && !puceRes.dejaLie ? 'Rattacher à mes patients et l’utiliser' : 'Utiliser cet animal'}
+                  {puceRes.aVous || puceRes.dejaLie ? 'Utiliser cet animal'
+                    : puceRes.ownerUid ? 'Créer le RDV pour ce propriétaire'
+                    : puceRes.detenteur === 'pro' ? 'Ajouter à mes clients' : 'Utiliser cet animal'}
                 </button>
               </div>
             ) : puceIntrouvable ? (
-              <p className="text-[11px] text-gray-400 mt-1">Aucun animal avec cette puce sur PetsMatch : saisissez le client ci-dessous.</p>
+              <div className="mt-2 rounded-xl p-3 space-y-2" style={{ background: '#0C5C6C0C', border: '1px solid #0C5C6C33' }}>
+                <p className="text-xs text-gray-600">Aucun animal avec cette puce sur PetsMatch.</p>
+                <button type="button" onClick={() => setFicheModal({ puce: puce.replace(/[\s-]/g, '') })}
+                  className="w-full py-2 rounded-xl text-xs font-bold text-white" style={{ background: TEAL }}>
+                  Créer sa fiche (propriétaire et animal)
+                </button>
+              </div>
             ) : null}
           </div>
         )}
 
-        {fichierClients && !linked && (
-          <button type="button" onClick={() => setNouveauClient(true)} className="text-sm font-semibold" style={{ color: '#0C5C6C' }}>
-            + {catPro === 'veterinaire' ? 'Nouveau patient (propriétaire sans appli)' : 'Nouveau client (sans appli)'}
-          </button>
+        {!linked && (
+          <div>
+            <label className={label}>Rechercher dans mes clients</label>
+            <input value={recherche} onChange={e => setRecherche(e.target.value)} placeholder="Nom de l'animal, du propriétaire, téléphone…"
+              className={champ} />
+            {recherche.trim() && (
+              resultats.length > 0 ? (
+                <div className="mt-1 border border-gray-200 rounded-xl overflow-hidden">
+                  {resultats.map((p, i) => (
+                    <button key={`${p.animalId ?? ''}-${i}`} type="button" onClick={() => choisirClient(p)}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-50 last:border-0">
+                      <span className="font-semibold">{p.animalNom || 'Animal non renseigné'}</span>
+                      {p.espece ? <span className="text-gray-400"> · {p.espece}</span> : null}
+                      <span className="block text-xs text-gray-500">
+                        {[p.clientNom, p.tel, p.clientUid ? 'compte PetsMatch' : ''].filter(Boolean).join(' · ')}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-gray-400 mt-1">Aucun client trouvé : recherchez par puce, créez un nouveau client ou saisissez-le ci-dessous.</p>
+              )
+            )}
+            <button type="button" onClick={() => setFicheModal({})} className="text-sm font-semibold mt-2" style={{ color: TEAL }}>
+              + {catPro === 'veterinaire' ? 'Nouveau patient (propriétaire sans appli)' : 'Nouveau client (sans appli)'}
+            </button>
+          </div>
         )}
-        {nouveauClient && profileId && (
-          <NouveauPatientModal cliniqueProfileId={profileId} estClinique={catPro === 'veterinaire'} onClose={() => setNouveauClient(false)}
-            onCree={id => { setNouveauClient(false); setPatientId(id); setRechargerFichier(n => n + 1); }} />
-        )}
-        {patients.length > 0 && !linked && (
-          <div><label className={label}>{catPro === 'veterinaire' ? 'Patient de la clinique' : 'Client de mon fichier'}</label>
-            <select value={patientId} className={`${champ} bg-white`} onChange={e => {
-              const p = patients.find(x => x.animalId === e.target.value);
-              setPatientId(e.target.value);
-              if (p) { setAnimalNom(p.animalNom); setClientNom(p.clientNom); setClientTel(p.tel); setClientEmail(p.email); }
-            }}>
-              <option value="">— Aucun (saisie libre) —</option>
-              {patients.map(p => <option key={p.animalId} value={p.animalId}>{p.animalNom}{p.clientNom ? ` · ${p.clientNom}` : ''}</option>)}
-            </select></div>
+        {ficheModal && profileId && (
+          <NouveauPatientModal cliniqueProfileId={profileId} estClinique={catPro === 'veterinaire'}
+            puceInitiale={ficheModal.puce} rattacherAnimalId={ficheModal.rattacher}
+            onClose={() => setFicheModal(null)}
+            onCree={id => { setFicheModal(null); setPuceRes(null); setPuceIntrouvable(false); setPuce('');
+              setASelectionner(id); setRechargerFichier(n => n + 1); }} />
         )}
         {linked ? (
           <div className="flex items-center gap-3 rounded-xl p-3" style={{ background: '#6E9E570C', border: '1px solid #6E9E5733' }}>
