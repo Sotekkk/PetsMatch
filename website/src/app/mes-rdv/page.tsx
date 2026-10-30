@@ -1363,7 +1363,9 @@ function groupRanges(slotsForDate: { time: string; statut: SlotStatus }[]): Slot
   return ranges;
 }
 
-function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
+// [praticienId] : vétérinaire employé de la clinique — ses propres créneaux
+// (creneaux_pro.praticien_profile_id), miroir appli _praticienCreneaux.
+function CreneauxTab({ uid, profileId, praticienId = null }: { uid: string; profileId: string; praticienId?: string | null }) {
   const [weekStart, setWeekStart]           = useState(() => getMonday(new Date()));
   const [selectedDayIdx, setSelectedDayIdx] = useState(0);
   const [slots, setSlots]                   = useState<Record<string, SlotStatus>>({});
@@ -1389,6 +1391,7 @@ function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
         .select('date, heure_debut, statut')
         .eq('pro_uid', uid)
         .eq('pro_profile_id', profileId)
+        .match(praticienId ? { praticien_profile_id: praticienId } : {})
         .in('statut', ['disponible', 'bloque'])
         .gte('date', toDateStr(weekStart))
         .lte('date', toDateStr(end));
@@ -1400,7 +1403,7 @@ function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
       setSlots(map);
     } catch { /* ignore */ }
     setLoadingSlots(false);
-  }, [uid, profileId, weekStart]);
+  }, [uid, profileId, weekStart, praticienId]);
 
   useEffect(() => { loadSlots(); }, [loadSlots]);
 
@@ -1426,7 +1429,7 @@ function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
       const fin  = minsToTime(cur + 15);
       const key  = `${dateStr}_${hhmm}`;
       newSlots[key] = statut;
-      rows.push({ pro_uid: uid, pro_profile_id: profileId, date: dateStr,
+      rows.push({ pro_uid: uid, pro_profile_id: profileId, ...(praticienId ? { praticien_profile_id: praticienId } : {}), date: dateStr,
         heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut });
       cur += 15;
     }
@@ -1454,6 +1457,7 @@ function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
     try {
       await supabase.from('creneaux_pro').delete()
         .eq('pro_uid', uid).eq('pro_profile_id', profileId)
+        .match(praticienId ? { praticien_profile_id: praticienId } : {})
         .eq('date', dateStr).in('heure_debut', hdList);
     } catch { loadSlots(); }
   }
@@ -1484,7 +1488,7 @@ function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
           const tDay     = new Date(target);
           tDay.setDate(target.getDate() + dayDiff);
           const fin = minsToTime(timeToMins(hhmm) + 15);
-          rows.push({ pro_uid: uid, pro_profile_id: profileId, date: toDateStr(tDay),
+          rows.push({ pro_uid: uid, pro_profile_id: profileId, ...(praticienId ? { praticien_profile_id: praticienId } : {}), date: toDateStr(tDay),
             heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut: 'disponible' });
         }
         target = new Date(target); target.setDate(target.getDate() + 7);
@@ -1985,8 +1989,8 @@ export default function MesRdvPage() {
     { key: 'demandes',   label: 'Demandes',   badge: demandes.length   },
     { key: 'a_venir',    label: 'À venir',    badge: aVenir.length     },
     { key: 'historique', label: 'Historique', badge: 0                 },
-    // Espace employé : les créneaux sont ceux de la clinique (gérés par le titulaire).
-    ...(esp.espace ? [] : [{ key: 'creneaux' as TabKey, label: 'Créneaux', badge: 0 }]),
+    // Espace employé : le vétérinaire gère SES créneaux ; l'ASV n'en a pas.
+    ...(esp.espace && !esp.praticien ? [] : [{ key: 'creneaux' as TabKey, label: 'Créneaux', badge: 0 }]),
     // Clinique : journée en colonnes par praticien / par salle.
     ...(catPro === 'veterinaire' ? [{ key: 'planning' as TabKey, label: 'Planning', badge: 0 }] : []),
   ];
@@ -2097,7 +2101,7 @@ export default function MesRdvPage() {
 
         {/* Onglet créneaux */}
         {activeTab === 'creneaux' && user && (
-          <CreneauxTab uid={user.uid} profileId={activeProfileId ?? ''} />
+          <CreneauxTab uid={proUid} profileId={activeProfileId ?? ''} praticienId={esp.espace ? esp.monProfil : null} />
         )}
 
         {/* Planning de la clinique */}
