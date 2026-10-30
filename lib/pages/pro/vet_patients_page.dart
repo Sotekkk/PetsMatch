@@ -29,6 +29,12 @@ class _VetPatientsPageState extends State<VetPatientsPage>
   List<Map<String, dynamic>> _patients = [];
   String _search = '';
   String? _filterEspece;
+  /// Vétérinaire employé d'une clinique : ses patients (RDV à son nom, comptes
+  /// rendus rédigés / validés par lui) ; une recherche porte sur tout le
+  /// fichier de la clinique. L'ASV et le titulaire voient tout.
+  bool _praticienEmploye = false;
+  Set<String> _mesAnimaux = {};
+  bool _toutLeFichier = false;
 
   // Onglet Agenda
   bool _loadingAgenda = false;
@@ -67,6 +73,20 @@ class _VetPatientsPageState extends State<VetPatientsPage>
       final pid = AgendaContexte.profileId.isNotEmpty ? AgendaContexte.profileId
           : (User_Info.availableProfiles.firstWhere((p) => p['is_main'] == true, orElse: () => const {})['id']?.toString() ?? '');
       if (pid.isEmpty) { setState(() => _loading = false); return; }
+      if (AgendaContexte.pourEmployeur && await AgendaContexte.praticienEmploye()) {
+        final moi = await AgendaContexte.monProfil();
+        final me = AgendaContexte.moi ?? '';
+        final res = await Future.wait<dynamic>([
+          Supabase.instance.client.from('rdv').select('animal_id')
+              .eq('pro_profile_id', pid).eq('instructeur_profile_id', moi ?? '-'),
+          Supabase.instance.client.from('comptes_rendus').select('animal_id')
+              .eq('pro_profile_id', pid).or('redige_par_uid.eq.$me,valide_par_uid.eq.$me'),
+        ].map((f) => (f as Future).catchError((_) => <dynamic>[])));
+        _praticienEmploye = true;
+        _mesAnimaux = {
+          for (final l in res) for (final r in l as List) if (r['animal_id'] != null) r['animal_id'].toString(),
+        };
+      }
       await _rattraperAccesRdv(pid);
       final grants = await Supabase.instance.client
           .from('animal_access')
@@ -188,7 +208,9 @@ class _VetPatientsPageState extends State<VetPatientsPage>
   List<Map<String, dynamic>> get _filtered {
     return _patients.where((p) {
       if (_filterEspece != null && p['espece']?.toString() != _filterEspece) return false;
-      if (_search.trim().isEmpty) return true;
+      if (_search.trim().isEmpty) {
+        return !_praticienEmploye || _toutLeFichier || _mesAnimaux.contains(p['id']?.toString());
+      }
       final q = _search.toLowerCase();
       return (p['nom'] ?? '').toString().toLowerCase().contains(q)
           || (p['espece'] ?? '').toString().toLowerCase().contains(q)
@@ -245,6 +267,8 @@ class _VetPatientsPageState extends State<VetPatientsPage>
           .lte('date_heure', dayEnd)
           .inFilter('statut', ['confirme', 'demande']);
       rq = rq.eq('pro_profile_id', pid);
+      // Vétérinaire employé : ses RDV seulement.
+      if (_praticienEmploye) rq = rq.eq('instructeur_profile_id', await AgendaContexte.monProfil() ?? '-');
       final rdvs = await rq.order('date_heure', ascending: true);
 
       // Charger les infos animaux
@@ -591,6 +615,22 @@ class _VetPatientsPageState extends State<VetPatientsPage>
     return SliverMainAxisGroup(slivers: [
       SliverToBoxAdapter(
                     child: Column(children: [
+                      if (_praticienEmploye)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                          child: Row(children: [
+                            for (final (tout, label) in const [(false, 'Mes patients'), (true, 'Tout le fichier de la clinique')])
+                              Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: ChoiceChip(
+                                  label: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5,
+                                      color: _toutLeFichier == tout ? Colors.white : const Color(0xFF1E2025))),
+                                  selected: _toutLeFichier == tout, showCheckmark: false,
+                                  selectedColor: _teal, onSelected: (_) => setState(() => _toutLeFichier = tout),
+                                ),
+                              ),
+                          ]),
+                        ),
                       Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: TextField(

@@ -415,6 +415,8 @@ class _SwitcherSheet extends StatelessWidget {
                 final type = p['profile_type']?.toString() ?? '';
                 final isMain = p['is_main'] == true;
                 final isCogerance = p['_is_cogerance'] == true;
+                // Clinique où l'on est employé : espace employé (pas supprimable).
+                final isEmploi = p['_is_employe_clinique'] == true;
                 return _ProfileRow(
                   label: p['nom']?.toString() ?? p['profile_label']?.toString() ?? typeLabel(type),
                   sublabel: typeLabel(type),
@@ -422,10 +424,11 @@ class _SwitcherSheet extends StatelessWidget {
                   avatarUrl: _ProfileSwitcherHeaderState._displayAvatar(p),
                   isActive: activeProfileId == id || (activeProfileId.isEmpty && isMain),
                   isMain: isMain,
-                  isCogerance: isCogerance,
+                  isCogerance: isCogerance || isEmploi,
+                  badge: isEmploi ? (p['_role_pro'] == 'asv' ? 'Employé · ASV' : 'Employé · vétérinaire') : null,
                   unreadCount: unreadByProfile[id] ?? 0,
                   onTap: () => onSelect(p),
-                  onDelete: (isMain || isCogerance) ? null : () => onDelete(id),
+                  onDelete: (isMain || isCogerance || isEmploi) ? null : () => onDelete(id),
                 );
               }),
 
@@ -464,6 +467,8 @@ class _ProfileRow extends StatelessWidget {
   final bool isActive;
   final bool isMain;
   final bool isCogerance;
+  /// Libellé du badge (par défaut « Cogérance ») : « Employé · … » pour une clinique.
+  final String? badge;
   final int unreadCount;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
@@ -476,6 +481,7 @@ class _ProfileRow extends StatelessWidget {
     required this.isActive,
     this.isMain = false,
     this.isCogerance = false,
+    this.badge,
     this.unreadCount = 0,
     required this.onTap,
     this.onDelete,
@@ -555,8 +561,8 @@ class _ProfileRow extends StatelessWidget {
               color: const Color(0xFFE3F2FD),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Text('Cogérance',
-              style: TextStyle(fontSize: 10, color: Color(0xFF0C5C6C), fontFamily: 'Galey')),
+            child: Text(badge ?? 'Cogérance',
+              style: const TextStyle(fontSize: 10, color: Color(0xFF0C5C6C), fontFamily: 'Galey')),
           ),
         ],
       ]),

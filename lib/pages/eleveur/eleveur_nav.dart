@@ -12,6 +12,7 @@ import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/salles_clinique_page.dart';
 import 'package:PetsMatch/pages/pro/cr_a_valider_page.dart';
+import 'package:PetsMatch/utils/contexte_pro.dart' show AgendaContexte;
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/cogerance_page.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
@@ -95,6 +96,21 @@ class EleveurNav extends StatefulWidget {
 }
 
 class _EleveurNavState extends State<EleveurNav> {
+  /// Espace employé (clinique) : ouvre [page] si l'autorisation [droit] est
+  /// accordée par la clinique (employe_permissions).
+  Future<void> _ouvrirSiDroit(BuildContext context, String? droit, Widget page) async {
+    Navigator.pop(context);
+    if (droit != null && !await AgendaContexte.peut(droit)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('La clinique ne vous a pas donné cette autorisation.', style: TextStyle(fontFamily: 'Galey')),
+          behavior: SnackBarBehavior.floating));
+      }
+      return;
+    }
+    if (context.mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  }
+
   int _selectedIndex = 0;
   String _planCode   = 'free';
   String _pensionPlanCode = 'free';
@@ -863,7 +879,42 @@ class _EleveurNavState extends State<EleveurNav> {
                 ],
                 // « Mon activité vétérinaire » + « Administratif » — même
                 // schéma que santé / éducateur, juste sous « Accueil ».
-                if (User_Info.catPro == 'veterinaire') ...[
+                // Espace employé d'une clinique : ses RDV, ses patients, les
+                // comptes rendus à valider — selon ses autorisations ; rien de
+                // la gestion de la clinique (équipe, salles, tarifs, factures).
+                if (User_Info.catPro == 'veterinaire' && AgendaContexte.espaceEmploye) ...[
+                  _DrawerSection(
+                    icon: Icons.medical_services_outlined,
+                    label: 'Mon activité à la clinique',
+                    initiallyExpanded: true,
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Mon agenda RDV',
+                        icon: Icons.event_outlined,
+                        onTap: () => _ouvrirSiDroit(context, 'vet_agenda', const ProAgendaPage()),
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes patients',
+                        icon: Icons.medical_information_outlined,
+                        onTap: () => _ouvrirSiDroit(context, 'vet_patients', const VetPatientsPage()),
+                      ),
+                      _DrawerSubItem(
+                        label: 'Scanner une puce',
+                        icon: Icons.qr_code_scanner,
+                        onTap: () {
+                          Navigator.pop(context);
+                          ChipScannerService.scanFromVet(context);
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Comptes rendus à valider',
+                        icon: Icons.task_alt_outlined,
+                        onTap: () => _ouvrirSiDroit(context, 'vet_cr_valider', const CrAValiderPage()),
+                      ),
+                    ],
+                  ),
+                ],
+                if (User_Info.catPro == 'veterinaire' && !AgendaContexte.espaceEmploye) ...[
                   _DrawerSection(
                     icon: Icons.medical_services_outlined,
                     label: 'Mon activité vétérinaire',
@@ -1669,7 +1720,8 @@ class _EleveurNavState extends State<EleveurNav> {
                 ],
                 // La pension a deja sa propre section "Mon Profil" ci-dessus —
                 // eviter le doublon (meme logique que sur le site).
-                if (User_Info.catPro != 'pension') ...[
+                // Espace employé : le profil et l'abonnement sont ceux de la clinique.
+                if (User_Info.catPro != 'pension' && !AgendaContexte.espaceEmploye) ...[
                   const Divider(height: 24),
                   _DrawerItem(
                     icon: Icons.person_outline,
@@ -1838,13 +1890,13 @@ class _DrawerSection extends StatelessWidget {
   final IconData icon;
   final String label;
   final List<Widget> children;
+  final bool initiallyExpanded;
 
-
-  const _DrawerSection({required this.icon, required this.label, required this.children});
+  const _DrawerSection({required this.icon, required this.label, required this.children, this.initiallyExpanded = false});
 
   @override
   Widget build(BuildContext context) => MenuProSection(
-    icon: icon, label: label, children: children);
+    icon: icon, label: label, children: children, initiallyExpanded: initiallyExpanded);
 }
 
 class _DrawerSubItem extends StatelessWidget {

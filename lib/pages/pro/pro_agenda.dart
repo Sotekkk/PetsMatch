@@ -130,6 +130,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // Clinique vétérinaire : filtre par praticien (null = tous, '' = titulaire
   // du compte, sinon employe_profile_id du praticien).
   String? _filtrePraticien;
+  /// Vétérinaire employé : le filtre « mes RDV » ne se retire pas.
+  bool _filtreVerrouille = false;
   /// Pet-sitter : filtre par famille de prestation (garde, promenade, visite…).
   String _filtrePrestation = 'tous';
   bool get _estClinique => AgendaContexte.catPro == 'veterinaire';
@@ -501,10 +503,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         final moi = await AgendaContexte.monProfil();
         if (moi != null && result.any((e) => e.profileId == moi)) monFiltre = moi;
       }
+      // Vétérinaire employé : uniquement ses RDV (l'ASV voit toute la clinique).
+      final verrou = monFiltre != null && await AgendaContexte.praticienEmploye();
       if (mounted) {
         setState(() {
           _employes = result; _employesLoaded = true;
-          if (monFiltre != null && _filtrePraticien == null) _filtrePraticien = monFiltre;
+          _filtreVerrouille = verrou;
+          if (monFiltre != null && (_filtrePraticien == null || verrou)) _filtrePraticien = monFiltre;
           if (monFiltre != null) _praticienCreneaux = monFiltre;
         });
         if (monFiltre != null) _loadCreneaux();
@@ -3601,7 +3606,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     _showNouveauRdvDialog(dateInit: dt, praticienInit: praticien, salleInit: salle),
               ))).then((_) => _loadRdvs()),
             ),
-          if (_estClinique && _employes.isNotEmpty && _vetCfg.hasMultiPraticiens)
+          if (_estClinique && _employes.isNotEmpty && _vetCfg.hasMultiPraticiens && !_filtreVerrouille)
             PopupMenuButton<String>(
               tooltip: 'Filtrer par praticien',
               icon: Icon(_filtrePraticien == null ? Icons.filter_alt_outlined : Icons.filter_alt),

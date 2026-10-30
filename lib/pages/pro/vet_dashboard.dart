@@ -14,6 +14,7 @@ import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/utils/retards_rdv.dart';
+import 'package:PetsMatch/utils/contexte_pro.dart' show AgendaContexte;
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 
 const _teal = Color(0xFF0C5C6C);
@@ -90,6 +91,10 @@ class _VetDashboardState extends State<VetDashboard> {
   final Map<String, String> _clients = {};
   final Map<String, Map<String, dynamic>> _animaux = {};
   String _filtrePlanning = '*'; // '*' = toute la clinique, '' = titulaire
+  /// Espace employé : vétérinaire de la clinique → ses RDV / patients seulement
+  /// (l'ASV voit toute la clinique). Null hors espace employé.
+  bool? _praticienEmploye;
+  int? _patientsMoi;
   String _periode = 'mois';     // semaine | mois | annee
   String _filtreStats = '*';
 
@@ -136,9 +141,23 @@ class _VetDashboardState extends State<VetDashboard> {
           (id: p['praticien_profile_id']?.toString() ?? '',
            nom: (p['nom'] as String?)?.trim().isNotEmpty == true ? p['nom'] as String : 'Vétérinaire'),
       ];
+      if (AgendaContexte.espaceEmploye) await _scoperEmploye();
       await _chargerNoms();
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
+  }
+
+  /// Espace employé : vétérinaire → ses RDV (et les « peu importe » en
+  /// demande), ses patients ; CR à valider seulement avec ce droit.
+  Future<void> _scoperEmploye() async {
+    _praticienEmploye = await AgendaContexte.praticienEmploye();
+    if (!await AgendaContexte.peut('vet_cr_valider')) _crBrouillons = [];
+    if (_praticienEmploye != true) return;
+    final moi = await AgendaContexte.monProfil();
+    _rdvs = _rdvs.where((r) => (moi != null && _praticienDe(r) == moi)
+        || (r['praticien_indifferent'] == true && r['statut'] == 'demande')).toList();
+    _praticiens = [];
+    _patientsMoi = {for (final r in _rdvs) if (r['animal_id'] != null) r['animal_id'].toString()}.length;
   }
 
   Future<void> _chargerNoms() async {
@@ -251,6 +270,18 @@ class _VetDashboardState extends State<VetDashboard> {
       final actions = _actionsSection(now, aCloturer);
       final stats = _statsSection(now);
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (AgendaContexte.espaceEmploye) ...[
+          _carte(Row(children: [
+            const Icon(Icons.badge_outlined, color: _teal, size: 20),
+            const SizedBox(width: 10),
+            Expanded(child: Text(
+              _praticienEmploye == true
+                  ? 'Espace employé : vos rendez-vous et vos patients à ${User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : 'la clinique'}.'
+                  : 'Espace employé : agenda et patients de ${User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : 'la clinique'}.',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _ink))),
+          ]), padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
+          const SizedBox(height: 12),
+        ],
         if (enRetard > 0 || _demandes.isNotEmpty) ...[
           _alertes(enRetard),
           const SizedBox(height: 12),
@@ -322,7 +353,7 @@ class _VetDashboardState extends State<VetDashboard> {
           onTap: () => _go(const ProAgendaPage(initialTabIndex: 0))),
       DashKpi(valeur: nbACloturer, label: 'Consultations à clôturer', icon: Icons.assignment_late_outlined,
           onTap: () => _go(const ProAgendaPage(initialTabIndex: 1))),
-      DashKpi(valeur: widget.patientsCount, label: 'Patients suivis', icon: Icons.favorite_outline,
+      DashKpi(valeur: _patientsMoi ?? widget.patientsCount, label: 'Patients suivis', icon: Icons.favorite_outline,
           onTap: () => _go(const VetPatientsPage())),
     ];
     return GridView.count(

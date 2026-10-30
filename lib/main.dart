@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:PetsMatch/utils/especes_elevees.dart';
+import 'package:PetsMatch/utils/contexte_pro.dart' show AgendaContexte;
 import 'dart:io';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
@@ -629,6 +630,13 @@ class User_Info {
   static String primaryAvatar = '';
 
   static void applyProfile(Map<String, dynamic> p) {
+    // Clinique employeuse : espace employé (contexte de la clinique, droits,
+    // RDV / patients à soi). Sinon : retour à ses propres profils.
+    if (p['_is_employe_clinique'] == true && p['_employeur_uid'] != null) {
+      AgendaContexte.ouvrirEspace(uid: p['_employeur_uid'].toString(), profileId: p['id'].toString(), catPro: 'veterinaire');
+    } else {
+      AgendaContexte.quitterEspace();
+    }
     activeProfileId = p['id']?.toString() ?? '';
     final type = p['profile_type']?.toString() ?? '';
     activeType = type.isNotEmpty ? type : primaryType;

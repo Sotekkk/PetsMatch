@@ -1,5 +1,6 @@
 import 'package:PetsMatch/pages/pro/toilettage_salon_dashboard.dart';
 import 'package:PetsMatch/pages/pro/pension_dashboard.dart';
+import 'package:PetsMatch/utils/contexte_pro.dart' show AgendaContexte;
 import 'package:PetsMatch/pages/pro/education_dashboard.dart';
 import 'package:PetsMatch/pages/pro/garde_dashboard.dart';
 import 'package:PetsMatch/pages/message.dart';
@@ -608,12 +609,15 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
             onTap: () => _ouvrirPatientVet(context, ongletFiche: 2, acte: 'un vaccin')),
         _QuickTile(icon: Icons.description_outlined, label: 'Compte\nrendu', color: const Color(0xFFB8860B),
             onTap: () => _ouvrirPatientVet(context, ongletFiche: 1, acte: 'un compte rendu')),
-        _QuickTile(icon: Icons.chat_bubble_outline, label: 'Messages', color: const Color(0xFF5F9EAA),
-            onTap: () => go(const MessagePage())),
-        _QuickTile(icon: Icons.receipt_long_outlined, label: 'Facturation', color: const Color(0xFF6E9E57),
-            onTap: () => go(const FacturationPage())),
-        _QuickTile(icon: Icons.workspace_premium_outlined, label: 'Mon\nabonnement', color: const Color(0xFFD97706),
-            onTap: () => go(const VetAbonnementPage())),
+        // Espace employé : messagerie, facturation et abonnement sont ceux de la clinique.
+        if (!AgendaContexte.espaceEmploye) ...[
+          _QuickTile(icon: Icons.chat_bubble_outline, label: 'Messages', color: const Color(0xFF5F9EAA),
+              onTap: () => go(const MessagePage())),
+          _QuickTile(icon: Icons.receipt_long_outlined, label: 'Facturation', color: const Color(0xFF6E9E57),
+              onTap: () => go(const FacturationPage())),
+          _QuickTile(icon: Icons.workspace_premium_outlined, label: 'Mon\nabonnement', color: const Color(0xFFD97706),
+              onTap: () => go(const VetAbonnementPage())),
+        ],
       ],
     );
   }

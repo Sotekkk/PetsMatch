@@ -11,6 +11,11 @@ class AgendaContexte {
   static String? _uid, _profileId, _catPro;
   static Set<String>? _droits;
   static String? _monProfilEmploye;
+  /// Rôle de l'employé dans la clinique (employes.role_pro : veterinaire / asv).
+  static String? _role;
+  /// Espace employé : la clinique est le profil ACTIF (sélecteur de profils).
+  /// Le contexte reste alors ouvert, y compris quand un écran le « ferme ».
+  static ({String uid, String profileId, String catPro})? _espace;
 
   /// uid du COMPTE pro (gérant) — pas forcément l'utilisateur connecté.
   static String? get uid => _uid ?? FirebaseAuth.instance.currentUser?.uid;
@@ -23,13 +28,42 @@ class AgendaContexte {
 
   static void ouvrir({required String uid, required String profileId, required String catPro}) {
     _uid = uid; _profileId = profileId; _catPro = catPro;
-    _droits = null; _monProfilEmploye = null;
+    _droits = null; _monProfilEmploye = null; _role = null;
   }
 
+  /// Ferme le contexte employeur ; dans l'espace employé, revient à la clinique active.
   static void fermer() {
+    final e = _espace;
+    if (e != null) { ouvrir(uid: e.uid, profileId: e.profileId, catPro: e.catPro); return; }
     _uid = null; _profileId = null; _catPro = null;
-    _droits = null; _monProfilEmploye = null;
+    _droits = null; _monProfilEmploye = null; _role = null;
   }
+
+  /// Bascule sur l'espace d'une clinique employeuse (profil actif).
+  static void ouvrirEspace({required String uid, required String profileId, required String catPro}) {
+    _espace = (uid: uid, profileId: profileId, catPro: catPro);
+    ouvrir(uid: uid, profileId: profileId, catPro: catPro);
+  }
+
+  /// Retour à un profil à soi : plus d'espace employé.
+  static void quitterEspace() {
+    if (_espace == null) return;
+    _espace = null;
+    fermer();
+  }
+
+  /// Profil actif = clinique où l'on est employé.
+  static bool get espaceEmploye => _espace != null;
+
+  /// Rôle dans la clinique (veterinaire / asv) ; null hors contexte employé.
+  static Future<String?> role() async {
+    if (!pourEmployeur) return null;
+    await droits();
+    return _role;
+  }
+
+  /// Vétérinaire employé : ne voit que SES RDV et SES patients (l'ASV voit tout).
+  static Future<bool> praticienEmploye() async => (await role()) == 'veterinaire';
 
   /// Droits de l'utilisateur dans ce contexte. Titulaire / cogérant (contexte
   /// non employé) : tous. Employé : employe_permissions de CE profil.
@@ -38,10 +72,11 @@ class AgendaContexte {
     if (_droits != null) return _droits!;
     final supa = Supabase.instance.client;
     try {
-      final e = await supa.from('employes').select('employe_profile_id')
+      final e = await supa.from('employes').select('employe_profile_id, role_pro')
           .eq('eleveur_profile_id', profileId).eq('uid_employe', moi ?? '')
           .eq('actif', true).maybeSingle();
       _monProfilEmploye = e?['employe_profile_id'] as String?;
+      _role = e?['role_pro'] as String?;
       if (_monProfilEmploye == null) return _droits = <String>{};
       final rows = await supa.from('employe_permissions').select('permission')
           .eq('eleveur_profile_id', profileId).eq('employe_profile_id', _monProfilEmploye!);

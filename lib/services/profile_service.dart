@@ -13,7 +13,42 @@ class ProfileService {
         .order('created_at', ascending: true);
     final owned = List<Map<String, dynamic>>.from(rows as List);
     final cogeres = await _loadCogerances(uid);
-    return [...owned, ...cogeres];
+    final dejaLa = {for (final p in [...owned, ...cogeres]) p['id']?.toString()};
+    final cliniques = (await _loadEmploisCliniques(uid)).where((p) => !dejaLa.contains(p['id']?.toString())).toList();
+    return [...owned, ...cogeres, ...cliniques];
+  }
+
+  /// Cliniques vétérinaires où l'on est employé (employes actif) : leur
+  /// profil s'ouvre comme un profil à soi (espace employé), scopé à ses RDV /
+  /// patients et limité par ses autorisations (AgendaContexte). Marqué
+  /// `_is_employe_clinique` (+ `_employeur_uid`) — champs synthétiques. Nom,
+  /// prénom et téléphone vidés : ce sont ceux de la clinique, pas les siens.
+  static Future<List<Map<String, dynamic>>> _loadEmploisCliniques(String uid) async {
+    try {
+      final liens = await _supa.from('employes')
+          .select('uid_eleveur, eleveur_profile_id, role_pro')
+          .eq('uid_employe', uid).eq('actif', true)
+          .not('eleveur_profile_id', 'is', null);
+      final parId = <String, Map<String, dynamic>>{
+        for (final l in liens as List)
+          if (l['uid_eleveur'] != uid) l['eleveur_profile_id'].toString(): Map<String, dynamic>.from(l as Map),
+      };
+      if (parId.isEmpty) return [];
+      final profs = await _supa.from('user_profiles_complet').select().inFilter('id', parId.keys.toList());
+      return [
+        for (final p in profs as List)
+          if (p['profile_type'] == 'veterinaire')
+            {
+              ...Map<String, dynamic>.from(p as Map),
+              'firstname': '', 'lastname': '', 'phone': '', 'is_main': false,
+              '_is_employe_clinique': true,
+              '_employeur_uid': parId[p['id'].toString()]?['uid_eleveur'],
+              '_role_pro': parId[p['id'].toString()]?['role_pro'],
+            },
+      ];
+    } catch (_) {
+      return [];
+    }
   }
 
   /// Élevages cogérés activement (elevage_cogerants) : le profil élevage du
