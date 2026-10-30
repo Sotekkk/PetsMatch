@@ -27,6 +27,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { AnatomieSeances } from '@/components/AnatomiePoints';
 import MorphoAnimalTab from '@/components/morpho/MorphoAnimalTab';
 import OwnerContactButton from '@/components/pro/OwnerContactButton';
+import { retourDossierEducation } from '@/components/education/DossierEducationModal';
 
 import LienDocument from '@/components/LienDocument';
 import ConsultationsVet, { type CrVet, type OrdoVet } from '@/components/pro/ConsultationsVet';
@@ -991,7 +992,8 @@ function PatientDetailPageInner() {
   // Après l'envoi d'un bilan : lien vers le devis pré-rempli (forfait conseillé + objectifs en note).
   const [devisPrefillUrl, setDevisPrefillUrl] = useState<string | null>(null);
   const [forfaitsSous, setForfaitsSous] = useState<ForfaitSous[]>([]);
-  const [showForfaitSousForm, setShowForfaitSousForm] = useState(false);
+  // Depuis le dossier de la séance : « Appliquer un forfait » ouvre le formulaire.
+  const [showForfaitSousForm, setShowForfaitSousForm] = useState(() => searchParams.get('forfait') === '1');
   const [imputerForfait, setImputerForfait] = useState(true);
   const [savingRapport, setSavingRapport] = useState(false);
   const [editingRapportId, setEditingRapportId] = useState<string | null>(null);
@@ -2356,6 +2358,9 @@ function PatientDetailPageInner() {
       const { data } = await supabase.from('education_progression')
         .select('*').eq('animal_id', animalId).order('date_seance', { ascending: false });
       setRapports((data ?? []) as RapportEduP[]);
+      // Ouvert depuis le dossier de la séance (éducateur) : retour au RDV.
+      const retourRdv = searchParams.get('retourRdv');
+      if (retourRdv && finalise) { router.push(retourDossierEducation(retourRdv)); return; }
       if (isBilan && finalise) {
         const params = new URLSearchParams({ prefill: '1', animal: animalId });
         if (ownerUid) params.set('clientUid', ownerUid);
@@ -2808,6 +2813,14 @@ function PatientDetailPageInner() {
           )}
         </div>
 
+        {searchParams.get('retourRdv') && (
+          <div className="max-w-3xl mx-auto px-4 pt-3">
+            <button type="button" onClick={() => router.push(retourDossierEducation(searchParams.get('retourRdv')!))}
+              className="w-full text-left text-sm font-semibold rounded-xl px-3 py-2 bg-white/90 text-[#0C5C6C]">
+              ← Revenir au dossier de la séance
+            </button>
+          </div>
+        )}
         {/* Animal summary */}
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-4">
           <div className="w-16 h-16 rounded-2xl overflow-hidden bg-white/20 flex-shrink-0 flex items-center justify-center">

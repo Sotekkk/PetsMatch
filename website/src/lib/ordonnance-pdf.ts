@@ -110,6 +110,9 @@ export interface CompteRenduData {
   proprietaire?: string; contenu: string; date?: Date;
   /** Signature manuscrite du vétérinaire (data-URL PNG). */
   signature?: string | null;
+  /** Autres métiers (éducateur…) : titre du document, « Dr » ou rien devant le
+   *  nom, libellé de l'encadré animal. Défauts : vétérinaire. */
+  titre?: string; prefixePraticien?: string; libelleAnimal?: string;
 }
 
 /** Âge de l'animal (« 5 mois », « 3 ans ») d'après sa date de naissance,
@@ -148,7 +151,7 @@ export async function compteRenduPdfBlob(d: CompteRenduData): Promise<Blob> {
   let y = 50;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...TEAL);
   doc.text(d.cliniqueNom, M, y);
-  doc.setFontSize(13); doc.text('COMPTE RENDU', W - M, y, { align: 'right' });
+  doc.setFontSize(13); doc.text(d.titre ?? 'COMPTE RENDU', W - M, y, { align: 'right' });
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...DARK);
   doc.text(`Le ${(d.date ?? new Date()).toLocaleDateString('fr-FR')}`, W - M, y + 14, { align: 'right' });
   for (const l of [d.cliniqueAdresse, d.cliniqueTel ? `Tél. ${d.cliniqueTel}` : '', d.cliniqueEmail]) { if (l) { y += 13; doc.text(l, M, y); } }
@@ -159,7 +162,7 @@ export async function compteRenduPdfBlob(d: CompteRenduData): Promise<Blob> {
   doc.setFillColor(244, 247, 246); doc.roundedRect(M, y, W - 2 * M, hBoite, 6, 6, 'F');
   const col2 = M + (W - 2 * M) / 2 + 8;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...TEAL);
-  doc.text('Patient', M + 10, y + 16); doc.text('Propriétaire', col2, y + 16);
+  doc.text(d.libelleAnimal ?? 'Patient', M + 10, y + 16); doc.text('Propriétaire', col2, y + 16);
   doc.setFontSize(11); doc.setTextColor(...DARK); doc.text(d.animalNom, M + 10, y + 31);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(d.proprietaire || '—', col2, y + 31);
   doc.setFontSize(9);
@@ -196,7 +199,7 @@ export async function compteRenduPdfBlob(d: CompteRenduData): Promise<Blob> {
   y += 24;
   const xs = W - M - 180;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...DARK);
-  if (praticien) { doc.text(`Dr ${praticien}`, xs, y); y += 14; }
+  if (praticien) { doc.text(`${d.prefixePraticien ?? 'Dr '}${praticien}`, xs, y); y += 14; }
   doc.setFont('helvetica', 'normal');
   doc.text(`Le ${new Date().toLocaleDateString('fr-FR')}`, xs, y); y += 14;
   doc.text('Signature :', xs, y);

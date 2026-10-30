@@ -83,6 +83,8 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
   const uid = user?.uid ?? '';
 
   const [pendingRdvs, setPendingRdvs] = useState<PendingRdv[]>([]);
+  // Éducateur : demandes d'inscription aux cours collectifs à confirmer.
+  const [inscriptionsCours, setInscriptionsCours] = useState(0);
   const [upcomingRdvs, setUpcomingRdvs] = useState<UpcomingRdv[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [lostAnimals, setLostAnimals] = useState<LostAnimal[]>([]);
@@ -141,6 +143,11 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       setPendingRdvs((pendRes.data ?? []) as PendingRdv[]);
       setUpcomingRdvs((upRes.data ?? []) as UpcomingRdv[]);
       setLostAnimals((lostRes.data ?? []) as LostAnimal[]);
+      if (catPro === 'education') {
+        const { count } = await supabase.from('cours_collectifs_participants').select('id, cours_collectifs!inner(pro_uid)', { count: 'exact', head: true })
+          .eq('statut', 'demande').eq('cours_collectifs.pro_uid', uid);
+        setInscriptionsCours(count ?? 0);
+      }
 
       // Accès animaux clients — même logique que /mes-patients : tout accès non
       // révoqué + les animaux des RDV confirmés/terminés sans accès explicite.
@@ -382,6 +389,12 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
         )}
 
         {/* RDV en attente */}
+        {isEducation && inscriptionsCours > 0 && (
+          <Link href="/education/planning" className={`block bg-white rounded-2xl px-4 py-3 ${OMBRE}`} style={{ border: '1px solid #F3D9A4' }}>
+            <p className="text-sm font-semibold text-[#1F2A2E]">{inscriptionsCours} demande{inscriptionsCours > 1 ? 's' : ''} d&apos;inscription à un cours collectif</p>
+            <p className="text-xs text-gray-500">À confirmer ou refuser dans le planning des cours</p>
+          </Link>
+        )}
         {(loading || pendingRdvs.length > 0) && (
           <div>
             <TitreRubrique titre={`RDV en attente${!loading ? ` (${pendingRdvs.length})` : ''}`} lien="/mes-rdv" />

@@ -385,6 +385,9 @@ function DevisPageInner() {
 
       setDevisList(prev => [data as Devis, ...prev]);
       setShowForm(false);
+      // Créé depuis le dossier d'une séance : retour au RDV (lien interne seulement).
+      const retour = searchParams.get('retour');
+      if (retour?.startsWith('/')) { resetForm(); router.push(retour); return; }
       if (envoyer) setNewLink(`${window.location.origin}/signer-contrat/${docToken ?? token}`);
       resetForm();
     } finally {

@@ -39,6 +39,9 @@ class _EducationDashboardState extends State<EducationDashboard> {
   List<Map<String, dynamic>> _objectifs = [];
   List<Map<String, dynamic>> _seances = [];
   List<Map<String, dynamic>> _forfaits = [];
+  /// Demandes à traiter : RDV (statut « demande ») et inscriptions aux cours collectifs.
+  int _demandesRdv = 0;
+  int _demandesCours = 0;
   /// Animaux de « Mes animaux suivis » (même source que ProClientsPage :
   /// accès accordés à ce profil + animaux vus en RDV avec ce profil).
   Set<String> _animauxSuivis = {};
@@ -112,6 +115,11 @@ class _EducationDashboardState extends State<EducationDashboard> {
         for (final l in r) for (final x in (l as List)) if (x['animal_id'] != null) x['animal_id'].toString(),
       };
     } catch (_) { _animauxSuivis = {}; }
+    try {
+      _demandesRdv = (await _supa.from('rdv').select('id').eq('pro_profile_id', pid).inFilter('statut', ['demande', 'contre_proposition']) as List).length;
+      _demandesCours = (await _supa.from('cours_collectifs_participants').select('id, cours_collectifs!inner(pro_uid)')
+          .eq('statut', 'demande').eq('cours_collectifs.pro_uid', uid) as List).length;
+    } catch (_) {}
     await _chargerNoms();
     if (mounted) setState(() => _loading = false);
   }
@@ -248,6 +256,10 @@ class _EducationDashboardState extends State<EducationDashboard> {
               Text(r['lieu']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),
             ],
             const SizedBox(height: 8),
+            if (r['animal_id'] != null)
+              _action(ctx, Icons.folder_open_outlined, 'Dossier de la séance', () => _go(EducationSuiviPage(
+                animalId: r['animal_id'].toString(), animalNom: _nomAnimal(r), ownerProfileId: r['client_profile_id']?.toString(),
+                ownerName: _nomClient(r), rdvId: r['id']?.toString(), dossier: true))),
             _action(ctx, Icons.assignment_ind_outlined, 'Ouvrir la fiche éducative', () => _fiche(r)),
             _action(ctx, Icons.track_changes_outlined, 'Consulter les objectifs', () => _fiche(r, onglet: 1)),
             if (_domicile(r))
@@ -296,6 +308,29 @@ class _EducationDashboardState extends State<EducationDashboard> {
         ],
       ]);
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        for (final (n, texte, page) in [
+          (_demandesRdv, 'demande${_demandesRdv > 1 ? 's' : ''} de rendez-vous à traiter', const ProAgendaPage(initialTabIndex: 0) as Widget),
+          (_demandesCours, "demande${_demandesCours > 1 ? 's' : ''} d'inscription à un cours collectif", const EducationPlanningPage() as Widget),
+        ])
+          if (n > 0) Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Material(
+              color: const Color(0xFFFFF4DC), borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => _go(page),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  child: Row(children: [
+                    const Icon(Icons.mark_email_unread_outlined, color: _ambre),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('$n $texte', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _ink))),
+                    const Icon(Icons.chevron_right, color: _muted),
+                  ]),
+                ),
+              ),
+            ),
+          ),
         GridView.count(
           crossAxisCount: large ? 4 : 2,
           shrinkWrap: true,

@@ -60,6 +60,8 @@ export async function pdfCompteRendu(cr: CrConsultation, o: {
   proProfileId: string | null; praticien: string; signature?: string | null; emailCompte?: string | null;
   /** Nom du client du RDV, en dernier recours. */
   proprietaire?: string | null;
+  /** Autres métiers : présentation du PDF (cf. CompteRenduData). */
+  titre?: string; prefixePraticien?: string; libelleAnimal?: string; nomParDefaut?: string;
 }) {
   const v = (x: unknown) => String(x ?? '').trim();
   const [{ data: cl }, { data: an }] = await Promise.all([
@@ -89,7 +91,7 @@ export async function pdfCompteRendu(cr: CrConsultation, o: {
   }
   if (!proprio) proprio = v(o.proprietaire);
   return compteRenduPdfBlob({
-    cliniqueNom: v(c.nom) || 'Cabinet vétérinaire',
+    cliniqueNom: v(c.nom) || (o.nomParDefaut ?? 'Cabinet vétérinaire'),
     cliniqueAdresse: (v(c.rue_pro) || v(c.ville_pro)
       ? [c.rue_pro, `${v(c.code_postal_pro)} ${v(c.ville_pro)}`.trim()] : [c.rue, `${v(c.code_postal)} ${v(c.ville)}`.trim()])
       .filter(x => v(x)).join(', '),
@@ -100,6 +102,7 @@ export async function pdfCompteRendu(cr: CrConsultation, o: {
     animalSexe: sexeAnimal(a.sexe as string | null), animalAge: ageAnimal(a.date_naissance as string | null, a.age_estime as string | null),
     animalIdentification: v(a.identification), proprietaire: proprio,
     contenu: cr.contenu ?? '', date: new Date(cr.created_at), signature: o.signature,
+    titre: o.titre, prefixePraticien: o.prefixePraticien, libelleAnimal: o.libelleAnimal,
   });
 }
 

@@ -5323,7 +5323,17 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       prestation: (rdv['motif']?.toString() ?? '').trim().isEmpty ? 'Toilettage' : rdv['motif'].toString().trim(),
                       animal: rdv['_animal_nom']?.toString() ?? rdv['animal_nom_manuel']?.toString(),
                       depuisAgenda: true, onChanged: _loadRdvs)
-                  : null,
+                  // Éducateur : dossier de la séance (compte rendu, exercices, devis, facture, envoi).
+                  : AgendaContexte.catPro == 'education' && rdv['statut'] != 'demande' && rdv['statut'] != 'contre_proposition' && hasAnimal
+                      ? () async {
+                          await Navigator.push(context, MaterialPageRoute(builder: (_) => EducationSuiviPage(
+                            animalId: animalId, animalNom: rdv['_animal_nom']?.toString() ?? 'Animal',
+                            ownerProfileId: rdv['client_profile_id']?.toString(),
+                            ownerName: rdv['_client_name']?.toString() ?? 'La famille',
+                            rdvId: rdv['id']?.toString(), dossier: true)));
+                          _loadRdvs();
+                        }
+                      : null,
           onFiche: (showProTools && AgendaContexte.catPro == 'toilettage' && hasAnimal)
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => ToilettageFicheClientPage(

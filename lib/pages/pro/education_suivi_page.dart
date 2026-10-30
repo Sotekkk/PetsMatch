@@ -15,6 +15,8 @@ import 'package:PetsMatch/widgets/rich_text_view.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:PetsMatch/widgets/animal/pro_animal_entete.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
+import 'package:PetsMatch/utils/document_pro.dart' show showDocumentProSheet;
+import 'package:PetsMatch/utils/fin_seance_education.dart' show devisDepuisRdv, factureDepuisRdv, finSeanceEducation;
 
 /// Fiche éducative (éducateur / comportementaliste) — vue métier unique de
 /// l'animal : en-tête commun (identité + propriétaire), onglets Synthèse ·
@@ -29,6 +31,11 @@ class EducationSuiviPage extends StatefulWidget {
   /// Séance (rdv) dont on rédige le compte rendu — ouvre le formulaire pré-rempli.
   final String? rdvId;
   final int initialTab;
+  /// Dossier de la séance [rdvId] (miroir site DossierEducationModal) : barre
+  /// d'actions (compte rendu, exercices, programme, forfait, devis, facture,
+  /// mon compte rendu / contrat, terminer et envoyer) ; on revient ici après
+  /// chaque action. Sans dossier, [rdvId] ouvre directement le compte rendu.
+  final bool dossier;
 
   const EducationSuiviPage({
     super.key,
@@ -38,6 +45,7 @@ class EducationSuiviPage extends StatefulWidget {
     this.ownerName = 'La famille',
     this.rdvId,
     this.initialTab = 0,
+    this.dossier = false,
   });
 
   @override
@@ -70,6 +78,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   /// Vue de l'onglet Programme : objectifs / exercices / forfait.
   String _programmeVue = 'objectifs';
   bool _rdvTraite = false;
+  /// Mode dossier : le RDV de la séance.
+  Map<String, dynamic>? _rdvDossier;
   bool _loading = true;
 
   @override
@@ -175,7 +185,13 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         } catch (_) {}
       }
       // Compte rendu d'une séance précise (depuis le tableau de bord / l'agenda).
-      if (widget.rdvId != null && !_rdvTraite && mounted) {
+      if (widget.dossier && widget.rdvId != null && _rdvDossier == null) {
+        try {
+          final r = await _supa.from('rdv').select().eq('id', widget.rdvId!).maybeSingle();
+          if (mounted) setState(() => _rdvDossier = r);
+        } catch (_) {}
+      }
+      if (widget.rdvId != null && !widget.dossier && !_rdvTraite && mounted) {
         _rdvTraite = true;
         final deja = _seances.where((x) => x['rdv_id']?.toString() == widget.rdvId).firstOrNull;
         Map<String, dynamic>? rdv;
@@ -1143,9 +1159,64 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
       body: Column(children: [
         // En-tête commun : identité + propriétaire (appeler, message, urgence).
         ProAnimalEntete(animalId: widget.animalId, catPro: 'education', statut: _statutSuivi),
+        if (_rdvDossier != null) _barreDossier(_rdvDossier!),
         Expanded(child: _loading
             ? const Center(child: CircularProgressIndicator(color: _kOrange))
             : TabBarView(controller: _tab, children: [_syntheseTab(), _programmeTab(), _seancesTab(), _documentsTab()])),
+      ]),
+    );
+  }
+
+  /// Dossier de la séance : chaque action revient sur cet écran (rechargé).
+  Widget _barreDossier(Map<String, dynamic> rdv) {
+    final d = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
+    final crRdv = _seances.where((x) => x['rdv_id']?.toString() == rdv['id'].toString()).firstOrNull;
+    final proNom = _proNom;
+    Future<void> puis(Future<void> Function() action) async { await action(); if (mounted) await _load(); }
+    Widget chip(IconData icone, String label, Future<void> Function() action) => Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ActionChip(
+            avatar: Icon(icone, size: 16, color: const Color(0xFF0C5C6C)),
+            label: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+            backgroundColor: Colors.white, side: const BorderSide(color: Color(0xFFE0E4E2)),
+            onPressed: () => puis(action),
+          ),
+        );
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFFF1F6F7),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Séance${d == null ? '' : ' du ${_dateFr(rdv['date_heure']?.toString())} à ${d.hour.toString().padLeft(2, '0')}h${d.minute.toString().padLeft(2, '0')}'}'
+            '${crRdv == null ? ' · compte rendu à rédiger' : crRdv['statut'] == 'brouillon' ? ' · compte rendu en brouillon' : ' · compte rendu rédigé'}',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+        const SizedBox(height: 6),
+        SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
+          chip(Icons.edit_note_outlined, crRdv == null ? 'Compte rendu' : 'Modifier le compte rendu', () async {
+            _tab.animateTo(2);
+            await _editSeance(existing: crRdv, rdv: rdv);
+          }),
+          chip(Icons.fitness_center_outlined, 'Exercices', () async { _tab.animateTo(1); await _attribuerExercices(); }),
+          chip(Icons.track_changes_outlined, 'Programme', () async { _tab.animateTo(1); await _editObjectif(); }),
+          chip(Icons.confirmation_number_outlined, 'Forfait', () async { _tab.animateTo(1); await _enregistrerForfait(); }),
+          chip(Icons.request_quote_outlined, 'Devis', () => devisDepuisRdv(context, rdv, animalNom: widget.animalNom)),
+          chip(Icons.receipt_long_outlined, 'Facture', () => factureDepuisRdv(context, rdv, animalNom: widget.animalNom)),
+          chip(Icons.upload_file_outlined, 'Mon compte rendu', () async {
+            await showDocumentProSheet(context, rdv: rdv, mode: 'compte_rendu', clientNom: widget.ownerName,
+                animalNom: widget.animalNom, proNom: proNom, catPro: 'education');
+          }),
+          chip(Icons.draw_outlined, 'Mon contrat', () async {
+            await showDocumentProSheet(context, rdv: rdv, mode: 'contrat', clientNom: widget.ownerName,
+                animalNom: widget.animalNom, proNom: proNom, catPro: 'education');
+          }),
+        ])),
+        const SizedBox(height: 6),
+        SizedBox(width: double.infinity, child: ElevatedButton.icon(
+          onPressed: () => puis(() => finSeanceEducation(context, rdv, animalNom: widget.animalNom, clientNom: widget.ownerName)),
+          icon: const Icon(Icons.send_outlined, size: 18),
+          label: const Text('Terminer et envoyer au client', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0C5C6C), foregroundColor: Colors.white),
+        )),
       ]),
     );
   }

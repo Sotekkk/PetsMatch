@@ -8,6 +8,7 @@ import MotifAnnulationChamp from '@/components/rdv/MotifAnnulationChamp';
 import FinConsultationModal from '@/components/rdv/FinConsultationModal';
 import NouveauPatientModal from '@/components/pro/NouveauPatientModal';
 import DocumentProModal from '@/components/pro/DocumentProModal';
+import DossierEducationModal from '@/components/education/DossierEducationModal';
 import DossierToilettageModal from '@/components/toilettage/DossierToilettageModal';
 import { dureeImposeeGarde } from '@/lib/garde-facturation';
 
@@ -1920,6 +1921,8 @@ export default function MesRdvPage() {
   const [docPro, setDocPro] = useState<{ rdv: Rdv; mode: 'compte_rendu' | 'contrat' } | null>(null);
   const [dossierRdv, setDossierRdv] = useState<Rdv | null>(null);
   const [dossierToilettage, setDossierToilettage] = useState<Rdv | null>(null);
+  // Éducateur : dossier de la séance (rouvert au retour d'une action : ?rdv=…&dossier=1).
+  const [dossierEducation, setDossierEducation] = useState<{ id: string; nomClient: string } | null>(null);
   const [modalNouveau, setModalNouveau]   = useState<{ date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string } | null>(null);
   // Ouvert depuis la fiche d'un patient : retour à la fiche une fois fini.
   const [retourFiche, setRetourFiche] = useState<string | null>(null);
@@ -1974,6 +1977,7 @@ export default function MesRdvPage() {
     if (onglet && ['demandes', 'a_venir', 'historique', 'creneaux', 'planning'].includes(onglet)) setActiveTab(onglet);
     else if (catPro === 'veterinaire') setActiveTab('a_venir');
     setRdvFocus(q.get('rdv'));
+    if (q.get('dossier') === '1' && q.get('rdv') && catPro === 'education') setDossierEducation({ id: q.get('rdv')!, nomClient: '' });
     setModifierFocus(q.get('modifier') === '1');
     setRetourFiche(q.get('animal'));
     // Accès rapide « Nouveau RDV » de l'accueil, ou depuis la fiche d'un patient.
@@ -2368,7 +2372,8 @@ export default function MesRdvPage() {
                     : undefined}
                   onDossier={activeTab === 'demandes' ? undefined
                     : catPro === 'photographe' ? () => setDossierRdv(rdv)
-                    : catPro === 'toilettage' ? () => setDossierToilettage(rdv) : undefined}
+                    : catPro === 'toilettage' ? () => setDossierToilettage(rdv)
+                    : catPro === 'education' ? () => setDossierEducation({ id: rdv.id, nomClient: rdv.clientName ?? rdv.client_nom_manuel ?? 'Client' }) : undefined}
                   onDocumentPro={activeTab !== 'demandes' && rdv.statut !== 'annule' && rdv.statut !== 'refuse'
                     ? mode => setDocPro({ rdv, mode }) : undefined}
                 />
@@ -2387,6 +2392,11 @@ export default function MesRdvPage() {
       {dossierToilettage && (
         <DossierToilettageModal rdvId={dossierToilettage.id} nomClient={dossierToilettage.clientName ?? dossierToilettage.client_nom_manuel ?? 'Client'}
           animal={dossierToilettage.animalNom} onClose={() => setDossierToilettage(null)} onChanged={() => fetchRdvs()} />
+      )}
+      {dossierEducation && (
+        <DossierEducationModal rdvId={dossierEducation.id}
+          nomClient={dossierEducation.nomClient || (rdvs.find(x => x.id === dossierEducation.id)?.clientName ?? 'Client')}
+          onClose={() => setDossierEducation(null)} onChanged={() => fetchRdvs(true)} />
       )}
       {finConsultation && (
         <FinConsultationModal rdvId={finConsultation.id} proProfileId={activeProfileId || null} clientNom={finConsultation.clientName}

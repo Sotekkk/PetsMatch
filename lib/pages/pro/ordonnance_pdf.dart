@@ -230,6 +230,11 @@ Future<Uint8List> compteRenduPdfBytes({
   DateTime? date,
   /// Signature manuscrite du vétérinaire (PNG).
   Uint8List? signature,
+  /// Autres métiers (éducateur…) : titre du document, « Dr » ou rien devant
+  /// le nom, libellé de l'encadré animal. Miroir site : CompteRenduData.
+  String titre = 'COMPTE RENDU',
+  String prefixePraticien = 'Dr ',
+  String libelleAnimal = 'Patient',
 }) async {
   final doc = pw.Document(theme: await _chargerTheme());
   final jour = date ?? DateTime.now();
@@ -247,7 +252,7 @@ Future<Uint8List> compteRenduPdfBytes({
           if (cliniqueEmail.isNotEmpty) pw.Text(cliniqueEmail, style: const pw.TextStyle(fontSize: 9, color: _dark)),
         ])),
         pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-          pw.Text('COMPTE RENDU', style: pw.TextStyle(fontSize: 13, color: _teal, fontWeight: pw.FontWeight.bold, letterSpacing: 1)),
+          pw.Text(titre, style: pw.TextStyle(fontSize: 13, color: _teal, fontWeight: pw.FontWeight.bold, letterSpacing: 1)),
           pw.Text('Le ${_date(jour)}', style: const pw.TextStyle(fontSize: 9, color: _dark)),
         ]),
       ]),
@@ -259,7 +264,7 @@ Future<Uint8List> compteRenduPdfBytes({
         decoration: pw.BoxDecoration(color: const PdfColor.fromInt(0xFFF4F7F6), borderRadius: pw.BorderRadius.circular(6)),
         child: pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
           pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-            pw.Text('Patient', style: pw.TextStyle(fontSize: 9, color: _teal, fontWeight: pw.FontWeight.bold)),
+            pw.Text(libelleAnimal, style: pw.TextStyle(fontSize: 9, color: _teal, fontWeight: pw.FontWeight.bold)),
             pw.Text(animalNom, style: pw.TextStyle(fontSize: 11, color: _dark, fontWeight: pw.FontWeight.bold)),
             for (final (l, v) in [('Espèce / race', animalEspeceRace), ('Sexe', animalSexe), ('Âge', animalAge),
                 ('Identification', animalIdentification)])
@@ -281,7 +286,7 @@ Future<Uint8List> compteRenduPdfBytes({
       pw.SizedBox(height: 28),
       pw.Align(alignment: pw.Alignment.centerRight, child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
         if (nomPraticien.isNotEmpty)
-          pw.Text('Dr $nomPraticien', style: pw.TextStyle(fontSize: 10, color: _dark, fontWeight: pw.FontWeight.bold)),
+          pw.Text('$prefixePraticien$nomPraticien', style: pw.TextStyle(fontSize: 10, color: _dark, fontWeight: pw.FontWeight.bold)),
         pw.SizedBox(height: 3),
         pw.Text('Le ${_date(DateTime.now())}', style: const pw.TextStyle(fontSize: 10, color: _dark)),
         pw.SizedBox(height: 3),
