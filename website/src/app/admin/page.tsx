@@ -74,7 +74,11 @@ interface ConvReport {
   reason: string; details?: string; status: string; created_at: string;
 }
 /** Conversation signalée : qui signale, qui est signalé (api/admin/moderation?type=conv_reports_contexte). */
-interface PersonneSignalement { uid: string; nom: string; profil: string | null; nb_valides: number }
+interface PersonneSignalement {
+  uid: string; nom: string; profil: string | null; nb_valides: number;
+  /** Signalements faits par la personne (conversations + contenus / profils). */
+  faits?: { total: number; valides: number; rejetes: number; en_attente: number };
+}
 interface ConvContexte { reporter: PersonneSignalement; signale: PersonneSignalement | null }
 interface ConvMessage {
   id: string; sender_id: string; text?: string; msg_type: string;
@@ -158,7 +162,9 @@ const TARGET_LABELS: Record<string, string> = {
 
 /** Contexte d'un signalement (api/admin/moderation?type=signalements_contexte). */
 interface SigContexte {
-  reporter: { uid: string; nom: string };
+  reporter: { uid: string; nom: string; nb_valides?: number; faits?: PersonneSignalement['faits'] };
+  /** Signalements validés de l'auteur du contenu / du profil visé (si connu). */
+  auteur_nb_valides?: number | null;
   cible: null | {
     nom?: string; extrait?: string; image_url?: string | null;
     auteur?: { uid: string; nom: string }; groupe_id?: string; groupe_nom?: string; lieu_id?: string;
@@ -175,29 +181,33 @@ const REGLES_MODERATION = [
   'Maltraitance animale',
   'Fausse information ou usurpation d\'identité',
   'Hors sujet par rapport au groupe',
+  'Signalements abusifs ou répétés',
   'Autre (préciser)',
 ];
 
 /** Décision sur un signalement : retirer le contenu, avertir, suspendre ou
  *  bloquer l'auteur — toujours avec la règle enfreinte, transmise à la personne. */
-function PanneauSanction({ sig, onFait }: { sig: Signalement; onFait: (resume: string) => void }) {
+function PanneauSanction({ sig, ctx, onFait }: { sig: Signalement; ctx?: SigContexte; onFait: (resume: string) => void }) {
+  // Cible : l'auteur du contenu / le profil signalé, ou la personne qui signale (signalements abusifs).
+  const [cible, setCible] = useState<'auteur' | 'reporter'>('auteur');
   const [regle, setRegle] = useState('');
   const [precisions, setPrecisions] = useState('');
-  const [supprimer, setSupprimer] = useState(sig.target_type !== 'user');
+  const [supprimerContenu, setSupprimer] = useState(sig.target_type !== 'user');
+  const supprimer = cible === 'auteur' && supprimerContenu;
   const [sanction, setSanction] = useState<'aucune' | 'avertissement' | 'suspension' | 'blocage'>('avertissement');
   const [jours, setJours] = useState(7);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState('');
-  const peutSupprimer = sig.target_type !== 'user';
+  const peutSupprimer = sig.target_type !== 'user' && cible === 'auteur';
   const pret = !!regle && (regle !== 'Autre (préciser)' || precisions.trim().length > 0) && (supprimer || sanction !== 'aucune');
 
   async function appliquer() {
-    if (sanction === 'blocage' && !confirm('Bloquer définitivement ce compte ?')) return;
+    if (sanction === 'blocage' && !confirm(cible === 'reporter' ? `Bloquer définitivement le compte de ${ctx?.reporter.nom ?? 'la personne qui signale'} ?` : 'Bloquer définitivement ce compte ?')) return;
     setEnvoi(true); setErreur('');
     try {
       const r = await apiFetch('/api/admin/moderation', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'signalement_sanction', id: sig.id, regle, precisions, supprimer: peutSupprimer && supprimer, sanction, jours }),
+        body: JSON.stringify({ action: 'signalement_sanction', id: sig.id, regle, precisions, supprimer: peutSupprimer && supprimer, sanction, jours, cible }),
       });
       const j = await r.json().catch(() => ({})) as { error?: string; faits?: string[] };
       if (!r.ok) { setErreur(j.error ?? 'Action impossible.'); return; }
@@ -215,6 +225,16 @@ function PanneauSanction({ sig, onFait }: { sig: Signalement; onFait: (resume: s
   return (
     <div className="border border-gray-200 rounded-2xl p-4 space-y-3">
       <p className="text-sm font-bold text-[#1F2A2E]">Décision</p>
+      <div className="flex gap-1.5">
+        {([['auteur', sig.target_type === 'user' ? 'Profil signalé' : 'Auteur du contenu'], ['reporter', 'Personne qui signale']] as const).map(([v, l]) => (
+          <button key={v} type="button"
+            onClick={() => { setCible(v); if (v === 'reporter') { if (!regle) setRegle('Signalements abusifs ou répétés'); if (sanction === 'aucune') setSanction('avertissement'); } }}
+            className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-semibold border ${cible === v ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200'}`}>{l}</button>
+        ))}
+      </div>
+      {cible === 'reporter' && (
+        <p className="text-xs text-gray-500">Sanction de {ctx?.reporter.nom ?? 'la personne qui signale'} ; le signalement sera classé comme rejeté.</p>
+      )}
       <div>
         <label htmlFor="regle" className="text-xs font-semibold text-gray-600 block mb-1">Règle enfreinte *</label>
         <select id="regle" value={regle} onChange={e => setRegle(e.target.value)}
@@ -232,12 +252,12 @@ function PanneauSanction({ sig, onFait }: { sig: Signalement; onFait: (resume: s
       </div>
       {peutSupprimer && (
         <label className="flex items-center gap-2.5 text-sm font-semibold text-[#1F2A2E] cursor-pointer">
-          <input type="checkbox" checked={supprimer} onChange={e => setSupprimer(e.target.checked)} className="w-4 h-4 accent-[#B42318]" />
+          <input type="checkbox" checked={supprimerContenu} onChange={e => setSupprimer(e.target.checked)} className="w-4 h-4 accent-[#B42318]" />
           {sig.target_type === 'lieu' ? 'Masquer la fiche du lieu' : sig.target_type === 'lieu_avis' ? "Masquer l'avis" : `Supprimer ${sig.target_type === 'groupe_post' ? 'la publication' : sig.target_type === 'annonce' ? 'l\'annonce' : 'la balade'}`}
         </label>
       )}
       <div className="space-y-2">
-        {choix('aucune', 'Aucune sanction sur le compte', 'Seulement le retrait du contenu, avec le motif.')}
+        {cible === 'auteur' && choix('aucune', 'Aucune sanction sur le compte', 'Seulement le retrait du contenu, avec le motif.')}
         {choix('avertissement', 'Avertir', 'Message d\'avertissement avec la règle enfreinte.')}
         {choix('suspension', 'Suspendre le compte', 'Accès bloqué pendant la durée choisie, puis rétabli automatiquement.')}
         {sanction === 'suspension' && (
@@ -254,19 +274,42 @@ function PanneauSanction({ sig, onFait }: { sig: Signalement; onFait: (resume: s
       {erreur && <p className="text-xs text-red-600">{erreur}</p>}
       <button type="button" onClick={appliquer} disabled={!pret || envoi}
         className="w-full py-2.5 rounded-xl bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-40 text-white text-sm font-bold">
-        {envoi ? 'Application…' : 'Appliquer et prévenir la personne'}
+        {envoi ? 'Application…' : cible === 'reporter' ? 'Appliquer, prévenir la personne et rejeter le signalement' : 'Appliquer et prévenir la personne'}
       </button>
     </div>
   );
 }
 
+/** Signalements faits par une personne : total, validés, rejetés, en attente
+ *  (+ alerte si beaucoup de rejets : signalements abusifs possibles). */
+function CompteursSignalements({ faits }: { faits?: PersonneSignalement['faits'] }) {
+  if (!faits) return null;
+  return (<>
+    <div className="mt-1.5 grid grid-cols-4 gap-1 text-center">
+      {([['Signalements faits', faits.total, '#1F2A2E'], ['Validés', faits.valides, '#15803d'],
+        ['Rejetés', faits.rejetes, faits.rejetes ? '#B42318' : '#6B7280'], ['En attente', faits.en_attente, '#b45309']] as const).map(([l, n, c]) => (
+        <div key={l} className="rounded-lg bg-white border border-gray-100 py-1">
+          <p className="text-sm font-bold" style={{ color: c }}>{n}</p>
+          <p className="text-[10px] text-gray-500 leading-tight">{l}</p>
+        </div>
+      ))}
+    </div>
+    {faits.rejetes >= 3 && faits.rejetes >= faits.valides && (
+      <p className="mt-1.5 text-xs font-semibold text-[#B42318]">Beaucoup de signalements rejetés : signalements abusifs possibles.</p>
+    )}
+  </>);
+}
+
 /** Décision sur une conversation signalée, avant de la marquer traitée :
  *  avertir, suspendre (durée), bloquer ou supprimer le compte de la personne
  *  signalée — toujours avec la règle enfreinte (sauf suppression). */
-function DecisionConversation({ report, signale, onFait, onSupprimerCompte }: {
-  report: ConvReport; signale: PersonneSignalement | null;
+function DecisionConversation({ report, signale: personneSignalee, reporter, onFait, onSupprimerCompte }: {
+  report: ConvReport; signale: PersonneSignalement | null; reporter: PersonneSignalement | null;
   onFait: (resume: string) => void; onSupprimerCompte: (uid: string) => Promise<boolean>;
 }) {
+  // Cible de l'action : la personne signalée, ou celle qui signale (signalements abusifs).
+  const [cible, setCible] = useState<'signale' | 'reporter'>('signale');
+  const signale = cible === 'reporter' ? reporter : personneSignalee;
   const [regle, setRegle] = useState('');
   const [precisions, setPrecisions] = useState('');
   const [sanction, setSanction] = useState<'avertissement' | 'suspension' | 'blocage' | 'suppression'>('avertissement');
@@ -293,10 +336,10 @@ function DecisionConversation({ report, signale, onFait, onSupprimerCompte }: {
       if (sanction === 'suppression') {
         // Suppression du compte (confirmations « SUPPRIMER »), puis signalement traité.
         if (!await onSupprimerCompte(signale.uid)) return;
-        await appel({ sanction: 'aucune', statut: 'reviewed' });
+        await appel({ sanction: 'aucune', statut: cible === 'reporter' ? 'dismissed' : 'reviewed' });
         onFait('compte supprimé');
       } else {
-        onFait(await appel({ sanction, regle, precisions, jours }));
+        onFait(await appel({ sanction, regle, precisions, jours, cible }));
       }
     } catch (e) { setErreur((e as Error).message); } finally { setEnvoi(false); }
   }
@@ -308,10 +351,25 @@ function DecisionConversation({ report, signale, onFait, onSupprimerCompte }: {
     </label>
   );
 
-  if (!signale) return <p className="text-xs text-gray-400">Personne signalée introuvable (conversation supprimée ?).</p>;
+  const choixCible = (
+    <div className="flex gap-1.5">
+      {([['signale', 'Personne signalée'], ['reporter', 'Personne qui signale']] as const).map(([v, l]) => (
+        <button key={v} type="button" onClick={() => { setCible(v); if (v === 'reporter' && !regle) setRegle('Signalements abusifs ou répétés'); }}
+          className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-semibold border ${cible === v ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200'}`}>{l}</button>
+      ))}
+    </div>
+  );
+  if (!signale) return (
+    <div className="border border-gray-200 rounded-2xl p-3 space-y-2.5">
+      {choixCible}
+      <p className="text-xs text-gray-400">Personne introuvable (conversation supprimée ?).</p>
+    </div>
+  );
   return (
     <div className="border border-gray-200 rounded-2xl p-3 space-y-2.5">
+      {choixCible}
       <p className="text-sm font-bold text-[#1F2A2E]">Action sur le compte de {signale.nom}</p>
+      {cible === 'reporter' && <p className="text-xs text-gray-500">Le signalement sera classé comme rejeté.</p>}
       <div className="space-y-2">
         {choix('avertissement', 'Alerter l’utilisateur', 'Message d’avertissement avec la règle enfreinte.')}
         {choix('suspension', 'Suspendre son compte', 'Accès bloqué pendant la durée choisie, puis rétabli automatiquement.')}
@@ -347,7 +405,9 @@ function DecisionConversation({ report, signale, onFait, onSupprimerCompte }: {
       {erreur && <p className="text-xs text-red-600">{erreur}</p>}
       <button type="button" onClick={appliquer} disabled={!pret || envoi}
         className={`w-full py-2.5 rounded-xl disabled:opacity-40 text-white text-sm font-bold ${sanction === 'suppression' ? 'bg-[#B42318] hover:bg-[#912018]' : 'bg-[#0C5C6C] hover:bg-[#094F5D]'}`}>
-        {envoi ? 'Application…' : sanction === 'suppression' ? 'Supprimer le compte et marquer traité' : 'Appliquer, prévenir la personne et marquer traité'}
+        {envoi ? 'Application…' : sanction === 'suppression'
+          ? `Supprimer le compte et ${cible === 'reporter' ? 'rejeter le signalement' : 'marquer traité'}`
+          : `Appliquer, prévenir la personne et ${cible === 'reporter' ? 'rejeter le signalement' : 'marquer traité'}`}
       </button>
     </div>
   );
@@ -2977,67 +3037,29 @@ export default function AdminPage() {
                 )}
               </div>
 
-              {/* Panneau conversation */}
+              {/* Fenêtre conversation : messages à gauche (toute la hauteur), personnes et décision à droite */}
               {selectedConvReport && (
-                <div className="w-[440px] flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col max-h-[85vh] overflow-y-auto">
-                  <div className="p-4 border-b border-gray-100">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-sm font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                        Conversation signalée
-                      </span>
-                      <button onClick={() => { setSelectedConvReport(null); setConvMessages([]); }}
-                        className="ml-auto text-gray-400 hover:text-gray-600 text-lg">✕</button>
-                    </div>
-                    {(() => {
-                      const ctx = convCtx[selectedConvReport.id];
-                      const carte = (titre: string, p: PersonneSignalement, rouge?: boolean) => (
-                        <div className={`rounded-xl border px-3 py-2 ${rouge ? 'border-red-200 bg-red-50' : 'border-gray-100 bg-gray-50'}`}>
-                          <p className="text-[11px] text-gray-500">{titre}</p>
-                          <p className="text-sm font-semibold text-[#1F2A2E]">
-                            {p.nom}{p.profil ? <span className="text-xs font-normal text-gray-500"> · {CAT_LABELS[p.profil] ?? p.profil}</span> : null}
-                          </p>
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
-                            <Link href={`/profil/${p.uid}`} target="_blank" className="text-xs text-[#0C5C6C] hover:underline font-semibold">Voir le profil ↗</Link>
-                            <span className={`text-xs font-semibold ${p.nb_valides ? 'text-red-700' : 'text-gray-400'}`}>
-                              {p.nb_valides ? `${p.nb_valides} signalement${p.nb_valides > 1 ? 's' : ''} validé${p.nb_valides > 1 ? 's' : ''}` : 'Aucun signalement validé'}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                      return ctx ? (
-                        <div className="space-y-2">
-                          {carte('Signalé par', ctx.reporter)}
-                          {ctx.signale ? carte('Personne signalée', ctx.signale, true) : <p className="text-xs text-gray-400">Personne signalée introuvable.</p>}
-                        </div>
-                      ) : <p className="text-xs text-gray-400 font-mono break-all">{selectedConvReport.conversation_id}</p>;
-                    })()}
-                    <div className="mt-2 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2">
-                      <p className="text-xs font-semibold text-amber-800">Motif : {selectedConvReport.reason}</p>
-                      {selectedConvReport.details && <p className="text-xs text-amber-900 mt-0.5 whitespace-pre-wrap">{selectedConvReport.details}</p>}
-                    </div>
-                    <div className="flex gap-2 mt-3">
-                      <button
-                        onClick={() => handleConvReportAction(selectedConvReport, 'reviewed')}
-                        disabled={convSaving === selectedConvReport.id || selectedConvReport.status !== 'pending'}
-                        className="flex-1 py-1.5 bg-green-100 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-200 disabled:opacity-40 transition-colors"
-                        style={{ fontFamily: 'Galey, sans-serif' }}>
-                        ✅ Traité sans action
-                      </button>
-                      <button
-                        onClick={() => handleConvReportAction(selectedConvReport, 'dismissed')}
-                        disabled={convSaving === selectedConvReport.id || selectedConvReport.status !== 'pending'}
-                        className="flex-1 py-1.5 bg-gray-100 text-gray-500 text-xs font-semibold rounded-lg hover:bg-gray-200 disabled:opacity-40 transition-colors"
-                        style={{ fontFamily: 'Galey, sans-serif' }}>
-                        ❌ Rejeter
-                      </button>
-                    </div>
+                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-3 sm:p-6"
+                  onClick={() => { setSelectedConvReport(null); setConvMessages([]); }}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden"
+                  onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-100">
+                    <span className="text-base font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      Conversation signalée
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      le {new Date(selectedConvReport.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <button onClick={() => { setSelectedConvReport(null); setConvMessages([]); }}
+                      className="ml-auto text-gray-400 hover:text-gray-600 text-xl" aria-label="Fermer">✕</button>
                   </div>
-
+                  <div className="flex-1 min-h-0 flex flex-col md:flex-row">
                   {/* Messages */}
-                  <p className="px-4 pt-3 text-xs font-bold text-gray-500">
-                    Messages — en rouge, ceux de la personne signalée
+                  <div className="flex-1 min-h-0 flex flex-col md:border-r border-gray-100">
+                  <p className="px-5 pt-3 text-xs font-bold text-gray-500">
+                    {convMessages.length} message{convMessages.length > 1 ? 's' : ''} — en rouge, ceux de la personne signalée
                   </p>
-                  <div className="p-4 pt-2 space-y-3 max-h-[40vh] overflow-y-auto">
+                  <div className="flex-1 min-h-[30vh] p-5 pt-2 space-y-3 overflow-y-auto bg-[#FAFAFA]">
                     {convMessagesLoading ? (
                       <div className="flex justify-center py-8">
                         <div className="w-6 h-6 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
@@ -3049,21 +3071,24 @@ export default function AdminPage() {
                         const isReport = msg.sender_id === selectedConvReport.reported_by_uid;
                         const auteurNom = isReport ? convCtx[selectedConvReport.id]?.reporter.nom : convCtx[selectedConvReport.id]?.signale?.nom;
                         const time = new Date(msg.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-                        const date = new Date(msg.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+                        const date = new Date(msg.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
                         return (
                           <div key={msg.id} className={`flex ${isReport ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
-                              isReport ? 'bg-[#0C5C6C] text-white' : 'bg-red-50 text-gray-800 border border-red-200'
+                            <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed ${
+                              isReport ? 'bg-[#0C5C6C] text-white' : 'bg-red-50 text-gray-900 border border-red-200'
                             }`}>
-                              {auteurNom && <p className={`text-[10px] font-semibold mb-0.5 ${isReport ? 'text-white/70' : 'text-red-700'}`}>{auteurNom}</p>}
+                              {auteurNom && <p className={`text-[11px] font-semibold mb-0.5 ${isReport ? 'text-white/70' : 'text-red-700'}`}>{auteurNom}</p>}
                               {msg.msg_type === 'image' ? (
-                                <span className="text-xs opacity-75">📷 Image</span>
+                                msg.image_url
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  ? <a href={msg.image_url} target="_blank" rel="noopener"><img src={msg.image_url} alt="" className="max-h-72 rounded-lg object-contain" /></a>
+                                  : <span className="text-xs opacity-75">Image</span>
                               ) : msg.msg_type === 'location' ? (
-                                <span className="text-xs opacity-75">📍 Position partagée</span>
+                                <span className="text-xs opacity-75">Position partagée</span>
                               ) : msg.msg_type === 'animal_card' ? (
-                                <span className="text-xs opacity-75">🐾 Fiche animal partagée</span>
+                                <span className="text-xs opacity-75">Fiche animal partagée</span>
                               ) : (
-                                <p className="break-words" style={{ fontFamily: 'Galey, sans-serif' }}>{msg.text}</p>
+                                <p className="break-words whitespace-pre-wrap" style={{ fontFamily: 'Galey, sans-serif' }}>{msg.text}</p>
                               )}
                               <p className={`text-[10px] mt-1 ${isReport ? 'text-white/60' : 'text-gray-400'}`}>{date} {time}</p>
                             </div>
@@ -3072,10 +3097,42 @@ export default function AdminPage() {
                       })
                     )}
                   </div>
-                  {selectedConvReport.status === 'pending' && (
-                    <div className="p-4 border-t border-gray-100">
+                  </div>
+
+                  {/* Personnes, motif, décision */}
+                  <div className="w-full md:w-[420px] flex-shrink-0 overflow-y-auto p-4 space-y-3 border-t md:border-t-0 border-gray-100">
+                    {(() => {
+                      const ctx = convCtx[selectedConvReport.id];
+                      const carte = (titre: string, p: PersonneSignalement, rouge?: boolean) => (
+                        <div className={`rounded-xl border px-3 py-2 ${rouge ? 'border-red-200 bg-red-50' : 'border-gray-100 bg-gray-50'}`}>
+                          <p className="text-[11px] text-gray-500">{titre}</p>
+                          <p className="text-sm font-semibold text-[#1F2A2E]">
+                            {p.nom}{p.profil ? <span className="text-xs font-normal text-gray-500"> · {CAT_LABELS[p.profil] ?? p.profil}</span> : null}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
+                            <Link href={`/profil/${p.uid}`} target="_blank" className="text-xs text-[#0C5C6C] hover:underline font-semibold">Voir le profil ↗</Link>
+                            <span className={`text-xs font-semibold ${p.nb_valides ? 'text-red-700' : 'text-gray-400'}`}>
+                              {p.nb_valides ? `Signalé ${p.nb_valides} fois (validé)` : 'Jamais signalé (validé)'}
+                            </span>
+                          </div>
+                          <CompteursSignalements faits={p.faits} />
+                        </div>
+                      );
+                      return ctx ? (
+                        <div className="space-y-2">
+                          {carte('Signalé par', ctx.reporter)}
+                          {ctx.signale ? carte('Personne signalée', ctx.signale, true) : <p className="text-xs text-gray-400">Personne signalée introuvable.</p>}
+                        </div>
+                      ) : <p className="text-xs text-gray-400 font-mono break-all">{selectedConvReport.conversation_id}</p>;
+                    })()}
+                    <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2">
+                      <p className="text-xs font-semibold text-amber-800">Motif : {selectedConvReport.reason}</p>
+                      {selectedConvReport.details && <p className="text-xs text-amber-900 mt-0.5 whitespace-pre-wrap">{selectedConvReport.details}</p>}
+                    </div>
+                    {selectedConvReport.status === 'pending' && (<>
                       <DecisionConversation key={selectedConvReport.id} report={selectedConvReport}
                         signale={convCtx[selectedConvReport.id]?.signale ?? null}
+                        reporter={convCtx[selectedConvReport.id]?.reporter ?? null}
                         onSupprimerCompte={supprimerCompteUid}
                         onFait={resume => {
                           const id = selectedConvReport.id;
@@ -3083,8 +3140,26 @@ export default function AdminPage() {
                           setSelectedConvReport(null); setConvMessages([]);
                           alert(`Signalement traité : ${resume}.`);
                         }} />
-                    </div>
-                  )}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleConvReportAction(selectedConvReport, 'reviewed')}
+                          disabled={convSaving === selectedConvReport.id}
+                          className="flex-1 py-2 bg-green-100 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-200 disabled:opacity-40 transition-colors"
+                          style={{ fontFamily: 'Galey, sans-serif' }}>
+                          Traité sans action
+                        </button>
+                        <button
+                          onClick={() => handleConvReportAction(selectedConvReport, 'dismissed')}
+                          disabled={convSaving === selectedConvReport.id}
+                          className="flex-1 py-2 bg-gray-100 text-gray-600 text-xs font-semibold rounded-lg hover:bg-gray-200 disabled:opacity-40 transition-colors"
+                          style={{ fontFamily: 'Galey, sans-serif' }}>
+                          Rejeter sans action
+                        </button>
+                      </div>
+                    </>)}
+                  </div>
+                  </div>
+                </div>
                 </div>
               )}
             </div>
@@ -3156,7 +3231,7 @@ export default function AdminPage() {
       {selectedSig && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
           onClick={() => setSelectedSig(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto"
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
             <div className="bg-[#fee2e2] rounded-t-2xl px-6 py-4 flex items-center justify-between">
               <div>
@@ -3171,6 +3246,31 @@ export default function AdminPage() {
               <InfoRow label="Raison" value={RAISON_LABELS[selectedSig.raison] ?? selectedSig.raison} />
               {selectedSig.description && <InfoRow label="Description" value={selectedSig.description} />}
               <SigLiens sig={selectedSig} ctx={sigContexte[selectedSig.id]} detail />
+              {sigContexte[selectedSig.id] && (() => {
+                const c = sigContexte[selectedSig.id];
+                return (
+                  <div className="space-y-2">
+                    {c.auteur_nb_valides != null && (
+                      <p className={`text-xs font-semibold ${c.auteur_nb_valides ? 'text-red-700' : 'text-gray-400'}`}>
+                        {selectedSig.target_type === 'user' ? 'Profil signalé' : 'Auteur'} : {c.auteur_nb_valides ? `signalé ${c.auteur_nb_valides} fois (validé)` : 'jamais signalé (validé)'}
+                      </p>
+                    )}
+                    <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+                      <p className="text-[11px] text-gray-500">Signalé par</p>
+                      <p className="text-sm font-semibold text-[#1F2A2E]">{c.reporter.nom}</p>
+                      <div className="flex flex-wrap items-center gap-x-3 mt-0.5">
+                        <Link href={`/profil/${c.reporter.uid}`} target="_blank" className="text-xs text-[#0C5C6C] hover:underline font-semibold">Voir le profil ↗</Link>
+                        {c.reporter.nb_valides != null && (
+                          <span className={`text-xs font-semibold ${c.reporter.nb_valides ? 'text-red-700' : 'text-gray-400'}`}>
+                            {c.reporter.nb_valides ? `Signalé ${c.reporter.nb_valides} fois (validé)` : 'Jamais signalé (validé)'}
+                          </span>
+                        )}
+                      </div>
+                      <CompteursSignalements faits={c.reporter.faits} />
+                    </div>
+                  </div>
+                );
+              })()}
               <InfoRow label="Date" value={new Date(selectedSig.created_at).toLocaleString('fr-FR')} />
               {selectedSig.target_type === 'annonce' && (
                 <Link href={`/annonces/${selectedSig.target_id}`} target="_blank"
@@ -3179,7 +3279,7 @@ export default function AdminPage() {
                 </Link>
               )}
               {selectedSig.statut === 'en_attente' && (
-                <PanneauSanction sig={selectedSig} onFait={(resume) => {
+                <PanneauSanction key={selectedSig.id} sig={selectedSig} ctx={sigContexte[selectedSig.id]} onFait={(resume) => {
                   setSignalements(prev => prev.filter(s => s.id !== selectedSig.id));
                   if (stats) setStats(prev => prev ? { ...prev, signalementsEnAttente: Math.max(0, prev.signalementsEnAttente - 1) } : prev);
                   setSelectedSig(null);
