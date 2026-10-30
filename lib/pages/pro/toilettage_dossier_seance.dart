@@ -44,14 +44,18 @@ Future<Map<String, String>> coordonneesClientRdv(Map<String, dynamic> rdv) async
         : await supa.from('user_profiles_complet')
             .select('firstname, lastname, phone_number, phone, email_contact, rue, code_postal, ville, rue_pro, code_postal_pro, ville_pro')
             .eq('id', cp).maybeSingle();
+    // Coordonnées du compte du client (e-mail, téléphone) : réservées au pro
+    // du RDV (migration_contact_client_rdv.sql).
+    Map? cc;
+    try { cc = await supa.rpc('pm_contact_client_rdv', params: {'p_rdv_id': rdv['id'].toString()}) as Map?; } catch (_) {}
     String premier(List<dynamic> v) => v.map((x) => (x ?? '').toString().trim()).firstWhere((x) => x.isNotEmpty, orElse: () => '');
-    out['tel'] = premier([prof?['phone_number'], prof?['phone'], man?['client_telephone_manuel']]);
-    out['email'] = premier([prof?['email_contact'], man?['client_email_manuel']]);
-    out['prenom'] = premier([prof?['firstname']]);
-    out['nom'] = premier([prof?['lastname']]);
-    out['rue'] = premier([prof?['rue'], prof?['rue_pro']]);
-    out['cp'] = premier([prof?['code_postal'], prof?['code_postal_pro']]);
-    out['ville'] = premier([prof?['ville'], prof?['ville_pro']]);
+    out['tel'] = premier([prof?['phone_number'], prof?['phone'], cc?['telephone'], man?['client_telephone_manuel']]);
+    out['email'] = premier([prof?['email_contact'], cc?['email'], man?['client_email_manuel']]);
+    out['prenom'] = premier([prof?['firstname'], cc?['prenom']]);
+    out['nom'] = premier([prof?['lastname'], cc?['nom']]);
+    out['rue'] = premier([prof?['rue'], prof?['rue_pro'], cc?['rue']]);
+    out['cp'] = premier([prof?['code_postal'], prof?['code_postal_pro'], cc?['code_postal']]);
+    out['ville'] = premier([prof?['ville'], prof?['ville_pro'], cc?['ville']]);
   } catch (_) {}
   return out;
 }

@@ -882,7 +882,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     Map<String, dynamic>? prof;
     try {
       final pq = supa.from('user_profiles_complet').select(
-          'id, nom, rue_pro, code_postal_pro, ville_pro, pays_pro, phone_number, siret, numero_tva, '
+          'id, nom, rue_pro, code_postal_pro, ville_pro, pays_pro, phone_number, phone, telephone, email_contact, rue, code_postal, ville, siret, numero_tva, '
           'forme_juridique_pro, capital_social_pro, rcs_pro, rm_pro, regime_tva_pro, iban_pro, bic_pro');
       prof = activePid != null
           ? await pq.eq('id', activePid).maybeSingle()
@@ -915,14 +915,21 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     }
     setState(() {
       _nomEmetteur.text = pick(prof?['nom'] as String?, 'nom_emetteur', d['nameElevage'] ?? d['firstname']);
-      _rueEmetteur.text = pick(prof?['rue_pro'] as String?, 'rue_emetteur', d['rueElevage']);
-      _cpEmetteur.text = pick(prof?['code_postal_pro'] as String?, 'cp_emetteur', d['codePostalElevage']);
-      _villeEmetteur.text = pick(prof?['ville_pro'] as String?, 'ville_emetteur', d['villeElevage']);
+      String? pv(List<String> cles) {
+        for (final k in cles) {
+          final v = (prof?[k] ?? '').toString().trim();
+          if (v.isNotEmpty) return v;
+        }
+        return null;
+      }
+      _rueEmetteur.text = pick(pv(['rue_pro', 'rue']), 'rue_emetteur', d['rueElevage']);
+      _cpEmetteur.text = pick(pv(['code_postal_pro', 'code_postal']), 'cp_emetteur', d['codePostalElevage']);
+      _villeEmetteur.text = pick(pv(['ville_pro', 'ville']), 'ville_emetteur', d['villeElevage']);
       _paysEmetteur.text = pick(prof?['pays_pro'] as String?, 'pays_emetteur', d['paysElevage'] ?? 'France');
-      _telEmetteur.text = pick(prof?['phone_number'] as String?, 'tel_emetteur', d['numeroElevage'] ?? d['phone_number']);
+      _telEmetteur.text = pick(pv(['phone_number', 'phone', 'telephone']), 'tel_emetteur', d['numeroElevage'] ?? d['phone_number']);
       _siretEmetteur.text = pick(prof?['siret'] as String?, 'siret_emetteur', d['siret']);
       _tvaEmetteur.text = pick(prof?['numero_tva'] as String?, 'tva_emetteur', d['numeroTVA']);
-      _emailEmetteur.text = pick(null, 'email_emetteur', d['email']);
+      _emailEmetteur.text = pick(pv(['email_contact']), 'email_emetteur', d['email']);
       _formeJuridiqueEmetteur.text = pick(prof?['forme_juridique_pro'] as String?, 'forme_juridique_emetteur');
       _capitalEmetteur.text = pick(prof?['capital_social_pro'] as String?, 'capital_emetteur');
       _rcsEmetteur.text = pick(prof?['rcs_pro'] as String?, 'rcs_emetteur', d['rcs']);

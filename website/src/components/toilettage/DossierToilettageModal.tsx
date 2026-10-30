@@ -85,10 +85,15 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
     setContrat(ct.data as Contrat | null);
     setFacture(fa.data as Facture | null);
     const pf = prof.data as Record<string, string | null | undefined> | null;
+    // Coordonnées du compte du client (e-mail, téléphone) : réservées au pro
+    // du RDV (migration_contact_client_rdv.sql).
+    const { data: ccData } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: x.id });
+    const cc = (ccData ?? null) as Record<string, string> | null;
     const v = (...a: (string | null | undefined)[]) => a.map(y => (y ?? '').trim()).find(Boolean) ?? '';
     setCoord({
-      tel: v(pf?.phone_number, pf?.phone, x.client_telephone_manuel), email: v(pf?.email_contact, x.client_email_manuel),
-      prenom: v(pf?.firstname), nom: v(pf?.lastname), rue: v(pf?.rue, pf?.rue_pro), cp: v(pf?.code_postal, pf?.code_postal_pro), ville: v(pf?.ville, pf?.ville_pro),
+      tel: v(pf?.phone_number, pf?.phone, cc?.telephone, x.client_telephone_manuel), email: v(pf?.email_contact, cc?.email, x.client_email_manuel),
+      prenom: v(pf?.firstname, cc?.prenom), nom: v(pf?.lastname, cc?.nom), rue: v(pf?.rue, pf?.rue_pro, cc?.rue),
+      cp: v(pf?.code_postal, pf?.code_postal_pro, cc?.code_postal), ville: v(pf?.ville, pf?.ville_pro, cc?.ville),
     });
     setNow(Date.now());
   }, [rdvId]);
