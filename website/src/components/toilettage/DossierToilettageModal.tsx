@@ -16,6 +16,7 @@ import { reponsesAffichables } from '@/lib/consignes-rdv';
 import { envoyerContratParEmail } from '@/lib/contrat-email';
 import { signerContratAvecSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
 import SignatureProModal from '@/components/signature/SignatureProModal';
+import FinConsultationModal from '@/components/rdv/FinConsultationModal';
 
 const TEAL = '#0C5C6C';
 const AMBRE = '#D97706';
@@ -58,6 +59,8 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
   const [enCours, setEnCours] = useState('');
   // Contrat généré sans signature enregistrée : la dessiner, elle est apposée.
   const [signerContrat, setSignerContrat] = useState<string | null>(null);
+  // Fin de séance : compte rendu + facture par e-mail, facture acquittée (comme le vétérinaire).
+  const [finSeance, setFinSeance] = useState(false);
   const [now, setNow] = useState(0);
 
   const charger = useCallback(async () => {
@@ -170,6 +173,8 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
         nomClient: coord.nom || nomClient, prenomClient: coord.prenom || undefined, emailClient: coord.email || undefined, telClient: coord.tel || undefined,
         rueClient: coord.rue || undefined, cpClient: coord.cp || undefined, villeClient: coord.ville || undefined,
         sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined, clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
+        // Après l'émission : retour au RDV en cours de traitement.
+        retour: `/mes-rdv?rdv=${encodeURIComponent(r.id)}`,
         lignes: [{ description: [prestation.nom, animalNom].filter(Boolean).join(' — ') + ` — ${debut.toLocaleDateString('fr-FR')}`, quantite: 1, prixUnitaire: 0, prixTTC: Number(prestation.prix ?? 0), tva: 20 }],
       }));
     } catch { /* facture vierge */ }
@@ -267,8 +272,16 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
           <p className="text-sm font-semibold text-[#1E2025] mb-1.5">Contacter le client</p>
           <ContactCanaux uid={r.client_uid} tel={coord.tel} email={coord.email} sujet={`Votre rendez-vous toilettage du ${jour(debut)}`} />
         </div>
-        <button onClick={onClose} className="w-full mt-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
+        <button onClick={() => setFinSeance(true)} className="w-full mt-4 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: TEAL }}>
+          Fin de séance : envoyer et encaisser
+        </button>
+        <button onClick={onClose} className="w-full mt-2 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
       </div>
+      {finSeance && (
+        <FinConsultationModal metier="toilettage" rdvId={r.id} proProfileId={pid || null} clientNom={nomClient}
+          onPreparerFacture={() => { setFinSeance(false); facturer(); }}
+          onClose={() => setFinSeance(false)} onDone={() => { setFinSeance(false); charger(); onChanged?.(); }} />
+      )}
       {signerContrat && user && (
         <SignatureProModal onClose={() => setSignerContrat(null)} onValider={async dataUrl => {
           await enregistrerSignaturePro(user.uid, dataUrl);

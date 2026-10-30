@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { seancesDuRdv, pdfSeance, preparerFactureOsteo, type SeanceRdv } from '@/lib/seance-osteo';
+import { seanceToilettageDuRdv, pdfCompteRenduToilettage, type SeanceToilettagePdf } from '@/lib/toilettage-pdf';
 import { useAuth } from '@/lib/auth-context';
 import { maSignaturePro } from '@/lib/signature-pro';
 import { envoyerPiecesParEmail } from '@/lib/transmission-document';
@@ -18,13 +19,18 @@ const MODES = ['Carte bancaire', 'Espèces', 'Chèque', 'Virement'];
 // Ostéo / kiné (metier « sante ») : compte(s) rendu(s) de séance + facture,
 // et « Préparer la facture » depuis les tarifs ostéo si elle n'existe pas.
 // Miroir appli : _terminerConsultation (compte_rendu_page.dart), finSeanceOsteo (fin_seance_osteo.dart).
-export default function FinConsultationModal({ rdvId, proProfileId, clientNom, onClose, onDone, metier = 'veterinaire' }: {
+// Toiletteur (metier « toilettage ») : compte rendu de toilettage (fiche
+// technique) + facture ; « Préparer la facture » via [onPreparerFacture].
+export default function FinConsultationModal({ rdvId, proProfileId, clientNom, onClose, onDone, metier = 'veterinaire', onPreparerFacture }: {
   rdvId: string; proProfileId: string | null; clientNom?: string; onClose: () => void; onDone: () => void;
-  metier?: 'veterinaire' | 'sante';
+  metier?: 'veterinaire' | 'sante' | 'toilettage';
+  onPreparerFacture?: () => void;
 }) {
   const { user, userData } = useAuth();
   const router = useRouter();
   const osteo = metier === 'sante';
+  const toilettage = metier === 'toilettage';
+  const [ficheToil, setFicheToil] = useState<SeanceToilettagePdf | null>(null);
   const [docs, setDocs] = useState<(DocsConsultation & { seances?: SeanceRdv[] }) | null>(null);
   const [prepa, setPrepa] = useState(false);
   const [coches, setCoches] = useState<Record<string, boolean>>({});
@@ -33,6 +39,24 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
   const [envoi, setEnvoi] = useState(false);
 
   useEffect(() => {
+    if (toilettage) {
+      (async () => {
+        const [fiche, { data: r }, { data: fac }] = await Promise.all([
+          seanceToilettageDuRdv(rdvId),
+          supabase.from('rdv').select('animal_id, animal_nom_manuel').eq('id', rdvId).maybeSingle(),
+          supabase.from('factures').select('*').eq('source_rdv_id', rdvId).neq('statut', 'annulee').order('created_at', { ascending: false }).limit(1),
+        ]);
+        const aid = r?.animal_id != null ? String(r.animal_id) : null;
+        const { data: an } = aid ? await supabase.from('animaux').select('id, nom').eq('id', aid).maybeSingle() : { data: null };
+        const facture = ((fac ?? [])[0] as DocsConsultation['facture']) ?? null;
+        setFicheToil(fiche);
+        setDocs({ rdvId, animalIdPrincipal: aid,
+          noms: aid ? { [aid]: (an?.nom as string | undefined) ?? (r?.animal_nom_manuel as string | undefined) ?? 'Animal' } : {},
+          crs: [], ordos: [], facture, seances: [] });
+        setCoches(Object.fromEntries([...(fiche ? [['toil', true]] : []), ...(facture ? [[`fac:${facture.id}`, true]] : [])]));
+      })();
+      return;
+    }
     if (osteo) {
       (async () => {
         const [seances, { data: r }, { data: fac }] = await Promise.all([
@@ -55,7 +79,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
       setCoches(Object.fromEntries([...d.crs.map(c => [`cr:${c.id}`, true]), ...d.ordos.map(o => [`ordo:${o.id}`, !!o.doc_url]),
         ...(d.facture ? [[`fac:${d.facture.id}`, true]] : [])]));
     });
-  }, [rdvId, osteo]);
+  }, [rdvId, osteo, toilettage]);
 
   /** Ostéo : facture préparée depuis les tarifs (séance / bilan / déplacement), client du RDV. */
   async function preparerFacture() {
@@ -87,6 +111,11 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         const signature = await maSignaturePro(user.uid).catch(() => null);
         const praticien = `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim();
         const pieces: { type: 'ordonnance' | 'compte_rendu' | 'facture'; blob: Blob; nomFichier: string }[] = [];
+        if (ficheToil && coches.toil) {
+          const nomA = docs.animalIdPrincipal ? nom(docs.animalIdPrincipal) : 'animal';
+          pieces.push({ type: 'compte_rendu', nomFichier: `Compte-rendu-toilettage-${nomA}.pdf`,
+            blob: await pdfCompteRenduToilettage(ficheToil, { proProfileId, signature, nomAnimal: nomA }) });
+        }
         for (const s of docs.seances ?? []) if (coches[`seance:${s.id}`]) {
           const { blob, animalNom } = await pdfSeance(s.id, signature);
           pieces.push({ type: 'compte_rendu', nomFichier: `Compte-rendu-seance-${animalNom}.pdf`, blob });
@@ -102,7 +131,8 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
           pieces.push({ type: 'facture', nomFichier: `Facture-${facture.numero_affichage ?? ''}${facture.statut === 'payee' ? '-acquittee' : ''}.pdf`,
             blob: await pdfFacture(facture) });
         }
-        const noms = [...new Set([...docs.crs.map(c => nom(c.animal_id)), ...(docs.seances ?? []).filter(s => s.animal_id).map(s => nom(s.animal_id!))])];
+        const noms = [...new Set([...docs.crs.map(c => nom(c.animal_id)), ...(docs.seances ?? []).filter(s => s.animal_id).map(s => nom(s.animal_id!)),
+          ...(toilettage && docs.animalIdPrincipal ? [nom(docs.animalIdPrincipal)] : [])])];
         const ok = await envoyerPiecesParEmail(pieces, {
           emailParDefaut: (facture?.email_client as string | null) ?? null, destinataireNom: clientNom,
           expediteur: userData?.nameElevage || praticien, animalNom: noms.join(', '),
@@ -131,21 +161,28 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4" onClick={onClose}>
       <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
-        <h2 className="font-bold text-lg text-[#1E2025]">{osteo ? 'Fin de séance' : 'Fin de consultation'}</h2>
+        <h2 className="font-bold text-lg text-[#1E2025]">{osteo || toilettage ? 'Fin de séance' : 'Fin de consultation'}</h2>
         {!docs ? <p className="text-sm text-gray-500">Chargement…</p> : (<>
           <div className="space-y-2">
             <p className="text-xs font-semibold text-gray-500">Envoyer au propriétaire par e-mail</p>
-            {docs.crs.length === 0 && docs.ordos.length === 0 && !docs.facture && !(docs.seances?.length) && (
+            {docs.crs.length === 0 && docs.ordos.length === 0 && !docs.facture && !(docs.seances?.length) && !ficheToil && (
               <p className="text-sm text-gray-500">{osteo
                 ? <>Aucun document pour ce rendez-vous pour l&apos;instant : finalisez d&apos;abord la séance.</>
                 : <>Aucun document pour ce rendez-vous pour l&apos;instant (compte rendu validé, ordonnance ou facture).</>}</p>
             )}
+            {toilettage && ficheToil && ligne('toil', `Compte rendu de toilettage — ${docs.animalIdPrincipal ? nom(docs.animalIdPrincipal) : 'Animal'}`)}
             {(docs.seances ?? []).map(s => ligne(`seance:${s.id}`, `Compte rendu de séance — ${s.animal_id ? nom(s.animal_id) : 'Animal'}`))}
             {docs.crs.map(c => ligne(`cr:${c.id}`, `Compte rendu — ${nom(c.animal_id)}`))}
             {docs.ordos.map(o => ligne(`ordo:${o.id}`, `Ordonnance — ${nom(o.animal_id)}`, o.doc_url ? undefined : 'PDF indisponible', !o.doc_url))}
             {docs.facture && ligne(`fac:${docs.facture.id}`, `Facture ${docs.facture.numero_affichage ?? ''}`,
               `${Number(docs.facture.total_ttc ?? 0).toFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}`)}
           </div>
+          {toilettage && !docs.facture && onPreparerFacture && (
+            <button type="button" onClick={onPreparerFacture}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold border border-[#0C5C6C] text-[#0C5C6C]">
+              Préparer la facture
+            </button>
+          )}
           {osteo && !docs.facture && (docs.seances?.length ?? 0) > 0 && (
             <button type="button" disabled={prepa} onClick={preparerFacture}
               className="w-full py-2.5 rounded-xl text-sm font-semibold border border-[#0C5C6C] text-[#0C5C6C] disabled:opacity-40">

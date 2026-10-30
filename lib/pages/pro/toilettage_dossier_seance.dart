@@ -13,7 +13,12 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
-import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage, CreerFacturePage, FacturePrefillLigne;
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage, CreerFacturePage, FacturePrefillLigne, facturePdfDepuisLigne;
+import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart' show compteRenduToilettagePdfBytes;
+import 'package:PetsMatch/pages/pro/transmission_document.dart' show envoyerDocumentsParEmail;
+import 'package:PetsMatch/pages/pro/toilettage_constantes.dart' show labelTravailToilettage;
+import 'package:PetsMatch/utils/signature_pro.dart' show octetsSignature;
+import 'dart:typed_data';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
@@ -189,6 +194,161 @@ Future<void> signerContratAvecSignaturePro(BuildContext context, String docId) a
         body: jsonEncode({'role': 'eleveur', 'signature': sig, 'actorUid': User_Info.uid,
             'actorNom': '${User_Info.firstname} ${User_Info.lastname}'.trim()}));
   } catch (_) {}
+}
+
+/// Fin de séance du toiletteur (miroir site : FinConsultationModal metier
+/// « toilettage ») : compte rendu de toilettage (fiche technique, PDF signé)
+/// et facture envoyés au client en un seul e-mail, facture acquittée ;
+/// « Préparer la facture » si elle n'existe pas.
+Future<void> finSeanceToilettage(BuildContext context, Map<String, dynamic> rdv, {String? nomClient, String? animal}) async {
+  final supa = Supabase.instance.client;
+  final rdvId = rdv['id'].toString();
+  Map<String, dynamic>? fiche, facture;
+  try { fiche = await supa.from('seances_toilettage').select().eq('rdv_id', rdvId).maybeSingle(); } catch (_) {}
+  try {
+    final f = await supa.from('factures').select().eq('source_rdv_id', rdvId).neq('statut', 'annulee')
+        .order('created_at', ascending: false).limit(1);
+    if ((f as List).isNotEmpty) facture = Map<String, dynamic>.from(f.first as Map);
+  } catch (_) {}
+  if (!context.mounted) return;
+  final animalNom = (animal ?? '').trim().isEmpty ? 'Animal' : animal!.trim();
+  final coches = <String, bool>{if (fiche != null) 'toil': true, if (facture != null) 'fac': true};
+  final dejaPayee = facture?['statut'] == 'payee';
+  var acquittee = false;
+  var mode = 'Carte bancaire';
+  final choix = await showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
+      Widget ligne(String cle, String titre, [String? sous]) => CheckboxListTile(
+            value: coches[cle] ?? false, dense: true, activeColor: _teal, contentPadding: EdgeInsets.zero,
+            onChanged: (v) => setM(() => coches[cle] = v ?? false),
+            title: Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+            subtitle: sous == null ? null : Text(sous, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+          );
+      final nb = coches.values.where((v) => v).length;
+      return SafeArea(child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Fin de séance', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          Text('Envoyer au client par e-mail', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+          if (fiche == null && facture == null)
+            const Padding(padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('Aucun document pour ce rendez-vous : remplissez d’abord la fiche technique.', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+          if (fiche != null) ligne('toil', 'Compte rendu de toilettage — $animalNom'),
+          if (facture != null)
+            ligne('fac', 'Facture ${facture['numero_affichage'] ?? ''}',
+                '${((facture['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}'),
+          if (facture == null) ...[
+            const SizedBox(height: 6),
+            SizedBox(width: double.infinity, child: OutlinedButton.icon(
+              onPressed: () => Navigator.pop(ctx, 'facture'),
+              icon: const Icon(Icons.receipt_long_outlined, size: 18),
+              label: const Text('Préparer la facture', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              style: OutlinedButton.styleFrom(foregroundColor: _teal),
+            )),
+          ],
+          if (facture != null && !dejaPayee) ...[
+            const SizedBox(height: 6),
+            SwitchListTile(
+              value: acquittee, activeThumbColor: _teal, contentPadding: EdgeInsets.zero, dense: true,
+              onChanged: (v) => setM(() => acquittee = v),
+              title: const Text('Facture acquittée (réglée aujourd’hui)', style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+            ),
+            if (acquittee) Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final m in const ['Carte bancaire', 'Espèces', 'Chèque', 'Virement'])
+                ChoiceChip(label: Text(m, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)), selected: mode == m,
+                    selectedColor: _teal.withValues(alpha: 0.2), onSelected: (_) => setM(() => mode = m)),
+            ]),
+          ],
+          const SizedBox(height: 16),
+          Row(children: [
+            Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx),
+                child: const Text('Fermer', style: TextStyle(fontFamily: 'Galey')))),
+            if (acquittee) ...[
+              const SizedBox(width: 8),
+              Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx, 'acquitter'),
+                  child: const Text('Acquitter seulement', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5)))),
+            ],
+            const SizedBox(width: 8),
+            Expanded(flex: 2, child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white),
+              onPressed: nb == 0 ? null : () => Navigator.pop(ctx, 'envoyer'),
+              child: Text('Envoyer ($nb)', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+          ]),
+        ]),
+      ));
+    }),
+  );
+  if (choix == null || !context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    if (choix == 'facture') {
+      await facturerToilettage(context, rdv, nomClient: nomClient, animal: animal);
+      // Facture faite : la fin de séance reprend (envoi, acquittée).
+      if (context.mounted) await finSeanceToilettage(context, rdv, nomClient: nomClient, animal: animal);
+      return;
+    }
+    if (facture != null && acquittee && !dejaPayee) {
+      final maj = {'statut': 'payee', 'mode_paiement': mode, 'date_paiement': DateTime.now().toUtc().toIso8601String()};
+      await supa.from('factures').update(maj).eq('id', facture['id']);
+      facture = {...facture, ...maj};
+    }
+    if (choix != 'envoyer') {
+      messenger.showSnackBar(const SnackBar(content: Text('Facture acquittée.', style: TextStyle(fontFamily: 'Galey')),
+          behavior: SnackBarBehavior.floating));
+      return;
+    }
+    final pieces = <({String type, String nomFichier, Uint8List bytes})>[];
+    if (fiche != null && coches['toil'] == true) {
+      String s(dynamic v) => v?.toString().trim() ?? '';
+      final pid = s(rdv['pro_profile_id']).isNotEmpty ? s(rdv['pro_profile_id']) : User_Info.activeProfileId;
+      final p = pid.isEmpty ? null : await supa.from('user_profiles_complet')
+          .select('nom, firstname, lastname, rue_pro, code_postal_pro, ville_pro, rue, code_postal, ville, phone_number, phone, email_contact')
+          .eq('id', pid).maybeSingle();
+      final a = s(rdv['animal_id']).isEmpty ? null
+          : await supa.from('animaux').select('espece, race').eq('id', rdv['animal_id']).maybeSingle();
+      final adresse = (s(p?['rue_pro']).isNotEmpty || s(p?['ville_pro']).isNotEmpty)
+          ? [s(p?['rue_pro']), '${s(p?['code_postal_pro'])} ${s(p?['ville_pro'])}'.trim()]
+          : [s(p?['rue']), '${s(p?['code_postal'])} ${s(p?['ville'])}'.trim()];
+      final f = fiche;
+      pieces.add((type: 'compte_rendu', nomFichier: 'Compte-rendu-toilettage-$animalNom.pdf', bytes: await compteRenduToilettagePdfBytes(
+        salon: s(p?['nom']).isNotEmpty ? s(p?['nom']) : '${s(p?['firstname'])} ${s(p?['lastname'])}'.trim(),
+        adresse: adresse.where((x) => x.isNotEmpty).join(', '),
+        tel: s(p?['phone_number']).isNotEmpty ? s(p?['phone_number']) : s(p?['phone']),
+        email: s(p?['email_contact']),
+        animalNom: animalNom,
+        especeRace: [s(a?['espece']), s(a?['race'])].where((x) => x.isNotEmpty).join(' · '),
+        date: DateTime.tryParse(s(f['date_seance'])),
+        rubriques: [
+          ('Prestations réalisées', [for (final t in (f['travaux'] as List? ?? const [])) labelTravailToilettage(t.toString())].join(', ')),
+          ('Longueur de coupe', s(f['longueur_coupe'])),
+          ('Zones', s(f['zones'])),
+          ('Finition', s(f['finition'])),
+          ('Produits utilisés', s(f['produits'])),
+          ('Compte rendu', s(f['compte_rendu'])),
+          ('Conseils de soin du pelage', s(f['conseils_pelage'])),
+        ],
+        signature: octetsSignature(await maSignaturePro()),
+      )));
+    }
+    if (facture != null && coches['fac'] == true) {
+      pieces.add((type: 'facture', nomFichier: 'Facture-${facture['numero_affichage'] ?? ''}${facture['statut'] == 'payee' ? '-acquittee' : ''}.pdf',
+          bytes: await facturePdfDepuisLigne(facture)));
+    }
+    if (pieces.isEmpty || !context.mounted) return;
+    final coord = await coordonneesClientRdv(rdv);
+    if (!context.mounted) return;
+    await envoyerDocumentsParEmail(context, pieces: pieces, animalNom: animalNom, destinataireNom: nomClient,
+        emailParDefaut: (coord['email'] ?? '').isNotEmpty ? coord['email'] : ((facture?['email_client'] ?? '').toString().isEmpty ? null : facture!['email_client'].toString()),
+        animalId: rdv['animal_id']?.toString());
+  } catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text('Impossible : $e', style: const TextStyle(fontFamily: 'Galey')),
+        behavior: SnackBarBehavior.floating));
+  }
 }
 
 /// Facture de la prestation : prix TTC affiché (HT déduit selon le régime de
@@ -510,6 +670,20 @@ class _DossierToilettageState extends State<_DossierToilettage> {
         const SizedBox(height: 4),
         Text('Le compte rendu partagé (avec vos conseils de soin du pelage) apparaît dans l\'onglet Consultations de l\'animal.',
             style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+        // Fin de séance (comme le vétérinaire) : compte rendu + facture par
+        // e-mail, facture acquittée.
+        const SizedBox(height: 10),
+        SizedBox(width: double.infinity, child: ElevatedButton.icon(
+          onPressed: () async {
+            await finSeanceToilettage(context, r, nomClient: widget.nomClient, animal: _animalNom);
+            if (mounted) { setState(() => _loading = true); _charger(); }
+          },
+          icon: const Icon(Icons.outgoing_mail, size: 18),
+          label: const Text('Fin de séance : envoyer et encaisser', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+        )),
         const Padding(padding: EdgeInsets.only(top: 10, bottom: 6),
             child: Text('Contacter le client', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5, color: _ink))),
         ContactCanaux(clientUid: r['client_uid']?.toString(), tel: _coord['tel'], email: _coord['email'], monProfilId: _pid,

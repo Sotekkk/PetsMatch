@@ -1121,6 +1121,11 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
       // pas besoin d'ouvrir la boîte d'impression système ici. On amène
       // directement sur « Mes Factures » pour retrouver la facture émise.
       if (!mounted) return;
+      // Facture d'un RDV (fin de séance / consultation) : retour au RDV en cours.
+      if (widget.sourceRdvId != null || widget.sourceRdvIds.isNotEmpty) {
+        Navigator.pop(context, true);
+        return;
+      }
       final wasAssociation = User_Info.activeType == 'association' || User_Info.isAssociation;
       Navigator.pushReplacement(context, MaterialPageRoute(
         builder: (_) => FacturationPage(isAssociation: wasAssociation),

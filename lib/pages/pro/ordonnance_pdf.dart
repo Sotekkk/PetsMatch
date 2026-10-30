@@ -295,3 +295,67 @@ Future<Uint8List> compteRenduPdfBytes({
   ));
   return doc.save();
 }
+
+/// Compte rendu de toilettage (fiche technique du RDV) : rubriques titrées,
+/// bloc signature du salon. Miroir site : pdfCompteRenduToilettage
+/// (website/src/lib/toilettage-pdf.ts).
+Future<Uint8List> compteRenduToilettagePdfBytes({
+  required String salon,
+  String adresse = '',
+  String tel = '',
+  String email = '',
+  required String animalNom,
+  String especeRace = '',
+  DateTime? date,
+  required List<(String, String)> rubriques,
+  Uint8List? signature,
+}) async {
+  final doc = pw.Document(theme: await _chargerTheme());
+  final jour = date ?? DateTime.now();
+  doc.addPage(pw.MultiPage(
+    pageFormat: PdfPageFormat.a4,
+    margin: const pw.EdgeInsets.fromLTRB(40, 36, 40, 36),
+    build: (_) => [
+      pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+        pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+          pw.Text(salon, style: pw.TextStyle(fontSize: 15, color: _teal, fontWeight: pw.FontWeight.bold)),
+          if (adresse.isNotEmpty) pw.Text(adresse, style: const pw.TextStyle(fontSize: 9, color: _dark)),
+          if (tel.isNotEmpty) pw.Text('Tél. $tel', style: const pw.TextStyle(fontSize: 9, color: _dark)),
+          if (email.isNotEmpty) pw.Text(email, style: const pw.TextStyle(fontSize: 9, color: _dark)),
+        ])),
+        pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
+          pw.Text('COMPTE RENDU DE TOILETTAGE', style: pw.TextStyle(fontSize: 12, color: _teal, fontWeight: pw.FontWeight.bold)),
+          pw.Text('Le ${_date(jour)}', style: const pw.TextStyle(fontSize: 9, color: _dark)),
+        ]),
+      ]),
+      pw.SizedBox(height: 12),
+      pw.Divider(color: _line, thickness: 1),
+      pw.SizedBox(height: 8),
+      pw.Text(animalNom, style: pw.TextStyle(fontSize: 12, color: _dark, fontWeight: pw.FontWeight.bold)),
+      if (especeRace.isNotEmpty) pw.Text(especeRace, style: const pw.TextStyle(fontSize: 10, color: _dark)),
+      pw.SizedBox(height: 14),
+      for (final (titre, texte) in rubriques)
+        if (texte.trim().isNotEmpty) ...[
+          pw.Text(titre, style: pw.TextStyle(fontSize: 10.5, color: _teal, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 3),
+          pw.Text(texte.trim(), style: const pw.TextStyle(fontSize: 10.5, color: _dark, lineSpacing: 2)),
+          pw.SizedBox(height: 10),
+        ],
+      // Bloc signature : salon, date du jour, « Signature : » puis la signature.
+      pw.SizedBox(height: 20),
+      pw.Align(alignment: pw.Alignment.centerRight, child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+        pw.Text(salon, style: pw.TextStyle(fontSize: 10, color: _dark, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 3),
+        pw.Text('Le ${_date(DateTime.now())}', style: const pw.TextStyle(fontSize: 10, color: _dark)),
+        pw.SizedBox(height: 3),
+        pw.Text('Signature :', style: const pw.TextStyle(fontSize: 10, color: _dark)),
+        if (signature != null)
+          pw.Container(width: 160, height: 56, alignment: pw.Alignment.centerLeft,
+              child: pw.Image(pw.MemoryImage(signature), fit: pw.BoxFit.contain))
+        else
+          pw.SizedBox(height: 40),
+      ])),
+    ],
+  ));
+  return doc.save();
+}
