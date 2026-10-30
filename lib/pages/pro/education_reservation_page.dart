@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/utils/geocoding_helper.dart';
+import 'package:PetsMatch/widgets/adresse_recherche_field.dart';
 
 // Vitesse moyenne heuristique (à vol d'oiseau, pas d'API Directions payante)
 // + marge de sécurité — même principe que pro_agenda.dart _travelWarningsToday(),
@@ -70,6 +71,12 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
   String _origineDefaut = 'cabinet';
   double? _cabinetLat, _cabinetLng, _autreDomicileLat, _autreDomicileLng;
   double? _domicileLat, _domicileLng;
+  // Adresse du compte (profil actif) : « Mon adresse » sélectionnée d'office ;
+  // sinon (ou « Une autre adresse ») saisie vérifiée par Google Maps, comme à
+  // l'inscription. Miroir site : EducationReservationModal.
+  String? _adresseConnue;
+  double? _adresseConnueLat, _adresseConnueLng;
+  bool _autreAdresse = false;
 
   // Chargement paresseux semaine par semaine — clé = date du lundi (yyyy-MM-dd).
   // Une semaine = ≤ 7 jours × ~40 créneaux 15 min = ~280 lignes, bien sous le
@@ -108,6 +115,27 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
       _loadPreselectedAnimal();
     }
     _init();
+    _loadAdresseConnue();
+  }
+
+  Future<void> _loadAdresseConnue() async {
+    try {
+      final pid = User_Info.activeProfileId;
+      final row = pid.isNotEmpty
+          ? await Supabase.instance.client.from('user_profiles_complet').select('rue, code_postal, ville, lat, lng').eq('id', pid).maybeSingle()
+          : await Supabase.instance.client.from('users_complet').select('rue, code_postal, ville, lat, lng')
+              .eq('uid', FirebaseAuth.instance.currentUser?.uid ?? '').maybeSingle();
+      final texte = [row?['rue'], row?['code_postal'], row?['ville']].map((v) => (v ?? '').toString().trim()).where((v) => v.isNotEmpty).join(', ');
+      if (texte.isEmpty || !mounted) return;
+      setState(() {
+        _adresseConnue = texte;
+        _adresseConnueLat = (row?['lat'] as num?)?.toDouble();
+        _adresseConnueLng = (row?['lng'] as num?)?.toDouble();
+        _adresseDomicileCtrl.text = texte;
+        _domicileLat = _adresseConnueLat;
+        _domicileLng = _adresseConnueLng;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -496,7 +524,9 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     final adresse = _adresseDomicileCtrl.text.trim();
     if (adresse.isEmpty) return;
     setState(() => _geocodingDomicile = true);
-    final geo = await GeocodingHelper.geocode(adresse);
+    // Adresse du compte ou choisie dans Google Maps : coordonnées déjà connues.
+    final geo = _domicileLat != null && _domicileLng != null
+        ? (lat: _domicileLat!, lng: _domicileLng!) : await GeocodingHelper.geocode(adresse);
     if (!mounted) return;
     setState(() {
       _domicileLat = geo?.lat;
@@ -932,18 +962,49 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
         ]),
         if (_domicile) ...[
           const SizedBox(height: 16),
-          TextField(
-            controller: _adresseDomicileCtrl,
-            onChanged: (_) => setState(() {}),
-            style: const TextStyle(fontFamily: 'Galey'),
-            decoration: const InputDecoration(labelText: 'Votre adresse', hintText: 'Numéro, rue, ville', border: OutlineInputBorder()),
-          ),
+          if (_adresseConnue != null)
+            for (final (autre, titre, sous) in [(false, 'Mon adresse', _adresseConnue), (true, 'Une autre adresse', null)])
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => setState(() {
+                    _autreAdresse = autre;
+                    _adresseDomicileCtrl.text = autre ? '' : _adresseConnue!;
+                    _domicileLat = autre ? null : _adresseConnueLat;
+                    _domicileLng = autre ? null : _adresseConnueLng;
+                  }),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _autreAdresse == autre ? color.withValues(alpha: 0.08) : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _autreAdresse == autre ? color : Colors.grey.shade300),
+                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                      if (sous != null) Text(sous, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                    ]),
+                  ),
+                ),
+              ),
+          if (_adresseConnue == null || _autreAdresse)
+            AdresseRechercheField(
+              label: 'Votre adresse (Google Maps)',
+              onSelection: (a) => setState(() {
+                _adresseDomicileCtrl.text = a.formatee;
+                _domicileLat = a.lat;
+                _domicileLng = a.lng;
+              }),
+            ),
           const SizedBox(height: 6),
           Text('Seuls les créneaux compatibles avec le trajet du professionnel seront proposés.',
               style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
           const SizedBox(height: 16),
           SizedBox(width: double.infinity, child: ElevatedButton(
-            onPressed: _geocodingDomicile || _adresseDomicileCtrl.text.trim().isEmpty ? null : _geocoderDomicile,
+            onPressed: _geocodingDomicile || _adresseDomicileCtrl.text.trim().isEmpty
+                || ((_adresseConnue == null || _autreAdresse) && _domicileLat == null) ? null : _geocoderDomicile,
             style: ElevatedButton.styleFrom(backgroundColor: color, padding: const EdgeInsets.symmetric(vertical: 14)),
             child: _geocodingDomicile
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))

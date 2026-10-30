@@ -8,6 +8,7 @@ import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { geocodeAddress, distanceKm } from '@/lib/geocoding';
 import { getClientKnownAddress } from '@/lib/client-address';
 import { AnimalPickerField } from '@/components/AnimalPickerField';
+import AdresseGoogleInput from '@/components/AdresseGoogleInput';
 
 // Vitesse moyenne heuristique (à vol d'oiseau) + marge de sécurité — même
 // principe que lib/pages/pro/education_reservation_page.dart (app), utilisé
@@ -94,6 +95,10 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   const [adresseDomicile, setAdresseDomicile] = useState('');
   // Adresse connue du profil client (pré-remplissage) — cf. getClientKnownAddress.
   const [clientAdresseConnue, setClientAdresseConnue] = useState<string | null>(null);
+  const [clientAdresseGeo, setClientAdresseGeo] = useState<{ lat: number; lng: number } | null>(null);
+  // Compte avec une adresse : « Mon adresse » sélectionnée d'office ; sinon (ou
+  // « Une autre adresse ») saisie vérifiée par Google Maps, comme à l'inscription.
+  const [autreAdresse, setAutreAdresse] = useState(false);
   const [geocodingDomicile, setGeocodingDomicile] = useState(false);
   const [domicileLatLng, setDomicileLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const [origineDefaut, setOrigineDefaut] = useState('cabinet');
@@ -175,7 +180,9 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       if (clientAdresse) {
         setClientAdresseConnue(clientAdresse.text);
         setAdresseDomicile(clientAdresse.text);
-        setDomicileLatLng(clientAdresse.lat != null && clientAdresse.lng != null ? { lat: clientAdresse.lat, lng: clientAdresse.lng } : null);
+        const geo = clientAdresse.lat != null && clientAdresse.lng != null ? { lat: clientAdresse.lat, lng: clientAdresse.lng } : null;
+        setClientAdresseGeo(geo);
+        setDomicileLatLng(geo);
       }
       setLoading(false);
     })();
@@ -405,7 +412,8 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
     const adresse = adresseDomicile.trim();
     if (!adresse) return;
     setGeocodingDomicile(true);
-    const geo = await geocodeAddress(adresse);
+    // Adresse du compte ou choisie dans Google Maps : coordonnées déjà connues.
+    const geo = domicileLatLng ?? await geocodeAddress(adresse);
     setDomicileLatLng(geo);
     setGeocodingDomicile(false);
     setDomicileChoiceMade(true);
@@ -616,19 +624,34 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
               </div>
               {domicile && (
                 <>
-                  <input value={adresseDomicile}
-                    onChange={e => { setAdresseDomicile(e.target.value); if (domicileLatLng) setDomicileLatLng(null); }}
-                    placeholder="Votre adresse (numéro, rue, ville)"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-galey" />
-                  {clientAdresseConnue && adresseDomicile.trim() === clientAdresseConnue && (
-                    <p className="text-xs text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
-                      Adresse enregistrée sur votre profil — modifiable ci-dessus.
-                    </p>
+                  {clientAdresseConnue && (
+                    <div className="space-y-2">
+                      {([[false, 'Mon adresse', clientAdresseConnue], [true, 'Une autre adresse', null]] as const).map(([autre, titre, sous]) => (
+                        <button key={titre} type="button"
+                          onClick={() => {
+                            setAutreAdresse(autre);
+                            if (!autre) { setAdresseDomicile(clientAdresseConnue); setDomicileLatLng(clientAdresseGeo); }
+                            else { setAdresseDomicile(''); setDomicileLatLng(null); }
+                          }}
+                          className="w-full text-left px-3 py-2.5 rounded-xl border text-sm"
+                          style={{ borderColor: autreAdresse === autre ? catColor : '#E5E7EB', background: autreAdresse === autre ? `${catColor}10` : 'white', fontFamily: 'Galey, sans-serif' }}>
+                          <span className="font-semibold text-[#1E2025]">{titre}</span>
+                          {sous && <span className="block text-xs text-gray-500">{sous}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {(!clientAdresseConnue || autreAdresse) && (
+                    <AdresseGoogleInput value={adresseDomicile} placeholder="Rechercher votre adresse…"
+                      onChange={(texte, parts) => {
+                        setAdresseDomicile(texte);
+                        setDomicileLatLng(parts.lat != null && parts.lng != null ? { lat: parts.lat, lng: parts.lng } : null);
+                      }} />
                   )}
                   <p className="text-xs text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
                     Seuls les créneaux compatibles avec le trajet du professionnel seront proposés.
                   </p>
-                  <button onClick={geocoderDomicile} disabled={geocodingDomicile || !adresseDomicile.trim()}
+                  <button onClick={geocoderDomicile} disabled={geocodingDomicile || !adresseDomicile.trim() || ((!clientAdresseConnue || autreAdresse) && !domicileLatLng)}
                     className="w-full py-3 rounded-2xl text-sm font-semibold text-white disabled:opacity-50"
                     style={{ backgroundColor: catColor, fontFamily: 'Galey, sans-serif' }}>
                     {geocodingDomicile ? '…' : 'Voir les créneaux'}
