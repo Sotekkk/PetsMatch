@@ -53,6 +53,7 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
   const [ouvrirCr, setOuvrirCr] = useState(false);
   const [saisirConsignes, setSaisirConsignes] = useState(false);
   const [message, setMessage] = useState('');
+  const [enCours, setEnCours] = useState('');
   const [now, setNow] = useState(0);
 
   const charger = useCallback(async () => {
@@ -172,12 +173,22 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
     onChanged?.();
   }
 
-  const btn = (t: string, f: () => void) => <button key={t} onClick={f} className="text-sm font-semibold ml-2" style={{ color: TEAL }}>{t}</button>;
+  // Vrais boutons (Relancer, Saisir…) ; l'action en cours affiche « … ».
+  const btn = (t: string, f: () => unknown) => (
+    <button key={t} type="button" disabled={!!enCours}
+      onClick={async () => { setEnCours(t); setMessage(''); try { await f(); } finally { setEnCours(''); } }}
+      className="text-sm font-semibold px-3 py-1.5 rounded-full border disabled:opacity-50 hover:bg-[#0C5C6C]/5"
+      style={{ color: TEAL, borderColor: TEAL }}>
+      {enCours === t ? '…' : t}
+    </button>
+  );
   const ligne = (titre: string, etat: string, c: string, actions: React.ReactNode[]) => (
-    <div className="flex items-center gap-2 py-1.5 flex-wrap">
-      <span className="w-28 text-sm font-bold text-[#1E2025]">{titre}</span>
-      <span className="flex-1 text-sm min-w-[140px]" style={{ color: c }}>{etat}</span>
-      {actions}
+    <div className="py-2 border-b border-gray-50 last:border-0">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="w-28 text-sm font-bold text-[#1E2025]">{titre}</span>
+        <span className="flex-1 text-sm min-w-[140px]" style={{ color: c }}>{etat}</span>
+      </div>
+      {actions.length > 0 && <div className="flex flex-wrap gap-2 mt-1.5">{actions}</div>}
     </div>
   );
   const crRedige = !!seance?.compte_rendu?.trim();
@@ -188,6 +199,7 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
         <p className="font-bold text-[#1E2025]">{prestation.nom}</p>
         <p className="text-sm text-gray-500">{nomClient} · {jour(debut)} à {hm(debut)}{r.duree_minutes ? ` · ${r.duree_minutes} min` : ''}</p>
         {animalNom && <p className="text-sm">Animal : {animalNom}</p>}
+        {message && <p className="text-sm mt-2 rounded-xl px-3 py-2 bg-[#E6F2F3]" style={{ color: TEAL }}>{message}</p>}
 
         <div className="mt-3 border border-gray-100 rounded-xl px-3 py-1.5">
           {ligne('Compte rendu',
@@ -237,7 +249,6 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
           )}
         </div>
         <p className="text-[11px] text-gray-400 mt-1">Le compte rendu partagé (avec vos conseils de soin du pelage) apparaît dans l&apos;onglet Consultations de l&apos;animal.</p>
-        {message && <p className="text-sm mt-2" style={{ color: TEAL }}>{message}</p>}
 
         <div className="mt-3">
           <p className="text-sm font-semibold text-[#1E2025] mb-1.5">Contacter le client</p>

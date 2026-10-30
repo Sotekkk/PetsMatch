@@ -359,14 +359,28 @@ class _DossierToilettageState extends State<_DossierToilettage> {
     }
   }
 
+  // Étape du dossier : état, puis de vrais boutons (Relancer, Saisir…).
   Widget _ligne(String titre, String etat, Color c, List<(String, VoidCallback)> actions) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(children: [
-          SizedBox(width: 92, child: Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: _ink))),
-          Expanded(child: Text(etat, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: c))),
-          for (final a in actions)
-            TextButton(onPressed: a.$2, style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6), minimumSize: const Size(0, 32)),
-                child: Text(a.$1, style: const TextStyle(fontFamily: 'Galey', color: _teal, fontSize: 13))),
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            SizedBox(width: 92, child: Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: _ink))),
+            Expanded(child: Text(etat, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: c))),
+          ]),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Wrap(spacing: 8, runSpacing: 6, children: [
+              for (final a in actions)
+                OutlinedButton(
+                  onPressed: a.$2,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _teal, side: const BorderSide(color: _teal),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6), minimumSize: const Size(0, 34),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
+                  child: Text(a.$1, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700)),
+                ),
+            ]),
+          ],
         ]),
       );
 

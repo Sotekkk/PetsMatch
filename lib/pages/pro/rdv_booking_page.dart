@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/consignes_rdv.dart' show questionnaireConsignes;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -82,6 +83,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   List<Map<String, dynamic>> _animaux = [];
   Map<String, dynamic>? _selectedAnimal;
   final _notesCtrl = TextEditingController();
+  /// Toiletteur : consignes du questionnaire dès la demande (facultatif).
+  final Map<String, String> _consignesResa = {};
   final _motifCtrl = TextEditingController();
 
   // Créneaux (tous les pros)
@@ -1366,6 +1369,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           },
           if ((widget.isPension || widget.isGarde) && _premiereVisite != null)
             'premiere_visite': _premiereVisite,
+          if (widget.isToilettage && _consignesResa.values.any((v) => v.trim().isNotEmpty)) ...{
+            'consignes': {for (final e in _consignesResa.entries) if (e.value.trim().isNotEmpty) e.key: e.value.trim()},
+            'consignes_le': DateTime.now().toUtc().toIso8601String(),
+          },
           if ((_notesCtrl.text.trim().isNotEmpty && (widget.isPension ? _selectedMotif != 'autre' : true)) ||
               (_gardeAvecAdresse && _gardeLieuNote.isNotEmpty))
             'notes_client': [if (_gardeAvecAdresse) _gardeLieuNote, _notesCtrl.text.trim()]
@@ -3191,6 +3198,32 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   Widget _buildNotesSection() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      // Toiletteur : consignes (facultatif) dès la demande. Miroir site.
+      if (widget.isToilettage) ...[
+        _sectionTitle('Consignes pour le toiletteur (facultatif)'),
+        const SizedBox(height: 8),
+        for (final q in questionnaireConsignes('toilettage')) ...[
+          Text(q.label, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          if (q.choix != null)
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final c in q.choix!)
+                ChoiceChip(
+                  label: Text(c, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                  selected: _consignesResa[q.cle] == c,
+                  onSelected: (sel) => setState(() => _consignesResa[q.cle] = sel ? c : ''),
+                ),
+            ])
+          else
+            TextField(
+              onChanged: (v) => _consignesResa[q.cle] = v,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: _inputDecoration(q.aide ?? ''),
+            ),
+          const SizedBox(height: 10),
+        ],
+        const SizedBox(height: 6),
+      ],
       _sectionTitle('Notes (optionnel)'),
       const SizedBox(height: 8),
       if (widget.isPension && _selectedMotif == 'autre') const SizedBox.shrink()

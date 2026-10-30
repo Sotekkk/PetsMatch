@@ -1,5 +1,6 @@
 'use client';
 import { portfolioPublic, type ItemPortfolio } from '@/lib/portfolio';
+import { questionnaire } from '@/lib/consignes-rdv';
 import { dureeImposeeGarde } from '@/lib/garde-facturation';
 
 import { cleMotif } from '@/lib/salles-clinique';
@@ -239,6 +240,9 @@ function ProDetailContent() {
   // Vétérinaire / santé : le propriétaire partage le carnet de santé dès la réservation.
   const [partagerCarnet, setPartagerCarnet] = useState(true);
   const [notes, setNotes] = useState('');
+  // Toiletteur : consignes du questionnaire remplies dès la demande de RDV
+  // (sinon demandées ensuite par le salon). Miroir appli : rdv_booking_page.
+  const [consignesResa, setConsignesResa] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [rdvSuccess, setRdvSuccess] = useState(false);
   /** Le RDV est demandé mais le carnet n'a pas pu être partagé avec le cabinet. */
@@ -1022,6 +1026,9 @@ function ProDetailContent() {
           motif: `${motifRdv}${premiereSuffix}`,
           ...(premiereVisite !== null ? { premiere_visite: premiereVisite } : {}),
           notes_client: (pro.cat_pro === 'garde' ? notesGarde : notes) || null,
+          ...(pro.cat_pro === 'toilettage' && Object.values(consignesResa).some(v => v.trim())
+            ? { consignes: Object.fromEntries(Object.entries(consignesResa).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v)), consignes_le: new Date().toISOString() }
+            : {}),
           pro_profile_id: pro.profileTableId || null,
           ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
           ...(isTaxi ? {
@@ -2631,6 +2638,34 @@ function ProDetailContent() {
                       </div>
                     );
                   })()}
+
+                  {/* Toiletteur : consignes (facultatif) dès la demande. */}
+                  {pro.cat_pro === 'toilettage' && (
+                    <div className="space-y-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Consignes pour le toiletteur (facultatif)</p>
+                      {questionnaire('toilettage').map(q => (
+                        <div key={q.cle}>
+                          <label className="text-xs font-semibold text-gray-600 block mb-1">{q.label}</label>
+                          {q.choix ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {q.choix.map(c => (
+                                <button key={c} type="button"
+                                  onClick={() => setConsignesResa(x => ({ ...x, [q.cle]: x[q.cle] === c ? '' : c }))}
+                                  className="px-3 py-1 rounded-full text-xs font-semibold border"
+                                  style={consignesResa[q.cle] === c ? { background: catColor, borderColor: catColor, color: 'white' } : { borderColor: '#D1D5DB', color: '#374151' }}>
+                                  {c}
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <input value={consignesResa[q.cle] ?? ''} placeholder={q.aide ?? ''}
+                              onChange={e => setConsignesResa(x => ({ ...x, [q.cle]: e.target.value }))}
+                              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Notes */}
                   <div>
