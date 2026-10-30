@@ -77,6 +77,8 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   // par animal. Miroir appli : education_reservation_page.dart.
   const [autresAnimaux, setAutresAnimaux] = useState<(number | string)[]>([]);
   const [prestationsAutres, setPrestationsAutres] = useState<Record<string, string>>({});
+  // Créneau choisi : la demande ne part qu'après « Valider la demande » (récapitulatif).
+  const [slotChoisi, setSlotChoisi] = useState<{ date: string; heure: string } | null>(null);
   const [notes, setNotes] = useState('');
 
   // Profil du pro consulté, résolu une fois (fallback "is_main" si l'appelant
@@ -807,13 +809,16 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                     <div key={key} className="rounded-xl border border-gray-100 p-3">
                       <p className="text-xs font-bold capitalize mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>{DAY_FMT.format(day)}</p>
                       <div className="flex flex-wrap gap-2">
-                        {daySlots.map(s => (
+                        {daySlots.map(s => {
+                          const choisi = slotChoisi?.date === key && slotChoisi.heure === s.heure_debut;
+                          return (
                           <button key={s.heure_debut} disabled={saving || !selectedAnimalId}
-                            onClick={() => confirmSlot(key, s.heure_debut)}
+                            onClick={() => setSlotChoisi(choisi ? null : { date: key, heure: s.heure_debut })}
                             className="px-3 py-1.5 rounded-lg border text-xs font-semibold disabled:opacity-40 flex flex-col items-center leading-tight"
                             style={{
                               borderColor: s.complet ? '#FDBA74' : catColor,
-                              color: s.complet ? '#C2410C' : catColor,
+                              color: choisi ? '#fff' : s.complet ? '#C2410C' : catColor,
+                              background: choisi ? (s.complet ? '#C2410C' : catColor) : undefined,
                               fontFamily: 'Galey, sans-serif',
                             }}>
                             <span>{s.heure_debut.slice(0, 5)}</span>
@@ -823,12 +828,57 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                               </span>
                             )}
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   );
                 })}
               </div>
+
+              {(() => {
+                // Récapitulatif du créneau choisi (s'il est toujours proposé) avant l'envoi.
+                const s = slotChoisi ? (smartSlotsByDate[slotChoisi.date] ?? []).find(x => x.heure_debut === slotChoisi.heure) : undefined;
+                if (!slotChoisi || !s || !selectedAnimalId) return null;
+                const [h, m] = slotChoisi.heure.split(':').map(Number);
+                const dh = new Date(`${slotChoisi.date}T00:00:00`);
+                dh.setHours(h, m, 0, 0);
+                const lignes: [string, string][] = [
+                  ['Cours', selectedPrestation.nom],
+                  [tousAnimaux.length > 1 ? 'Animaux' : 'Animal', tousAnimaux.map(nomAnimal).filter(Boolean).join(' + ')],
+                  ...(detailAnimaux && !isCollectif ? detailAnimaux.map(d => ['', `${d.nom} — ${d.motif} · ${fmtDureeRdv(d.duree_minutes)}`] as [string, string]) : []),
+                  ['Date', `${DAY_FMT.format(dh)} à ${slotChoisi.heure.slice(0, 5)}`],
+                  ['Durée', fmtDureeRdv(duration)],
+                  ...(prixTotal != null ? [['Prix', `${prixTotal.toFixed(0)} €`] as [string, string]] : []),
+                  ['Lieu', isCollectif || !domicile ? (selectedPrestation.lieu_adresse || 'Chez le professionnel') : `À domicile — ${adresseDomicile}`],
+                  ...(s.capacite != null ? [['Places', `${s.inscrits}/${s.capacite}${s.complet ? ' — liste d’attente' : ''}`] as [string, string]] : []),
+                ];
+                return (
+                  <div className="sticky bottom-0 rounded-2xl border p-4 bg-white shadow-lg" style={{ borderColor: catColor, fontFamily: 'Galey, sans-serif' }}>
+                    <p className="text-sm font-bold mb-2" style={{ color: catColor }}>Confirmer la réservation</p>
+                    <div className="space-y-0.5 mb-3">
+                      {lignes.map(([l, v], i) => (
+                        <div key={i} className="flex gap-2 text-[13px]">
+                          <span className="w-16 shrink-0 text-xs text-gray-400 pt-0.5">{l}</span>
+                          <span className="font-semibold text-[#1E2025] first-letter:uppercase">{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setSlotChoisi(null)} disabled={saving}
+                        className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Changer</button>
+                      <button type="button" disabled={saving}
+                        onClick={async () => {
+                          try { await confirmSlot(slotChoisi.date, slotChoisi.heure); }
+                          catch (e) { alert(`La demande n’a pas pu être envoyée : ${(e as Error).message}`); }
+                        }}
+                        className="flex-[2] py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ background: catColor }}>
+                        {saving ? 'Envoi…' : 'Valider la demande'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
