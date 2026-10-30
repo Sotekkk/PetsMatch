@@ -73,6 +73,9 @@ interface ConvReport {
   id: string; conversation_id: string; reported_by_uid: string;
   reason: string; details?: string; status: string; created_at: string;
 }
+/** Conversation signalée : qui signale, qui est signalé (api/admin/moderation?type=conv_reports_contexte). */
+interface PersonneSignalement { uid: string; nom: string; profil: string | null; nb_valides: number }
+interface ConvContexte { reporter: PersonneSignalement; signale: PersonneSignalement | null }
 interface ConvMessage {
   id: string; sender_id: string; text?: string; msg_type: string;
   created_at: string; image_url?: string;
@@ -257,6 +260,99 @@ function PanneauSanction({ sig, onFait }: { sig: Signalement; onFait: (resume: s
   );
 }
 
+/** Décision sur une conversation signalée, avant de la marquer traitée :
+ *  avertir, suspendre (durée), bloquer ou supprimer le compte de la personne
+ *  signalée — toujours avec la règle enfreinte (sauf suppression). */
+function DecisionConversation({ report, signale, onFait, onSupprimerCompte }: {
+  report: ConvReport; signale: PersonneSignalement | null;
+  onFait: (resume: string) => void; onSupprimerCompte: (uid: string) => Promise<boolean>;
+}) {
+  const [regle, setRegle] = useState('');
+  const [precisions, setPrecisions] = useState('');
+  const [sanction, setSanction] = useState<'avertissement' | 'suspension' | 'blocage' | 'suppression'>('avertissement');
+  const [jours, setJours] = useState(7);
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState('');
+  const pret = !!signale && (sanction === 'suppression' || (!!regle && (regle !== 'Autre (préciser)' || precisions.trim().length > 0)));
+
+  async function appel(corps: Record<string, unknown>) {
+    const r = await apiFetch('/api/admin/moderation', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'conv_report_sanction', id: report.id, ...corps }),
+    });
+    const j = await r.json().catch(() => ({})) as { error?: string; faits?: string[] };
+    if (!r.ok) throw new Error(j.error ?? 'Action impossible.');
+    return (j.faits ?? []).join(', ');
+  }
+
+  async function appliquer() {
+    if (!signale) return;
+    if (sanction === 'blocage' && !confirm(`Bloquer définitivement le compte de ${signale.nom} ?`)) return;
+    setEnvoi(true); setErreur('');
+    try {
+      if (sanction === 'suppression') {
+        // Suppression du compte (confirmations « SUPPRIMER »), puis signalement traité.
+        if (!await onSupprimerCompte(signale.uid)) return;
+        await appel({ sanction: 'aucune', statut: 'reviewed' });
+        onFait('compte supprimé');
+      } else {
+        onFait(await appel({ sanction, regle, precisions, jours }));
+      }
+    } catch (e) { setErreur((e as Error).message); } finally { setEnvoi(false); }
+  }
+
+  const choix = (v: typeof sanction, label: string, aide: string) => (
+    <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer ${sanction === v ? (v === 'suppression' ? 'border-[#B42318] bg-red-50' : 'border-[#0C5C6C] bg-[#E8F4F6]') : 'border-gray-200 hover:bg-gray-50'}`}>
+      <input type="radio" name={`sanction-${report.id}`} checked={sanction === v} onChange={() => setSanction(v)} className="mt-0.5 accent-[#0C5C6C]" />
+      <span><span className="block text-sm font-semibold text-[#1F2A2E]">{label}</span><span className="block text-xs text-gray-500">{aide}</span></span>
+    </label>
+  );
+
+  if (!signale) return <p className="text-xs text-gray-400">Personne signalée introuvable (conversation supprimée ?).</p>;
+  return (
+    <div className="border border-gray-200 rounded-2xl p-3 space-y-2.5">
+      <p className="text-sm font-bold text-[#1F2A2E]">Action sur le compte de {signale.nom}</p>
+      <div className="space-y-2">
+        {choix('avertissement', 'Alerter l’utilisateur', 'Message d’avertissement avec la règle enfreinte.')}
+        {choix('suspension', 'Suspendre son compte', 'Accès bloqué pendant la durée choisie, puis rétabli automatiquement.')}
+        {sanction === 'suspension' && (
+          <div className="pl-7">
+            <label htmlFor={`jours-${report.id}`} className="text-xs font-semibold text-gray-600 mr-2">Durée</label>
+            <select id={`jours-${report.id}`} value={jours} onChange={e => setJours(Number(e.target.value))}
+              className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white">
+              {[1, 3, 7, 15, 30, 90].map(j => <option key={j} value={j}>{j} jour{j > 1 ? 's' : ''}</option>)}
+            </select>
+          </div>
+        )}
+        {choix('blocage', 'Bloquer son compte', 'Blocage définitif (réactivable depuis la fiche du compte).')}
+        {choix('suppression', 'Supprimer son compte', 'Suppression définitive du compte et de ses données.')}
+      </div>
+      {sanction !== 'suppression' && (<>
+        <div>
+          <label htmlFor={`regle-${report.id}`} className="text-xs font-semibold text-gray-600 block mb-1">Règle enfreinte *</label>
+          <select id={`regle-${report.id}`} value={regle} onChange={e => setRegle(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white">
+            <option value="">Choisir…</option>
+            {REGLES_MODERATION.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+        <div>
+          <label htmlFor={`precisions-${report.id}`} className="text-xs font-semibold text-gray-600 block mb-1">
+            Précisions envoyées à la personne{regle === 'Autre (préciser)' ? ' *' : ' (facultatif)'}
+          </label>
+          <textarea id={`precisions-${report.id}`} value={precisions} onChange={e => setPrecisions(e.target.value)} rows={2}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+        </div>
+      </>)}
+      {erreur && <p className="text-xs text-red-600">{erreur}</p>}
+      <button type="button" onClick={appliquer} disabled={!pret || envoi}
+        className={`w-full py-2.5 rounded-xl disabled:opacity-40 text-white text-sm font-bold ${sanction === 'suppression' ? 'bg-[#B42318] hover:bg-[#912018]' : 'bg-[#0C5C6C] hover:bg-[#094F5D]'}`}>
+        {envoi ? 'Application…' : sanction === 'suppression' ? 'Supprimer le compte et marquer traité' : 'Appliquer, prévenir la personne et marquer traité'}
+      </button>
+    </div>
+  );
+}
+
 /** Liens : publication / profil signalé + profil de la personne qui signale. */
 function SigLiens({ sig, ctx, detail }: { sig: Signalement; ctx?: SigContexte; detail?: boolean }) {
   const lien = 'text-xs text-[#0C5C6C] hover:underline font-semibold';
@@ -409,6 +505,9 @@ export default function AdminPage() {
   const [convMessages, setConvMessages] = useState<ConvMessage[]>([]);
   const [convMessagesLoading, setConvMessagesLoading] = useState(false);
   const [convSaving, setConvSaving] = useState<string | null>(null);
+  const [convCtx, setConvCtx] = useState<Record<string, ConvContexte>>({});
+  // Utilisateurs : signalements validés par compte (filtre « Signalés »).
+  const [nbSignalements, setNbSignalements] = useState<Record<string, number>>({});
 
   // ── Admin check ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -487,6 +586,10 @@ export default function AdminPage() {
   // ── Utilisateurs ─────────────────────────────────────────────────────────────
   const loadUsers = useCallback(async () => {
     setUsersLoading(true);
+    apiFetch('/api/admin/moderation?type=comptes_signales')
+      .then(r => r.ok ? r.json() : { counts: {} })
+      .then((j: { counts?: Record<string, number> }) => setNbSignalements(j.counts ?? {}))
+      .catch(() => { /* compteurs indisponibles */ });
     try {
       const snap = await getDocs(collection(db, 'users'));
       const fireMap: Record<string, FireUser> = {};
@@ -631,9 +734,16 @@ export default function AdminPage() {
       await supabase.from('user_profiles').delete().eq('id', entry.profileTableId);
       setEntries(prev => prev.filter(e => e.profileTableId !== entry.profileTableId));
       setSelected(null);
-    } else {
-      if (!confirm('Supprimer ce compte définitivement ?')) return;
-      if (prompt('Tapez SUPPRIMER pour confirmer') !== 'SUPPRIMER') return;
+    } else if (await supprimerCompteUid(entry.uid)) {
+      setEntries(prev => prev.filter(e => e.uid !== entry.uid));
+      setSelected(null);
+    }
+  }
+
+  /** Suppression définitive d'un compte (double confirmation) — true si supprimé. */
+  async function supprimerCompteUid(uid: string): Promise<boolean> {
+      if (!confirm('Supprimer ce compte définitivement ?')) return false;
+      if (prompt('Tapez SUPPRIMER pour confirmer') !== 'SUPPRIMER') return false;
       try {
         // adminUid requis par l'edge function (sinon rejet immédiat) — et son
         // retour doit être vérifié : functions.invoke() ne lève pas d'exception
@@ -642,7 +752,7 @@ export default function AdminPage() {
         // disparaissait de l'admin (illusion de succès) alors que le compte
         // Firebase Auth + Supabase restait bien vivant.
         const { data, error } = await supabase.functions.invoke('delete-user', {
-          body: { uid: entry.uid, adminUid: user!.uid },
+          body: { uid, adminUid: user!.uid },
         });
         if (error) {
           // FunctionsHttpError expose la Response brute dans `.context` — son
@@ -656,11 +766,10 @@ export default function AdminPage() {
           throw new Error(detail);
         }
         if (!data?.success) throw new Error(data?.error ?? 'Échec de la suppression');
-        await deleteDoc(doc(db, 'users', entry.uid));
-        setEntries(prev => prev.filter(e => e.uid !== entry.uid));
-        setSelected(null);
-      } catch (e) { alert(`Erreur : ${e}`); }
-    }
+        await deleteDoc(doc(db, 'users', uid));
+        setEntries(prev => prev.filter(e => e.uid !== uid));
+        return true;
+      } catch (e) { alert(`Erreur : ${e}`); return false; }
   }
 
   // ── Dossiers ─────────────────────────────────────────────────────────────────
@@ -1281,7 +1390,13 @@ export default function AdminPage() {
     try {
       const { data } = await supabase.from('conversation_reports')
         .select('*').eq('status', status).order('created_at', { ascending: false });
-      setConvReports((data ?? []) as ConvReport[]);
+      const liste = (data ?? []) as ConvReport[];
+      setConvReports(liste);
+      if (liste.length) {
+        const r = await apiFetch(`/api/admin/moderation?type=conv_reports_contexte&ids=${liste.map(x => x.id).join(',')}`);
+        const j = await r.json().catch(() => ({})) as { items?: Record<string, ConvContexte> };
+        setConvCtx(prev => ({ ...prev, ...(j.items ?? {}) }));
+      }
     } finally { setConvLoading(false); }
   }, []);
 
@@ -1300,7 +1415,11 @@ export default function AdminPage() {
   async function handleConvReportAction(report: ConvReport, newStatus: 'reviewed' | 'dismissed') {
     setConvSaving(report.id);
     try {
-      await supabase.from('conversation_reports').update({ status: newStatus }).eq('id', report.id);
+      const r = await apiFetch('/api/admin/moderation', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'conv_report_sanction', id: report.id, sanction: 'aucune', statut: newStatus }),
+      });
+      if (!r.ok) { alert(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Action impossible.'); return; }
       setConvReports(prev => prev.filter(r => r.id !== report.id));
       if (selectedConvReport?.id === report.id) { setSelectedConvReport(null); setConvMessages([]); }
     } finally { setConvSaving(null); }
@@ -1366,8 +1485,9 @@ export default function AdminPage() {
   // test disparaissait de tous les filtres par métier).
   const filtered = entries.filter(e => {
     if (filter === 'admin') return !!e.isAdmin;
+    if (filter === 'signales' && !nbSignalements[e.uid]) return false;
     if (filter === 'en_attente' && e.statutPro !== 'en_attente') return false;
-    if (filter !== 'tous' && filter !== 'en_attente' && entryCategory(e) !== filter) return false;
+    if (filter !== 'tous' && filter !== 'en_attente' && filter !== 'signales' && entryCategory(e) !== filter) return false;
     if (search) {
       const q = search.toLowerCase();
       const name = `${e.firstName} ${e.lastName}`.toLowerCase();
@@ -1397,8 +1517,9 @@ export default function AdminPage() {
   })();
   const filteredAccounts = accounts.filter(e => {
     if (filter === 'admin') return !!e.isAdmin;
+    if (filter === 'signales' && !nbSignalements[e.uid]) return false;
     if (filter === 'en_attente' && e.statutPro !== 'en_attente') return false;
-    if (filter !== 'tous' && filter !== 'en_attente' && entryCategory(e) !== filter) return false;
+    if (filter !== 'tous' && filter !== 'en_attente' && filter !== 'signales' && entryCategory(e) !== filter) return false;
     if (search) {
       const q = search.toLowerCase();
       const name = `${e.firstName} ${e.lastName}`.toLowerCase();
@@ -1995,6 +2116,7 @@ export default function AdminPage() {
               {[
                 { key: 'tous',       label: 'Tous' },
                 { key: 'en_attente', label: '⏳ En attente' },
+                { key: 'signales',   label: `Signalés (${new Set(entries.filter(e => nbSignalements[e.uid]).map(e => e.uid)).size})` },
                 { key: 'admin',      label: 'Admins' },
               ].map(f => (
                 <button key={f.key} onClick={() => setFilter(f.key)}
@@ -2023,7 +2145,7 @@ export default function AdminPage() {
             ) : (
               <div className="flex flex-col gap-3">
                 {filteredAccounts.map(e => (
-                  <ProfileCard key={e.uid} entry={e} profileCount={e.profileCount} onClick={() => setSelected(e)} />
+                  <ProfileCard key={e.uid} entry={e} profileCount={e.profileCount} onClick={() => setSelected(e)} nbSignalements={nbSignalements[e.uid]} />
                 ))}
               </div>
             )}
@@ -2052,6 +2174,7 @@ export default function AdminPage() {
               {[
                 { key: 'tous',       label: 'Tous' },
                 { key: 'en_attente', label: '⏳ En attente' },
+                { key: 'signales',   label: `Signalés (${new Set(entries.filter(e => nbSignalements[e.uid]).map(e => e.uid)).size})` },
                 { key: 'admin',      label: 'Admins' },
               ].map(f => (
                 <button key={f.key} onClick={() => setFilter(f.key)}
@@ -2110,8 +2233,8 @@ export default function AdminPage() {
               </p>
             ) : (
               <div className="flex flex-col gap-3">
-                {filtered.map((e, i) => (
-                  <ProfileCard key={`${e.uid}-${e.profileTableId ?? 'p'}-${i}`} entry={e} onClick={() => setSelected(e)} />
+                {(filter === 'signales' ? [...filtered].sort((a, b) => (nbSignalements[b.uid] ?? 0) - (nbSignalements[a.uid] ?? 0)) : filtered).map((e, i) => (
+                  <ProfileCard key={`${e.uid}-${e.profileTableId ?? 'p'}-${i}`} entry={e} onClick={() => setSelected(e)} nbSignalements={nbSignalements[e.uid]} />
                 ))}
               </div>
             )}
@@ -2816,7 +2939,16 @@ export default function AdminPage() {
                           {report.details && (
                             <p className="text-xs text-gray-500 mt-1 line-clamp-1">{report.details}</p>
                           )}
-                          <p className="text-xs text-gray-400 mt-1 font-mono truncate">Conv: {report.conversation_id.slice(0, 16)}…</p>
+                          {convCtx[report.id] ? (
+                            <p className="text-xs text-gray-600 mt-1">
+                              Signalé par <span className="font-semibold">{convCtx[report.id].reporter.nom}</span>
+                              {convCtx[report.id].signale && <> · concerne <span className="font-semibold text-red-700">{convCtx[report.id].signale!.nom}</span>
+                                {convCtx[report.id].signale!.nb_valides > 0 && <span className="ml-1 text-[11px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">
+                                  {convCtx[report.id].signale!.nb_valides} signalement{convCtx[report.id].signale!.nb_valides > 1 ? 's' : ''} validé{convCtx[report.id].signale!.nb_valides > 1 ? 's' : ''}</span>}</>}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-gray-400 mt-1 font-mono truncate">Conv: {report.conversation_id.slice(0, 16)}…</p>
+                          )}
                           <p className="text-xs text-gray-400 mt-0.5">
                             {new Date(report.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </p>
@@ -2847,23 +2979,49 @@ export default function AdminPage() {
 
               {/* Panneau conversation */}
               {selectedConvReport && (
-                <div className="w-[380px] flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col max-h-[70vh]">
+                <div className="w-[440px] flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col max-h-[85vh] overflow-y-auto">
                   <div className="p-4 border-b border-gray-100">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-sm font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                        Messages de la conversation
+                        Conversation signalée
                       </span>
                       <button onClick={() => { setSelectedConvReport(null); setConvMessages([]); }}
                         className="ml-auto text-gray-400 hover:text-gray-600 text-lg">✕</button>
                     </div>
-                    <p className="text-xs text-gray-400 font-mono break-all">{selectedConvReport.conversation_id}</p>
+                    {(() => {
+                      const ctx = convCtx[selectedConvReport.id];
+                      const carte = (titre: string, p: PersonneSignalement, rouge?: boolean) => (
+                        <div className={`rounded-xl border px-3 py-2 ${rouge ? 'border-red-200 bg-red-50' : 'border-gray-100 bg-gray-50'}`}>
+                          <p className="text-[11px] text-gray-500">{titre}</p>
+                          <p className="text-sm font-semibold text-[#1F2A2E]">
+                            {p.nom}{p.profil ? <span className="text-xs font-normal text-gray-500"> · {CAT_LABELS[p.profil] ?? p.profil}</span> : null}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
+                            <Link href={`/profil/${p.uid}`} target="_blank" className="text-xs text-[#0C5C6C] hover:underline font-semibold">Voir le profil ↗</Link>
+                            <span className={`text-xs font-semibold ${p.nb_valides ? 'text-red-700' : 'text-gray-400'}`}>
+                              {p.nb_valides ? `${p.nb_valides} signalement${p.nb_valides > 1 ? 's' : ''} validé${p.nb_valides > 1 ? 's' : ''}` : 'Aucun signalement validé'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                      return ctx ? (
+                        <div className="space-y-2">
+                          {carte('Signalé par', ctx.reporter)}
+                          {ctx.signale ? carte('Personne signalée', ctx.signale, true) : <p className="text-xs text-gray-400">Personne signalée introuvable.</p>}
+                        </div>
+                      ) : <p className="text-xs text-gray-400 font-mono break-all">{selectedConvReport.conversation_id}</p>;
+                    })()}
+                    <div className="mt-2 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2">
+                      <p className="text-xs font-semibold text-amber-800">Motif : {selectedConvReport.reason}</p>
+                      {selectedConvReport.details && <p className="text-xs text-amber-900 mt-0.5 whitespace-pre-wrap">{selectedConvReport.details}</p>}
+                    </div>
                     <div className="flex gap-2 mt-3">
                       <button
                         onClick={() => handleConvReportAction(selectedConvReport, 'reviewed')}
                         disabled={convSaving === selectedConvReport.id || selectedConvReport.status !== 'pending'}
                         className="flex-1 py-1.5 bg-green-100 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-200 disabled:opacity-40 transition-colors"
                         style={{ fontFamily: 'Galey, sans-serif' }}>
-                        ✅ Marquer traité
+                        ✅ Traité sans action
                       </button>
                       <button
                         onClick={() => handleConvReportAction(selectedConvReport, 'dismissed')}
@@ -2876,7 +3034,10 @@ export default function AdminPage() {
                   </div>
 
                   {/* Messages */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                  <p className="px-4 pt-3 text-xs font-bold text-gray-500">
+                    Messages — en rouge, ceux de la personne signalée
+                  </p>
+                  <div className="p-4 pt-2 space-y-3 max-h-[40vh] overflow-y-auto">
                     {convMessagesLoading ? (
                       <div className="flex justify-center py-8">
                         <div className="w-6 h-6 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
@@ -2886,13 +3047,15 @@ export default function AdminPage() {
                     ) : (
                       convMessages.map(msg => {
                         const isReport = msg.sender_id === selectedConvReport.reported_by_uid;
+                        const auteurNom = isReport ? convCtx[selectedConvReport.id]?.reporter.nom : convCtx[selectedConvReport.id]?.signale?.nom;
                         const time = new Date(msg.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                         const date = new Date(msg.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
                         return (
                           <div key={msg.id} className={`flex ${isReport ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
-                              isReport ? 'bg-[#0C5C6C] text-white' : 'bg-gray-100 text-gray-800'
+                              isReport ? 'bg-[#0C5C6C] text-white' : 'bg-red-50 text-gray-800 border border-red-200'
                             }`}>
+                              {auteurNom && <p className={`text-[10px] font-semibold mb-0.5 ${isReport ? 'text-white/70' : 'text-red-700'}`}>{auteurNom}</p>}
                               {msg.msg_type === 'image' ? (
                                 <span className="text-xs opacity-75">📷 Image</span>
                               ) : msg.msg_type === 'location' ? (
@@ -2909,6 +3072,19 @@ export default function AdminPage() {
                       })
                     )}
                   </div>
+                  {selectedConvReport.status === 'pending' && (
+                    <div className="p-4 border-t border-gray-100">
+                      <DecisionConversation key={selectedConvReport.id} report={selectedConvReport}
+                        signale={convCtx[selectedConvReport.id]?.signale ?? null}
+                        onSupprimerCompte={supprimerCompteUid}
+                        onFait={resume => {
+                          const id = selectedConvReport.id;
+                          setConvReports(prev => prev.filter(r => r.id !== id));
+                          setSelectedConvReport(null); setConvMessages([]);
+                          alert(`Signalement traité : ${resume}.`);
+                        }} />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -3246,7 +3422,7 @@ export default function AdminPage() {
 
 // ─── ProfileCard ──────────────────────────────────────────────────────────────
 
-function ProfileCard({ entry, onClick, profileCount }: { entry: ProfileEntry; onClick: () => void; profileCount?: number }) {
+function ProfileCard({ entry, onClick, profileCount, nbSignalements }: { entry: ProfileEntry; onClick: () => void; profileCount?: number; nbSignalements?: number }) {
   const name = [entry.firstName, entry.lastName].filter(Boolean).join(' ') || 'Nom inconnu';
   const statutStyle = STATUT_STYLE[entry.statutPro] ?? STATUT_STYLE.actif;
   const isPro = !!entry.catPro;
@@ -3271,6 +3447,7 @@ function ProfileCard({ entry, onClick, profileCount }: { entry: ProfileEntry; on
         {entry.nameElevage && <p className="text-xs text-[#0C5C6C] truncate">{entry.nameElevage}</p>}
         <p className="text-xs text-gray-400 truncate">{entry.email}</p>
         <div className="flex gap-1.5 flex-wrap mt-1">
+          {!!nbSignalements && <Badge label={`${nbSignalements} signalement${nbSignalements > 1 ? 's' : ''} validé${nbSignalements > 1 ? 's' : ''}`} color="#dc2626" />}
           {entry.emailNonValide && <Badge label="E-mail non validé" color="#b45309" />}
           {entry.isSecondary && <Badge label="Secondaire" color="#7c3aed" />}
           {entry.isAdmin && <Badge label="Admin" color="#7c3aed" />}

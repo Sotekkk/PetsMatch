@@ -7,6 +7,35 @@ import { supabaseAdmin, requireAdmin } from '../_lib/guard';
 // aucune policy d'écriture, petfriendly_places n'est modifiable que par son
 // pro.
 
+type ProfilNom = { id: string; uid: string; profile_type: string; nom: string | null; firstname: string | null; lastname: string | null; is_main: boolean };
+const nomProfil = (p?: ProfilNom) => p ? ((p.profile_type !== 'particulier' && p.nom?.trim()) || `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim() || p.nom || '') : '';
+
+/** Signalements VALIDÉS par compte (pas ceux en attente ni rejetés) :
+ *  conversations signalées marquées traitées (l'autre participant), signalements
+ *  traités visant le compte, et signalements de ses contenus ayant abouti à
+ *  une sanction. Chaque signalement compte une fois. */
+async function signalementsValides(): Promise<Record<string, number>> {
+  const parUid: Record<string, Set<string>> = {};
+  const ajouter = (uid: string | null | undefined, cle: string) => { if (uid) (parUid[uid] ??= new Set()).add(cle); };
+  const [{ data: convs }, { data: sigs }, { data: sanctions }] = await Promise.all([
+    supabaseAdmin.from('conversation_reports').select('id, conversation_id, reported_by_uid').eq('status', 'reviewed'),
+    supabaseAdmin.from('signalements').select('id, target_id').eq('statut', 'traite').eq('target_type', 'user'),
+    supabaseAdmin.from('sanctions_moderation').select('uid, signalement_id').not('signalement_id', 'is', null),
+  ]);
+  const cr = (convs ?? []) as { id: string; conversation_id: string; reported_by_uid: string }[];
+  const convIds = [...new Set(cr.map(r => r.conversation_id))];
+  const { data: parts } = convIds.length
+    ? await supabaseAdmin.from('conversations').select('id, participants').in('id', convIds)
+    : { data: [] };
+  const partsDe = new Map(((parts ?? []) as { id: string; participants: string[] | null }[]).map(c => [c.id, c.participants ?? []]));
+  for (const r of cr) for (const u of partsDe.get(r.conversation_id) ?? []) if (u !== r.reported_by_uid) ajouter(u, `conv:${r.id}`);
+  for (const x of (sigs ?? []) as { id: string; target_id: string }[]) ajouter(x.target_id, `sig:${x.id}`);
+  for (const x of (sanctions ?? []) as { uid: string; signalement_id: string }[]) {
+    ajouter(x.uid, x.signalement_id.startsWith('conv:') ? x.signalement_id : `sig:${x.signalement_id}`);
+  }
+  return Object.fromEntries(Object.entries(parUid).map(([u, set]) => [u, set.size]));
+}
+
 // GET /api/admin/moderation?type=influenceurs&statut=pending|approved|refused
 //                          ?type=pubs
 //                          ?type=lieux
@@ -107,6 +136,43 @@ export async function GET(req: NextRequest) {
       enAttente: enAttente.data ?? [], aCorriger: aCorriger.data ?? [], publies: publies.data ?? [],
       corrections: corrections.data ?? [], revendications: revendications.data ?? [], journal: journal.data ?? [], doublons,
     });
+  }
+  if (type === 'comptes_signales') {
+    // Onglet Utilisateurs : nombre de signalements validés par compte.
+    return NextResponse.json({ counts: await signalementsValides() });
+  }
+  if (type === 'conv_reports_contexte') {
+    // Conversation signalée : qui signale (et avec quel profil), qui est
+    // signalé (l'autre participant) et ses signalements validés.
+    const ids = (searchParams.get('ids') ?? '').split(',').filter(Boolean).slice(0, 200);
+    if (ids.length === 0) return NextResponse.json({ items: {} });
+    const { data: reps } = await supabaseAdmin.from('conversation_reports').select('id, conversation_id, reported_by_uid').in('id', ids);
+    const liste = (reps ?? []) as { id: string; conversation_id: string; reported_by_uid: string }[];
+    const { data: convs } = await supabaseAdmin.from('conversations')
+      .select('id, participants, pro_profile_id, consumer_profile_id').in('id', [...new Set(liste.map(r => r.conversation_id))]);
+    type C = { id: string; participants: string[] | null; pro_profile_id: string | null; consumer_profile_id: string | null };
+    const cl = (convs ?? []) as C[];
+    const uids = new Set<string>();
+    liste.forEach(r => uids.add(r.reported_by_uid));
+    cl.forEach(c => (c.participants ?? []).forEach(u => uids.add(u)));
+    const [{ data: profils }, counts] = await Promise.all([
+      uids.size ? supabaseAdmin.from('user_profiles').select('id, uid, profile_type, nom, firstname, lastname, is_main').in('uid', [...uids]) : Promise.resolve({ data: [] }),
+      signalementsValides(),
+    ]);
+    const pl = (profils ?? []) as ProfilNom[];
+    // Profil de la conversation (pro / consommateur) s'il appartient à ce compte, sinon profil particulier / principal.
+    const personne = (uid: string, c?: C) => {
+      const pConv = pl.find(p => p.uid === uid && (p.id === c?.pro_profile_id || p.id === c?.consumer_profile_id));
+      const p = pConv ?? pl.find(p => p.uid === uid && p.profile_type === 'particulier') ?? pl.find(p => p.uid === uid && p.is_main) ?? pl.find(p => p.uid === uid);
+      return { uid, nom: nomProfil(p) || uid, profil: p ? (p.profile_type === 'particulier' ? 'Particulier' : p.profile_type) : null, nb_valides: counts[uid] ?? 0 };
+    };
+    const items: Record<string, unknown> = {};
+    for (const r of liste) {
+      const c = cl.find(x => x.id === r.conversation_id);
+      const autre = (c?.participants ?? []).find(u => u !== r.reported_by_uid);
+      items[r.id] = { reporter: personne(r.reported_by_uid, c), signale: autre ? personne(autre, c) : null };
+    }
+    return NextResponse.json({ items });
   }
   if (type === 'signalements_contexte') {
     // Qui signale + ce qui est signalé (extrait), lu avec la clé service : un
@@ -455,6 +521,61 @@ export async function POST(req: NextRequest) {
       // Contenu retiré et/ou avertissement, suspension (jours) ou blocage
       // (définitif) du compte de l'auteur, avec la règle enfreinte : la
       // personne est prévenue (notification) et la sanction est historisée.
+      // Conversation signalée : avertir, suspendre (jours) ou bloquer l'autre
+      // participant, avec la règle enfreinte (notification + historique), puis
+      // le signalement passe en « traité » (compté dans ses signalements validés).
+      // statut seul : 'reviewed' (traité sans sanction, ex. compte supprimé) ou 'dismissed'.
+      case 'conv_report_sanction': {
+        const rep = (await supabaseAdmin.from('conversation_reports').select('id, conversation_id, reported_by_uid').eq('id', id).maybeSingle()).data as
+          { id: string; conversation_id: string; reported_by_uid: string } | null;
+        if (!rep) return NextResponse.json({ error: 'Signalement introuvable' }, { status: 404 });
+        const sanction = String(body.sanction ?? 'aucune'); // aucune | avertissement | suspension | blocage
+        if (sanction === 'aucune') {
+          const statut = body.statut === 'dismissed' ? 'dismissed' : 'reviewed';
+          const r = await supabaseAdmin.from('conversation_reports').update({ status: statut }).eq('id', rep.id);
+          if (r.error) throw r.error;
+          return NextResponse.json({ ok: true, faits: [statut === 'dismissed' ? 'rejeté' : 'traité'] });
+        }
+        if (!['avertissement', 'suspension', 'blocage'].includes(sanction)) return NextResponse.json({ error: 'Sanction inconnue' }, { status: 400 });
+        const regle = String(body.regle ?? '').trim();
+        const precisions = String(body.precisions ?? '').trim();
+        const jours = Math.min(365, Math.max(1, Number(body.jours ?? 7)));
+        if (!regle) return NextResponse.json({ error: 'Indiquez la règle enfreinte.' }, { status: 400 });
+        const conv = (await supabaseAdmin.from('conversations').select('participants').eq('id', rep.conversation_id).maybeSingle()).data as { participants: string[] | null } | null;
+        const auteur = (conv?.participants ?? []).find(u => u !== rep.reported_by_uid);
+        if (!auteur) return NextResponse.json({ error: 'Personne signalée introuvable (conversation supprimée ?)' }, { status: 404 });
+        // Ses derniers messages dans la conversation, gardés dans l'historique.
+        const { data: msgs } = await supabaseAdmin.from('messages').select('text').eq('conversation_id', rep.conversation_id)
+          .eq('sender_id', auteur).order('created_at', { ascending: false }).limit(5);
+        const extrait = ((msgs ?? []) as { text: string | null }[]).map(m => m.text ?? '').filter(Boolean).reverse().join(' / ').slice(0, 300);
+        const finLe = sanction === 'suspension' ? new Date(Date.now() + jours * 864e5).toISOString() : null;
+        const ins = await supabaseAdmin.from('sanctions_moderation').insert({
+          uid: auteur, type: sanction, regle, precisions: precisions || null, fin_le: finLe,
+          signalement_id: `conv:${rep.id}`, contenu: { type: 'conversation', id: rep.conversation_id, extrait }, created_by: auth.uid,
+        });
+        if (ins.error) throw ins.error;
+        if (sanction !== 'avertissement') {
+          // Compte entier (tous les profils), comme le bouton « Suspendre » de l'admin.
+          const r = await supabaseAdmin.from('user_profiles').update({ statut_pro: 'suspendu' }).eq('uid', auteur);
+          if (r.error) throw r.error;
+        }
+        const motif = precisions ? `${regle} — ${precisions}` : regle;
+        const dateFin = finLe ? new Date(finLe).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+        await supabaseAdmin.from('notifications').insert({
+          uid: auteur, type: 'moderation', read: false,
+          title: sanction === 'blocage' ? 'Votre compte a été bloqué'
+            : sanction === 'suspension' ? `Votre compte est suspendu jusqu'au ${dateFin}` : 'Avertissement de la modération',
+          body: [
+            'Suite au signalement d’une conversation.',
+            `Règle enfreinte : ${motif}.`,
+            sanction === 'suspension' ? `Votre compte est suspendu jusqu'au ${dateFin}.` : '',
+            sanction === 'blocage' ? 'Votre compte est bloqué de façon définitive.' : '',
+          ].filter(Boolean).join(' '),
+        });
+        const r = await supabaseAdmin.from('conversation_reports').update({ status: 'reviewed' }).eq('id', rep.id);
+        if (r.error) throw r.error;
+        return NextResponse.json({ ok: true, faits: [sanction === 'avertissement' ? 'avertissement' : sanction === 'suspension' ? `suspension ${jours} j` : 'compte bloqué'] });
+      }
       case 'signalement_sanction': {
         const sig = (await supabaseAdmin.from('signalements').select('*').eq('id', id).maybeSingle()).data as
           { id: string; target_type: string; target_id: string } | null;
