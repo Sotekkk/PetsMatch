@@ -10,9 +10,13 @@ import CompteRenduRdvModal from '@/components/rdv/CompteRenduRdvModal';
 // (ostéo) par animal, avec l'état de chacun — fait / brouillon / à faire.
 // Miroir appli : choisirAnimalRdv (lib/utils/rdv_animaux.dart).
 
-export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier, proProfileId = null, clientNom }: {
+export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier, proProfileId = null, clientNom, onOuvrir, version }: {
   rdvId: string; animaux: AnimalRdv[]; metier: 'veterinaire' | 'sante';
   proProfileId?: string | null; clientNom?: string;
+  /** Dossier de la séance : ouvre la page (rédaction, séance) dans un panneau. */
+  onOuvrir?: (url: string, titre: string) => void;
+  /** Change à la fermeture du panneau → états rechargés. */
+  version?: number;
 }) {
   // Vétérinaire : compte rendu fait ouvert ici, sans quitter le RDV.
   const [crOuvert, setCrOuvert] = useState<AnimalRdv | null>(null);
@@ -49,7 +53,7 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier, proPro
       setEspeces(Object.fromEntries(((an ?? []) as { id: string; espece: string | null }[]).map(a => [String(a.id), a.espece ?? ''])));
     })();
     return () => { annule = true; };
-  }, [rdvId, ids, metier]);
+  }, [rdvId, ids, metier, version]);
 
   // Fait : la fiche, onglet Consultations, ce compte rendu ouvert ;
   // brouillon : ce brouillon repris ; à faire : un compte rendu vierge du RDV.
@@ -74,7 +78,10 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier, proPro
             {/* Chargement complet : formulaire du compte rendu toujours repris à zéro. */}
             {/* Fait (vert plein) : l'ouvrir — Brouillon (orange) : le reprendre — À faire (contour) : le rédiger. */}
             <a href={lien(a)}
-              onClick={e => { if (metier === 'veterinaire' && etat === 'fait' && crIds[a.id]) { e.preventDefault(); setCrOuvert(a); } }}
+              onClick={e => {
+                if (metier === 'veterinaire' && etat === 'fait' && crIds[a.id]) { e.preventDefault(); setCrOuvert(a); return; }
+                if (onOuvrir) { e.preventDefault(); onOuvrir(lien(a), `${metier === 'veterinaire' ? 'Compte rendu' : 'Séance'} — ${a.nom}`); }
+              }}
               className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-lg border"
               style={etat === 'fait' ? { background: '#2E7D32', borderColor: '#2E7D32', color: 'white' }
                 : etat === 'brouillon' ? { background: '#FFF4E0', borderColor: '#C77800', color: '#8A5A00' }

@@ -32,6 +32,7 @@ import { familleGarde, FAMILLES_GARDE } from '@/lib/compte-rendu-garde';
 import ApresAcceptationGardeModal from '@/components/garde/ApresAcceptationGardeModal';
 import PlanningCours from '@/components/education/PlanningCours';
 import PanneauPage from '@/components/PanneauPage';
+import DossierSoinsModal from '@/components/rdv/DossierSoinsModal';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -1918,6 +1919,8 @@ export default function MesRdvPage() {
   const [modalModifier, setModalModifier] = useState<Rdv | null>(null);
   const [modalAnnuler, setModalAnnuler]   = useState<Rdv | null>(null);
   const [historiqueRdv, setHistoriqueRdv] = useState<Rdv | null>(null);
+  // Vétérinaire / ostéo : dossier de la séance (toutes les étapes du RDV).
+  const [dossierSoins, setDossierSoins] = useState<Rdv | null>(null);
   // Vétérinaire : fin de consultation (envoi des documents, facture acquittée).
   const [finConsultation, setFinConsultation] = useState<Rdv | null>(null);
   const [docPro, setDocPro] = useState<{ rdv: Rdv; mode: 'compte_rendu' | 'contrat' } | null>(null);
@@ -2160,9 +2163,18 @@ export default function MesRdvPage() {
     setRdvs(prev => prev.filter(r => r.id !== rdvId));
   }
 
+  function facturerSoins(rdv: Rdv) {
+    if (catPro === 'sante') {
+      // Ostéo : facture depuis les séances du RDV et les tarifs.
+      (async () => { if (activeProfileId && await preparerFactureOsteo(rdv.id, activeProfileId)) router.push('/elevage/facturation'); })();
+      return;
+    }
+    window.location.assign(`/mes-patients/${encodeURIComponent(String(rdv.animal_id ?? animauxDetailRdv(rdv)[0].id))}?facturerRdv=${encodeURIComponent(rdv.id)}`);
+  }
+
   function openAnimalFiche(animalId: string) {
     // Éducateur : fiche en panneau, la liste des RDV reste en place.
-    if (catPro === 'education') { setPanneau({ url: `/mes-patients/${encodeURIComponent(animalId)}`, titre: 'Fiche animal' }); return; }
+    if (catPro === 'education' || catPro === 'veterinaire' || catPro === 'sante') { setPanneau({ url: `/mes-patients/${encodeURIComponent(animalId)}`, titre: 'Fiche animal' }); return; }
     router.push(`/mes-patients/${animalId}`);
   }
 
@@ -2382,22 +2394,15 @@ export default function MesRdvPage() {
                   onDelete={() => deleteRdv(rdv.id)}
                   onOpenAnimal={openAnimalFiche}
                   onModifier={() => setModalModifier(rdv)}
-                  onHistorique={catPro === 'veterinaire' && rdv.animal_id ? () => setHistoriqueRdv(rdv) : undefined}
-                  crParAnimal={activeTab !== 'demandes' && (catPro === 'veterinaire' || catPro === 'sante') ? catPro : undefined}
-                  onFinConsultation={activeTab !== 'demandes' && (catPro === 'veterinaire' || catPro === 'sante') ? () => setFinConsultation(rdv) : undefined}
-                  onFacturer={activeTab !== 'demandes' && (catPro === 'veterinaire' || catPro === 'sante') && !rdv.facture_id && rdv.statut !== 'annule'
-                    && (rdv.animal_id || animauxDetailRdv(rdv).length > 0)
-                    ? (catPro === 'sante'
-                      // Ostéo : facture depuis les séances du RDV et les tarifs.
-                      ? async () => { if (activeProfileId && await preparerFactureOsteo(rdv.id, activeProfileId)) router.push('/elevage/facturation'); }
-                      : () => window.location.assign(`/mes-patients/${encodeURIComponent(String(rdv.animal_id ?? animauxDetailRdv(rdv)[0].id))}?facturerRdv=${encodeURIComponent(rdv.id)}`))
-                    : undefined}
+                  // Véto / ostéo : compte rendu, facture, fin de consultation et
+                  // historique dans le dossier de la séance (un seul bouton).
                   onDossier={activeTab === 'demandes' ? undefined
+                    : (catPro === 'veterinaire' || catPro === 'sante') && rdv.statut !== 'annule' && rdv.statut !== 'refuse' ? () => setDossierSoins(rdv)
                     : catPro === 'photographe' ? () => setDossierRdv(rdv)
                     : catPro === 'toilettage' ? () => setDossierToilettage(rdv)
                     : catPro === 'education' ? () => setDossierEducation({ id: rdv.id, nomClient: rdv.clientName ?? rdv.client_nom_manuel ?? 'Client' }) : undefined}
                   // Éducateur : compte rendu / contrat dans le dossier de la séance.
-                  onDocumentPro={catPro !== 'education' && activeTab !== 'demandes' && rdv.statut !== 'annule' && rdv.statut !== 'refuse'
+                  onDocumentPro={!['education', 'veterinaire', 'sante'].includes(catPro) && activeTab !== 'demandes' && rdv.statut !== 'annule' && rdv.statut !== 'refuse'
                     ? mode => setDocPro({ rdv, mode }) : undefined}
                 />
                 </div>
@@ -2422,6 +2427,23 @@ export default function MesRdvPage() {
           onClose={() => setDossierEducation(null)} onChanged={() => fetchRdvs(true)}
           onOuvrirPage={(url, titre) => setPanneau({ url, titre })} version={versionDossier} />
       )}
+      {dossierSoins && (catPro === 'veterinaire' || catPro === 'sante') && (() => {
+        const det = animauxDetailRdv(dossierSoins);
+        const animaux: AnimalRdv[] = det.length > 0 ? det
+          : dossierSoins.animal_id ? [{ id: String(dossierSoins.animal_id), nom: dossierSoins.animalNom ?? 'Animal', motif: dossierSoins.motif ?? null }] : [];
+        return (
+          <DossierSoinsModal rdvId={dossierSoins.id} metier={catPro} dateHeure={dossierSoins.date_heure}
+            nomClient={dossierSoins.clientName ?? dossierSoins.client_nom_manuel ?? 'Client'} animaux={animaux}
+            proProfileId={activeProfileId || null} version={versionDossier}
+            onClose={() => setDossierSoins(null)}
+            onOuvrirPage={(url, titre) => setPanneau({ url, titre })}
+            onChargerDoc={mode => setDocPro({ rdv: dossierSoins, mode })}
+            onFacturer={!dossierSoins.facture_id && animaux.length > 0 ? () => facturerSoins(dossierSoins) : undefined}
+            onFin={() => setFinConsultation(dossierSoins)}
+            onHistorique={catPro === 'veterinaire' && dossierSoins.animal_id ? () => setHistoriqueRdv(dossierSoins) : undefined}
+            onFiche={openAnimalFiche} />
+        );
+      })()}
       {panneau && (
         <PanneauPage url={panneau.url} titre={panneau.titre}
           onClose={() => { setPanneau(null); setVersionDossier(v => v + 1); fetchRdvs(true); }} />
@@ -2429,12 +2451,12 @@ export default function MesRdvPage() {
       {finConsultation && (
         <FinConsultationModal rdvId={finConsultation.id} proProfileId={activeProfileId || null} clientNom={finConsultation.clientName}
           metier={catPro === 'sante' ? 'sante' : 'veterinaire'}
-          onClose={() => setFinConsultation(null)} onDone={() => { setFinConsultation(null); fetchRdvs(true); }} />
+          onClose={() => setFinConsultation(null)} onDone={() => { setFinConsultation(null); setVersionDossier(v => v + 1); fetchRdvs(true); }} />
       )}
       {docPro && (
         <DocumentProModal rdv={{ ...docPro.rdv, pro_profile_id: docPro.rdv.pro_profile_id ?? (activeProfileId || null) }} mode={docPro.mode}
           clientNom={docPro.rdv.clientName ?? docPro.rdv.client_nom_manuel ?? 'Client'} animalNom={docPro.rdv.animalNom ?? docPro.rdv.animal_nom_manuel ?? undefined}
-          proNom={proName} catPro={catPro} onClose={() => setDocPro(null)} onDone={() => { setDocPro(null); fetchRdvs(true); }} />
+          proNom={proName} catPro={catPro} onClose={() => setDocPro(null)} onDone={() => { setDocPro(null); setVersionDossier(v => v + 1); fetchRdvs(true); }} />
       )}
       {historiqueRdv?.animal_id && activeProfileId && (
         <HistoriquePatient animalId={String(historiqueRdv.animal_id)} animalNom={historiqueRdv.animalNom ?? 'Patient'}

@@ -41,7 +41,14 @@ export default function PanneauPage({ url, titre, onClose }: { url: string; titr
           )}
           {/* Page sans en-tête : SiteShell détecte l'iframe et prévient (MSG_PANNEAU_PRET). */}
           <iframe src={url} title={titre} className="w-full h-full border-0"
-            onLoad={() => setTimeout(() => setPret(true), 1500)} />
+            onLoad={e => {
+              // La page est revenue vers Gérer mes RDV (retour après une
+              // facture, un compte rendu…) : on referme le panneau.
+              try {
+                if (e.currentTarget.contentWindow?.location.pathname.startsWith('/mes-rdv')) { onClose(); return; }
+              } catch { /* autre origine */ }
+              setTimeout(() => setPret(true), 1500);
+            }} />
         </div>
       </div>
     </div>

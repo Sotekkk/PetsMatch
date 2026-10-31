@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { estDansPanneau, signalerPanneau, MSG_PANNEAU_PRET } from '@/lib/panneau';
+import { estDansPanneau, signalerPanneau, MSG_PANNEAU_PRET, MSG_PANNEAU_FERMER } from '@/lib/panneau';
 import Image from 'next/image';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
@@ -23,6 +23,11 @@ export default function SiteShell({ children }: { children: React.ReactNode }) {
     setPanneau(true);
     signalerPanneau(MSG_PANNEAU_PRET);
   }, []);
+  // En panneau, une page qui revient vers Gérer mes RDV (retour après une
+  // action) referme le panneau au lieu de s'y afficher.
+  useEffect(() => {
+    if (panneau && pathname.startsWith('/mes-rdv')) signalerPanneau(MSG_PANNEAU_FERMER);
+  }, [panneau, pathname]);
 
   if (bare) return <main className="flex-1">{children}</main>;
   if (panneau) return <ValidationGuard><main className="flex-1">{children}</main></ValidationGuard>;

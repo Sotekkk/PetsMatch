@@ -5323,6 +5323,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => HistoriquePatientPage(
                   animalId: animalId, animalNom: rdv['_animal_nom']?.toString() ?? 'Patient')))
               : null,
+          regrouperEnDossier: showProTools && const {'veterinaire', 'sante'}.contains(AgendaContexte.catPro)
+              && rdv['statut'] != 'annule' && rdv['statut'] != 'refuse',
           onDossier: AgendaContexte.catPro == 'photographe' && rdv['statut'] != 'demande' && rdv['statut'] != 'contre_proposition'
               ? () => showDossierSeance(context, rdv,
                   nomClient: rdv['_client_name']?.toString() ?? 'Client',
@@ -5423,6 +5425,9 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback? onFiche;
   /// Photographe : dossier de la séance (devis, contrat, galerie, facture).
   final VoidCallback? onDossier;
+  /// Vétérinaire / ostéo : compte rendu, contrat, facture, carnet, historique
+  /// et fin de séance regroupés dans un seul bouton « Dossier de la séance ».
+  final bool regrouperEnDossier;
   /// Vétérinaire : historique des consultations du patient.
   final VoidCallback? onHistorique;
   /// Tous les pros : mon compte rendu / mon contrat (photo ou PDF).
@@ -5451,6 +5456,7 @@ class _RdvCard extends StatelessWidget {
     this.onAlbum,
     this.onFiche,
     this.onDossier,
+    this.regrouperEnDossier = false,
     this.onHistorique,
     this.onDocumentPro,
   });
@@ -5460,6 +5466,81 @@ class _RdvCard extends StatelessWidget {
     decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
     child: Text(texte, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700, color: fg)),
   );
+
+  /// Dossier de la séance (vétérinaire / ostéo) : toutes les étapes du RDV.
+  Future<void> _dossierSoins(BuildContext context) async {
+    const teal = Color(0xFF0C5C6C);
+    final veto = onCompteRendu != null;
+    Widget etape(BuildContext ctx, int n, String titre, String? aide, List<(String, VoidCallback)> actions) => Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            CircleAvatar(radius: 12, backgroundColor: teal,
+                child: Text('$n', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white))),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700)),
+              if (aide != null) Padding(padding: const EdgeInsets.only(top: 2),
+                  child: Text(aide, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600))),
+              const SizedBox(height: 6),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final a in actions)
+                  OutlinedButton(
+                    onPressed: () { Navigator.pop(ctx); a.$2(); },
+                    style: OutlinedButton.styleFrom(foregroundColor: teal, side: const BorderSide(color: teal),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), visualDensity: VisualDensity.compact),
+                    child: Text(a.$1, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+              ]),
+            ])),
+          ]),
+        );
+    var n = 0;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Dossier de la séance', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 14),
+          if (onCompteRendu != null || onSuiviMorpho != null || onDocumentPro != null)
+            etape(ctx, ++n, veto ? 'Compte rendu et soins' : 'Séance (compte rendu)',
+                veto
+                    ? 'Avec PetsMatch : compte rendu, ordonnance, vaccins, traitements, produits. Avec votre document chargé, '
+                        'rédigez quand même avec PetsMatch pour inscrire les soins (le texte est facultatif) : c\'est votre document qui part au client.'
+                    : 'Avec PetsMatch : bilan, points travaillés, conseils. Ou chargez votre propre document.',
+                [
+                  if (onCompteRendu != null) ('Rédiger avec PetsMatch', onCompteRendu!),
+                  if (onSuiviMorpho != null) ('Rédiger avec PetsMatch', onSuiviMorpho!),
+                  if (onDocumentPro != null) ('Charger le mien (PDF / photo)', () => onDocumentPro!('compte_rendu')),
+                ]),
+          if (onContrat != null || onDocumentPro != null)
+            etape(ctx, ++n, 'Contrat', null, [
+              if (onContrat != null) ('Générer avec PetsMatch', onContrat!),
+              if (onDocumentPro != null) ('Charger le mien (PDF / photo)', () => onDocumentPro!('contrat')),
+            ]),
+          if (onFacturer != null) etape(ctx, ++n, 'Facture', null, [('Facturer', onFacturer!)]),
+          if (onCarnetSante != null || onHistorique != null)
+            etape(ctx, ++n, 'Dossier de l\'animal', null, [
+              if (onCarnetSante != null) ('Carnet de santé', onCarnetSante!),
+              if (onHistorique != null) ('Historique', onHistorique!),
+            ]),
+          if (onFinSeance != null)
+            SizedBox(width: double.infinity, child: ElevatedButton.icon(
+              onPressed: () { Navigator.pop(ctx); onFinSeance!(); },
+              icon: const Icon(Icons.send_outlined, size: 18),
+              label: const Text('Terminer la séance et envoyer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(backgroundColor: teal, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 13)),
+            ))
+          else if (veto)
+            Text('Fin de consultation (envoi du compte rendu, de l\'ordonnance et de la facture) : proposée en enregistrant le compte rendu.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+        ]),
+      )),
+    );
+  }
 
   /// Bouton « Compte rendu » / « Contrat » : un choix entre le document fait
   /// avec PetsMatch et le sien chargé (photo / PDF).
@@ -5782,7 +5863,7 @@ class _RdvCard extends StatelessWidget {
                   constraints: const BoxConstraints(),
                 ),
               ],
-              if (onCarnetSante != null) ...[
+              if (!regrouperEnDossier && (onCarnetSante != null)) ...[
                 const SizedBox(width: 6),
                 IconButton(
                   onPressed: onCarnetSante,
@@ -5793,7 +5874,7 @@ class _RdvCard extends StatelessWidget {
                 ),
               ],
               // Compte rendu : le rédiger avec PetsMatch ou charger le sien.
-              if (onCompteRendu != null || onSuiviMorpho != null || onDocumentPro != null) ...[
+              if (!regrouperEnDossier && (onCompteRendu != null || onSuiviMorpho != null || onDocumentPro != null)) ...[
                 const SizedBox(width: 6),
                 _menuDocument(
                   label: 'Compte rendu',
@@ -5805,7 +5886,7 @@ class _RdvCard extends StatelessWidget {
                   ],
                 ),
               ],
-              if (onFinSeance != null) ...[
+              if (!regrouperEnDossier && (onFinSeance != null)) ...[
                 const SizedBox(width: 6),
                 IconButton(
                   onPressed: onFinSeance,
@@ -5826,7 +5907,7 @@ class _RdvCard extends StatelessWidget {
                 ),
               ],
               // Contrat : le générer avec PetsMatch ou charger le sien.
-              if (onContrat != null || onDocumentPro != null) ...[
+              if (!regrouperEnDossier && (onContrat != null || onDocumentPro != null)) ...[
                 const SizedBox(width: 6),
                 _menuDocument(
                   label: 'Contrat',
@@ -5837,7 +5918,7 @@ class _RdvCard extends StatelessWidget {
                   ],
                 ),
               ],
-              if (onFacturer != null) ...[
+              if (!regrouperEnDossier && (onFacturer != null)) ...[
                 const SizedBox(width: 6),
                 IconButton(
                   onPressed: onFacturer,
@@ -5857,7 +5938,7 @@ class _RdvCard extends StatelessWidget {
                   constraints: const BoxConstraints(),
                 ),
               ],
-              if (onHistorique != null) ...[
+              if (!regrouperEnDossier && (onHistorique != null)) ...[
                 const SizedBox(width: 6),
                 IconButton(
                   onPressed: onHistorique,
@@ -5865,6 +5946,22 @@ class _RdvCard extends StatelessWidget {
                   tooltip: 'Historique du patient',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
+                ),
+              ],
+              if (regrouperEnDossier) ...[
+                const SizedBox(width: 6),
+                InkWell(
+                  onTap: () => _dossierSoins(context),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(color: const Color(0xFF0C5C6C), borderRadius: BorderRadius.circular(10)),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.folder_open_outlined, size: 15, color: Colors.white),
+                      SizedBox(width: 4),
+                      Text('Dossier de la séance', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+                    ]),
+                  ),
                 ),
               ],
               if (onDossier != null) ...[
