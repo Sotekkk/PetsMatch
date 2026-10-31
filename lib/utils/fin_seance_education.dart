@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne, facturePdfDepuisLigne;
 import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill;
@@ -287,8 +288,35 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
     if (pieces.isEmpty || !context.mounted) return;
     final c = await _client(rdv);
     if (!context.mounted) return;
-    await envoyerDocumentsParEmail(context, pieces: pieces, animalNom: animalNom, destinataireNom: clientNom,
+    final envoye = await envoyerDocumentsParEmail(context, pieces: pieces, animalNom: animalNom, destinataireNom: clientNom,
         emailParDefaut: (c['email'] ?? '').isNotEmpty ? c['email'] : null, animalId: rdv['animal_id']?.toString());
+    // La famille est prévenue dans l'appli à l'envoi (les comptes rendus d'un
+    // RDV ne notifient pas à l'enregistrement).
+    if (envoye) {
+      final proNom = User_Info.nameElevage.isNotEmpty
+          ? User_Info.nameElevage
+          : [User_Info.firstname, User_Info.lastname].where((x) => x.isNotEmpty && x != 'none').join(' ');
+      for (final s in seances.where((s) => coches['edu:${s['id']}'] == true)) {
+        final owner = s['owner_uid']?.toString();
+        final aid = s['animal_id']?.toString();
+        if (owner == null || aid == null) continue;
+        final bilan = s['type'] == 'bilan';
+        try {
+          final an = await supa.from('animaux').select('nom').eq('id', aid).maybeSingle();
+          final pp = await supa.from('animaux_proprietes').select('profile_id_proprio').eq('animal_id', aid)
+              .isFilter('date_fin', null).order('date_debut', ascending: false).limit(1).maybeSingle();
+          final nomA = an?['nom']?.toString() ?? 'votre animal';
+          await supa.from('notifications').insert({
+            'uid': owner, 'type': bilan ? 'education_bilan' : 'education_rapport',
+            'title': '${bilan ? 'Bilan comportemental' : 'Rapport de séance'} — $nomA',
+            'body': '${proNom.isEmpty ? 'Votre éducateur' : proNom} a envoyé ${bilan ? 'le bilan' : 'le compte rendu de la séance'} pour $nomA.',
+            if (pp?['profile_id_proprio'] != null) 'profile_id': pp!['profile_id_proprio'],
+            'data': {'animalId': aid, 'animalNom': nomA, 'url': '/mes-animaux/$aid?tab=education'},
+            'read': false,
+          });
+        } catch (_) {}
+      }
+    }
   } catch (e) {
     messenger.showSnackBar(SnackBar(content: Text('Impossible : $e', style: const TextStyle(fontFamily: 'Galey')),
         behavior: SnackBarBehavior.floating));

@@ -10,6 +10,31 @@ export interface SeanceEducation {
   id: string; animal_id: string | null; type: string | null; statut?: string | null; contenu: string | null;
   exercices_conseilles: string | null; bilan_motif: string | null; bilan_recommandation: string | null;
   bilan_nb_seances_estime: number | null; created_at: string; date_seance: string | null;
+  owner_uid?: string | null;
+}
+
+/** Fin de séance (« Terminer et envoyer ») : prévient la famille dans
+ *  l'appli des comptes rendus envoyés. Les comptes rendus rédigés depuis un
+ *  RDV ne notifient pas à l'enregistrement : tout part à la fin du RDV. */
+export async function notifierFamilleSeances(seances: SeanceEducation[], proNom: string) {
+  for (const s of seances) {
+    if (!s.owner_uid || !s.animal_id) continue;
+    const bilan = s.type === 'bilan';
+    const [{ data: an }, { data: pp }] = await Promise.all([
+      supabase.from('animaux').select('nom').eq('id', s.animal_id).maybeSingle(),
+      supabase.from('animaux_proprietes').select('profile_id_proprio').eq('animal_id', s.animal_id).is('date_fin', null)
+        .order('date_debut', { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    const nomA = (an as { nom?: string } | null)?.nom ?? 'votre animal';
+    await supabase.from('notifications').insert({
+      uid: s.owner_uid, type: bilan ? 'education_bilan' : 'education_rapport',
+      title: `${bilan ? 'Bilan comportemental' : 'Rapport de séance'} — ${nomA}`,
+      body: `${proNom || 'Votre éducateur'} a envoyé ${bilan ? 'le bilan' : 'le compte rendu de la séance'} pour ${nomA}.`,
+      ...(pp?.profile_id_proprio ? { profile_id: pp.profile_id_proprio } : {}),
+      data: { animalId: s.animal_id, animalNom: nomA, url: `/mes-animaux/${s.animal_id}?tab=education` },
+      read: false,
+    });
+  }
 }
 
 const STATUT_OBJECTIF: Record<string, string> = { a_travailler: 'à travailler', en_cours: 'en cours', acquis: 'acquis' };

@@ -732,8 +732,10 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           'media_snapshot': e['media'] ?? [],
         }).toList());
       }
-      // Seul un compte rendu finalisé est partagé avec la famille.
-      if (finalise && !etaitFinalise) {
+      // Seul un compte rendu finalisé est partagé avec la famille ; rattaché à
+      // un RDV, il part à la fin du RDV (dossier → Terminer et envoyer).
+      final lieAuRdv = (rdv?['id'] ?? existing?['rdv_id']) != null;
+      if (finalise && !etaitFinalise && !lieAuRdv) {
         await _notifyOwner(isBilan ? 'education_bilan' : 'education_rapport',
             isBilan ? 'Bilan comportemental — ${widget.animalNom}' : 'Rapport de séance — ${widget.animalNom}',
             '${_proNom.isNotEmpty ? _proNom : 'Votre éducateur'} a envoyé ${isBilan ? 'le bilan' : 'un rapport de séance'}'
@@ -745,7 +747,9 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             int.tryParse(nbCtrl.text.trim()),
             forfaitId == null ? null : _forfaits.firstWhere((f) => f['id'].toString() == forfaitId, orElse: () => {}));
       } else if (mounted) {
-        _snack(finalise ? 'Compte rendu envoyé à la famille.' : 'Brouillon enregistré.');
+        _snack(!finalise ? 'Brouillon enregistré.'
+            : lieAuRdv ? 'Compte rendu enregistré : il partira à la fin du RDV (Terminer et envoyer).'
+            : 'Compte rendu envoyé à la famille.');
       }
     } catch (e) {
       _snack('Erreur : $e', err: true);

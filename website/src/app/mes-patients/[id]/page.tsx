@@ -2377,7 +2377,9 @@ function PatientDetailPageInner() {
           .select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs, etapes_snapshot, nb_validations, validations').eq('animal_id', animalId).order('assigned_at', { ascending: false });
         if (attr) setAttribues(attr as EducAttribue[]);
       }
-      if (finalise) await notifierRapportEdu(isBilan);
+      // Rattaché à un RDV : rien n'est envoyé maintenant, tout part à la fin du
+      // RDV (dossier de la séance → Terminer et envoyer).
+      if (finalise && !seanceRdvId) await notifierRapportEdu(isBilan);
       if (!isBilan && imputerForfait && forfaitActif) await imputerSeanceForfait(forfaitActif);
       const { data } = await supabase.from('education_progression')
         .select('*').eq('animal_id', animalId).order('date_seance', { ascending: false });
@@ -2437,7 +2439,7 @@ function PatientDetailPageInner() {
         ...(finaliser ? { statut: 'finalise' } : {}),
       }).eq('id', editingRapportId);
       if (finaliser && avant?.statut === 'brouillon') {
-        await notifierRapportEdu(avant.type === 'bilan');
+        if (!(avant as { rdv_id?: string | null }).rdv_id) await notifierRapportEdu(avant.type === 'bilan');
         setRapports(prev => prev.map(r => r.id === editingRapportId ? { ...r, statut: 'finalise' } : r));
       }
       setRapports(prev => prev.map(r => r.id === editingRapportId
@@ -4030,7 +4032,7 @@ function PatientDetailPageInner() {
                                 onChange={() => setCrExos(v => on ? v.filter(x => x !== b.id) : [...v, b.id])} />
                               <span className="text-sm">
                                 <span className="font-semibold text-[#1F2A2E]">{b.titre}</span>
-                                {b.description && <span className="block text-xs text-gray-500 line-clamp-1">{b.description}</span>}
+                                {b.description && !richTextIsEmpty(b.description) && <span className="block text-xs text-gray-500 line-clamp-1">{richTextToPlain(b.description)}</span>}
                               </span>
                             </label>
                           );
@@ -4067,9 +4069,13 @@ function PatientDetailPageInner() {
                   <button onClick={() => soumettreRapport(true)} disabled={savingRapport || richTextIsEmpty(rapportContenu)}
                     className="flex-[2] text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
                     style={{ background: rapportType === 'bilan' ? '#EF6C00' : TEAL, fontFamily: 'Galey, sans-serif' }}>
-                    {savingRapport ? '…' : rapportType === 'bilan' ? 'Finaliser et envoyer le bilan' : 'Finaliser et envoyer'}
+                    {savingRapport ? '…' : seanceRdvId ? (rapportType === 'bilan' ? 'Enregistrer le bilan' : 'Enregistrer le compte rendu')
+                      : rapportType === 'bilan' ? 'Finaliser et envoyer le bilan' : 'Finaliser et envoyer'}
                   </button>
                 </div>
+                {seanceRdvId && (
+                  <p className="text-[11px] text-gray-500 text-center">Rien n&apos;est envoyé maintenant : tout part à la fin du RDV (dossier de la séance, « Terminer et envoyer »).</p>
+                )}
               </div>
             )}
             {editingRapportId && (

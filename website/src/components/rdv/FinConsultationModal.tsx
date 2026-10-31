@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { seancesDuRdv, pdfSeance, preparerFactureOsteo, type SeanceRdv } from '@/lib/seance-osteo';
 import { seanceToilettageDuRdv, pdfCompteRenduToilettage, type SeanceToilettagePdf } from '@/lib/toilettage-pdf';
 import { animauxDetailRdv } from '@/lib/rdv-animaux';
-import { seancesEducationDuRdv, pdfSeanceEducation, type SeanceEducation } from '@/lib/seance-education';
+import { seancesEducationDuRdv, pdfSeanceEducation, notifierFamilleSeances, type SeanceEducation } from '@/lib/seance-education';
 import { useAuth } from '@/lib/auth-context';
 import { maSignaturePro } from '@/lib/signature-pro';
 import { envoyerPiecesParEmail, pdfDepuisUrl } from '@/lib/transmission-document';
@@ -203,6 +203,8 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
           animalId: docs.animalIdPrincipal ?? docs.crs[0]?.animal_id ?? docs.seances?.find(s => s.animal_id)?.animal_id ?? null,
         });
         if (!ok) return;
+        // Éducateur : la famille est prévenue dans l'appli à l'envoi.
+        if (education) await notifierFamilleSeances(seancesEdu.filter(s => coches[`edu:${s.id}`]), userData?.nameElevage || praticien).catch(() => {});
       }
       onDone();
     } catch (e) {
