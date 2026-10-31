@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1821,6 +1822,9 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
                   const SizedBox(height: 2),
                   Wrap(spacing: 6, children: [
+                    if (DateTime.tryParse(ex['assigned_at']?.toString() ?? '') != null)
+                      _pill('Attribué le ${DateFormat('dd/MM/yyyy').format(DateTime.parse(ex['assigned_at'].toString()).toLocal())}',
+                          Colors.grey.shade500),
                     _pill(kEduExerciceStatutLabels[statut] ?? statut,
                         done ? const Color(0xFF6E9E57) : Colors.grey.shade500),
                     if ((ex['cadence']?.toString() ?? '').isNotEmpty)
@@ -2024,6 +2028,13 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                   const SizedBox(height: 6),
                   Text('${e.$1} : ${s[e.$2]}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, height: 1.35)),
                 ],
+              // Exercices attribués pendant cette séance (joints au compte rendu).
+              if (_exercices.any((x) => x['progression_id']?.toString() == s['id']?.toString())) ...[
+                const SizedBox(height: 6),
+                Text('Exercices attribués pendant la séance : '
+                    '${_exercices.where((x) => x['progression_id']?.toString() == s['id']?.toString()).map((x) => x['titre_snapshot']).join(', ')}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600, height: 1.35)),
+              ],
               if ((s['exercices_conseilles']?.toString() ?? '').isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Container(

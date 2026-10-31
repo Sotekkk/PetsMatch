@@ -144,6 +144,7 @@ interface EducAttribue {
   id: string; titre_snapshot: string; description_snapshot?: string | null;
   cadence: string | null; echeance: string | null; statut: string; rappels_actifs: boolean;
   etapes_snapshot?: { titre: string }[] | null; nb_validations?: number | null; validations?: string[] | null;
+  assigned_at?: string | null; progression_id?: string | null;
 }
 interface EducRetour {
   id: string; attribution_id: string; note: string | null;
@@ -1404,7 +1405,7 @@ function PatientDetailPageInner() {
         isFemelle ? supabase.from('gestations').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
         supabase.from('education_progression').select('*').eq('animal_id', animalId).order('date_seance', { ascending: false }),
         supabase.from('education_objectifs').select('id, libelle, categorie, statut, note, ordre').eq('animal_id', animalId).order('ordre').order('created_at'),
-        supabase.from('exercices_attribues').select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs, etapes_snapshot, nb_validations, validations').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
+        supabase.from('exercices_attribues').select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs, etapes_snapshot, nb_validations, validations, assigned_at, progression_id').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
         supabase.from('forfaits_souscrits').select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut').eq('animal_id', animalId).order('souscrit_le', { ascending: false }),
         supabase.from('alimentations').select('*').eq('animal_id', animalId).maybeSingle(),
         supabase.from('vermifuges').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
@@ -2374,7 +2375,7 @@ function PatientDetailPageInner() {
         if (exErr) await supabase.from('exercices_attribues').insert(lignesExos);
         // Visibles tout de suite dans Programme > Exercices.
         const { data: attr } = await supabase.from('exercices_attribues')
-          .select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs, etapes_snapshot, nb_validations, validations').eq('animal_id', animalId).order('assigned_at', { ascending: false });
+          .select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs, etapes_snapshot, nb_validations, validations, assigned_at, progression_id').eq('animal_id', animalId).order('assigned_at', { ascending: false });
         if (attr) setAttribues(attr as EducAttribue[]);
       }
       // Rattaché à un RDV : rien n'est envoyé maintenant, tout part à la fin du
@@ -2594,7 +2595,7 @@ function PatientDetailPageInner() {
       }
       setAttrPicker(null);
       const { data } = await supabase.from('exercices_attribues')
-        .select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs, etapes_snapshot, nb_validations, validations').eq('animal_id', animalId).order('assigned_at', { ascending: false });
+        .select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs, etapes_snapshot, nb_validations, validations, assigned_at, progression_id').eq('animal_id', animalId).order('assigned_at', { ascending: false });
       setAttribues((data ?? []) as EducAttribue[]);
     } finally {
       setSavingAttr(false);
@@ -3807,7 +3808,8 @@ function PatientDetailPageInner() {
                           {(() => {
                             const pr = progression(a);
                             return [
-                              pr.termine ? '✓ Terminé par la famille' : pr.total > 1
+                              a.assigned_at ? `Attribué le ${fmtDateShort(a.assigned_at)}` : '',
+                              pr.termine ? 'Terminé par la famille' : pr.total > 1
                                 ? (pr.etapes.length ? `Étape ${pr.faites}/${pr.total}` : `${pr.faites}/${pr.total} réussites`)
                                 : 'En attente',
                               a.cadence ?? '',
@@ -4154,6 +4156,11 @@ function PatientDetailPageInner() {
                     {([['Comportements observés', r.comportements], ['Difficultés', r.difficultes], ['Prochaine étape', r.prochaine_etape]] as const).map(([l, v]) => v ? (
                       <p key={l} className="text-xs text-gray-700 mt-1">{l} : {v}</p>
                     ) : null)}
+                    {attribues.some(a => a.progression_id === r.id) && (
+                      <p className="text-xs font-semibold text-gray-700 mt-1">
+                        Exercices attribués pendant la séance : {attribues.filter(a => a.progression_id === r.id).map(a => a.titre_snapshot).join(', ')}
+                      </p>
+                    )}
                     {r.exercices_conseilles && (
                       <div className="mt-2 bg-[#EEF5EA] rounded-lg px-2.5 py-1.5">
                         <p className="text-xs font-semibold text-[#4A7A32] mb-0.5">Recommandations / travail à la maison</p>
