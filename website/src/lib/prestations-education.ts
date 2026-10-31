@@ -77,3 +77,34 @@ export function lignesTarifsPublics(prestations: PrestationEducation[], tarifs: 
     })),
   ];
 }
+
+/** Tarif d'une séance à facturer (sans forfait) : le prix figé à la
+ *  réservation, sinon celui du cours du catalogue (par id, sinon par nom) +
+ *  le supplément à domicile si la séance a lieu chez le client. */
+export async function tarifSeanceRdv(rdv: {
+  prix_calcule?: number | null; prestation_id?: string | null; motif?: string | null;
+  lieu_lat?: number | null; pro_uid?: string | null; pro_profile_id?: string | null;
+}, prestationId?: string | null): Promise<number> {
+  if (!prestationId && rdv.prix_calcule != null) return Number(rdv.prix_calcule);
+  const pid = prestationId ?? rdv.prestation_id;
+  type Cours = { prix: number | null; lieu_lat: number | null };
+  let p: Cours | null = null;
+  if (pid) {
+    const { data } = await supabase.from('prestations_education').select('prix, lieu_lat').eq('id', pid).maybeSingle();
+    p = data as Cours | null;
+  } else if (rdv.motif?.trim() && rdv.pro_uid) {
+    let q = supabase.from('prestations_education').select('prix, lieu_lat').eq('pro_uid', rdv.pro_uid).eq('actif', true).eq('nom', rdv.motif.trim());
+    if (rdv.pro_profile_id) q = q.eq('pro_profile_id', rdv.pro_profile_id);
+    const { data } = await q.limit(1).maybeSingle();
+    p = data as Cours | null;
+  }
+  if (!p?.prix) return 0;
+  // À domicile : lieu du RDV = adresse du client (pas le lieu propre du cours).
+  const domicile = rdv.lieu_lat != null && p.lieu_lat !== rdv.lieu_lat;
+  let sup = 0;
+  if (domicile && rdv.pro_profile_id) {
+    const { data: pr } = await supabase.from('user_profiles').select('tarifs_education').eq('id', rdv.pro_profile_id).maybeSingle();
+    sup = supplementDomicile((pr as { tarifs_education?: Record<string, number> } | null)?.tarifs_education);
+  }
+  return Number(p.prix) + sup;
+}

@@ -18,6 +18,7 @@ import { animauxDetailRdv } from '@/lib/rdv-animaux';
 import { useEducationPlan } from '@/lib/use-plan';
 import { contratEducationAnimal, creerContratEducation, STATUT_CONTRAT, type ContratEducation } from '@/lib/contrat-education';
 import { annulerDecompteForfait, COLS_FORFAIT_SOUSCRIT, decompterSeanceForfait, estReparti, forfaitCouvre, libelleCompteurs, libelleTypeSeances, seancesRestantes, typeSeanceRdv, type ForfaitActif } from '@/lib/forfait-education';
+import { tarifSeanceRdv } from '@/lib/prestations-education';
 
 const TEAL = '#0C5C6C';
 const AMBRE = '#D97706';
@@ -29,6 +30,7 @@ interface RdvRow {
   animal_id: string | null; animal_nom_manuel?: string | null; client_uid: string | null; client_profile_id: string | null;
   client_nom_manuel?: string | null; client_email_manuel?: string | null; client_telephone_manuel?: string | null;
   pro_profile_id?: string | null; prix_calcule?: number | null; animaux_detail?: unknown;
+  pro_uid?: string | null; lieu_lat?: number | null;
   prestation_id?: string | null; forfait_souscrit_id?: string | null;
 }
 
@@ -202,8 +204,14 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     }
   }
 
-  function facturer() {
+  async function facturer() {
     if (!r) return;
+    // Sans forfait : tarif du cours (prix de la réservation, sinon catalogue +
+    // supplément à domicile), une ligne par animal.
+    const prixAnimaux = detail.length > 0
+      ? await Promise.all(detail.map(a => a.prix != null ? Promise.resolve(Number(a.prix)) : tarifSeanceRdv(r, (a as { prestation_id?: string | null }).prestation_id ?? null)))
+      : [];
+    const prixSeance = detail.length > 0 ? 0 : await tarifSeanceRdv(r);
     try {
       sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
         nomClient: coord.nom || nomClient, prenomClient: coord.prenom || undefined, emailClient: coord.email || undefined, telClient: coord.tel || undefined,
@@ -212,9 +220,9 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
         retour,
         lignes: detail.length > 0
           ? detail.map(a => ({ description: [a.motif?.trim() || 'Séance d’éducation', a.nom].filter(Boolean).join(' — ') + ` — ${debut.toLocaleDateString('fr-FR')}`,
-              quantite: 1, prixUnitaire: 0, prixTTC: Number(a.prix ?? 0), tva: 20 }))
+              quantite: 1, prixUnitaire: 0, prixTTC: prixAnimaux[detail.indexOf(a)] ?? 0, tva: 20 }))
           : [{ description: [r.motif?.trim() || 'Séance d’éducation', animalNom].filter(Boolean).join(' — ') + ` — ${debut.toLocaleDateString('fr-FR')}`,
-          quantite: 1, prixUnitaire: 0, prixTTC: Number(r.prix_calcule ?? 0), tva: 20 }],
+          quantite: 1, prixUnitaire: 0, prixTTC: prixSeance, tva: 20 }],
       }));
     } catch { /* facture vierge */ }
     ouvrir('/elevage/facturation', 'Facture de la séance');

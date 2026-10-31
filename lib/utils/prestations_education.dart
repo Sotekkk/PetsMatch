@@ -63,3 +63,37 @@ List<({String label, String prix})> lignesTarifsPublics(List<Map<String, dynamic
           ),
   ];
 }
+
+/// Tarif d'une séance à facturer (sans forfait) : le prix figé à la
+/// réservation, sinon celui du cours du catalogue (par id, sinon par nom) +
+/// le supplément à domicile si la séance a lieu chez le client.
+Future<double> tarifSeanceRdv(Map<String, dynamic> rdv, {String? prestationId}) async {
+  if (prestationId == null && rdv['prix_calcule'] != null) return (rdv['prix_calcule'] as num).toDouble();
+  final supa = Supabase.instance.client;
+  final pid = prestationId ?? rdv['prestation_id']?.toString();
+  Map<String, dynamic>? p;
+  try {
+    if (pid != null && pid.isNotEmpty) {
+      p = await supa.from('prestations_education').select('prix, lieu_lat').eq('id', pid).maybeSingle();
+    } else if ((rdv['motif']?.toString().trim() ?? '').isNotEmpty && rdv['pro_uid'] != null) {
+      var q = supa.from('prestations_education').select('prix, lieu_lat')
+          .eq('pro_uid', rdv['pro_uid']).eq('actif', true).eq('nom', rdv['motif'].toString().trim());
+      final ppid = rdv['pro_profile_id']?.toString() ?? '';
+      if (ppid.isNotEmpty) q = q.eq('pro_profile_id', ppid);
+      p = await q.limit(1).maybeSingle();
+    }
+  } catch (_) {}
+  final prix = (p?['prix'] as num?)?.toDouble() ?? 0;
+  if (prix <= 0) return 0;
+  // À domicile : lieu du RDV = adresse du client (pas le lieu propre du cours).
+  final domicile = rdv['lieu_lat'] != null && (p?['lieu_lat'] as num?)?.toDouble() != (rdv['lieu_lat'] as num?)?.toDouble();
+  var sup = 0.0;
+  final ppid = rdv['pro_profile_id']?.toString() ?? '';
+  if (domicile && ppid.isNotEmpty) {
+    try {
+      final pr = await supa.from('user_profiles').select('tarifs_education').eq('id', ppid).maybeSingle();
+      sup = supplementDomicile(pr?['tarifs_education']);
+    } catch (_) {}
+  }
+  return prix + sup;
+}

@@ -39,7 +39,7 @@ import { phraseChampsARemplir, erreursDatesSante } from '@/lib/controle-dates';
 import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
 import { uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
 import { allerOuFermer } from '@/lib/panneau';
-import { COLS_FORFAIT_SOUSCRIT, TYPES_SEANCES, libelleCompteurs, libelleTypeSeances, preparerFactureForfait, type TypeSeances } from '@/lib/forfait-education';
+import { COLS_FORFAIT_SOUSCRIT, TYPES_SEANCES, coordClientForfait, libelleCompteurs, libelleTypeSeances, preparerFactureForfait, type TypeSeances } from '@/lib/forfait-education';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -2690,10 +2690,11 @@ function PatientDetailPageInner() {
       const { data: pp } = await supabase.from('animaux_proprietes').select('profile_id_proprio').eq('animal_id', animalId)
         .is('date_fin', null).order('date_debut', { ascending: false }).limit(1).maybeSingle();
       const retourRdv = searchParams.get('retourRdv');
+      const client = await coordClientForfait(user.uid, animalId, retourRdv,
+        { prenom: owner?.firstname ?? '', nom: owner?.lastname ?? '', email: owner?.email ?? '' });
       preparerFactureForfait({
         nomForfait: nom.trim(), nbSeances: nb || 1, prix, animalId, animalNom: animal?.nom ?? 'Animal',
-        clientUid: ownerUid, clientProfileId: pp?.profile_id_proprio ?? null,
-        prenom: owner?.firstname ?? '', nom: owner?.lastname ?? '', email: owner?.email ?? '',
+        clientUid: ownerUid, clientProfileId: pp?.profile_id_proprio ?? null, client,
         retour: retourRdv ? retourDossierEducation(retourRdv) : `/mes-patients/${encodeURIComponent(animalId)}?tab=Programme`,
       });
       router.push('/elevage/facturation');

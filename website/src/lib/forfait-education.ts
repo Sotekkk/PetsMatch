@@ -108,14 +108,41 @@ export async function annulerDecompteForfait(rdvId: string) {
   await supabase.from('rdv').update({ forfait_souscrit_id: null, forfait_type_decompte: null }).eq('id', rdvId);
 }
 
+export interface CoordClient { prenom: string; nom: string; email: string; tel: string; rue: string; cp: string; ville: string }
+
+/** Coordonnées du client pour la facture du forfait : celles du RDV (le RDV
+ *  du dossier, sinon le dernier RDV de l'animal chez ce pro), comme la facture
+ *  d'une séance (pm_contact_client_rdv) ; repli sur le propriétaire connu. */
+export async function coordClientForfait(proUid: string, animalId: string, rdvId?: string | null,
+  repli: Partial<CoordClient> = {}): Promise<CoordClient> {
+  let id = rdvId ?? null;
+  let manuel: { client_nom_manuel?: string | null; client_email_manuel?: string | null; client_telephone_manuel?: string | null } = {};
+  if (!id) {
+    const { data } = await supabase.from('rdv').select('id, client_nom_manuel, client_email_manuel, client_telephone_manuel')
+      .eq('pro_uid', proUid).eq('animal_id', animalId).order('date_heure', { ascending: false }).limit(1).maybeSingle();
+    id = (data as { id?: string } | null)?.id ?? null;
+    manuel = (data ?? {}) as typeof manuel;
+  }
+  const { data: cc } = id ? await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: id }) : { data: null };
+  const c = (cc ?? {}) as Record<string, string | null>;
+  const v = (...l: (string | null | undefined)[]) => l.find(x => x?.trim())?.trim() ?? '';
+  return {
+    prenom: v(c.prenom, repli.prenom), nom: v(c.nom, manuel.client_nom_manuel, repli.nom),
+    email: v(c.email, manuel.client_email_manuel, repli.email), tel: v(c.telephone, manuel.client_telephone_manuel, repli.tel),
+    rue: v(c.rue, repli.rue), cp: v(c.code_postal, repli.cp), ville: v(c.ville, repli.ville),
+  };
+}
+
 /** Facture du forfait (payé d'avance) : pré-remplit /elevage/facturation. */
 export function preparerFactureForfait(o: {
   nomForfait: string; nbSeances: number; prix: number; animalId: string; animalNom: string;
-  clientUid?: string | null; clientProfileId?: string | null; prenom?: string; nom?: string; email?: string; retour?: string;
+  clientUid?: string | null; clientProfileId?: string | null; client: CoordClient; retour?: string;
 }) {
   try {
     sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
-      prenomClient: o.prenom || undefined, nomClient: o.nom || 'Client', emailClient: o.email || undefined,
+      prenomClient: o.client.prenom || undefined, nomClient: o.client.nom || 'Client', emailClient: o.client.email || undefined,
+      telClient: o.client.tel || undefined, rueClient: o.client.rue || undefined, cpClient: o.client.cp || undefined,
+      villeClient: o.client.ville || undefined,
       sourceAnimalId: o.animalId, clientUid: o.clientUid ?? undefined, clientProfileId: o.clientProfileId ?? undefined,
       notes: `Forfait payé d'avance — ${o.animalNom}`,
       ...(o.retour ? { retour: o.retour } : {}),

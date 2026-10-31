@@ -21,7 +21,7 @@ import 'package:PetsMatch/widgets/animal/pro_animal_entete.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
 import 'package:PetsMatch/utils/document_pro.dart' show showDocumentProSheet;
 import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv, choisirAnimalRdv;
-import 'package:PetsMatch/utils/fin_seance_education.dart' show devisDepuisRdv, factureDepuisRdv, finSeanceEducation;
+import 'package:PetsMatch/utils/fin_seance_education.dart' show devisDepuisRdv, factureDepuisRdv, finSeanceEducation, clientDuRdv;
 
 /// Fiche éducative (éducateur / comportementaliste) — vue métier unique de
 /// l'animal : en-tête commun (identité + propriétaire), onglets Synthèse ·
@@ -1786,8 +1786,19 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
       await _load();
       // Payé d'avance : facture du forfait préparée.
       if (prix != null && prix > 0 && mounted) {
+        // Coordonnées du client : RDV du dossier, sinon dernier RDV de l'animal chez moi.
+        Map<String, dynamic>? rdvClient = _rdvDossier;
+        if (rdvClient == null && proUid != null) {
+          rdvClient = await _supa.from('rdv').select().eq('pro_uid', proUid).eq('animal_id', widget.animalId)
+              .order('date_heure', ascending: false).limit(1).maybeSingle();
+        }
+        final c = rdvClient != null ? await clientDuRdv(rdvClient) : <String, String>{};
+        String v(String k, [String repli = '']) => (c[k] ?? '').isNotEmpty ? c[k]! : repli;
+        if (!mounted) return;
         await Navigator.push(context, MaterialPageRoute(builder: (_) => CreerFacturePage(
-          clientNom: widget.ownerName,
+          clientPrenom: v('prenom'), clientNom: v('nom', widget.ownerName),
+          clientEmail: v('email'), clientTel: v('tel'),
+          clientRue: v('rue'), clientCp: v('cp'), clientVille: v('ville'),
           lignesPrefill: [FacturePrefillLigne(
             designation: 'Forfait ${nomCtrl.text.trim()} ($nb séance${nb > 1 ? 's' : ''}) — ${widget.animalNom}',
             description: 'Forfait payé d\'avance', prixTTC: prix,

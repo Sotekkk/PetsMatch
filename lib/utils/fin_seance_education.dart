@@ -9,6 +9,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/prestations_education.dart' show tarifSeanceRdv;
 
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne, facturePdfDepuisLigne;
 import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill;
@@ -25,6 +26,10 @@ const _statutObjectif = {'a_travailler': 'à travailler', 'en_cours': 'en cours'
 String _v(dynamic x) => (x ?? '').toString().trim();
 
 /// Coordonnées du client d'un RDV (compte : réservées au pro du RDV ; sinon saisies).
+/// Coordonnées du client d'un RDV (pm_contact_client_rdv, repli sur la saisie
+/// manuelle) : facture / devis de la séance, facture d'un forfait.
+Future<Map<String, String>> clientDuRdv(Map<String, dynamic> rdv) => _client(rdv);
+
 Future<Map<String, String>> _client(Map<String, dynamic> rdv) async {
   Map? cc;
   try { cc = await Supabase.instance.client.rpc('pm_contact_client_rdv', params: {'p_rdv_id': rdv['id'].toString()}) as Map?; } catch (_) {}
@@ -65,6 +70,14 @@ Future<void> factureDepuisRdv(BuildContext context, Map<String, dynamic> rdv, {S
   final d = DateTime.tryParse(_v(rdv['date_heure']))?.toLocal();
   final seanceDu = d == null ? '' : 'Séance du ${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   final detail = animauxDetailRdv(rdv);
+  // Sans forfait : tarif du cours (prix de la réservation, sinon catalogue +
+  // supplément à domicile), une ligne par animal.
+  final prixAnimaux = [
+    for (final a in detail)
+      (a['prix'] as num?)?.toDouble() ?? await tarifSeanceRdv(rdv, prestationId: a['prestation_id']?.toString()),
+  ];
+  final prixSeance = detail.isEmpty ? await tarifSeanceRdv(rdv) : 0.0;
+  if (!context.mounted) return;
   await Navigator.push(context, MaterialPageRoute(builder: (_) => CreerFacturePage(
     clientPrenom: c['prenom'], clientNom: c['nom'], clientEmail: c['email'], clientTel: c['tel'],
     clientRue: c['rue'], clientCp: c['cp'], clientVille: c['ville'],
@@ -72,12 +85,12 @@ Future<void> factureDepuisRdv(BuildContext context, Map<String, dynamic> rdv, {S
     lignesPrefill: detail.isNotEmpty
         ? [for (final a in detail) FacturePrefillLigne(
             designation: [_v(a['motif']).isEmpty ? 'Séance d’éducation' : _v(a['motif']), _v(a['nom'])].where((x) => x.isNotEmpty).join(' — '),
-            description: seanceDu, prixTTC: (a['prix'] as num?)?.toDouble() ?? 0,
+            description: seanceDu, prixTTC: prixAnimaux[detail.indexOf(a)],
           )]
         : [FacturePrefillLigne(
       designation: [_v(rdv['motif']).isEmpty ? 'Séance d’éducation' : _v(rdv['motif']), animalNom].where((x) => x.isNotEmpty).join(' — '),
       description: seanceDu,
-      prixTTC: (rdv['prix_calcule'] as num?)?.toDouble() ?? 0,
+      prixTTC: prixSeance,
     )],
     sourceRdvId: rdv['id'].toString(), sourceAnimalId: rdv['animal_id']?.toString(),
     clientUid: rdv['client_uid']?.toString(), clientProfileId: rdv['client_profile_id']?.toString(),
