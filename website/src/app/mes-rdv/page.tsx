@@ -31,6 +31,7 @@ import { functions } from '@/lib/firebase';
 import { familleGarde, FAMILLES_GARDE } from '@/lib/compte-rendu-garde';
 import ApresAcceptationGardeModal from '@/components/garde/ApresAcceptationGardeModal';
 import PlanningCours from '@/components/education/PlanningCours';
+import PanneauPage from '@/components/PanneauPage';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -1968,6 +1969,10 @@ export default function MesRdvPage() {
 
   const ongletInitialFait = useRef(false);
   const [rdvFocus, setRdvFocus] = useState<string | null>(null);
+  // Page ouverte par-dessus Gérer mes RDV (fiche animal, devis, facture) ; à sa
+  // fermeture, le dossier ouvert et la liste se rechargent sans bouger.
+  const [panneau, setPanneau] = useState<{ url: string; titre: string } | null>(null);
+  const [versionDossier, setVersionDossier] = useState(0);
   useEffect(() => {
     if (ongletInitialFait.current || !catPro) return;
     ongletInitialFait.current = true;
@@ -2142,7 +2147,7 @@ export default function MesRdvPage() {
         }
       }
     } catch { /* ignore */ }
-    fetchRdvs();
+    fetchRdvs(true);
   }
 
   async function deleteRdv(rdvId: string) {
@@ -2156,6 +2161,8 @@ export default function MesRdvPage() {
   }
 
   function openAnimalFiche(animalId: string) {
+    // Éducateur : fiche en panneau, la liste des RDV reste en place.
+    if (catPro === 'education') { setPanneau({ url: `/mes-patients/${encodeURIComponent(animalId)}`, titre: 'Fiche animal' }); return; }
     router.push(`/mes-patients/${animalId}`);
   }
 
@@ -2402,21 +2409,26 @@ export default function MesRdvPage() {
       {dossierRdv && (
         <DossierSeanceModal rdv={dossierRdv as unknown as RdvDossier} nomClient={dossierRdv.clientName ?? dossierRdv.client_nom_manuel ?? 'Client'}
           prestation={dossierRdv.motif?.trim() || 'Séance photo'} animal={dossierRdv.animal_nom_manuel ?? dossierRdv.animalNom}
-          depuisAgenda onClose={() => setDossierRdv(null)} onChanged={() => fetchRdvs()} />
+          depuisAgenda onClose={() => setDossierRdv(null)} onChanged={() => fetchRdvs(true)} />
       )}
       {dossierToilettage && (
         <DossierToilettageModal rdvId={dossierToilettage.id} nomClient={dossierToilettage.clientName ?? dossierToilettage.client_nom_manuel ?? 'Client'}
-          animal={dossierToilettage.animalNom} onClose={() => setDossierToilettage(null)} onChanged={() => fetchRdvs()} />
+          animal={dossierToilettage.animalNom} onClose={() => setDossierToilettage(null)} onChanged={() => fetchRdvs(true)} />
       )}
       {dossierEducation && (
         <DossierEducationModal rdvId={dossierEducation.id}
           nomClient={dossierEducation.nomClient || (rdvs.find(x => x.id === dossierEducation.id)?.clientName ?? 'Client')}
-          onClose={() => setDossierEducation(null)} onChanged={() => fetchRdvs(true)} />
+          onClose={() => setDossierEducation(null)} onChanged={() => fetchRdvs(true)}
+          onOuvrirPage={(url, titre) => setPanneau({ url, titre })} version={versionDossier} />
+      )}
+      {panneau && (
+        <PanneauPage url={panneau.url} titre={panneau.titre}
+          onClose={() => { setPanneau(null); setVersionDossier(v => v + 1); fetchRdvs(true); }} />
       )}
       {finConsultation && (
         <FinConsultationModal rdvId={finConsultation.id} proProfileId={activeProfileId || null} clientNom={finConsultation.clientName}
           metier={catPro === 'sante' ? 'sante' : 'veterinaire'}
-          onClose={() => setFinConsultation(null)} onDone={() => { setFinConsultation(null); fetchRdvs(); }} />
+          onClose={() => setFinConsultation(null)} onDone={() => { setFinConsultation(null); fetchRdvs(true); }} />
       )}
       {docPro && (
         <DocumentProModal rdv={{ ...docPro.rdv, pro_profile_id: docPro.rdv.pro_profile_id ?? (activeProfileId || null) }} mode={docPro.mode}
@@ -2434,7 +2446,7 @@ export default function MesRdvPage() {
         <NouveauRdvModal proUid={proUid} profileId={activeProfileId} proName={proName} catPro={catPro}
           initial={modalNouveau}
           onClose={() => { setModalNouveau(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); }}
-          onDone={() => { setModalNouveau(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); else fetchRdvs(); }} />
+          onDone={() => { setModalNouveau(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); else fetchRdvs(true); }} />
       )}
       {apresAcceptation && (
         <ApresAcceptationGardeModal rdvs={apresAcceptation} proProfileId={activeProfileId || null}
@@ -2443,13 +2455,13 @@ export default function MesRdvPage() {
       {modalSerie && (
         <SerieModal serie={modalSerie.serie} mode={modalSerie.mode} proName={proName}
           onClose={() => setModalSerie(null)}
-          onDone={ok => { const serie = modalSerie.serie; setModalSerie(null); fetchRdvs(); if (ok && catPro === 'garde') setApresAcceptation(serie); }} />
+          onDone={ok => { const serie = modalSerie.serie; setModalSerie(null); fetchRdvs(true); if (ok && catPro === 'garde') setApresAcceptation(serie); }} />
       )}
       {modalAccepter && (
         <AccepterModal rdv={modalAccepter} proName={proName}
           onClose={() => setModalAccepter(null)}
           onDone={ok => {
-            const r = modalAccepter; setModalAccepter(null); fetchRdvs();
+            const r = modalAccepter; setModalAccepter(null); fetchRdvs(true);
             if (ok && catPro === 'garde') setApresAcceptation([r]);
             // Toiletteur : le client est invité à préciser ses consignes (notification + e-mail).
             if (ok && catPro === 'toilettage') apiFetch('/api/rdv/consignes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'demander', rdvId: r.id }) }).catch(() => {});
@@ -2458,17 +2470,17 @@ export default function MesRdvPage() {
       {modalModifier && (
         <ModifierModal rdv={modalModifier} proName={proName} activeProfileId={activeProfileId ?? ''}
           onClose={() => { setModalModifier(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); }}
-          onDone={() => { setModalModifier(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); else fetchRdvs(); }} />
+          onDone={() => { setModalModifier(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); else fetchRdvs(true); }} />
       )}
       {modalRefuser && (
         <RefuserModal rdv={modalRefuser} label="Refuser" type="refuse"
           onClose={() => setModalRefuser(null)}
-          onDone={() => { setModalRefuser(null); fetchRdvs(); }} />
+          onDone={() => { setModalRefuser(null); fetchRdvs(true); }} />
       )}
       {modalAnnuler && (
         <RefuserModal rdv={modalAnnuler} label="Annuler" type="annule"
           onClose={() => setModalAnnuler(null)}
-          onDone={() => { setModalAnnuler(null); fetchRdvs(); }} />
+          onDone={() => { setModalAnnuler(null); fetchRdvs(true); }} />
       )}
     </div>
   );

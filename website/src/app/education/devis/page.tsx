@@ -10,6 +10,7 @@ import { usePlanGarde } from '@/lib/use-plan';
 import { apiFetch } from '@/lib/api-fetch';
 import { rechercherUtilisateurs } from '@/lib/user-lookup';
 import { chargerPrestationsEducation } from '@/lib/prestations-education';
+import { allerOuFermer } from '@/lib/panneau';
 
 interface Ligne { description: string; quantite: number; prix_unitaire: number; total: number; }
 
@@ -399,7 +400,7 @@ function DevisPageInner() {
       setShowForm(false);
       // Créé depuis le dossier d'une séance : retour au RDV (lien interne seulement).
       const retour = searchParams.get('retour');
-      if (retour?.startsWith('/')) { resetForm(); router.push(retour); return; }
+      if (retour?.startsWith('/')) { resetForm(); allerOuFermer(router, retour); return; }
       if (envoyer) setNewLink(`${window.location.origin}/signer-contrat/${docToken ?? token}`);
       resetForm();
     } finally {

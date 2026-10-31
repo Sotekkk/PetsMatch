@@ -31,8 +31,13 @@ interface RdvRow {
 /** Lien de retour vers ce dossier (après une action dans une autre page). */
 export const retourDossierEducation = (rdvId: string) => `/mes-rdv?rdv=${encodeURIComponent(rdvId)}&dossier=1`;
 
-export default function DossierEducationModal({ rdvId, nomClient, onClose, onChanged }: {
+export default function DossierEducationModal({ rdvId, nomClient, onClose, onChanged, onOuvrirPage, version }: {
   rdvId: string; nomClient: string; onClose: () => void; onChanged?: () => void;
+  /** Ouvre une page (fiche animal, devis, facturation) dans un panneau au lieu
+   *  de quitter Gérer mes RDV ; sans lui, navigation classique. */
+  onOuvrirPage?: (url: string, titre: string) => void;
+  /** Change à la fermeture du panneau → rechargement du dossier. */
+  version?: number;
 }) {
   const router = useRouter();
   const { user } = useAuth();
@@ -86,7 +91,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
       setNbObjectifs(o.count ?? 0); setNbExercices(e.count ?? 0);
       setForfait((f.data as typeof forfait) ?? null);
     }
-  }, [rdvId, pidActif, animalChoisi]);
+  }, [rdvId, pidActif, animalChoisi, version]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -99,8 +104,9 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   const retour = retourDossierEducation(r.id);
   const detail = animauxDetailRdv(r);
   const aidSel = (detail.length > 0 && animalChoisi && detail.some(a => a.id === animalChoisi)) ? animalChoisi : r.animal_id;
-  const fiche = (suite: string) => aidSel
-    ? router.push(`/mes-patients/${encodeURIComponent(aidSel)}?${suite}&retourRdv=${encodeURIComponent(r.id)}`)
+  const ouvrir = (url: string, titre: string) => onOuvrirPage ? onOuvrirPage(url, titre) : router.push(url);
+  const fiche = (suite: string, titre: string) => aidSel
+    ? ouvrir(`/mes-patients/${encodeURIComponent(aidSel)}?${suite}&retourRdv=${encodeURIComponent(r.id)}`, `${titre} — ${animalNom || 'animal'}`)
     : alert('Ce rendez-vous n’est rattaché à aucune fiche animal : créez d’abord la fiche du client (Gérer mes RDV → nouveau client).');
 
   function creerDevis() {
@@ -117,7 +123,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     if (detail.length > 0) q.set('lignes', JSON.stringify(detail.map(a => ({ d: [a.motif?.trim(), a.nom].filter(Boolean).join(' — '), q: 1, p: a.prix ?? 0 }))));
     else if (r.motif?.trim()) { q.set('ligneDesc', [r.motif.trim(), animalNom].filter(Boolean).join(' — ')); q.set('ligneQte', '1');
       if (r.prix_calcule != null) q.set('lignePrix', String(r.prix_calcule)); }
-    router.push(`/education/devis?${q.toString()}`);
+    ouvrir(`/education/devis?${q.toString()}`, 'Devis de la séance');
   }
 
   function facturer() {
@@ -135,7 +141,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           quantite: 1, prixUnitaire: 0, prixTTC: Number(r.prix_calcule ?? 0), tva: 20 }],
       }));
     } catch { /* facture vierge */ }
-    router.push('/elevage/facturation');
+    ouvrir('/elevage/facturation', 'Facture de la séance');
   }
 
   const eur = (n: number | null | undefined) => `${Number(n ?? 0).toFixed(2)} €`;
@@ -184,20 +190,20 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           {ligne('Compte rendu',
             !cr ? 'À rédiger' : cr.statut === 'brouillon' ? 'Brouillon' : cr.type === 'bilan' ? 'Bilan rédigé' : 'Rédigé',
             !cr ? GRIS : cr.statut === 'brouillon' ? AMBRE : VERT,
-            [btn(cr ? 'Modifier / voir' : 'Rédiger', () => fiche(`rdv=${encodeURIComponent(r.id)}`)),
+            [btn(cr ? 'Modifier / voir' : 'Rédiger', () => fiche(`rdv=${encodeURIComponent(r.id)}`, 'Compte rendu')),
               btn('Mon compte rendu', () => setDocPro('compte_rendu'))])}
           {ligne('Exercices', nbExercices ? `${nbExercices} en cours` : 'Aucun en cours', nbExercices ? VERT : GRIS,
-            [btn('Attribuer', () => fiche('tab=Programme'))])}
+            [btn('Attribuer', () => fiche('tab=Programme', 'Exercices'))])}
           {ligne('Programme de travail', nbObjectifs ? `${nbObjectifs} objectif${nbObjectifs > 1 ? 's' : ''} en cours` : 'Aucun objectif', nbObjectifs ? VERT : GRIS,
-            [btn(nbObjectifs ? 'Voir / ajouter' : 'Définir', () => fiche('tab=Programme'))])}
+            [btn(nbObjectifs ? 'Voir / ajouter' : 'Définir', () => fiche('tab=Programme', 'Programme de travail'))])}
           {ligne('Forfait', forfait ? `${forfait.nom_snapshot} · ${forfait.nb_seances_utilisees}/${forfait.nb_seances_total} séances` : 'Aucun forfait en cours',
-            forfait ? VERT : GRIS, [btn(forfait ? 'Gérer' : 'Appliquer un forfait', () => fiche('tab=Programme&forfait=1'))])}
+            forfait ? VERT : GRIS, [btn(forfait ? 'Gérer' : 'Appliquer un forfait', () => fiche('tab=Programme&forfait=1', 'Forfait'))])}
           {ligne('Devis', !devis ? 'Aucun' : `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'Brouillon'} · ${eur(devis.total_ttc)}`,
             !devis ? GRIS : devis.statut === 'accepte' ? VERT : AMBRE,
-            [!devis ? btn('Créer', creerDevis) : btn('Voir', () => router.push('/education/devis'))])}
+            [!devis ? btn('Créer', creerDevis) : btn('Voir', () => ouvrir('/education/devis', 'Devis'))])}
           {ligne('Facture', !facture ? 'À émettre' : `${facture.statut === 'payee' ? 'Payée' : 'Émise'} · ${eur(facture.total_ttc)}`,
             !facture ? GRIS : facture.statut === 'payee' ? VERT : AMBRE,
-            [!facture ? btn('Facturer', facturer) : btn('Voir', () => router.push('/elevage/facturation'))])}
+            [!facture ? btn('Facturer', facturer) : btn('Voir', () => ouvrir('/elevage/facturation', 'Factures'))])}
           {ligne('Contrat', 'Votre contrat (photo ou PDF), signé en ligne par le client', GRIS,
             [btn('Mon contrat', () => setDocPro('contrat'))])}
         </div>

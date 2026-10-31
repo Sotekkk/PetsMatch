@@ -3898,7 +3898,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   child: TabBarView(
                     controller: _tabCtrl,
                     children: [
-                      if (_avecAgendaEducation) const EducationPlanningPage(integre: true),
+                      if (_avecAgendaEducation) EducationPlanningPage(integre: true, onOuvrirDemandes: () => _tabCtrl.animateTo(1)),
                       _buildTabWithCours(_coursDemandes, _demandes, showActions: true),
                       _buildTabWithCours(_coursAvenir, _avenir, showCancel: true),
                       _buildList(_historique, showDelete: true),

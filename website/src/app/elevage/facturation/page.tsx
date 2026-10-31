@@ -15,6 +15,7 @@ import { apiFetch } from '@/lib/api-fetch';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 
 import LienDocument from '@/components/LienDocument';
+import { allerOuFermer } from '@/lib/panneau';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Ligne {
@@ -559,7 +560,7 @@ export default function FacturationPage() {
           onSaved={(f) => {
             setFactures((prev) => [f, ...prev]); setShowForm(false); setAvoirSource(null);
             // Facture préparée depuis un RDV : retour à la vue du RDV (fin de consultation).
-            if (prefill?.retour?.startsWith('/')) router.push(prefill.retour);
+            if (prefill?.retour?.startsWith('/')) allerOuFermer(router, prefill.retour);
             setPrefill(null);
           }}
         />

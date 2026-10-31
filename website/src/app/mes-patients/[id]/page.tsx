@@ -38,6 +38,7 @@ import { imprimerPdf, pdfDepuisUrl, envoyerPdfParEmail } from '@/lib/transmissio
 import { phraseChampsARemplir, erreursDatesSante } from '@/lib/controle-dates';
 import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
 import { uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
+import { allerOuFermer } from '@/lib/panneau';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -2360,7 +2361,7 @@ function PatientDetailPageInner() {
       setRapports((data ?? []) as RapportEduP[]);
       // Ouvert depuis le dossier de la séance (éducateur) : retour au RDV.
       const retourRdv = searchParams.get('retourRdv');
-      if (retourRdv && finalise) { router.push(retourDossierEducation(retourRdv)); return; }
+      if (retourRdv && finalise) { allerOuFermer(router, retourDossierEducation(retourRdv)); return; }
       if (isBilan && finalise) {
         const params = new URLSearchParams({ prefill: '1', animal: animalId });
         if (ownerUid) params.set('clientUid', ownerUid);
@@ -2815,7 +2816,7 @@ function PatientDetailPageInner() {
 
         {searchParams.get('retourRdv') && (
           <div className="max-w-3xl mx-auto px-4 pt-3">
-            <button type="button" onClick={() => router.push(retourDossierEducation(searchParams.get('retourRdv')!))}
+            <button type="button" onClick={() => allerOuFermer(router, retourDossierEducation(searchParams.get('retourRdv')!))}
               className="w-full text-left text-sm font-semibold rounded-xl px-3 py-2 bg-white/90 text-[#0C5C6C]">
               ← Revenir au dossier de la séance
             </button>

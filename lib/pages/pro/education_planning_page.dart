@@ -16,7 +16,10 @@ const _kEducationPurple = Color(0xFF7B5EA7);
 /// sans Scaffold ni barre d'application.
 class EducationPlanningPage extends StatefulWidget {
   final bool integre;
-  const EducationPlanningPage({super.key, this.integre = false});
+  /// Intégré : « Confirmer / refuser » bascule sur l'onglet Demandes de
+  /// l'agenda au lieu d'ouvrir un second agenda.
+  final VoidCallback? onOuvrirDemandes;
+  const EducationPlanningPage({super.key, this.integre = false, this.onOuvrirDemandes});
   @override
   State<EducationPlanningPage> createState() => _EducationPlanningPageState();
 }
@@ -335,7 +338,7 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _RdvDetailSheet(rdv: rdv),
+      builder: (_) => _RdvDetailSheet(rdv: rdv, onOuvrirDemandes: widget.onOuvrirDemandes),
     ).then((changed) { if (changed == true) _load(); });
   }
 }
@@ -1055,7 +1058,8 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
 // agenda_events, accès carnet, notifications).
 class _RdvDetailSheet extends StatelessWidget {
   final Map<String, dynamic> rdv;
-  const _RdvDetailSheet({required this.rdv});
+  final VoidCallback? onOuvrirDemandes;
+  const _RdvDetailSheet({required this.rdv, this.onOuvrirDemandes});
 
   @override
   Widget build(BuildContext context) {
@@ -1160,6 +1164,7 @@ class _RdvDetailSheet extends StatelessWidget {
           SizedBox(width: double.infinity, child: ElevatedButton.icon(
             onPressed: () {
               Navigator.pop(context);
+              if (onOuvrirDemandes != null) { onOuvrirDemandes!(); return; }
               Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage(initialTabIndex: 0)));
             },
             style: ElevatedButton.styleFrom(backgroundColor: _kEducationPurple, foregroundColor: Colors.white,
