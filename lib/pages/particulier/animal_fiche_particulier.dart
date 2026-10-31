@@ -5616,7 +5616,7 @@ class _EducationTabPState extends State<_EducationTabP> {
           const Text('🎫 ', style: TextStyle(fontSize: 14)),
           Expanded(child: Text(f['nom_snapshot']?.toString() ?? 'Forfait',
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13))),
-          Text(actif ? '$used / $total séances' : 'Terminé',
+          Text(actif ? '${total - used < 0 ? 0 : total - used} séance${total - used > 1 ? 's' : ''} restante${total - used > 1 ? 's' : ''} sur $total' : 'Terminé',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFEF6C00))),
         ]),
         const SizedBox(height: 6),

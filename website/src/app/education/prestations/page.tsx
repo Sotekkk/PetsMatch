@@ -17,6 +17,7 @@ import {
   chargerPrestationsEducation, typeAffiche, uniteTarif,
   type PrestationEducation, type OptionTarifaire,
 } from '@/lib/prestations-education';
+import { TYPES_SEANCES, libelleTypeSeances, type TypeSeances } from '@/lib/forfait-education';
 
 const PURPLE = '#7B5EA7';
 const TEAL = '#0C5C6C';
@@ -31,7 +32,7 @@ interface FormCours {
   reservable: boolean; affiche_public: boolean; sans_bilan_prealable: boolean; conditions: string;
 }
 
-interface Forfait { id: string; nom: string; nb_seances: number; prix: number; description: string | null; affiche_public: boolean }
+interface Forfait { id: string; nom: string; nb_seances: number; prix: number; description: string | null; affiche_public: boolean; type_seances?: string | null }
 
 const FORM_VIDE: FormCours = {
   nom: '', description: '', duree_minutes: '60', prix: '', type: 'individuel', capacite_max: '6', domicile_ok: true,
@@ -98,7 +99,7 @@ export default function EducationPrestationsPage() {
   const [extra, setExtra] = useState<{ label: string; prix: number; description: string }[]>([]);
   const [reglagesModifies, setReglagesModifies] = useState(false);
   const [reglagesMsg, setReglagesMsg] = useState<string | null>(null);
-  const [formForfait, setFormForfait] = useState<{ nom: string; nb: string; prix: string; description: string } | null>(null);
+  const [formForfait, setFormForfait] = useState<{ nom: string; nb: string; prix: string; description: string; type: TypeSeances } | null>(null);
 
   const load = useCallback(async () => {
     if (!user?.uid) return;
@@ -117,7 +118,7 @@ export default function EducationPrestationsPage() {
         ? supabase.from('user_profiles').select('tarifs_education, tarifs_education_extra, tarifs_education_visibles, education_bilan_requis, education_bilan_description').eq('id', id).maybeSingle()
         : Promise.resolve({ data: null }),
       (() => {
-        let q = supabase.from('forfaits_education').select('id, nom, nb_seances, prix, description, affiche_public')
+        let q = supabase.from('forfaits_education').select('id, nom, nb_seances, prix, description, affiche_public, type_seances')
           .eq('pro_uid', user.uid).eq('actif', true);
         if (id) q = q.or(`pro_profile_id.eq.${id},pro_profile_id.is.null`);
         return q.order('created_at');
@@ -227,8 +228,8 @@ export default function EducationPrestationsPage() {
     const { data } = await supabase.from('forfaits_education').insert({
       pro_uid: user.uid, pro_profile_id: pid || null, nom: formForfait.nom.trim(),
       nb_seances: parseInt(formForfait.nb, 10) || 1, prix: Number(formForfait.prix) || 0,
-      description: formForfait.description.trim() || null, affiche_public: true,
-    }).select('id, nom, nb_seances, prix, description, affiche_public').maybeSingle();
+      description: formForfait.description.trim() || null, affiche_public: true, type_seances: formForfait.type,
+    }).select('id, nom, nb_seances, prix, description, affiche_public, type_seances').maybeSingle();
     setSaving(false);
     if (data) setForfaits(prev => [...prev, data as Forfait]);
     setFormForfait(null);
@@ -433,7 +434,7 @@ export default function EducationPrestationsPage() {
 
           <Bloc titre="Forfaits" sousTitre="Plusieurs séances à un prix global. Appliqué au client depuis le dossier de la séance ; les séances utilisées sont décomptées."
             action={!formForfait && (
-              <button onClick={() => setFormForfait({ nom: '', nb: '5', prix: '', description: '' })}
+              <button onClick={() => setFormForfait({ nom: '', nb: '5', prix: '', description: '', type: 'mixte' })}
                 className="text-sm font-semibold shrink-0" style={{ color: PURPLE }}>Ajouter un forfait</button>
             )}>
             {formForfait && (
@@ -448,6 +449,10 @@ export default function EducationPrestationsPage() {
                     <input type="number" min={0} value={formForfait.prix} onChange={e => setFormForfait({ ...formForfait, prix: e.target.value })} className={`${inputCls} mt-1`} />
                   </label>
                 </div>
+                <select value={formForfait.type} onChange={e => setFormForfait({ ...formForfait, type: e.target.value as TypeSeances })}
+                  className={`${inputCls} bg-white`}>
+                  {TYPES_SEANCES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
                 <input value={formForfait.description} onChange={e => setFormForfait({ ...formForfait, description: e.target.value })}
                   placeholder="Description (optionnel)" className={inputCls} />
                 <div className="flex gap-2">
@@ -465,7 +470,7 @@ export default function EducationPrestationsPage() {
                   <div key={f.id} className="border border-gray-100 rounded-xl p-3 flex items-center gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-[#1F2A2E]">{f.nom}</p>
-                      <p className="text-xs text-gray-500">{f.nb_seances} séance{f.nb_seances > 1 ? 's' : ''} · {f.prix} €{f.description ? ` · ${f.description}` : ''}</p>
+                      <p className="text-xs text-gray-500">{f.nb_seances} séance{f.nb_seances > 1 ? 's' : ''} · {f.prix} € · {libelleTypeSeances(f.type_seances)}{f.description ? ` · ${f.description}` : ''}</p>
                     </div>
                     <button type="button" onClick={() => basculerForfaitPublic(f)}>
                       <Pastille texte={f.affiche_public ? 'Sur la fiche' : 'Masqué'} couleur={f.affiche_public ? 'violet' : 'gris'} />

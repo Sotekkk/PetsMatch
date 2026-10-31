@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/exercices_progression.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contrat_education.dart';
+import 'package:PetsMatch/utils/forfait_education.dart';
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/pages/pro/education_shared.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
@@ -468,7 +470,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     bool detaille = existing != null &&
         ((existing['comportements'] ?? existing['difficultes'] ?? existing['prochaine_etape']) != null);
     final fActif = _forfaitActif;
-    bool imputer = fActif != null && existing == null;
+    bool imputer = fActif != null && existing == null && rdv == null;
     final List<Map<String, dynamic>> joints = [];
     final dateSeance = (existing?['date_seance']?.toString()) ??
         (DateTime.tryParse(rdv?['date_heure']?.toString() ?? '')?.toLocal() ?? DateTime.now())
@@ -597,7 +599,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                         const DropdownMenuItem(value: null, child: Text('Aucun', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
                         ..._forfaits.map((f) => DropdownMenuItem(
                           value: f['id'].toString(),
-                          child: Text('${f['nom']} · ${f['nb_seances']}× · ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0}€',
+                          child: Text('${f['nom']} · ${f['nb_seances']} séances · ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} € · ${libelleTypeSeances(f['type_seances']?.toString())}',
                               overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
                         )),
                       ],
@@ -608,7 +610,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                 ] else ...[
                   champ(exercicesCtrl, 'Recommandations / travail avant la prochaine séance',
                       hint: 'À faire à la maison d\'ici la prochaine séance…'),
-                  if (fActif != null && existing == null)
+                  if (fActif != null && existing == null && rdv == null)
                     CheckboxListTile(
                       contentPadding: EdgeInsets.zero,
                       controlAffinity: ListTileControlAffinity.leading,
@@ -1251,9 +1253,23 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           }),
           chip(Icons.fitness_center_outlined, 'Exercices', () async { _tab.animateTo(1); await _attribuerExercices(); }),
           chip(Icons.track_changes_outlined, 'Programme', () async { _tab.animateTo(1); await _editObjectif(); }),
-          chip(Icons.confirmation_number_outlined, 'Forfait', () async { _tab.animateTo(1); await _enregistrerForfait(); }),
+          if (rdv['forfait_souscrit_id'] != null)
+            chip(Icons.confirmation_number_outlined, 'Séance décomptée (annuler)', () async {
+              await annulerDecompteForfait(rdv['id'].toString());
+              _rdvDossier = null;
+            })
+          else if (_forfaitActif != null)
+            chip(Icons.confirmation_number_outlined,
+                'Décompter du forfait (reste ${seancesRestantes(_forfaitActif!)})', () async {
+              await decompterSeanceForfait(_forfaitActif!, rdv['id'].toString(),
+                  animalId: widget.animalId, animalNom: widget.animalNom, ownerUid: _ownerUid);
+              _rdvDossier = null;
+            })
+          else
+            chip(Icons.confirmation_number_outlined, 'Attribuer un forfait', () async { _tab.animateTo(1); await _enregistrerForfait(); }),
           chip(Icons.request_quote_outlined, 'Devis', () => devisDepuisRdv(context, rdv, animalNom: widget.animalNom)),
-          chip(Icons.receipt_long_outlined, 'Facture', () => factureDepuisRdv(context, rdv, animalNom: widget.animalNom)),
+          if (rdv['forfait_souscrit_id'] == null)
+            chip(Icons.receipt_long_outlined, 'Facture', () => factureDepuisRdv(context, rdv, animalNom: widget.animalNom)),
           chip(Icons.upload_file_outlined, 'Charger mon compte rendu', () async {
             await showDocumentProSheet(context, rdv: rdv, mode: 'compte_rendu', clientNom: widget.ownerName,
                 animalNom: widget.animalNom, proNom: proNom, catPro: 'education');
@@ -1269,7 +1285,38 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         ])),
         const SizedBox(height: 6),
         SizedBox(width: double.infinity, child: ElevatedButton.icon(
-          onPressed: () => puis(() => finSeanceEducation(context, rdv, animalNom: widget.animalNom, clientNom: widget.ownerName)),
+          onPressed: () => puis(() async {
+            // Forfait en cours : même type de cours → séance décomptée ; sinon choix.
+            var cible = rdv;
+            final f = _forfaitActif;
+            if (f != null && rdv['forfait_souscrit_id'] == null) {
+              final typeCours = await typeSeanceRdv(rdv);
+              var decompter = forfaitCouvre(f, typeCours);
+              if (!decompter && mounted) {
+                final choix = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
+                  title: const Text('Forfait ou facture ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  content: Text('Le forfait « ${f['nom_snapshot']} » couvre les ${libelleTypeSeances(f['type_seances']?.toString()).toLowerCase()}, '
+                      'et ce cours est $typeCours. Reste ${seancesRestantes(f)} séance${seancesRestantes(f) > 1 ? 's' : ''}.',
+                      style: const TextStyle(fontFamily: 'Galey')),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+                    TextButton(onPressed: () => Navigator.pop(ctx, 'facturer'), child: const Text('Facturer la séance')),
+                    TextButton(onPressed: () => Navigator.pop(ctx, 'decompter'), child: const Text('Décompter du forfait')),
+                  ],
+                ));
+                if (choix == null) return;
+                decompter = choix == 'decompter';
+              }
+              if (decompter) {
+                await decompterSeanceForfait(f, rdv['id'].toString(),
+                    animalId: widget.animalId, animalNom: widget.animalNom, ownerUid: _ownerUid);
+                cible = {...rdv, 'forfait_souscrit_id': f['id']};
+              }
+            }
+            if (!mounted) return;
+            await finSeanceEducation(context, cible, animalNom: widget.animalNom, clientNom: widget.ownerName);
+            _rdvDossier = null;
+          }),
           icon: const Icon(Icons.send_outlined, size: 18),
           label: const Text('Terminer et envoyer au client', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0C5C6C), foregroundColor: Colors.white),
@@ -1575,6 +1622,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     final nbCtrl = TextEditingController(text: '5');
     final prixCtrl = TextEditingController();
     String? forfaitId;
+    String typeSeances = 'mixte';
 
     final ok = await showModalBottomSheet<bool>(
       context: context,
@@ -1586,8 +1634,12 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-            const Text('Enregistrer un forfait pris',
+            const Text('Attribuer un forfait',
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 4),
+            Text('Le client paie le forfait d\'avance : sa facture est préparée. Chaque séance est ensuite décomptée '
+                '(dossier de la séance), et le client voit les séances restantes.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
             const SizedBox(height: 14),
             if (_forfaits.isNotEmpty) ...[
               DropdownButtonFormField<String?>(
@@ -1603,7 +1655,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                   const DropdownMenuItem(value: null, child: Text('Saisie libre', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
                   ..._forfaits.map((f) => DropdownMenuItem(
                     value: f['id'].toString(),
-                    child: Text('${f['nom']} · ${f['nb_seances']}× · ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0}€',
+                    child: Text('${f['nom']} · ${f['nb_seances']} séances · ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} € · ${libelleTypeSeances(f['type_seances']?.toString())}',
                         overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
                   )),
                 ],
@@ -1614,11 +1666,27 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                     nomCtrl.text = f['nom']?.toString() ?? '';
                     nbCtrl.text = ((f['nb_seances'] as num?)?.toInt() ?? 5).toString();
                     prixCtrl.text = ((f['prix'] as num?)?.toStringAsFixed(0) ?? '');
+                    typeSeances = f['type_seances']?.toString() ?? 'mixte';
                   }
                 }),
               ),
               const SizedBox(height: 10),
             ],
+            DropdownButtonFormField<String>(
+              key: ValueKey('type-$typeSeances'),
+              initialValue: typeSeances,
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: 'Séances couvertes',
+                labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+              items: [for (final t in kTypesSeances)
+                DropdownMenuItem(value: t.$1, child: Text(t.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)))],
+              onChanged: (v) => setSheet(() => typeSeances = v ?? 'mixte'),
+            ),
+            const SizedBox(height: 10),
             TextField(
               controller: nomCtrl,
               style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
@@ -1660,7 +1728,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                 padding: const EdgeInsets.symmetric(vertical: 14), elevation: 0,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              child: const Text('Attribuer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
             )),
           ]),
         ),
@@ -1668,6 +1736,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     );
 
     if (ok != true || nomCtrl.text.trim().isEmpty || !mounted) return;
+    final prix = double.tryParse(prixCtrl.text.trim().replaceAll(',', '.'));
+    final nb = int.tryParse(nbCtrl.text.trim()) ?? 1;
     final proUid = FirebaseAuth.instance.currentUser?.uid;
     try {
       await _supa.from('forfaits_souscrits').insert({
@@ -1678,10 +1748,23 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         if (widget.ownerProfileId != null) 'client_profile_id': widget.ownerProfileId,
         'animal_id': widget.animalId,
         'nom_snapshot': nomCtrl.text.trim(),
-        'nb_seances_total': int.tryParse(nbCtrl.text.trim()) ?? 1,
-        if (prixCtrl.text.trim().isNotEmpty) 'prix_snapshot': double.tryParse(prixCtrl.text.trim()),
+        'nb_seances_total': nb,
+        if (prix != null) 'prix_snapshot': prix,
+        'type_seances': typeSeances,
       });
       await _load();
+      // Payé d'avance : facture du forfait préparée.
+      if (prix != null && prix > 0 && mounted) {
+        await Navigator.push(context, MaterialPageRoute(builder: (_) => CreerFacturePage(
+          clientNom: widget.ownerName,
+          lignesPrefill: [FacturePrefillLigne(
+            designation: 'Forfait ${nomCtrl.text.trim()} ($nb séance${nb > 1 ? 's' : ''}) — ${widget.animalNom}',
+            description: 'Forfait payé d\'avance', prixTTC: prix,
+          )],
+          sourceAnimalId: widget.animalId, clientUid: _ownerUid, clientProfileId: widget.ownerProfileId,
+        )));
+        if (mounted) await _load();
+      }
     } catch (e) {
       _snack('Erreur : $e', err: true);
     }

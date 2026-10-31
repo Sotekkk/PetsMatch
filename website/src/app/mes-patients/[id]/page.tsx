@@ -39,6 +39,7 @@ import { phraseChampsARemplir, erreursDatesSante } from '@/lib/controle-dates';
 import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
 import { uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
 import { allerOuFermer } from '@/lib/panneau';
+import { TYPES_SEANCES, libelleTypeSeances, preparerFactureForfait, type TypeSeances } from '@/lib/forfait-education';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -158,7 +159,7 @@ interface RapportEduP {
   objectifs_travailles?: string[] | null; comportements?: string | null; difficultes?: string | null;
   prochaine_etape?: string | null; rdv_id?: string | null;
 }
-interface ForfaitSous { id: string; nom_snapshot: string; nb_seances_total: number; nb_seances_utilisees: number; statut: string; }
+interface ForfaitSous { id: string; nom_snapshot: string; nb_seances_total: number; nb_seances_utilisees: number; statut: string; type_seances?: string | null; }
 const EDUC_RESSENTI: Record<string, string> = { facile: '😊 Facile', moyen: '😐 Moyen', difficile: '😓 Difficile', bloque: '🚫 Bloqué' };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -241,31 +242,37 @@ function EmptyState({ text }: { text: string }) {
 
 function ForfaitSousForm({ proUid, onSave, onCancel }: {
   proUid: string;
-  onSave: (nom: string, nb: number, prix: number | null, forfaitId: string | null) => void;
+  onSave: (nom: string, nb: number, prix: number | null, forfaitId: string | null, type: TypeSeances) => void;
   onCancel: () => void;
 }) {
   const [nom, setNom] = useState('');
   const [nb, setNb] = useState('5');
   const [prix, setPrix] = useState('');
+  const [type, setType] = useState<TypeSeances>('mixte');
   const [forfaitId, setForfaitId] = useState('');
-  const [catalog, setCatalog] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
+  const [catalog, setCatalog] = useState<{ id: string; nom: string; nb_seances: number; prix: number; type_seances?: string | null }[]>([]);
   useEffect(() => {
     if (!proUid) return;
-    supabase.from('forfaits_education').select('id, nom, nb_seances, prix').eq('pro_uid', proUid).eq('actif', true).order('created_at')
+    supabase.from('forfaits_education').select('id, nom, nb_seances, prix, type_seances').eq('pro_uid', proUid).eq('actif', true).order('created_at')
       .then(({ data }) => setCatalog((data ?? []) as typeof catalog));
   }, [proUid]);
   return (
     <div className="border border-[#EF6C00]/30 rounded-2xl p-4 mb-4 bg-[#EF6C00]/5 space-y-2">
+      <p className="text-xs text-gray-600">Le client paie le forfait d&apos;avance : sa facture est préparée. Chaque séance est ensuite décomptée (dossier de la séance), et le client voit les séances restantes.</p>
       {catalog.length > 0 && (
         <select value={forfaitId} onChange={e => {
           const v = e.target.value; setForfaitId(v);
           const f = catalog.find(x => x.id === v);
-          if (f) { setNom(f.nom); setNb(String(f.nb_seances)); setPrix(String(f.prix)); }
+          if (f) { setNom(f.nom); setNb(String(f.nb_seances)); setPrix(String(f.prix)); setType((f.type_seances as TypeSeances) || 'mixte'); }
         }} className="w-full border border-gray-200 rounded-xl px-2 py-2 text-sm">
           <option value="">Saisie libre…</option>
-          {catalog.map(f => <option key={f.id} value={f.id}>{f.nom} · {f.nb_seances}× · {f.prix}€</option>)}
+          {catalog.map(f => <option key={f.id} value={f.id}>{f.nom} · {f.nb_seances} séances · {f.prix} € · {libelleTypeSeances(f.type_seances)}</option>)}
         </select>
       )}
+      <select value={type} onChange={e => setType(e.target.value as TypeSeances)}
+        className="w-full border border-gray-200 rounded-xl px-2 py-2 text-sm">
+        {TYPES_SEANCES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+      </select>
       <input value={nom} onChange={e => setNom(e.target.value)} placeholder="Nom du forfait"
         className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
       <div className="flex gap-2">
@@ -276,9 +283,9 @@ function ForfaitSousForm({ proUid, onSave, onCancel }: {
       </div>
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 border border-gray-200 rounded-xl py-2 text-sm text-gray-500">Annuler</button>
-        <button onClick={() => onSave(nom, Number(nb), prix ? Number(prix) : null, forfaitId || null)}
+        <button onClick={() => onSave(nom, Number(nb), prix ? Number(prix) : null, forfaitId || null, type)}
           disabled={!nom.trim()} className="flex-1 text-white rounded-xl py-2 text-sm font-semibold disabled:opacity-50" style={{ background: '#EF6C00' }}>
-          Enregistrer
+          {prix && Number(prix) > 0 ? 'Attribuer et préparer la facture' : 'Attribuer'}
         </button>
       </div>
     </div>
@@ -2345,7 +2352,7 @@ function PatientDetailPageInner() {
         type: rapportType,
         contenu: rapportContenu.trim(),
         exercices_conseilles: !isBilan ? (rapportExercices.trim() || null) : null,
-        ...(!isBilan && imputerForfait && forfaitActif ? { forfait_souscrit_id: forfaitActif.id } : {}),
+        ...(!isBilan && imputerForfait && forfaitActif && !seanceRdvId ? { forfait_souscrit_id: forfaitActif.id } : {}),
         ...(isBilan ? {
           bilan_motif: bilanMotif.trim() || null,
           bilan_observations: rapportContenu.trim(),
@@ -2381,7 +2388,7 @@ function PatientDetailPageInner() {
       // Rattaché à un RDV : rien n'est envoyé maintenant, tout part à la fin du
       // RDV (dossier de la séance → Terminer et envoyer).
       if (finalise && !seanceRdvId) await notifierRapportEdu(isBilan);
-      if (!isBilan && imputerForfait && forfaitActif) await imputerSeanceForfait(forfaitActif);
+      if (!isBilan && imputerForfait && forfaitActif && !seanceRdvId) await imputerSeanceForfait(forfaitActif);
       const { data } = await supabase.from('education_progression')
         .select('*').eq('animal_id', animalId).order('date_seance', { ascending: false });
       setRapports((data ?? []) as RapportEduP[]);
@@ -2611,21 +2618,37 @@ function PatientDetailPageInner() {
 
   async function reloadForfaitsSous() {
     const { data } = await supabase.from('forfaits_souscrits')
-      .select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut').eq('animal_id', animalId).order('souscrit_le', { ascending: false });
+      .select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut, type_seances').eq('animal_id', animalId).order('souscrit_le', { ascending: false });
     setForfaitsSous(((data ?? []) as ForfaitSous[]).filter(f => f.statut !== 'annule'));
   }
 
-  async function registerForfaitSous(nom: string, nb: number, prix: number | null, forfaitId: string | null) {
+  async function registerForfaitSous(nom: string, nb: number, prix: number | null, forfaitId: string | null, type: TypeSeances = 'mixte') {
     if (!nom.trim() || !user?.uid) return;
     const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
-    await supabase.from('forfaits_souscrits').insert({
+    const ligne = {
       ...(forfaitId ? { forfait_id: forfaitId } : {}),
       pro_uid: user.uid, pro_profile_id: activeProfileId || null,
       client_uid: ownerUid, animal_id: animalId,
       nom_snapshot: nom.trim(), nb_seances_total: nb || 1, ...(prix != null ? { prix_snapshot: prix } : {}),
-    });
+    };
+    const { error } = await supabase.from('forfaits_souscrits').insert({ ...ligne, type_seances: type });
+    // Repli sans la colonne type_seances (migration pas encore passée).
+    if (error) await supabase.from('forfaits_souscrits').insert(ligne);
     setShowForfaitSousForm(false);
     await reloadForfaitsSous();
+    // Payé d'avance : facture du forfait préparée, puis retour (dossier de la séance ou fiche).
+    if (prix != null && prix > 0) {
+      const { data: pp } = await supabase.from('animaux_proprietes').select('profile_id_proprio').eq('animal_id', animalId)
+        .is('date_fin', null).order('date_debut', { ascending: false }).limit(1).maybeSingle();
+      const retourRdv = searchParams.get('retourRdv');
+      preparerFactureForfait({
+        nomForfait: nom.trim(), nbSeances: nb || 1, prix, animalId, animalNom: animal?.nom ?? 'Animal',
+        clientUid: ownerUid, clientProfileId: pp?.profile_id_proprio ?? null,
+        prenom: owner?.firstname ?? '', nom: owner?.lastname ?? '', email: owner?.email ?? '',
+        retour: retourRdv ? retourDossierEducation(retourRdv) : `/mes-patients/${encodeURIComponent(animalId)}?tab=Programme`,
+      });
+      router.push('/elevage/facturation');
+    }
   }
 
   async function imputerSeanceForfait(f: ForfaitSous) {
@@ -3872,7 +3895,7 @@ function PatientDetailPageInner() {
               <button onClick={() => setShowForfaitSousForm(v => !v)}
                 className="w-full text-white rounded-2xl py-2.5 font-semibold text-sm flex items-center justify-center gap-2 mb-4"
                 style={{ background: '#EF6C00', fontFamily: 'Galey, sans-serif' }}>
-                <span className="text-lg leading-none">+</span> Enregistrer un forfait pris
+                <span className="text-lg leading-none">+</span> Attribuer un forfait
               </button>
             )}
             {showForfaitSousForm && (

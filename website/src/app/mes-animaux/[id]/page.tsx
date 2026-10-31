@@ -1738,7 +1738,7 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
           <div key={f.id} className="rounded-2xl border border-[#EF6C00]/30 bg-[#FFF3E9] p-3">
             <div className="flex items-center justify-between">
               <p className="text-sm font-bold text-gray-800">🎫 {f.nom_snapshot}</p>
-              <p className="text-xs font-bold text-[#EF6C00]">{actif ? `${f.nb_seances_utilisees} / ${f.nb_seances_total} séances` : 'Terminé'}</p>
+              <p className="text-xs font-bold text-[#EF6C00]">{actif ? `${Math.max(0, f.nb_seances_total - f.nb_seances_utilisees)} séance${f.nb_seances_total - f.nb_seances_utilisees > 1 ? 's' : ''} restante${f.nb_seances_total - f.nb_seances_utilisees > 1 ? 's' : ''} sur ${f.nb_seances_total}` : 'Terminé'}</p>
             </div>
             <div className="mt-1.5 h-1.5 rounded-full bg-[#EF6C00]/15 overflow-hidden">
               <div className="h-full bg-[#EF6C00]" style={{ width: `${pct}%` }} />

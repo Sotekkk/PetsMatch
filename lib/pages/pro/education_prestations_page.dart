@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/geocoding_helper.dart';
 import 'package:PetsMatch/utils/prestations_education.dart';
+import 'package:PetsMatch/utils/forfait_education.dart' show kTypesSeances, libelleTypeSeances;
 
 // ── Prestations & tarifs (éducateur / comportementaliste) : seul endroit où se
 // règlent les cours, les bilans, la règle du bilan préalable, les forfaits et
@@ -67,7 +68,7 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
     if (uid == null) { setState(() => _loading = false); return; }
     final pid = profilEducationId();
     try {
-      var fq = _supa.from('forfaits_education').select('id, nom, nb_seances, prix, description, affiche_public')
+      var fq = _supa.from('forfaits_education').select('id, nom, nb_seances, prix, description, affiche_public, type_seances')
           .eq('pro_uid', uid).eq('actif', true);
       if (pid.isNotEmpty) fq = fq.or('pro_profile_id.eq.$pid,pro_profile_id.is.null');
       final results = await Future.wait<dynamic>([
@@ -184,21 +185,29 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
 
   Future<void> _ajouterForfait() async {
     final nom = TextEditingController(), nb = TextEditingController(text: '5'), prix = TextEditingController(), desc = TextEditingController();
+    var typeSeances = 'mixte';
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setD) => AlertDialog(
         title: const Text('Nouveau forfait', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(controller: nom, decoration: const InputDecoration(labelText: 'Nom (ex : Pack 5 séances)')),
           TextField(controller: nb, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Nombre de séances')),
           TextField(controller: prix, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Prix total (€)')),
+          DropdownButtonFormField<String>(
+            initialValue: typeSeances,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Séances couvertes'),
+            items: [for (final t in kTypesSeances) DropdownMenuItem(value: t.$1, child: Text(t.$2))],
+            onChanged: (v) => setD(() => typeSeances = v ?? 'mixte'),
+          ),
           TextField(controller: desc, decoration: const InputDecoration(labelText: 'Description (optionnel)')),
         ])),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Valider')),
         ],
-      ),
+      )),
     );
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (ok == true && nom.text.trim().isNotEmpty && uid != null) {
@@ -208,7 +217,8 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
         'prix': double.tryParse(prix.text.trim().replaceAll(',', '.')) ?? 0,
         if (desc.text.trim().isNotEmpty) 'description': desc.text.trim(),
         'affiche_public': true,
-      }).select('id, nom, nb_seances, prix, description, affiche_public').maybeSingle();
+        'type_seances': typeSeances,
+      }).select('id, nom, nb_seances, prix, description, affiche_public, type_seances').maybeSingle();
       if (row != null && mounted) setState(() => _forfaits.add(Map<String, dynamic>.from(row)));
     }
     for (final c in [nom, nb, prix, desc]) { c.dispose(); }
@@ -387,7 +397,7 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
                             child: Row(children: [
                               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 Text(f['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
-                                Text('${f['nb_seances']} séance${((f['nb_seances'] as num?) ?? 1) > 1 ? 's' : ''} · ${_eur((f['prix'] as num?) ?? 0)} €',
+                                Text('${f['nb_seances']} séance${((f['nb_seances'] as num?) ?? 1) > 1 ? 's' : ''} · ${_eur((f['prix'] as num?) ?? 0)} € · ${libelleTypeSeances(f['type_seances']?.toString())}',
                                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                               ])),
                               _pastille(f['affiche_public'] == true ? 'Sur la fiche' : 'Masqué', actif: f['affiche_public'] == true,

@@ -81,7 +81,7 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier, proPro
                 : { background: 'white', borderColor: '#0C5C6C', color: '#0C5C6C' }}>
               {etat === 'fait' ? `✓ ${metier === 'veterinaire' ? 'Compte rendu fait' : 'Séance faite'} · ouvrir`
                 : etat === 'brouillon' ? 'Brouillon · reprendre'
-                : `À faire · ${metier === 'veterinaire' ? 'rédiger le compte rendu' : 'rédiger la séance'}`}
+                : `${metier === 'veterinaire' ? 'Rédiger le compte rendu' : 'Rédiger la séance'} avec PetsMatch`}
             </a>
           </div>
         );

@@ -1449,12 +1449,12 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
             <button onClick={() => onDocumentPro('compte_rendu')}
               className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
               style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
-              Mon compte rendu
+              Charger mon compte rendu (PDF / photo)
             </button>
             <button onClick={() => onDocumentPro('contrat')}
               className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
               style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
-              Mon contrat
+              Charger mon contrat (PDF / photo)
             </button>
           </>)}
         </div>
