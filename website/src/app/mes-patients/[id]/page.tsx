@@ -971,6 +971,12 @@ function PatientDetailPageInner() {
   const [seanceLieu, setSeanceLieu] = useState('');
   const [seanceDuree, setSeanceDuree] = useState('');
   const [seanceObjs, setSeanceObjs] = useState<string[]>([]);
+  // Compte rendu : nouvel objectif saisi librement, exercices de la
+  // bibliothèque joints (exercices_attribues.progression_id).
+  const [nouvelObjSeance, setNouvelObjSeance] = useState('');
+  const [ajoutObjSeance, setAjoutObjSeance] = useState(false);
+  const [crExos, setCrExos] = useState<string[]>([]);
+  const [crExosOuvert, setCrExosOuvert] = useState(false);
   const [seanceDetaille, setSeanceDetaille] = useState(false);
   const [seanceComport, setSeanceComport] = useState('');
   const [seanceDiff, setSeanceDiff] = useState('');
@@ -2347,12 +2353,29 @@ function PatientDetailPageInner() {
           bilan_forfait_conseille_id: bilanForfait || null,
         } : {}),
       };
-      let { error: insErr } = await supabase.from('education_progression').insert({ ...ligne, ...extra });
+      let { data: insRow, error: insErr } = await supabase.from('education_progression').insert({ ...ligne, ...extra }).select('id').single();
       // migration_education_fiche.sql pas encore passée : format d'origine (pas de brouillon).
       if (insErr) {
         if (!finalise) { alert('Brouillon indisponible : migration_education_fiche.sql à passer.'); return; }
-        ({ error: insErr } = await supabase.from('education_progression').insert(ligne));
+        ({ data: insRow, error: insErr } = await supabase.from('education_progression').insert(ligne).select('id').single());
         if (insErr) throw insErr;
+      }
+      // Exercices de la bibliothèque joints au compte rendu → attribués à l'animal.
+      const joints = !isBilan ? biblio.filter(b => crExos.includes(b.id)) : [];
+      if (joints.length > 0 && insRow?.id) {
+        const lignesExos = joints.map(b => ({
+          exercice_id: b.id, pro_uid: user.uid, pro_profile_id: activeProfileId || null,
+          animal_id: animalId, owner_uid: ownerUid, progression_id: insRow.id,
+          titre_snapshot: b.titre, description_snapshot: b.description, media_snapshot: b.media ?? [],
+        }));
+        const { error: exErr } = await supabase.from('exercices_attribues')
+          .insert(lignesExos.map((l, i) => ({ ...l, etapes_snapshot: joints[i].etapes ?? [], nb_validations: 1 })));
+        // Repli sans les colonnes d'étapes (base pas encore migrée).
+        if (exErr) await supabase.from('exercices_attribues').insert(lignesExos);
+        // Visibles tout de suite dans Programme > Exercices.
+        const { data: attr } = await supabase.from('exercices_attribues')
+          .select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs, etapes_snapshot, nb_validations, validations').eq('animal_id', animalId).order('assigned_at', { ascending: false });
+        if (attr) setAttribues(attr as EducAttribue[]);
       }
       if (finalise) await notifierRapportEdu(isBilan);
       if (!isBilan && imputerForfait && forfaitActif) await imputerSeanceForfait(forfaitActif);
@@ -2389,6 +2412,7 @@ function PatientDetailPageInner() {
       setRapportContenu(''); setRapportExercices(''); setShowAddRapport(false);
       setRapportType('seance'); setBilanMotif(''); setBilanReco(''); setBilanNb(''); setBilanForfait('');
       setSeanceType('individuelle'); setSeanceLieu(''); setSeanceDuree(''); setSeanceObjs([]);
+      setCrExos([]); setCrExosOuvert(false); setNouvelObjSeance('');
       setSeanceDetaille(false); setSeanceComport(''); setSeanceDiff(''); setSeanceProchaine(''); setSeanceRdvId(null);
     } finally {
       setSavingRapport(false);
@@ -2432,6 +2456,33 @@ function PatientDetailPageInner() {
   }
 
   // ── Objectifs (plan de travail) ──
+  async function ajouterObjectifSeance() {
+    const libelle = nouvelObjSeance.trim();
+    if (!libelle || !user?.uid || !animalId) return;
+    setAjoutObjSeance(true);
+    try {
+      const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+      const { data, error } = await supabase.from('education_objectifs').insert({
+        libelle, statut: 'a_travailler', pro_uid: user.uid, pro_profile_id: activeProfileId || null,
+        animal_id: animalId, owner_uid: ownerUid, ordre: objectifs.length,
+      }).select('id').single();
+      if (error || !data) { alert('Ajout de l’objectif impossible, réessayez.'); return; }
+      await reloadObjectifs();
+      setSeanceObjs(v => [...v, data.id as string]);
+      setNouvelObjSeance('');
+    } finally {
+      setAjoutObjSeance(false);
+    }
+  }
+
+  async function ouvrirExosCr() {
+    setCrExosOuvert(v => !v);
+    if (biblio.length > 0 || !user?.uid) return;
+    const { data } = await supabase.from('exercices_bibliotheque')
+      .select('id, titre, description, media, etapes').eq('pro_uid', user.uid).eq('actif', true).order('created_at', { ascending: false });
+    setBiblio((data ?? []) as EducExercice[]);
+  }
+
   async function reloadObjectifs() {
     const { data } = await supabase.from('education_objectifs')
       .select('id, libelle, categorie, statut, note, ordre').eq('animal_id', animalId).order('ordre').order('created_at');
@@ -3903,9 +3954,10 @@ function PatientDetailPageInner() {
                   <input type="number" value={seanceDuree} onChange={e => setSeanceDuree(e.target.value)} placeholder="Durée (min)"
                     className="w-32 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
                 </div>
-                {objectifs.length > 0 && (
+                {(
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Objectifs travaillés</p>
+                    {objectifs.length === 0 && <p className="text-xs text-gray-400 mb-1">Aucun objectif pour l&apos;instant : ajoutez-en un ci-dessous.</p>}
                     <div className="flex flex-wrap gap-1.5">
                       {objectifs.map(o => {
                         const on = seanceObjs.includes(o.id);
@@ -3917,6 +3969,15 @@ function PatientDetailPageInner() {
                           </button>
                         );
                       })}
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <input value={nouvelObjSeance} onChange={e => setNouvelObjSeance(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); ajouterObjectifSeance(); } }}
+                        placeholder="Nouvel objectif (ex : marche en laisse détendue)"
+                        className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                      <button type="button" onClick={ajouterObjectifSeance} disabled={ajoutObjSeance || !nouvelObjSeance.trim()}
+                        className="text-xs font-semibold px-3 py-2 rounded-xl border disabled:opacity-40"
+                        style={{ borderColor: '#EF6C00', color: '#B24E00' }}>Ajouter</button>
                     </div>
                   </div>
                 )}
@@ -3952,6 +4013,31 @@ function PatientDetailPageInner() {
                     <textarea value={rapportExercices} onChange={e => setRapportExercices(e.target.value)} rows={2}
                       placeholder="Exercices à faire à la maison d'ici la prochaine séance…"
                       className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                    <button type="button" onClick={ouvrirExosCr}
+                      className="mt-2 text-sm font-semibold px-3 py-2 rounded-xl border w-full text-left"
+                      style={{ borderColor: '#EF6C00', color: '#B24E00' }}>
+                      {crExos.length > 0 ? `${crExos.length} exercice${crExos.length > 1 ? 's' : ''} de la bibliothèque joint${crExos.length > 1 ? 's' : ''}` : 'Joindre des exercices de ma bibliothèque'}
+                    </button>
+                    {crExosOuvert && (
+                      <div className="mt-2 border border-gray-200 rounded-xl p-2 max-h-64 overflow-y-auto space-y-1">
+                        {biblio.length === 0 ? (
+                          <p className="text-xs text-gray-400 p-1">Aucun exercice dans votre bibliothèque.</p>
+                        ) : biblio.map(b => {
+                          const on = crExos.includes(b.id);
+                          return (
+                            <label key={b.id} className="flex items-start gap-2 p-1.5 rounded-lg cursor-pointer hover:bg-gray-50">
+                              <input type="checkbox" checked={on} className="mt-0.5"
+                                onChange={() => setCrExos(v => on ? v.filter(x => x !== b.id) : [...v, b.id])} />
+                              <span className="text-sm">
+                                <span className="font-semibold text-[#1F2A2E]">{b.titre}</span>
+                                {b.description && <span className="block text-xs text-gray-500 line-clamp-1">{b.description}</span>}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {crExos.length > 0 && <p className="text-[11px] text-gray-500 mt-1">Ils seront attribués à l&apos;animal (onglet Programme) et visibles par le propriétaire.</p>}
                   </div>
                 )}
                 <label className="flex items-center gap-2 text-sm text-gray-700">

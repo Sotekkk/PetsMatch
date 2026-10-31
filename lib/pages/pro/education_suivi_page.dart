@@ -459,6 +459,9 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     final travailles = <String>{
       for (final x in (existing?['objectifs_travailles'] as List? ?? const [])) x.toString(),
     };
+    // Nouvel objectif saisi librement depuis le compte rendu.
+    final nouvelObjCtrl = TextEditingController();
+    bool ajoutObj = false;
     String? forfaitId = existing?['bilan_forfait_conseille_id']?.toString();
     bool detaille = existing != null &&
         ((existing['comportements'] ?? existing['difficultes'] ?? existing['prochaine_etape']) != null);
@@ -519,7 +522,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                 ]),
                 const SizedBox(height: 10),
                 if (isBilan) champ(motifCtrl, 'Motif de la demande', hint: 'Ex : aboiements, tirage en laisse, réactivité…'),
-                if (_objectifs.isNotEmpty) ...[
+                if (!isBilan || _objectifs.isNotEmpty) ...[
                   const Text('Objectifs travaillés', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
                   Wrap(spacing: 6, runSpacing: 6, children: [
@@ -530,6 +533,37 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                         selectedColor: _kOrange.withValues(alpha: 0.18), checkmarkColor: _kOrange,
                         onSelected: (v) => setSheet(() => v ? travailles.add(o['id'].toString()) : travailles.remove(o['id'].toString())),
                       ),
+                  ]),
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    Expanded(child: TextField(controller: nouvelObjCtrl,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                        decoration: const InputDecoration(isDense: true, border: OutlineInputBorder(),
+                            hintText: 'Nouvel objectif (ex : marche en laisse détendue)'))),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: ajoutObj ? null : () async {
+                        final libelle = nouvelObjCtrl.text.trim();
+                        final proUid = FirebaseAuth.instance.currentUser?.uid;
+                        if (libelle.isEmpty || proUid == null) return;
+                        setSheet(() => ajoutObj = true);
+                        try {
+                          final row = await _supa.from('education_objectifs').insert({
+                            'libelle': libelle, 'statut': 'a_travailler', 'pro_uid': proUid,
+                            if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+                            'animal_id': widget.animalId, 'owner_uid': _ownerUid,
+                            if (widget.ownerProfileId != null) 'owner_profile_id': widget.ownerProfileId,
+                            'ordre': _objectifs.length,
+                          }).select().single();
+                          if (mounted) setState(() => _objectifs.add(Map<String, dynamic>.from(row)));
+                          setSheet(() { travailles.add(row['id'].toString()); nouvelObjCtrl.clear(); ajoutObj = false; });
+                        } catch (_) {
+                          setSheet(() => ajoutObj = false);
+                          _snack('Ajout de l\'objectif impossible, réessayez.', err: true);
+                        }
+                      },
+                      child: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _kOrange)),
+                    ),
                   ]),
                   const SizedBox(height: 10),
                 ],
