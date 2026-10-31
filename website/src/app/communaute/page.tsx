@@ -38,7 +38,7 @@ const ITEMS: CommunauteItem[] = [
     icon: '💬',
     color: '#1565C0',
     href: '/communaute/forum',
-    authRequired: false,
+    authRequired: true,
   },
   {
     label: 'Groupes',
@@ -46,7 +46,7 @@ const ITEMS: CommunauteItem[] = [
     icon: '👥',
     color: '#6A1B9A',
     href: '/communaute/groupes',
-    authRequired: false,
+    authRequired: true,
   },
   {
     label: 'Lieux Pet-Friendly',
