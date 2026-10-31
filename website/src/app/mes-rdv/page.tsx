@@ -2396,7 +2396,8 @@ export default function MesRdvPage() {
                     : catPro === 'photographe' ? () => setDossierRdv(rdv)
                     : catPro === 'toilettage' ? () => setDossierToilettage(rdv)
                     : catPro === 'education' ? () => setDossierEducation({ id: rdv.id, nomClient: rdv.clientName ?? rdv.client_nom_manuel ?? 'Client' }) : undefined}
-                  onDocumentPro={activeTab !== 'demandes' && rdv.statut !== 'annule' && rdv.statut !== 'refuse'
+                  // Éducateur : compte rendu / contrat dans le dossier de la séance.
+                  onDocumentPro={catPro !== 'education' && activeTab !== 'demandes' && rdv.statut !== 'annule' && rdv.statut !== 'refuse'
                     ? mode => setDocPro({ rdv, mode }) : undefined}
                 />
                 </div>

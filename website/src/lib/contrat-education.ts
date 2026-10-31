@@ -3,6 +3,8 @@
 // que les contrats éleveur/garde — voir contrat-garde.ts). Peut être issu
 // directement d'un devis accepté (lignes de prestation détaillées).
 
+import { supabase } from '@/lib/supabase';
+
 export interface LigneEducation {
   description: string;
   quantite: number;
@@ -173,4 +175,43 @@ ${data.notes ? `<div class="art-title">Art. 7 – Notes complémentaires</div><d
 <p class="foot">Contrat de prestation établi le ${today} · PetsMatch</p>
 </div>
 </body></html>`;
+}
+
+// ── Contrat créé depuis le dossier de la séance (ou « Mes Contrats ») — formule
+// Premium. Miroir appli : lib/utils/contrat_education.dart.
+
+export interface ContratEducation { id: string; token: string | null; statut: string }
+
+export const STATUT_CONTRAT: Record<string, string> = {
+  brouillon: 'Brouillon', en_attente: 'En attente de signature', partiellement_signe: 'Signé en partie',
+  signe: 'Signé', annule: 'Annulé', refuse: 'Refusé',
+};
+
+/** Dernier contrat PetsMatch (non annulé) de ce pro pour cet animal. */
+export async function contratEducationAnimal(proUid: string, animalId: string): Promise<ContratEducation | null> {
+  const { data } = await supabase.from('documents_animaux').select('id, token, statut')
+    .eq('uid_eleveur', proUid).eq('type', 'contrat_education').eq('animal_id', animalId)
+    .not('statut', 'in', '(annule,refuse)').order('created_at', { ascending: false }).limit(1).maybeSingle();
+  return (data as ContratEducation | null) ?? null;
+}
+
+export async function creerContratEducation(o: {
+  proUid: string; proProfileId: string | null; animalId: string | null; clientNom: string;
+  clientEmail?: string | null; prestation?: string | null; rdvId?: string | null;
+}): Promise<string | null> {
+  const { data } = await supabase.from('documents_animaux').insert({
+    animal_id: o.animalId,
+    uid_eleveur: o.proUid,
+    pro_profile_id: o.proProfileId,
+    type: 'contrat_education',
+    titre: `Contrat de prestation d'éducation — ${o.clientNom}`,
+    statut: 'brouillon',
+    metadata: {
+      acquereur_nom: o.clientNom,
+      ...(o.clientEmail ? { acquereur_email: o.clientEmail } : {}),
+      prestation: o.prestation?.trim() || 'Prestation d\'éducation canine',
+      ...(o.rdvId ? { rdv_id: o.rdvId } : {}),
+    },
+  }).select('token').single();
+  return (data?.token as string | undefined) ?? null;
 }

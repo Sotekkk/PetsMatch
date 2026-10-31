@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/exercices_progression.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/contrat_education.dart';
 import 'package:PetsMatch/pages/pro/education_shared.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
@@ -1253,11 +1254,15 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           chip(Icons.confirmation_number_outlined, 'Forfait', () async { _tab.animateTo(1); await _enregistrerForfait(); }),
           chip(Icons.request_quote_outlined, 'Devis', () => devisDepuisRdv(context, rdv, animalNom: widget.animalNom)),
           chip(Icons.receipt_long_outlined, 'Facture', () => factureDepuisRdv(context, rdv, animalNom: widget.animalNom)),
-          chip(Icons.upload_file_outlined, 'Mon compte rendu', () async {
+          chip(Icons.upload_file_outlined, 'Charger mon compte rendu', () async {
             await showDocumentProSheet(context, rdv: rdv, mode: 'compte_rendu', clientNom: widget.ownerName,
                 animalNom: widget.animalNom, proNom: proNom, catPro: 'education');
           }),
-          chip(Icons.draw_outlined, 'Mon contrat', () async {
+          // Contrat : généré par PetsMatch (signé en ligne) ou chargé.
+          chip(Icons.draw_outlined, 'Contrat PetsMatch', () => ouvrirContratEducation(context, rdv: rdv,
+              animalId: widget.animalId, clientNom: widget.ownerName.isEmpty ? 'Client' : widget.ownerName,
+              proProfileId: rdv['pro_profile_id']?.toString())),
+          chip(Icons.upload_file_outlined, 'Charger mon contrat', () async {
             await showDocumentProSheet(context, rdv: rdv, mode: 'contrat', clientNom: widget.ownerName,
                 animalNom: widget.animalNom, proNom: proNom, catPro: 'education');
           }),

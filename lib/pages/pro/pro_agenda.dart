@@ -5291,7 +5291,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   : (showProTools && AgendaContexte.catPro == 'marechal_ferrant')
                       ? () => _choixContrat(rdv, () => _genererContratMarechal(rdv))
                       : null,
-          onDocumentPro: showProTools && rdv['statut'] != 'annule' && rdv['statut'] != 'refuse'
+          onDocumentPro: showProTools && AgendaContexte.catPro != 'education' && rdv['statut'] != 'annule' && rdv['statut'] != 'refuse'
               ? (mode) => _documentPro(rdv, mode)
               : null,
           onFacturer: (showProTools && rdv['statut'] == 'termine' &&
@@ -5460,6 +5460,32 @@ class _RdvCard extends StatelessWidget {
     decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
     child: Text(texte, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700, color: fg)),
   );
+
+  /// Bouton « Compte rendu » / « Contrat » : un choix entre le document fait
+  /// avec PetsMatch et le sien chargé (photo / PDF).
+  Widget _menuDocument({required String label, required IconData icon, required List<(String, VoidCallback)> choix}) {
+    const teal = Color(0xFF0C5C6C);
+    final puce = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: teal)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 15, color: teal),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: teal)),
+        if (choix.length > 1) const Icon(Icons.arrow_drop_down, size: 16, color: teal),
+      ]),
+    );
+    if (choix.length == 1) return InkWell(onTap: choix.first.$2, borderRadius: BorderRadius.circular(10), child: puce);
+    return PopupMenuButton<int>(
+      tooltip: label,
+      onSelected: (i) => choix[i].$2(),
+      itemBuilder: (_) => [
+        for (var i = 0; i < choix.length; i++)
+          PopupMenuItem(value: i, child: Text(choix[i].$1, style: const TextStyle(fontFamily: 'Galey'))),
+      ],
+      child: puce,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -5766,24 +5792,17 @@ class _RdvCard extends StatelessWidget {
                   constraints: const BoxConstraints(),
                 ),
               ],
-              if (onCompteRendu != null) ...[
+              // Compte rendu : le rédiger avec PetsMatch ou charger le sien.
+              if (onCompteRendu != null || onSuiviMorpho != null || onDocumentPro != null) ...[
                 const SizedBox(width: 6),
-                IconButton(
-                  onPressed: onCompteRendu,
-                  icon: const Icon(Icons.description_outlined, size: 20, color: Color(0xFF6E9E57)),
-                  tooltip: 'CR / Ordonnance',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ],
-              if (onSuiviMorpho != null) ...[
-                const SizedBox(width: 6),
-                IconButton(
-                  onPressed: onSuiviMorpho,
-                  icon: const Icon(Icons.accessibility_new, size: 20, color: Color(0xFF6E9E57)),
-                  tooltip: 'Rédiger le compte rendu',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                _menuDocument(
+                  label: 'Compte rendu',
+                  icon: Icons.description_outlined,
+                  choix: [
+                    if (onCompteRendu != null) ('Rédiger avec PetsMatch (compte rendu / ordonnance)', onCompteRendu!),
+                    if (onSuiviMorpho != null) ('Rédiger la séance avec PetsMatch', onSuiviMorpho!),
+                    if (onDocumentPro != null) ('Charger le mien (photo / PDF)', () => onDocumentPro!('compte_rendu')),
+                  ],
                 ),
               ],
               if (onFinSeance != null) ...[
@@ -5806,26 +5825,15 @@ class _RdvCard extends StatelessWidget {
                   constraints: const BoxConstraints(),
                 ),
               ],
-              if (onContrat != null) ...[
+              // Contrat : le générer avec PetsMatch ou charger le sien.
+              if (onContrat != null || onDocumentPro != null) ...[
                 const SizedBox(width: 6),
-                IconButton(
-                  onPressed: onContrat,
-                  icon: const Icon(Icons.draw_outlined, size: 20, color: Color(0xFF90A4AE)),
-                  tooltip: 'Contrat de prestation',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ],
-              if (onDocumentPro != null) ...[
-                const SizedBox(width: 6),
-                PopupMenuButton<String>(
-                  onSelected: onDocumentPro,
-                  tooltip: 'Mon compte rendu / mon contrat',
-                  padding: EdgeInsets.zero,
-                  icon: const Icon(Icons.upload_file_outlined, size: 20, color: Color(0xFF90A4AE)),
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'compte_rendu', child: Text('Mon compte rendu (photo / PDF)', style: TextStyle(fontFamily: 'Galey'))),
-                    PopupMenuItem(value: 'contrat', child: Text('Mon contrat (photo / PDF)', style: TextStyle(fontFamily: 'Galey'))),
+                _menuDocument(
+                  label: 'Contrat',
+                  icon: Icons.draw_outlined,
+                  choix: [
+                    if (onContrat != null) ('Générer avec PetsMatch', onContrat!),
+                    if (onDocumentPro != null) ('Charger le mien (photo / PDF)', () => onDocumentPro!('contrat')),
                   ],
                 ),
               ],

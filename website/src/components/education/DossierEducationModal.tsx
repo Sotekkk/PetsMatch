@@ -15,6 +15,8 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import FinConsultationModal from '@/components/rdv/FinConsultationModal';
 import DocumentProModal from '@/components/pro/DocumentProModal';
 import { animauxDetailRdv } from '@/lib/rdv-animaux';
+import { useEducationPlan } from '@/lib/use-plan';
+import { contratEducationAnimal, creerContratEducation, STATUT_CONTRAT, type ContratEducation } from '@/lib/contrat-education';
 
 const TEAL = '#0C5C6C';
 const AMBRE = '#D97706';
@@ -56,6 +58,10 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   const [coord, setCoord] = useState<Record<string, string>>({});
   const [finSeance, setFinSeance] = useState(false);
   const [docPro, setDocPro] = useState<'compte_rendu' | 'contrat' | null>(null);
+  // Contrat : généré par PetsMatch (signé en ligne, Premium) ou chargé par le pro.
+  const [contrat, setContrat] = useState<ContratEducation | null>(null);
+  const [creationContrat, setCreationContrat] = useState(false);
+  const { plan: formule } = useEducationPlan();
 
   const charger = useCallback(async () => {
     const { data: rdv } = await supabase.from('rdv').select('*').eq('id', rdvId).maybeSingle();
@@ -90,8 +96,9 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
       const [o, e, f] = await Promise.all([ob, ex, fo.order('souscrit_le', { ascending: false }).limit(1).maybeSingle()]);
       setNbObjectifs(o.count ?? 0); setNbExercices(e.count ?? 0);
       setForfait((f.data as typeof forfait) ?? null);
+      if (user?.uid) setContrat(await contratEducationAnimal(user.uid, aid).catch(() => null));
     }
-  }, [rdvId, pidActif, animalChoisi, version]);
+  }, [rdvId, pidActif, animalChoisi, version, user?.uid]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -124,6 +131,27 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     else if (r.motif?.trim()) { q.set('ligneDesc', [r.motif.trim(), animalNom].filter(Boolean).join(' — ')); q.set('ligneQte', '1');
       if (r.prix_calcule != null) q.set('lignePrix', String(r.prix_calcule)); }
     ouvrir(`/education/devis?${q.toString()}`, 'Devis de la séance');
+  }
+
+  async function genererContrat() {
+    if (!r || !user?.uid) return;
+    if (formule !== 'premium') {
+      alert('Le contrat PetsMatch signé en ligne est inclus dans la formule Premium. Vous pouvez charger votre propre contrat (photo ou PDF).');
+      return;
+    }
+    setCreationContrat(true);
+    try {
+      const token = await creerContratEducation({
+        proUid: user.uid, proProfileId: pid || null, animalId: aidSel ?? null,
+        clientNom: [coord.prenom, coord.nom].filter(Boolean).join(' ') || nomClient,
+        clientEmail: coord.email || null, prestation: r.motif, rdvId: r.id,
+      });
+      if (!token) { alert('Création du contrat impossible, réessayez.'); return; }
+      ouvrir(`/signer-contrat/${token}`, 'Contrat de prestation');
+      charger();
+    } finally {
+      setCreationContrat(false);
+    }
   }
 
   function facturer() {
@@ -191,7 +219,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
             !cr ? 'À rédiger' : cr.statut === 'brouillon' ? 'Brouillon' : cr.type === 'bilan' ? 'Bilan rédigé' : 'Rédigé',
             !cr ? GRIS : cr.statut === 'brouillon' ? AMBRE : VERT,
             [btn(cr ? 'Modifier / voir' : 'Rédiger', () => fiche(`rdv=${encodeURIComponent(r.id)}`, 'Compte rendu')),
-              btn('Mon compte rendu', () => setDocPro('compte_rendu'))])}
+              btn('Charger le mien', () => setDocPro('compte_rendu'))])}
           {ligne('Exercices', nbExercices ? `${nbExercices} en cours` : 'Aucun en cours', nbExercices ? VERT : GRIS,
             [btn('Attribuer', () => fiche('tab=Programme', 'Exercices'))])}
           {ligne('Programme de travail', nbObjectifs ? `${nbObjectifs} objectif${nbObjectifs > 1 ? 's' : ''} en cours` : 'Aucun objectif', nbObjectifs ? VERT : GRIS,
@@ -204,8 +232,12 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           {ligne('Facture', !facture ? 'À émettre' : `${facture.statut === 'payee' ? 'Payée' : 'Émise'} · ${eur(facture.total_ttc)}`,
             !facture ? GRIS : facture.statut === 'payee' ? VERT : AMBRE,
             [!facture ? btn('Facturer', facturer) : btn('Voir', () => ouvrir('/elevage/facturation', 'Factures'))])}
-          {ligne('Contrat', 'Votre contrat (photo ou PDF), signé en ligne par le client', GRIS,
-            [btn('Mon contrat', () => setDocPro('contrat'))])}
+          {ligne('Contrat',
+            contrat ? `Contrat PetsMatch · ${STATUT_CONTRAT[contrat.statut] ?? contrat.statut}` : 'Générer avec PetsMatch ou charger le vôtre (photo ou PDF)',
+            !contrat ? GRIS : contrat.statut === 'signe' ? VERT : AMBRE,
+            [contrat?.token ? btn('Voir', () => ouvrir(`/signer-contrat/${contrat.token}`, 'Contrat de prestation'))
+              : btn(creationContrat ? 'Création…' : 'Générer', genererContrat),
+              btn('Charger le mien', () => setDocPro('contrat'))])}
         </div>
 
         <button type="button" onClick={() => setFinSeance(true)}
