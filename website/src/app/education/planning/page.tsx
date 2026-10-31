@@ -60,6 +60,7 @@ function EducationPlanningPageInner() {
   const [windowStart, setWindowStart] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [creating, setCreating] = useState(false);
   const [detailFor, setDetailFor] = useState<Cours | null>(null);
+  const [profilEducation, setProfilEducation] = useState('');
 
   useEffect(() => {
     if (authLoading) return;
@@ -83,15 +84,24 @@ function EducationPlanningPageInner() {
   const load = useCallback(async () => {
     if (!user) return;
     const windowEnd = new Date(windowStart); windowEnd.setDate(windowEnd.getDate() + DAYS);
-    // Profil éducateur actif seulement (pas les RDV du toiletteur / photographe du même compte).
-    const duProfil = activeProfileId ? `pro_profile_id.is.null,pro_profile_id.eq.${activeProfileId}` : 'pro_profile_id.is.null,pro_profile_id.neq.null';
+    // Profil éducateur seulement, strictement (comme l'agenda pro) : les RDV
+    // sans profil ou d'un autre profil du compte (toiletteur, photographe…)
+    // n'ont rien à faire ici. Profil actif vide → profil éducateur du compte.
+    let pid = activeProfileId;
+    if (!pid) {
+      const { data: p } = await supabase.from('user_profiles_complet').select('id')
+        .eq('uid', user.uid).eq('profile_type', 'education').limit(1).maybeSingle();
+      pid = (p?.id as string | undefined) ?? '';
+    }
+    setProfilEducation(pid);
+    if (!pid) { setRdvs([]); setCours([]); setParticipantsCount({}); setLoading(false); return; }
     const [{ data: r }, { data: c }] = await Promise.all([
       supabase.from('rdv').select('id, motif, date_heure, duree_minutes')
-        .eq('pro_uid', user.uid).neq('statut', 'refuse').or(duProfil)
+        .eq('pro_uid', user.uid).neq('statut', 'refuse').eq('pro_profile_id', pid)
         .gte('date_heure', windowStart.toISOString()).lt('date_heure', windowEnd.toISOString())
         .order('date_heure'),
       supabase.from('cours_collectifs').select('id, titre, date_heure, duree_minutes, capacite_max, lieu, notes, statut, serie_id')
-        .eq('pro_uid', user.uid).neq('statut', 'annule').or(duProfil)
+        .eq('pro_uid', user.uid).neq('statut', 'annule').eq('pro_profile_id', pid)
         .gte('date_heure', windowStart.toISOString()).lt('date_heure', windowEnd.toISOString())
         .order('date_heure'),
     ]);
@@ -194,7 +204,7 @@ function EducationPlanningPageInner() {
       {creating && (
         <CreateCoursModal
           proUid={user.uid}
-          proProfileId={activeProfileId || null}
+          proProfileId={profilEducation || activeProfileId || null}
           onClose={() => setCreating(false)}
           onSaved={() => { setCreating(false); load(); }}
         />

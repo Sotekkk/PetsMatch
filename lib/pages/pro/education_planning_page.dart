@@ -17,6 +17,15 @@ class EducationPlanningPage extends StatefulWidget {
   State<EducationPlanningPage> createState() => _EducationPlanningPageState();
 }
 
+/// Profil éducateur du planning : le profil actif, sinon le profil éducateur
+/// du compte (profil actif vide = profil principal).
+String _profilEducation() {
+  final actif = User_Info.activeProfileId;
+  if (actif.isNotEmpty) return actif;
+  final edu = User_Info.availableProfiles.where((p) => p['profile_type'] == 'education');
+  return edu.isNotEmpty ? edu.first['id']?.toString() ?? '' : '';
+}
+
 class _EducationPlanningPageState extends State<EducationPlanningPage> {
   final _supa = Supabase.instance.client;
 
@@ -55,11 +64,13 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
             .neq('statut', 'annule')
             .order('date_heure'),
       ]);
-      // Profil éducateur actif seulement : un même compte peut avoir un profil
-      // toiletteur / photographe dont les RDV n'ont rien à faire ici.
-      final pid = User_Info.activeProfileId;
+      // Profil éducateur seulement, strictement (comme l'agenda pro) : un même
+      // compte peut avoir un profil toiletteur / photographe dont les RDV n'ont
+      // rien à faire ici, ni les RDV sans profil. Profil actif vide → profil
+      // éducateur du compte.
+      final pid = _profilEducation();
       bool duProfil(Map<String, dynamic> x) =>
-          pid.isEmpty || x['pro_profile_id'] == null || x['pro_profile_id'].toString() == pid;
+          pid.isNotEmpty && x['pro_profile_id']?.toString() == pid;
       final cours = List<Map<String, dynamic>>.from(results[1] as List)
           .where(duProfil).toList();
       final coursIds = cours.map((c) => c['id'] as String).toList();
@@ -348,7 +359,8 @@ class _CoursCollectifSheetState extends State<_CoursCollectifSheet> {
       final titre = _titreCtrl.text.trim();
       final lieu = _lieuCtrl.text.trim().isEmpty ? null : _lieuCtrl.text.trim();
       final notes = _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim();
-      final profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      final pid = _profilEducation();
+      final profileId = pid.isNotEmpty ? pid : null;
 
       String? serieId;
       if (_recurrent) {
