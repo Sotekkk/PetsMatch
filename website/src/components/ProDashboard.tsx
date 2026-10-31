@@ -302,7 +302,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
             </>
           ) : isEducation ? (
             <>
-              <Kpi valeur={rdvToday} label="RDV aujourd'hui" icone="calendrier" href="/education/planning" />
+              <Kpi valeur={rdvToday} label="RDV aujourd'hui" icone="calendrier" href="/mes-rdv?onglet=agenda" />
               <Kpi valeur={upcomingRdvs.length} label="RDV à venir" icone="horloge" href="/mes-rdv" />
               <Kpi valeur="Éducateur" label="Ma formule" icone="etoile" href="/education/abonnement" />
             </>
@@ -390,7 +390,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
 
         {/* RDV en attente */}
         {isEducation && inscriptionsCours > 0 && (
-          <Link href="/education/planning" className={`block bg-white rounded-2xl px-4 py-3 ${OMBRE}`} style={{ border: '1px solid #F3D9A4' }}>
+          <Link href="/mes-rdv?onglet=agenda" className={`block bg-white rounded-2xl px-4 py-3 ${OMBRE}`} style={{ border: '1px solid #F3D9A4' }}>
             <p className="text-sm font-semibold text-[#1F2A2E]">{inscriptionsCours} demande{inscriptionsCours > 1 ? 's' : ''} d&apos;inscription à un cours collectif</p>
             <p className="text-xs text-gray-500">À confirmer ou refuser dans le planning des cours</p>
           </Link>

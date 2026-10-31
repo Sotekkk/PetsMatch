@@ -401,7 +401,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (type == 'cours_collectif_rappel' || type == 'cours_collectif_place_liberee' ||
         type == 'cours_collectif_confirme' || type == 'cours_collectif_refuse') {
       await Navigator.push(context, MaterialPageRoute(
-        builder: (_) => User_Info.catPro == 'education' ? const EducationPlanningPage() : const AgendaPage(),
+        builder: (_) => User_Info.catPro == 'education' ? const ProAgendaPage(ongletAgenda: true) : const AgendaPage(),
       ));
       return;
     }
@@ -729,7 +729,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => coursId != null && coursId.isNotEmpty
             ? CoursCollectifDetailPage(coursId: coursId)
-            : const EducationPlanningPage(),
+            : const ProAgendaPage(ongletAgenda: true),
       ));
       return;
     }

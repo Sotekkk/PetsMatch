@@ -68,7 +68,6 @@ import 'package:PetsMatch/pages/pro/toilettage_planning_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dashboard_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/marechal_contrats_page.dart';
-import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/education_prestations_page.dart';
@@ -1046,33 +1045,16 @@ class _EleveurNavState extends State<EleveurNav> {
                     ],
                   ),
                 ],
+                // Agenda & RDV = agenda pro avec l'onglet « Agenda » (RDV +
+                // cours collectifs, ex-Planning des cours) et « Disponibilités »
+                // (ex-Mes créneaux). Miroir site : MENU_EDUCATION (Header.tsx).
                 if (User_Info.catPro == 'education') ...[
                   _DrawerSection(
                     icon: Icons.work_outline,
                     label: 'Mon espace pro',
                     children: [
                       _DrawerSubItem(
-                        label: 'Planning des cours',
-                        icon: Icons.calendar_month_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const EducationPlanningPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Mes cours',
-                        icon: Icons.menu_book_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const EducationPrestationsPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Mon agenda RDV',
+                        label: 'Agenda & RDV',
                         icon: Icons.event_outlined,
                         onTap: () {
                           Navigator.pop(context);
@@ -1082,17 +1064,7 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
-                        label: 'Mes créneaux',
-                        icon: Icons.schedule_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const ProAgendaPage(initialTabIndex: 3),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Mes animaux suivis',
+                        label: 'Animaux suivis',
                         icon: Icons.psychology_outlined,
                         onTap: () {
                           Navigator.pop(context);
@@ -1112,7 +1084,17 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
-                        label: 'Mes Employés',
+                        label: 'Prestations & tarifs',
+                        icon: Icons.menu_book_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const EducationPrestationsPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mon équipe',
                         icon: Icons.groups_outlined,
                         locked: _educationPlanCode == 'free',
                         onTap: () {

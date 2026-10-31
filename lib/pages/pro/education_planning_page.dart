@@ -11,8 +11,12 @@ import 'package:url_launcher/url_launcher.dart';
 const _kEducationTeal = Color(0xFF0C5C6C);
 const _kEducationPurple = Color(0xFF7B5EA7);
 
+/// Planning de l'éducateur : RDV individuels + cours collectifs sur 7 jours.
+/// [integre] : affiché comme onglet « Agenda » de l'agenda pro (ProAgendaPage),
+/// sans Scaffold ni barre d'application.
 class EducationPlanningPage extends StatefulWidget {
-  const EducationPlanningPage({super.key});
+  final bool integre;
+  const EducationPlanningPage({super.key, this.integre = false});
   @override
   State<EducationPlanningPage> createState() => _EducationPlanningPageState();
 }
@@ -184,6 +188,37 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
     final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     final days = List.generate(_days, (i) => _windowStart.add(Duration(days: i)));
 
+    final contenu = _loading
+          ? const Center(child: CircularProgressIndicator(color: _kEducationTeal))
+          : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+              itemCount: days.length,
+              itemBuilder: (_, i) => _jour(days[i], today),
+            );
+    if (widget.integre) {
+      return Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 12, 0),
+          child: Row(children: [
+            IconButton(icon: const Icon(Icons.chevron_left), onPressed: () => _shiftWindow(-7)),
+            IconButton(icon: const Icon(Icons.today_outlined), tooltip: 'Aujourd\'hui', onPressed: () {
+              setState(() => _windowStart = today);
+              _load();
+            }),
+            IconButton(icon: const Icon(Icons.chevron_right), onPressed: () => _shiftWindow(7)),
+            const Spacer(),
+            FilledButton.icon(
+              onPressed: _createCoursCollectif,
+              style: FilledButton.styleFrom(backgroundColor: _kEducationPurple),
+              icon: const Icon(Icons.groups_outlined, size: 18),
+              label: const Text('Cours collectif', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            ),
+          ]),
+        ),
+        Expanded(child: RefreshIndicator(onRefresh: _load, color: _kEducationTeal, child: contenu)),
+      ]);
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
@@ -205,13 +240,11 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
         icon: const Icon(Icons.groups_outlined),
         label: const Text('Cours collectif', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _kEducationTeal))
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-              itemCount: days.length,
-              itemBuilder: (_, i) {
-                final day = days[i];
+      body: contenu,
+    );
+  }
+
+  Widget _jour(DateTime day, DateTime today) {
                 final sessions = _sessionsForDay(day);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 18),
@@ -240,9 +273,6 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
                       for (final s in sessions) _sessionCard(s),
                   ]),
                 );
-              },
-            ),
-    );
   }
 
   Widget _sessionCard(Map<String, dynamic> s) {

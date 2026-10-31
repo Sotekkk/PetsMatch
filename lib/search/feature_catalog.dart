@@ -80,7 +80,6 @@ import 'package:PetsMatch/pages/pro/pension_mes_taches_page.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
-import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
@@ -627,16 +626,16 @@ List<QuickAction> _all(BuildContext ctx) => [
 
   // ── Éducateur ──────────────────────────────────────────────────────────────
   QuickAction(
-    label: 'Mes cours',
-    keywords: ['catalogue cours', 'prestations éducateur', 'types de cours', 'tarifs cours', 'durée cours'],
+    label: 'Prestations & tarifs',
+    keywords: ['mes cours', 'bilan', 'forfaits', 'catalogue cours', 'prestations éducateur', 'types de cours', 'tarifs cours', 'durée cours'],
     icon: Icons.menu_book_outlined, group: 'Mon espace pro',
     visible: () => _catPro == 'education', open: (c) => _push(c, const EducationPrestationsPage()),
   ),
   QuickAction(
-    label: 'Planning des cours',
+    label: 'Agenda & RDV — cours collectifs',
     keywords: ['cours collectifs', 'séances', 'balade éducative', 'agenda cours', 'planning éducateur'],
     icon: Icons.calendar_month_outlined, group: 'Mon espace pro',
-    visible: () => _catPro == 'education', open: (c) => _push(c, const EducationPlanningPage()),
+    visible: () => _catPro == 'education', open: (c) => _push(c, const ProAgendaPage(ongletAgenda: true)),
   ),
   QuickAction(
     label: 'Mes animaux suivis',

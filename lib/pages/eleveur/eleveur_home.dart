@@ -36,7 +36,6 @@ import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show Facturation
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
-import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
@@ -558,7 +557,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
         _StatCard(
           value: _rdvTodayCount.toString(), label: 'RDV aujourd\'hui', icon: Icons.calendar_today_outlined,
           onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const EducationPlanningPage())),
+              MaterialPageRoute(builder: (_) => const ProAgendaPage(ongletAgenda: true))),
         ),
         const SizedBox(width: 12),
         _StatCard(

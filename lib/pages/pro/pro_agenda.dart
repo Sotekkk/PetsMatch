@@ -3,6 +3,7 @@ import 'package:PetsMatch/utils/rdv_animaux.dart';
 import 'package:PetsMatch/widgets/rdv/motif_annulation.dart';
 import 'package:PetsMatch/utils/fin_seance_osteo.dart' show finSeanceOsteo;
 import 'package:PetsMatch/pages/pro/nouveau_patient_clinique_page.dart' show NouveauPatientCliniquePage;
+import 'package:PetsMatch/pages/pro/education_planning_page.dart' show EducationPlanningPage;
 import 'package:PetsMatch/pages/pro/photographe_dossier_seance.dart' show showDossierSeance, genererContratPhoto;
 import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show showDossierToilettage, genererContratToilettage, facturerToilettage;
 import 'package:PetsMatch/pages/pro/garde_fiche_animal_page.dart';
@@ -64,7 +65,11 @@ class ProAgendaPage extends StatefulWidget {
   // le menu, sans dupliquer la logique déjà présente dans cette page.
   /// Onglet d'ouverture ; par défaut « À venir » pour un vétérinaire,
   /// « Demandes » pour les autres métiers.
+  /// Index logique : 0 Demandes, 1 À venir, 2 Historique, 3 Créneaux
+  /// (l'onglet « Agenda » de l'éducateur, placé devant, décale l'index réel).
   final int? initialTabIndex;
+  /// Éducateur : ouvrir sur l'onglet « Agenda » (RDV + cours collectifs).
+  final bool ongletAgenda;
   /// Agenda d'une clinique ouvert par un de ses employés (null = le mien).
   final ({String uid, String profileId, String catPro})? employeur;
   /// RDV dont on ouvre directement la fiche d'actions (accueil vétérinaire).
@@ -77,7 +82,7 @@ class ProAgendaPage extends StatefulWidget {
   final String? nouveauRdvMotif;
   /// Avec [focusRdvId] : ouvre directement « Modifier » puis revient en arrière.
   final bool modifierFocus;
-  const ProAgendaPage({super.key, this.initialTabIndex, this.employeur, this.focusRdvId, this.nouveauRdv = false,
+  const ProAgendaPage({super.key, this.initialTabIndex, this.ongletAgenda = false, this.employeur, this.focusRdvId, this.nouveauRdv = false,
       this.nouveauRdvAnimalId, this.nouveauRdvMotif, this.modifierFocus = false});
 
   @override
@@ -92,6 +97,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       'juil.', 'août', 'sep.', 'oct.', 'nov.', 'déc.'];
 
   late TabController _tabCtrl;
+  /// Éducateur : onglet « Agenda » (RDV individuels + cours collectifs, ex-
+  /// Planning des cours) devant Demandes / À venir / Historique / Disponibilités.
+  /// Pas dans l'espace employé : le planning lit le compte connecté.
+  bool get _avecAgendaEducation => AgendaContexte.catPro == 'education' && widget.employeur == null;
   bool _loading = true;
   List<Map<String, dynamic>> _rdvs = [];
   List<Map<String, dynamic>> _aujourdhui = [];
@@ -427,8 +436,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     } else {
       AgendaContexte.fermer();
     }
-    _tabCtrl = TabController(length: 4, vsync: this,
-        initialIndex: widget.initialTabIndex ?? (AgendaContexte.catPro == 'veterinaire' ? 1 : 0));
+    _tabCtrl = TabController(length: _avecAgendaEducation ? 5 : 4, vsync: this,
+        initialIndex: _avecAgendaEducation && widget.ongletAgenda ? 0
+            : (widget.initialTabIndex ?? (AgendaContexte.catPro == 'veterinaire' ? 1 : 0)) + (_avecAgendaEducation ? 1 : 0));
     final now = DateTime.now();
     _weekStart = now.subtract(Duration(days: now.weekday - 1));
     _loadRdvs();
@@ -3866,10 +3876,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           unselectedLabelColor: Colors.white60,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
           tabs: [
+            if (_avecAgendaEducation) const Tab(text: 'Agenda'),
             Tab(text: 'Demandes${_demandes.isNotEmpty ? " (${_demandes.length})" : ""}'),
             const Tab(text: 'À venir'),
             const Tab(text: 'Historique'),
-            const Tab(text: 'Créneaux'),
+            Tab(text: _avecAgendaEducation ? 'Disponibilités' : 'Créneaux'),
           ],
         ),
       ),
@@ -3887,6 +3898,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   child: TabBarView(
                     controller: _tabCtrl,
                     children: [
+                      if (_avecAgendaEducation) const EducationPlanningPage(integre: true),
                       _buildTabWithCours(_coursDemandes, _demandes, showActions: true),
                       _buildTabWithCours(_coursAvenir, _avenir, showCancel: true),
                       _buildList(_historique, showDelete: true),

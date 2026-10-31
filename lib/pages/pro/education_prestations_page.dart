@@ -67,7 +67,7 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
       appBar: AppBar(
         backgroundColor: _purple,
         foregroundColor: Colors.white,
-        title: const Text('Mes cours', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        title: const Text('Prestations & tarifs', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         elevation: 0,
       ),
       floatingActionButton: FloatingActionButton(

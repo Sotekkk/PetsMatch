@@ -14,7 +14,6 @@ import 'package:PetsMatch/utils/itineraire.dart';
 import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv, choisirAnimalRdv;
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
-import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
 import 'package:PetsMatch/pages/pro/education_shared.dart';
@@ -326,7 +325,7 @@ class _EducationDashboardState extends State<EducationDashboard> {
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         for (final (n, texte, page) in [
           (_demandesRdv, 'demande${_demandesRdv > 1 ? 's' : ''} de rendez-vous à traiter', const ProAgendaPage(initialTabIndex: 0) as Widget),
-          (_demandesCours, "demande${_demandesCours > 1 ? 's' : ''} d'inscription à un cours collectif", const EducationPlanningPage() as Widget),
+          (_demandesCours, "demande${_demandesCours > 1 ? 's' : ''} d'inscription à un cours collectif", const ProAgendaPage(ongletAgenda: true) as Widget),
         ])
           if (n > 0) Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -404,7 +403,7 @@ class _EducationDashboardState extends State<EducationDashboard> {
       for (final r in duJour) _ligne(r, now),
       for (final c in _cours)
         InkWell(
-          onTap: () => _go(const EducationPlanningPage()),
+          onTap: () => _go(const ProAgendaPage(ongletAgenda: true)),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 9),
             child: Row(children: [

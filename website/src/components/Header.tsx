@@ -84,6 +84,14 @@ const NAV_PRO = [
   { href: '/communaute',           label: 'Communauté' },
 ];
 
+// Accès rapides de l'éducateur / comportementaliste.
+const NAV_EDUCATION = [
+  { href: '/',                     label: 'Accueil' },
+  { href: '/mes-rdv',              label: 'Agenda & RDV' },
+  { href: '/mes-patients',         label: 'Animaux suivis' },
+  { href: '/communaute',           label: 'Communauté' },
+];
+
 const NAV_PENSION = [
   { href: '/',                     label: 'Accueil' },
   { href: '/pension/registre',     label: 'Registre' },
@@ -435,18 +443,20 @@ const MENU_GARDE = [
   },
 ];
 
+// Agenda & RDV (/mes-rdv) regroupe l'agenda (RDV + cours collectifs, ex-
+// Planning des cours), les demandes, à venir, historique et disponibilités
+// (ex-Mes créneaux). Miroir appli : eleveur_nav.dart bloc catPro == 'education'.
 const MENU_EDUCATION = [
   {
     section: 'Mon espace pro',
     icon: '💼',
     items: [
-      { href: '/education/prestations', label: 'Mes cours',       icon: '📖' },
-      { href: '/education/planning', label: 'Planning des cours', icon: '📅' },
-      { href: '/mes-rdv',            label: 'Mon agenda RDV',     icon: '🗓️' },
-      { href: '/pro/creneaux',       label: 'Mes créneaux',       icon: '⏰' },
-      { href: '/mes-patients',       label: 'Mes animaux suivis', icon: '🐾' },
+      { href: '/',                   label: 'Accueil',            icon: '🏠' },
+      { href: '/mes-rdv',            label: 'Agenda & RDV',       icon: '🗓️' },
+      { href: '/mes-patients',       label: 'Animaux suivis',     icon: '🐾' },
       { href: '/education/bibliotheque', label: 'Bibliothèque d\'exercices', icon: '🏋️' },
-      { href: '/elevage/employes',   label: 'Mes employés',       icon: '👥' },
+      { href: '/education/prestations', label: 'Prestations & tarifs', icon: '📖' },
+      { href: '/elevage/employes',   label: 'Mon équipe',         icon: '👥' },
     ],
   },
   {
@@ -718,7 +728,7 @@ const SEARCH_KEYWORDS: Record<string, string[]> = {
   '/favoris': ['favoris', 'likes', 'mes interactions'],
   '/messages': ['messagerie', 'chat', 'conversations', 'messages'],
   '/agenda': ['agenda', 'calendrier', 'rendez-vous', 'rdv'],
-  '/mes-rdv': ['demandes de rdv', 'gerer rdv', 'mes rendez-vous'],
+  '/mes-rdv': ['demandes de rdv', 'gerer rdv', 'mes rendez-vous', 'agenda', 'planning des cours', 'cours collectifs', 'seances', 'disponibilites'],
   '/pro/creneaux': ['disponibilites', 'horaires', 'creneaux'],
   '/mes-patients': ['patients', 'animaux suivis', 'clients', 'animaux en garde'],
   '/mes-animaux-acquis': ['animaux adoptes', 'animaux achetes', 'mes acquisitions'],
@@ -744,7 +754,7 @@ const SEARCH_KEYWORDS: Record<string, string[]> = {
   '/garde/tarifs-clients': ['tarifs clients', 'prix garde'],
   '/garde/abonnement': ['abonnement garde', 'formule garde'],
   // Éducation
-  '/education/planning': ['planning des cours', 'cours collectifs', 'seances'],
+  '/education/prestations': ['mes cours', 'prestations', 'tarifs', 'prix', 'bilan', 'forfaits'],
   '/education/bibliotheque': ['bibliotheque exercices', 'exercices', 'catalogue exercices', 'fiches exercices'],
   '/education/devis': ['devis', 'nouveau devis'],
   '/education/contrat': ['contrats education', 'contrat signable', 'mes contrats educateur'],
@@ -972,7 +982,7 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
       // Nouvel avis / avis modifié (reçu par le pro) : ses avis, sur sa vitrine.
       return d.pro_uid ? `/services/pro/${d.pro_uid}?avis=1${d.pro_profile_id ? `&profileId=${d.pro_profile_id}` : ''}` : null;
     case 'cours_collectif_inscription':
-      return d.coursId ? `/education/planning?coursId=${d.coursId}` : '/education/planning';
+      return d.coursId ? `/mes-rdv?onglet=agenda&coursId=${d.coursId}` : '/mes-rdv?onglet=agenda';
     case 'devis_recu':
       // Nouveau : le devis est un contrat signable (d.url = /signer-contrat/<token>)
       return d.url ?? (d.token ? `/devis/${d.token}` : devisPath);
@@ -1006,7 +1016,7 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'cours_collectif_place_liberee':
     case 'cours_collectif_confirme':
     case 'cours_collectif_refuse':
-      return '/education/planning';
+      return '/mes-rdv?onglet=agenda';
     case 'promenade_join':
     case 'promenade_accepte':
     case 'promenade_refuse':
@@ -1228,7 +1238,7 @@ export default function Header() {
   const isSecondaryPro = !!(activeProfile && PRO_TYPES.has(activeProfile.profile_type));
   const isEffectivelyPro = isSecondaryPro || isPrimaryPro;
   const navLinks = loading || !user ? NAV_GUEST
-    : isEffectivelyPro ? (effectiveIsVet ? NAV_VET : effectiveIsPension ? NAV_PENSION : NAV_PRO)
+    : isEffectivelyPro ? (effectiveIsVet ? NAV_VET : effectiveIsPension ? NAV_PENSION : effectiveIsEducation ? NAV_EDUCATION : NAV_PRO)
     : effectiveIsAssociation ? NAV_ASSOCIATION
     : effectiveIsEleveur ? NAV_ELEVEUR
     : NAV_PARTICULIER;

@@ -118,7 +118,7 @@ export default function EducationPrestationsPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Mes cours</h1>
+        <h1 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Prestations &amp; tarifs</h1>
         <button onClick={() => setForm({ nom: '', description: '', duree_minutes: '60', prix: '', bilan_requis: false, domicile_ok: true, type: 'individuel', capacite_max: '6', lieu_adresse: '', lieu_lat: null, lieu_lng: null })}
           className="text-white rounded-xl px-3 py-2 text-sm font-semibold" style={{ background: PURPLE }}>+ Cours</button>
       </div>

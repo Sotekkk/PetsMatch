@@ -30,6 +30,7 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/lib/firebase';
 import { familleGarde, FAMILLES_GARDE } from '@/lib/compte-rendu-garde';
 import ApresAcceptationGardeModal from '@/components/garde/ApresAcceptationGardeModal';
+import PlanningCours from '@/components/education/PlanningCours';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ const PRO_TITLE: Record<string, string> = {
   sante:            'Mes rendez-vous',
   pension:          'Gestion des RDV',
   garde:            'Mes RDV de garde',
-  education:        'Mes séances',
+  education:        'Agenda & RDV',
   toilettage:       'Mes RDV toilettage',
   comportementaliste: 'Mes séances',
   osteo:            'Mes séances',
@@ -1892,7 +1893,7 @@ function CreneauxTab({ uid, profileId, praticienId = null }: { uid: string; prof
 
 // ── Page principale ────────────────────────────────────────────────────────────
 
-type TabKey = 'demandes' | 'a_venir' | 'historique' | 'creneaux' | 'planning';
+type TabKey = 'demandes' | 'a_venir' | 'historique' | 'creneaux' | 'planning' | 'agenda';
 
 export default function MesRdvPage() {
   const { user, userData, loading } = useAuth();
@@ -1974,7 +1975,7 @@ export default function MesRdvPage() {
     // useSearchParams, qui exige un Suspense au build).
     const q = new URLSearchParams(window.location.search);
     const onglet = q.get('onglet') as TabKey | null;
-    if (onglet && ['demandes', 'a_venir', 'historique', 'creneaux', 'planning'].includes(onglet)) setActiveTab(onglet);
+    if (onglet && ['demandes', 'a_venir', 'historique', 'creneaux', 'planning', 'agenda'].includes(onglet)) setActiveTab(onglet);
     else if (catPro === 'veterinaire') setActiveTab('a_venir');
     setRdvFocus(q.get('rdv'));
     if (q.get('dossier') === '1' && q.get('rdv') && catPro === 'education') setDossierEducation({ id: q.get('rdv')!, nomClient: '' });
@@ -2186,11 +2187,14 @@ export default function MesRdvPage() {
   );
 
   const TABS: { key: TabKey; label: string; badge: number }[] = [
+    // Éducateur : RDV individuels et cours collectifs dans le même calendrier
+    // (ex-page Planning des cours).
+    ...(catPro === 'education' && !esp.espace ? [{ key: 'agenda' as TabKey, label: 'Agenda', badge: 0 }] : []),
     { key: 'demandes',   label: 'Demandes',   badge: demandes.length   },
     { key: 'a_venir',    label: 'À venir',    badge: aVenir.length     },
     { key: 'historique', label: 'Historique', badge: 0                 },
     // Espace employé : le vétérinaire gère SES créneaux ; l'ASV n'en a pas.
-    ...(esp.espace && !esp.praticien ? [] : [{ key: 'creneaux' as TabKey, label: 'Créneaux', badge: 0 }]),
+    ...(esp.espace && !esp.praticien ? [] : [{ key: 'creneaux' as TabKey, label: catPro === 'education' ? 'Disponibilités' : 'Créneaux', badge: 0 }]),
     // Clinique : journée en colonnes par praticien / par salle.
     ...(catPro === 'veterinaire' ? [{ key: 'planning' as TabKey, label: 'Planning', badge: 0 }] : []),
   ];
@@ -2256,10 +2260,10 @@ export default function MesRdvPage() {
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1 bg-white/10 rounded-xl p-1">
+          <div className="flex gap-1 bg-white/10 rounded-xl p-1 overflow-x-auto">
             {TABS.map(t => (
               <button key={t.key} onClick={() => setActiveTab(t.key)}
-                className="flex-1 py-2 px-1 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1"
+                className="flex-1 shrink-0 whitespace-nowrap py-2 px-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1"
                 style={{ background: activeTab === t.key ? 'white' : 'transparent', color: activeTab === t.key ? TEAL : 'rgba(255,255,255,0.75)', fontFamily: 'Galey, sans-serif' }}>
                 {t.label}
                 {t.badge > 0 && (
@@ -2318,7 +2322,18 @@ export default function MesRdvPage() {
           </FormuleVetRequise>
         )}
 
-        {activeTab !== 'creneaux' && activeTab !== 'planning' && famillesPresentes.length > 1 && (
+        {/* Agenda de l'éducateur : RDV + cours collectifs */}
+        {activeTab === 'agenda' && catPro === 'education' && !esp.espace && (
+          <PlanningCours version={rdvs} onOuvrirRdv={id => {
+            const r = rdvs.find(x => x.id === id);
+            if (!r) return;
+            setActiveTab(r.statut === 'demande' || r.statut === 'contre_proposition' ? 'demandes'
+              : historique.some(h => h.id === id) ? 'historique' : 'a_venir');
+            setRdvFocus(id);
+          }} />
+        )}
+
+        {activeTab !== 'creneaux' && activeTab !== 'planning' && activeTab !== 'agenda' && famillesPresentes.length > 1 && (
           <div className="flex flex-wrap gap-2 mb-3">
             {[{ key: 'tous', label: 'Toutes les prestations' }, ...famillesPresentes].map(f => (
               <button key={f.key} type="button" onClick={() => setFiltrePrestation(f.key)}
@@ -2331,7 +2346,7 @@ export default function MesRdvPage() {
         )}
 
         {/* Onglets RDV */}
-        {activeTab !== 'creneaux' && activeTab !== 'planning' && (
+        {activeTab !== 'creneaux' && activeTab !== 'planning' && activeTab !== 'agenda' && (
           fetching ? (
             <div className="flex justify-center py-16">
               <div className="w-7 h-7 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />

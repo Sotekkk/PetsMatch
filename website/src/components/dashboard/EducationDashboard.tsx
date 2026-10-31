@@ -204,7 +204,7 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
                         );
                       })}
                       {cours.map(c => (
-                        <Link key={c.id} href="/education/planning"
+                        <Link key={c.id} href={`/mes-rdv?onglet=agenda&coursId=${encodeURIComponent(c.id)}`}
                           className="w-full flex items-center gap-3 border border-[#EEF0EE] rounded-xl px-3 py-2.5 hover:bg-gray-50">
                           <p className="w-12 text-sm font-bold text-[#1E2025]">{hm(debut(c))}</p>
                           <span className="text-[#0C5C6C]"><Icone nom="equipe" taille={20} /></span>
