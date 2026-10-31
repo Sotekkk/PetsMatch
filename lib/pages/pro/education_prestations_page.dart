@@ -68,7 +68,7 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
     if (uid == null) { setState(() => _loading = false); return; }
     final pid = profilEducationId();
     try {
-      var fq = _supa.from('forfaits_education').select('id, nom, nb_seances, prix, description, affiche_public, type_seances')
+      var fq = _supa.from('forfaits_education').select('id, nom, nb_seances, prix, description, affiche_public, type_seances, nb_seances_indiv, nb_seances_coll')
           .eq('pro_uid', uid).eq('actif', true);
       if (pid.isNotEmpty) fq = fq.or('pro_profile_id.eq.$pid,pro_profile_id.is.null');
       final results = await Future.wait<dynamic>([
@@ -186,6 +186,8 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
   Future<void> _ajouterForfait() async {
     final nom = TextEditingController(), nb = TextEditingController(text: '5'), prix = TextEditingController(), desc = TextEditingController();
     var typeSeances = 'mixte';
+    // Forfait mixte : tant de séances individuelles + tant de collectives.
+    final indivCtrl = TextEditingController(), collCtrl = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setD) => AlertDialog(
@@ -201,6 +203,13 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
             items: [for (final t in kTypesSeances) DropdownMenuItem(value: t.$1, child: Text(t.$2))],
             onChanged: (v) => setD(() => typeSeances = v ?? 'mixte'),
           ),
+          if (typeSeances == 'mixte') Row(children: [
+            Expanded(child: TextField(controller: indivCtrl, keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Séances individuelles'))),
+            const SizedBox(width: 8),
+            Expanded(child: TextField(controller: collCtrl, keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Séances collectives'))),
+          ]),
           TextField(controller: desc, decoration: const InputDecoration(labelText: 'Description (optionnel)')),
         ])),
         actions: [
@@ -211,17 +220,21 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
     );
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (ok == true && nom.text.trim().isNotEmpty && uid != null) {
+      final reparti = typeSeances == 'mixte' && (indivCtrl.text.trim().isNotEmpty || collCtrl.text.trim().isNotEmpty);
+      final indiv = int.tryParse(indivCtrl.text.trim()) ?? 0, coll = int.tryParse(collCtrl.text.trim()) ?? 0;
       final row = await _supa.from('forfaits_education').insert({
         'pro_uid': uid, if (_pid.isNotEmpty) 'pro_profile_id': _pid, 'nom': nom.text.trim(),
-        'nb_seances': int.tryParse(nb.text.trim()) ?? 1,
+        'nb_seances': reparti ? (indiv + coll > 0 ? indiv + coll : 1) : (int.tryParse(nb.text.trim()) ?? 1),
+        if (reparti) 'nb_seances_indiv': indiv,
+        if (reparti) 'nb_seances_coll': coll,
         'prix': double.tryParse(prix.text.trim().replaceAll(',', '.')) ?? 0,
         if (desc.text.trim().isNotEmpty) 'description': desc.text.trim(),
         'affiche_public': true,
         'type_seances': typeSeances,
-      }).select('id, nom, nb_seances, prix, description, affiche_public, type_seances').maybeSingle();
+      }).select('id, nom, nb_seances, prix, description, affiche_public, type_seances, nb_seances_indiv, nb_seances_coll').maybeSingle();
       if (row != null && mounted) setState(() => _forfaits.add(Map<String, dynamic>.from(row)));
     }
-    for (final c in [nom, nb, prix, desc]) { c.dispose(); }
+    for (final c in [nom, nb, prix, desc, indivCtrl, collCtrl]) { c.dispose(); }
   }
 
   Future<void> _supprimerForfait(Map<String, dynamic> f) async {
@@ -397,7 +410,9 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
                             child: Row(children: [
                               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 Text(f['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
-                                Text('${f['nb_seances']} séance${((f['nb_seances'] as num?) ?? 1) > 1 ? 's' : ''} · ${_eur((f['prix'] as num?) ?? 0)} € · ${libelleTypeSeances(f['type_seances']?.toString())}',
+                                Text('${f['nb_seances_indiv'] != null || f['nb_seances_coll'] != null
+                                    ? '${f['nb_seances_indiv'] ?? 0} individuelle(s) + ${f['nb_seances_coll'] ?? 0} collective(s)'
+                                    : '${f['nb_seances']} séance${((f['nb_seances'] as num?) ?? 1) > 1 ? 's' : ''} · ${libelleTypeSeances(f['type_seances']?.toString())}'} · ${_eur((f['prix'] as num?) ?? 0)} €',
                                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                               ])),
                               _pastille(f['affiche_public'] == true ? 'Sur la fiche' : 'Masqué', actif: f['affiche_public'] == true,

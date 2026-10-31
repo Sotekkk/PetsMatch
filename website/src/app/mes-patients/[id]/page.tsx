@@ -39,7 +39,7 @@ import { phraseChampsARemplir, erreursDatesSante } from '@/lib/controle-dates';
 import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
 import { uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
 import { allerOuFermer } from '@/lib/panneau';
-import { TYPES_SEANCES, libelleTypeSeances, preparerFactureForfait, type TypeSeances } from '@/lib/forfait-education';
+import { COLS_FORFAIT_SOUSCRIT, TYPES_SEANCES, libelleCompteurs, libelleTypeSeances, preparerFactureForfait, type TypeSeances } from '@/lib/forfait-education';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -159,7 +159,8 @@ interface RapportEduP {
   objectifs_travailles?: string[] | null; comportements?: string | null; difficultes?: string | null;
   prochaine_etape?: string | null; rdv_id?: string | null;
 }
-interface ForfaitSous { id: string; nom_snapshot: string; nb_seances_total: number; nb_seances_utilisees: number; statut: string; type_seances?: string | null; }
+interface ForfaitSous { id: string; nom_snapshot: string; nb_seances_total: number; nb_seances_utilisees: number; statut: string; type_seances?: string | null;
+  nb_indiv_total?: number | null; nb_coll_total?: number | null; nb_indiv_utilisees?: number | null; nb_coll_utilisees?: number | null; }
 const EDUC_RESSENTI: Record<string, string> = { facile: '😊 Facile', moyen: '😐 Moyen', difficile: '😓 Difficile', bloque: '🚫 Bloqué' };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -242,18 +243,23 @@ function EmptyState({ text }: { text: string }) {
 
 function ForfaitSousForm({ proUid, onSave, onCancel }: {
   proUid: string;
-  onSave: (nom: string, nb: number, prix: number | null, forfaitId: string | null, type: TypeSeances) => void;
+  onSave: (nom: string, nb: number, prix: number | null, forfaitId: string | null, type: TypeSeances, indiv: number | null, coll: number | null) => void;
   onCancel: () => void;
 }) {
   const [nom, setNom] = useState('');
   const [nb, setNb] = useState('5');
   const [prix, setPrix] = useState('');
   const [type, setType] = useState<TypeSeances>('mixte');
+  // Forfait mixte : tant de séances individuelles + tant de collectives.
+  const [indiv, setIndiv] = useState('');
+  const [coll, setColl] = useState('');
   const [forfaitId, setForfaitId] = useState('');
-  const [catalog, setCatalog] = useState<{ id: string; nom: string; nb_seances: number; prix: number; type_seances?: string | null }[]>([]);
+  const [catalog, setCatalog] = useState<{ id: string; nom: string; nb_seances: number; prix: number; type_seances?: string | null; nb_seances_indiv?: number | null; nb_seances_coll?: number | null }[]>([]);
+  const reparti = type === 'mixte' && (indiv.trim() !== '' || coll.trim() !== '');
+  const nbTotal = reparti ? (Number(indiv) || 0) + (Number(coll) || 0) : Number(nb);
   useEffect(() => {
     if (!proUid) return;
-    supabase.from('forfaits_education').select('id, nom, nb_seances, prix, type_seances').eq('pro_uid', proUid).eq('actif', true).order('created_at')
+    supabase.from('forfaits_education').select('id, nom, nb_seances, prix, type_seances, nb_seances_indiv, nb_seances_coll').eq('pro_uid', proUid).eq('actif', true).order('created_at')
       .then(({ data }) => setCatalog((data ?? []) as typeof catalog));
   }, [proUid]);
   return (
@@ -263,7 +269,10 @@ function ForfaitSousForm({ proUid, onSave, onCancel }: {
         <select value={forfaitId} onChange={e => {
           const v = e.target.value; setForfaitId(v);
           const f = catalog.find(x => x.id === v);
-          if (f) { setNom(f.nom); setNb(String(f.nb_seances)); setPrix(String(f.prix)); setType((f.type_seances as TypeSeances) || 'mixte'); }
+          if (f) {
+            setNom(f.nom); setNb(String(f.nb_seances)); setPrix(String(f.prix)); setType((f.type_seances as TypeSeances) || 'mixte');
+            setIndiv(f.nb_seances_indiv != null ? String(f.nb_seances_indiv) : ''); setColl(f.nb_seances_coll != null ? String(f.nb_seances_coll) : '');
+          }
         }} className="w-full border border-gray-200 rounded-xl px-2 py-2 text-sm">
           <option value="">Saisie libre…</option>
           {catalog.map(f => <option key={f.id} value={f.id}>{f.nom} · {f.nb_seances} séances · {f.prix} € · {libelleTypeSeances(f.type_seances)}</option>)}
@@ -275,15 +284,28 @@ function ForfaitSousForm({ proUid, onSave, onCancel }: {
       </select>
       <input value={nom} onChange={e => setNom(e.target.value)} placeholder="Nom du forfait"
         className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+      {type === 'mixte' && (
+        <div className="flex gap-2">
+          <input type="number" min={0} value={indiv} onChange={e => setIndiv(e.target.value)} placeholder="Séances individuelles"
+            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+          <input type="number" min={0} value={coll} onChange={e => setColl(e.target.value)} placeholder="Séances collectives"
+            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+        </div>
+      )}
       <div className="flex gap-2">
-        <input type="number" value={nb} onChange={e => setNb(e.target.value)} placeholder="Nb séances"
-          className="w-28 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+        {reparti ? (
+          <p className="w-28 text-sm text-gray-600 py-2">{nbTotal} séances</p>
+        ) : (
+          <input type="number" value={nb} onChange={e => setNb(e.target.value)} placeholder="Nb séances"
+            className="w-28 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+        )}
         <input type="number" value={prix} onChange={e => setPrix(e.target.value)} placeholder="Prix (€)"
           className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
       </div>
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 border border-gray-200 rounded-xl py-2 text-sm text-gray-500">Annuler</button>
-        <button onClick={() => onSave(nom, Number(nb), prix ? Number(prix) : null, forfaitId || null, type)}
+        <button onClick={() => onSave(nom, nbTotal, prix ? Number(prix) : null, forfaitId || null, type,
+          reparti ? Number(indiv) || 0 : null, reparti ? Number(coll) || 0 : null)}
           disabled={!nom.trim()} className="flex-1 text-white rounded-xl py-2 text-sm font-semibold disabled:opacity-50" style={{ background: '#EF6C00' }}>
           {prix && Number(prix) > 0 ? 'Attribuer et préparer la facture' : 'Attribuer'}
         </button>
@@ -2641,11 +2663,12 @@ function PatientDetailPageInner() {
 
   async function reloadForfaitsSous() {
     const { data } = await supabase.from('forfaits_souscrits')
-      .select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut, type_seances').eq('animal_id', animalId).order('souscrit_le', { ascending: false });
+      .select(COLS_FORFAIT_SOUSCRIT).eq('animal_id', animalId).order('souscrit_le', { ascending: false });
     setForfaitsSous(((data ?? []) as ForfaitSous[]).filter(f => f.statut !== 'annule'));
   }
 
-  async function registerForfaitSous(nom: string, nb: number, prix: number | null, forfaitId: string | null, type: TypeSeances = 'mixte') {
+  async function registerForfaitSous(nom: string, nb: number, prix: number | null, forfaitId: string | null, type: TypeSeances = 'mixte',
+    indiv: number | null = null, coll: number | null = null) {
     if (!nom.trim() || !user?.uid) return;
     const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
     const ligne = {
@@ -2654,7 +2677,10 @@ function PatientDetailPageInner() {
       client_uid: ownerUid, animal_id: animalId,
       nom_snapshot: nom.trim(), nb_seances_total: nb || 1, ...(prix != null ? { prix_snapshot: prix } : {}),
     };
-    const { error } = await supabase.from('forfaits_souscrits').insert({ ...ligne, type_seances: type });
+    const { error } = await supabase.from('forfaits_souscrits').insert({
+      ...ligne, type_seances: type,
+      ...(type === 'mixte' && (indiv != null || coll != null) ? { nb_indiv_total: indiv ?? 0, nb_coll_total: coll ?? 0 } : {}),
+    });
     // Repli sans la colonne type_seances (migration pas encore passée).
     if (error) await supabase.from('forfaits_souscrits').insert(ligne);
     setShowForfaitSousForm(false);
@@ -3935,7 +3961,7 @@ function PatientDetailPageInner() {
                     <div key={f.id} className="border border-gray-100 rounded-xl p-3">
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-semibold text-[#1F2A2E]">{f.nom_snapshot}</p>
-                        <p className="text-xs font-bold text-[#EF6C00]">{actif ? `${f.nb_seances_utilisees} / ${f.nb_seances_total}` : 'Terminé'}</p>
+                        <p className="text-xs font-bold text-[#EF6C00] text-right">{actif ? libelleCompteurs(f) : 'Terminé'}</p>
                       </div>
                       <div className="mt-1.5 h-1.5 rounded-full bg-gray-100 overflow-hidden">
                         <div className="h-full bg-[#EF6C00]" style={{ width: `${pct}%` }} />

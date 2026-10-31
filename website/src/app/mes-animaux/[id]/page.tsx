@@ -50,6 +50,7 @@ import { pdfCompteRendu } from '@/lib/fin-consultation';
 import ReproducteurSelect from '@/components/animaux/ReproducteurSelect';
 import { chargerReproducteurs, chargerReproducteursExterieurs, raisonNonEligible, type Reproducteur } from '@/lib/reproducteurs';
 import ImagePrivee, { VideoPrivee } from '@/components/ImagePrivee';
+import { COLS_FORFAIT_SOUSCRIT, libelleCompteurs } from '@/lib/forfait-education';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -1598,7 +1599,8 @@ interface EduRetour {
 }
 const RESSENTI: Record<string, string> = { facile: '😊 Facile', moyen: '😐 Moyen', difficile: '😓 Difficile', bloque: '🚫 Bloqué' };
 
-interface EduForfait { id: string; nom_snapshot: string; nb_seances_total: number; nb_seances_utilisees: number; statut: string; }
+interface EduForfait { id: string; nom_snapshot: string; nb_seances_total: number; nb_seances_utilisees: number; statut: string;
+  nb_indiv_total?: number | null; nb_coll_total?: number | null; nb_indiv_utilisees?: number | null; nb_coll_utilisees?: number | null; }
 interface EduAttestation { id: string; pdf_url: string; emise_le: string; }
 
 function EducationRapportsTab({ animalId }: { animalId: string }) {
@@ -1628,7 +1630,7 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
         .select('id, pro_uid, pro_profile_id, titre_snapshot, description_snapshot, media_snapshot, cadence, echeance, statut, rappels_actifs, rappels_mutes, etapes_snapshot, nb_validations, validations')
         .eq('animal_id', animalId).order('assigned_at', { ascending: false }),
       supabase.from('forfaits_souscrits')
-        .select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut')
+        .select(COLS_FORFAIT_SOUSCRIT)
         .eq('animal_id', animalId).order('souscrit_le', { ascending: false }),
       supabase.from('education_attestations')
         .select('id, pdf_url, emise_le').eq('animal_id', animalId).order('emise_le', { ascending: false }),
@@ -1738,7 +1740,7 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
           <div key={f.id} className="rounded-2xl border border-[#EF6C00]/30 bg-[#FFF3E9] p-3">
             <div className="flex items-center justify-between">
               <p className="text-sm font-bold text-gray-800">🎫 {f.nom_snapshot}</p>
-              <p className="text-xs font-bold text-[#EF6C00]">{actif ? `${Math.max(0, f.nb_seances_total - f.nb_seances_utilisees)} séance${f.nb_seances_total - f.nb_seances_utilisees > 1 ? 's' : ''} restante${f.nb_seances_total - f.nb_seances_utilisees > 1 ? 's' : ''} sur ${f.nb_seances_total}` : 'Terminé'}</p>
+              <p className="text-xs font-bold text-[#EF6C00]">{actif ? libelleCompteurs(f) : 'Terminé'}</p>
             </div>
             <div className="mt-1.5 h-1.5 rounded-full bg-[#EF6C00]/15 overflow-hidden">
               <div className="h-full bg-[#EF6C00]" style={{ width: `${pct}%` }} />

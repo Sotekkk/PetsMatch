@@ -13,6 +13,7 @@ import 'package:PetsMatch/utils/controle_dates.dart';
 import 'package:PetsMatch/widgets/carnet/prises_traitement.dart';
 import 'package:PetsMatch/utils/resume_traitement.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/forfait_education.dart' show libelleCompteurs;
 import 'package:PetsMatch/pages/particulier/balades/choix_animaux_balade.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
@@ -5616,7 +5617,7 @@ class _EducationTabPState extends State<_EducationTabP> {
           const Text('🎫 ', style: TextStyle(fontSize: 14)),
           Expanded(child: Text(f['nom_snapshot']?.toString() ?? 'Forfait',
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13))),
-          Text(actif ? '${total - used < 0 ? 0 : total - used} séance${total - used > 1 ? 's' : ''} restante${total - used > 1 ? 's' : ''} sur $total' : 'Terminé',
+          Text(actif ? libelleCompteurs(f) : 'Terminé',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFEF6C00))),
         ]),
         const SizedBox(height: 6),

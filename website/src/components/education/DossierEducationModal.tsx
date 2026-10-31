@@ -17,7 +17,7 @@ import DocumentProModal from '@/components/pro/DocumentProModal';
 import { animauxDetailRdv } from '@/lib/rdv-animaux';
 import { useEducationPlan } from '@/lib/use-plan';
 import { contratEducationAnimal, creerContratEducation, STATUT_CONTRAT, type ContratEducation } from '@/lib/contrat-education';
-import { annulerDecompteForfait, decompterSeanceForfait, forfaitCouvre, libelleTypeSeances, seancesRestantes, typeSeanceRdv, type ForfaitActif } from '@/lib/forfait-education';
+import { annulerDecompteForfait, COLS_FORFAIT_SOUSCRIT, decompterSeanceForfait, estReparti, forfaitCouvre, libelleCompteurs, libelleTypeSeances, seancesRestantes, typeSeanceRdv, type ForfaitActif } from '@/lib/forfait-education';
 
 const TEAL = '#0C5C6C';
 const AMBRE = '#D97706';
@@ -104,14 +104,14 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     if (aid) {
       let ob = supabase.from('education_objectifs').select('id', { count: 'exact', head: true }).eq('animal_id', aid).neq('statut', 'acquis');
       let ex = supabase.from('exercices_attribues').select('id', { count: 'exact', head: true }).eq('animal_id', aid).in('statut', ['a_faire', 'en_cours']);
-      let fo = supabase.from('forfaits_souscrits').select('id, nom_snapshot, nb_seances_utilisees, nb_seances_total, type_seances, statut').eq('animal_id', aid).eq('statut', 'actif');
+      let fo = supabase.from('forfaits_souscrits').select(COLS_FORFAIT_SOUSCRIT).eq('animal_id', aid).eq('statut', 'actif');
       if (pid) { ob = ob.eq('pro_profile_id', pid); ex = ex.eq('pro_profile_id', pid); fo = fo.eq('pro_profile_id', pid); }
       const [o, e, f] = await Promise.all([ob, ex, fo.order('souscrit_le', { ascending: false }).limit(1).maybeSingle()]);
       setNbObjectifs(o.count ?? 0); setNbExercices(e.count ?? 0);
       setForfait((f.data as ForfaitActif | null) ?? null);
       if (x.forfait_souscrit_id) {
         const { data: fr } = await supabase.from('forfaits_souscrits')
-          .select('id, nom_snapshot, nb_seances_utilisees, nb_seances_total, type_seances, statut').eq('id', x.forfait_souscrit_id).maybeSingle();
+          .select(COLS_FORFAIT_SOUSCRIT).eq('id', x.forfait_souscrit_id).maybeSingle();
         setForfaitRdv((fr as ForfaitActif | null) ?? null);
       } else setForfaitRdv(null);
       if (user?.uid) setContrat(await contratEducationAnimal(user.uid, aid).catch(() => null));
@@ -151,11 +151,12 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     ouvrir(`/education/devis?${q.toString()}`, 'Devis de la séance');
   }
 
-  async function decompterSeance() {
+  async function decompterSeance(typeCours?: 'individuel' | 'collectif') {
     if (!r || !forfait || !aidSel) return;
     setDecompte(true);
     try {
-      await decompterSeanceForfait(forfait, r.id, { animalId: aidSel, animalNom: animalNom || 'votre animal', ownerUid: r.client_uid });
+      const type = typeCours ?? await typeSeanceRdv(r.prestation_id);
+      await decompterSeanceForfait(forfait, r.id, { animalId: aidSel, animalNom: animalNom || 'votre animal', ownerUid: r.client_uid, typeCours: type });
       await charger(); onChanged?.();
     } catch (e) {
       alert(`Décompte impossible : ${(e as Error).message}`);
@@ -175,7 +176,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     if (forfait && !r.forfait_souscrit_id) {
       const typeCours = await typeSeanceRdv(r.prestation_id);
       if (!forfaitCouvre(forfait, typeCours)) { setChoixForfait({ typeCours }); return; }
-      await decompterSeance();
+      await decompterSeance(typeCours);
     }
     setFinSeance(true);
   }
@@ -276,13 +277,17 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           {ligne('Programme de travail', nbObjectifs ? `${nbObjectifs} objectif${nbObjectifs > 1 ? 's' : ''} en cours` : 'Aucun objectif', nbObjectifs ? VERT : GRIS,
             [btn(nbObjectifs ? 'Voir / ajouter' : 'Définir', () => fiche('tab=Programme', 'Programme de travail'))])}
           {r.forfait_souscrit_id
-            ? ligne('Forfait', `Séance décomptée${forfaitRdv ? ` · ${forfaitRdv.nom_snapshot} · reste ${seancesRestantes(forfaitRdv)} séance${seancesRestantes(forfaitRdv) > 1 ? 's' : ''}` : ''}`,
+            ? ligne('Forfait', `Séance décomptée${forfaitRdv ? ` · ${forfaitRdv.nom_snapshot} · ${libelleCompteurs(forfaitRdv)}` : ''}`,
                 VERT, [btn('Annuler le décompte', annulerDecompte)])
             : ligne('Forfait', forfait
-                ? `${forfait.nom_snapshot} · ${forfait.nb_seances_utilisees}/${forfait.nb_seances_total} séances · ${libelleTypeSeances(forfait.type_seances)}`
+                ? `${forfait.nom_snapshot} · ${libelleCompteurs(forfait)}${estReparti(forfait) ? '' : ` · ${libelleTypeSeances(forfait.type_seances)}`}`
                 : 'Aucun forfait en cours',
               forfait ? AMBRE : GRIS,
-              forfait ? [btn(decompte ? 'Décompte…' : 'Décompter cette séance', decompterSeance), btn('Gérer', () => fiche('tab=Programme', 'Forfait'))]
+              forfait ? [btn(decompte ? 'Décompte…' : 'Décompter cette séance', async () => {
+                const t = await typeSeanceRdv(r.prestation_id);
+                if (!forfaitCouvre(forfait, t) && !confirm(`Ce forfait ne couvre plus de séance ${t === 'collectif' ? 'collective' : 'individuelle'} (${libelleCompteurs(forfait)}). Décompter quand même ?`)) return;
+                await decompterSeance(t);
+              }), btn('Gérer', () => fiche('tab=Programme', 'Forfait'))]
                 : [btn('Attribuer un forfait', () => fiche('tab=Programme&forfait=1', 'Attribuer un forfait'))])}
           {ligne('Devis', !devis ? 'Aucun' : `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'Brouillon'} · ${eur(devis.total_ttc)}`,
             !devis ? GRIS : devis.statut === 'accepte' ? VERT : AMBRE,
@@ -312,11 +317,13 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           <div className="bg-white rounded-2xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
             <p className="font-bold text-[#1F2A2E] mb-1">Forfait ou facture ?</p>
             <p className="text-sm text-gray-600 mb-4">
-              Le forfait « {forfait.nom_snapshot} » couvre les {libelleTypeSeances(forfait.type_seances).toLowerCase()}, et ce cours est {choixForfait.typeCours === 'collectif' ? 'collectif' : 'individuel'}.
-              Reste {seancesRestantes(forfait)} séance{seancesRestantes(forfait) > 1 ? 's' : ''}.
+              {estReparti(forfait)
+                ? <>Plus de séance {choixForfait.typeCours === 'collectif' ? 'collective' : 'individuelle'} sur le forfait « {forfait.nom_snapshot} » ({libelleCompteurs(forfait)}).</>
+                : <>Le forfait « {forfait.nom_snapshot} » couvre les {libelleTypeSeances(forfait.type_seances).toLowerCase()}, et ce cours est {choixForfait.typeCours === 'collectif' ? 'collectif' : 'individuel'}.
+                  Reste {seancesRestantes(forfait)} séance{seancesRestantes(forfait) > 1 ? 's' : ''}.</>}
             </p>
             <div className="space-y-2">
-              <button type="button" onClick={async () => { setChoixForfait(null); await decompterSeance(); setFinSeance(true); }}
+              <button type="button" onClick={async () => { const t = choixForfait.typeCours; setChoixForfait(null); await decompterSeance(t); setFinSeance(true); }}
                 className="w-full py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: TEAL }}>Décompter du forfait</button>
               <button type="button" onClick={() => { setChoixForfait(null); setFinSeance(true); }}
                 className="w-full py-2.5 rounded-xl text-sm font-bold border" style={{ borderColor: TEAL, color: TEAL }}>Facturer la séance à mon tarif</button>

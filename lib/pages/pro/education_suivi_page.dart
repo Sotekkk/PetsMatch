@@ -119,7 +119,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             .eq('id', widget.animalId).maybeSingle(),
         _supa.from('exercices_attribues').select().eq('animal_id', widget.animalId)
             .order('assigned_at', ascending: false),
-        _supa.from('forfaits_education').select('id, nom, nb_seances, prix')
+        _supa.from('forfaits_education').select('id, nom, nb_seances, prix, type_seances, nb_seances_indiv, nb_seances_coll')
             .eq('pro_uid', FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid)
             .eq('actif', true).order('created_at'),
         _supa.from('forfaits_souscrits').select().eq('animal_id', widget.animalId)
@@ -1260,9 +1260,10 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             })
           else if (_forfaitActif != null)
             chip(Icons.confirmation_number_outlined,
-                'Décompter du forfait (reste ${seancesRestantes(_forfaitActif!)})', () async {
+                'Décompter du forfait (${libelleCompteurs(_forfaitActif!)})', () async {
+              final t = await typeSeanceRdv(rdv);
               await decompterSeanceForfait(_forfaitActif!, rdv['id'].toString(),
-                  animalId: widget.animalId, animalNom: widget.animalNom, ownerUid: _ownerUid);
+                  animalId: widget.animalId, animalNom: widget.animalNom, ownerUid: _ownerUid, typeCours: t);
               _rdvDossier = null;
             })
           else
@@ -1295,7 +1296,9 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
               if (!decompter && mounted) {
                 final choix = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
                   title: const Text('Forfait ou facture ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-                  content: Text('Le forfait « ${f['nom_snapshot']} » couvre les ${libelleTypeSeances(f['type_seances']?.toString()).toLowerCase()}, '
+                  content: Text(estReparti(f)
+                      ? 'Plus de séance ${typeCours == 'collectif' ? 'collective' : 'individuelle'} sur le forfait « ${f['nom_snapshot']} » (${libelleCompteurs(f)}).'
+                      : 'Le forfait « ${f['nom_snapshot']} » couvre les ${libelleTypeSeances(f['type_seances']?.toString()).toLowerCase()}, '
                       'et ce cours est $typeCours. Reste ${seancesRestantes(f)} séance${seancesRestantes(f) > 1 ? 's' : ''}.',
                       style: const TextStyle(fontFamily: 'Galey')),
                   actions: [
@@ -1309,7 +1312,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
               }
               if (decompter) {
                 await decompterSeanceForfait(f, rdv['id'].toString(),
-                    animalId: widget.animalId, animalNom: widget.animalNom, ownerUid: _ownerUid);
+                    animalId: widget.animalId, animalNom: widget.animalNom, ownerUid: _ownerUid, typeCours: typeCours);
                 cible = {...rdv, 'forfait_souscrit_id': f['id']};
               }
             }
@@ -1401,7 +1404,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                 child: const Text('Voir', style: TextStyle(fontFamily: 'Galey'))),
             child: f == null
                 ? _texteDiscret('Aucun forfait en cours.')
-                : Text('${f['nom_snapshot'] ?? 'Forfait'} — séance ${(f['nb_seances_utilisees'] as num?)?.toInt() ?? 0}/${(f['nb_seances_total'] as num?)?.toInt() ?? 0}',
+                : Text('${f['nom_snapshot'] ?? 'Forfait'} — ${libelleCompteurs(f)}',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5))),
         _carte(titre: 'Objectifs prioritaires', icone: Icons.track_changes_outlined,
             action: TextButton(onPressed: () { setState(() => _programmeVue = 'objectifs'); _tab.animateTo(1); },
@@ -1620,6 +1623,9 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   Future<void> _enregistrerForfait() async {
     final nomCtrl = TextEditingController();
     final nbCtrl = TextEditingController(text: '5');
+    // Forfait mixte : tant de séances individuelles + tant de collectives.
+    final indivCtrl = TextEditingController();
+    final collCtrl = TextEditingController();
     final prixCtrl = TextEditingController();
     String? forfaitId;
     String typeSeances = 'mixte';
@@ -1667,6 +1673,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                     nbCtrl.text = ((f['nb_seances'] as num?)?.toInt() ?? 5).toString();
                     prixCtrl.text = ((f['prix'] as num?)?.toStringAsFixed(0) ?? '');
                     typeSeances = f['type_seances']?.toString() ?? 'mixte';
+                    indivCtrl.text = f['nb_seances_indiv']?.toString() ?? '';
+                    collCtrl.text = f['nb_seances_coll']?.toString() ?? '';
                   }
                 }),
               ),
@@ -1687,6 +1695,24 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
               onChanged: (v) => setSheet(() => typeSeances = v ?? 'mixte'),
             ),
             const SizedBox(height: 10),
+            if (typeSeances == 'mixte') ...[
+              Row(children: [
+                Expanded(child: TextField(controller: indivCtrl, keyboardType: TextInputType.number,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                    decoration: InputDecoration(labelText: 'Séances individuelles',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12)))),
+                const SizedBox(width: 10),
+                Expanded(child: TextField(controller: collCtrl, keyboardType: TextInputType.number,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                    decoration: InputDecoration(labelText: 'Séances collectives',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12)))),
+              ]),
+              Padding(padding: const EdgeInsets.only(top: 4, bottom: 10),
+                  child: Text('Remplies : le total est leur somme, chaque séance décomptée selon le cours.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600))),
+            ],
             TextField(
               controller: nomCtrl,
               style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
@@ -1737,7 +1763,9 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
 
     if (ok != true || nomCtrl.text.trim().isEmpty || !mounted) return;
     final prix = double.tryParse(prixCtrl.text.trim().replaceAll(',', '.'));
-    final nb = int.tryParse(nbCtrl.text.trim()) ?? 1;
+    final reparti = typeSeances == 'mixte' && (indivCtrl.text.trim().isNotEmpty || collCtrl.text.trim().isNotEmpty);
+    final indiv = int.tryParse(indivCtrl.text.trim()) ?? 0, coll = int.tryParse(collCtrl.text.trim()) ?? 0;
+    final nb = reparti ? (indiv + coll > 0 ? indiv + coll : 1) : (int.tryParse(nbCtrl.text.trim()) ?? 1);
     final proUid = FirebaseAuth.instance.currentUser?.uid;
     try {
       await _supa.from('forfaits_souscrits').insert({
@@ -1751,6 +1779,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         'nb_seances_total': nb,
         if (prix != null) 'prix_snapshot': prix,
         'type_seances': typeSeances,
+        if (reparti) 'nb_indiv_total': indiv,
+        if (reparti) 'nb_coll_total': coll,
       });
       await _load();
       // Payé d'avance : facture du forfait préparée.
