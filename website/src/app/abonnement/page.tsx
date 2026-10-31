@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { apiFetch } from '@/lib/api-fetch';
+import { avecInclusGratuit } from '@/lib/plan-gratuit';
 
 interface PlanTarifaire {
   plan_code: string;
@@ -222,7 +223,8 @@ function AbonnementContent() {
           // Annuel : le prix de l'année, payé en une fois, mis en avant.
           const prixAff = prix === 0 ? 'Gratuit' : periodicite === 'annuel' ? `${plan.prix_annuel} €/an` : `${prix} €/mois`;
           const isCurrent = currentPlan === plan.plan_code;
-          const features: string[] = Array.isArray(plan.features) ? plan.features : JSON.parse(plan.features as unknown as string ?? '[]');
+          const features: string[] = avecInclusGratuit('eleveur', plan.plan_code,
+            Array.isArray(plan.features) ? plan.features : JSON.parse(plan.features as unknown as string ?? '[]'));
 
           return (
             <div key={plan.plan_code} className={`rounded-2xl border p-6 flex flex-col relative ${PLAN_COLORS[plan.plan_code] ?? 'border-gray-200 bg-white'}`}>

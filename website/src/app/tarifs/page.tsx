@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { avecInclusGratuit } from '@/lib/plan-gratuit';
 
 interface PlanRow {
   id: string;
@@ -270,7 +271,7 @@ function TarifsInner() {
               const prixAff = prix === 0 ? 'Gratuit' : `${prix} €/mois`;
               const color = PLAN_COLORS_BY_METIER[metier]?.[plan.plan_code] ?? 'border-gray-200 bg-white';
               const isPopulaire = POPULAIRE_BY_METIER[metier] === plan.plan_code;
-              const features = featureLabels(metier, plan.features);
+              const features = avecInclusGratuit(metier, plan.plan_code, featureLabels(metier, plan.features));
               const isFree = plan.plan_code === 'free' || plan.plan_code === 'decouverte';
 
               return (

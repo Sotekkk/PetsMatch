@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { apiFetch } from '@/lib/api-fetch';
+import { avecInclusGratuit } from '@/lib/plan-gratuit';
 
 interface PlanTarifaire {
   plan_code: string;
@@ -207,7 +208,7 @@ function PhotographeAbonnementContent() {
                 )}
               </p>
               <ul className="flex-1 space-y-2 mb-6 mt-4">
-                {featureLabels(plan.features ?? {}).map((f, i) => (
+                {avecInclusGratuit('photographe', plan.plan_code, featureLabels(plan.features ?? {})).map((f, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
                     <span className="text-[#6E9E57] mt-0.5 flex-shrink-0">✓</span>
                     {f}
