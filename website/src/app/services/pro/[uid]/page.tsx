@@ -44,6 +44,7 @@ function normGalerie(raw: unknown): { url: string; legende: string }[] {
     .filter((p) => p.url);
 }
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
+import { chargerPrestationsEducation, lignesTarifsPublics, type PrestationEducation } from '@/lib/prestations-education';
 
 /** Téléphone FR → format international sans « + » pour wa.me. */
 function waPhone(raw: string): string {
@@ -109,7 +110,7 @@ interface Animal { id: number; nom: string; espece: string; race?: string | null
 const animalPresent = (a: Animal) => !estHorsPriseEnCharge(a) && !a.date_sortie;
 interface CoursCollectif {
   id: string; titre: string; date_heure: string; capacite_max: number; lieu?: string | null;
-  pro_profile_id?: string | null; serie_id?: string | null;
+  pro_profile_id?: string | null; serie_id?: string | null; prestation_id?: string | null;
 }
 
 // ─── Données statiques ─────────────────────────────────────────────────────────
@@ -361,6 +362,8 @@ function ProDetailContent() {
   // Cours collectifs (éducateur/comportementaliste)
   const [coursCollectifs, setCoursCollectifs] = useState<CoursCollectif[]>([]);
   const [participantsCount, setParticipantsCount] = useState<Record<string, number>>({});
+  // Éducateur : catalogue (cours actifs) — source des prix affichés.
+  const [prestationsEdu, setPrestationsEdu] = useState<PrestationEducation[]>([]);
   const [forfaitsPublics, setForfaitsPublics] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
   const [inscriptionCours, setInscriptionCours] = useState<CoursCollectif | null>(null);
   const [inscriptionSerie, setInscriptionSerie] = useState(false);
@@ -482,6 +485,7 @@ function ProDetailContent() {
       const proRow = row as unknown as ProData | null;
       if (proRow && proRow.cat_pro === 'education') {
         await loadCoursCollectifs(proRow.uid);
+        setPrestationsEdu(await chargerPrestationsEducation(proRow.uid, profileTableId || null, { reservablesSeulement: true }));
         if (proRow.tarifs_education_visibles) {
           const { data: fRows } = await supabase.from('forfaits_education')
             .select('id, nom, nb_seances, prix')
@@ -506,7 +510,7 @@ function ProDetailContent() {
 
   async function loadCoursCollectifs(proUid: string) {
     const { data: cours } = await supabase.from('cours_collectifs')
-      .select('id, titre, date_heure, capacite_max, lieu, pro_profile_id, serie_id')
+      .select('id, titre, date_heure, capacite_max, lieu, pro_profile_id, serie_id, prestation_id')
       .eq('pro_uid', proUid).eq('statut', 'planifie')
       .gte('date_heure', new Date().toISOString())
       .order('date_heure');
@@ -559,11 +563,20 @@ function ProDetailContent() {
     }
   }
 
+  /** Prix d'un cours collectif : celui du cours du catalogue relié, sinon le
+   *  seul cours collectif actif du catalogue s'il n'y en a qu'un. */
+  function prixCoursCollectif(c: CoursCollectif): number | null {
+    const lie = c.prestation_id ? prestationsEdu.find(p => p.id === c.prestation_id) : undefined;
+    if (lie) return lie.prix ?? null;
+    const collectifs = prestationsEdu.filter(p => p.type === 'collectif');
+    return collectifs.length === 1 ? collectifs[0].prix ?? null : null;
+  }
+
   async function confirmInscription() {
     if (!inscriptionCours || !user || !pro) return;
     setInscrivant(true);
     try {
-      const prixCours = pro.tarifs_education?.cours_collectif;
+      const prixCours = prixCoursCollectif(inscriptionCours);
 
       // Cible : cette occurrence seule, ou toutes les occurrences à venir
       // déjà générées de la série (les vagues futures sont prises en charge
@@ -1320,25 +1333,11 @@ function ProDetailContent() {
 
   const requiresBilanFirst = pro?.cat_pro === 'education' && pro.education_bilan_requis !== false && isFirstTimeEducationClient;
 
-  const EDUCATION_TARIF_LABELS: Record<string, string> = {
-    cours_individuel: 'Cours individuel',
-    cours_collectif: 'Cours collectif (par participant)',
-    evaluation: 'Évaluation comportementale',
-    domicile_supplement: 'Supplément à domicile',
-  };
+  // Tarifs éducateur : catalogue « Prestations & tarifs » (cours dont le
+  // prix est affiché) + options tarifaires.
   const educationTarifs: { label: string; prix: string }[] =
     pro?.cat_pro === 'education' && pro.tarifs_education_visibles
-      ? [
-          ...Object.entries(EDUCATION_TARIF_LABELS)
-            .filter(([k]) => (pro.tarifs_education?.[k] ?? 0) > 0)
-            .map(([k, label]) => ({ label, prix: `${pro.tarifs_education![k]} €` })),
-          ...(pro.tarifs_education_extra ?? [])
-            .filter(e => e.label?.trim())
-            .map(e => ({
-              label: e.description?.trim() ? `${e.label.trim()} — ${e.description.trim()}` : e.label.trim(),
-              prix: (e.prix ?? 0) > 0 ? `${e.prix} €` : '—',
-            })),
-        ]
+      ? lignesTarifsPublics(prestationsEdu.filter(p => p.affiche_public), pro.tarifs_education, pro.tarifs_education_extra)
       : [];
   const GARDE_TARIF_LABELS: Record<string, string> = {
     promenade_30min: 'Promenade (30 min)',
@@ -1787,9 +1786,9 @@ function ProDetailContent() {
                               : complet ? `Complet — ${inscrits} / ${c.capacite_max} places`
                               : `${inscrits} / ${c.capacite_max} places`}
                           </p>
-                          {!!pro.tarifs_education?.cours_collectif && (
+                          {!!prixCoursCollectif(c) && (
                             <p className="text-xs font-bold" style={{ color: '#7B5EA7' }}>
-                              {pro.tarifs_education.cours_collectif} €
+                              {prixCoursCollectif(c)} € par participant
                             </p>
                           )}
                         </div>

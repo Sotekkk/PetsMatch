@@ -1243,21 +1243,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       ...((data?.profile_type ?? data?.cat_pro) === 'pension'
         ? { tarifs_logements: tarifsLogements, arrhes_pourcentage: arrhesPourcentage }
         : {}),
-      ...((data?.profile_type ?? data?.cat_pro) === 'education'
-        ? {
-            tarifs_education: tarifsEducation,
-            education_bilan_requis: educationBilanRequis,
-            tarifs_education_visibles: tarifsEducationVisibles,
-            education_bilan_description: educationBilanDescription.trim(),
-            tarifs_education_extra: tarifsEducationExtra
-              .filter(e => e.label.trim())
-              .map(e => ({
-                label: e.label.trim(),
-                prix: Number(e.prix) || 0,
-                ...(e.description.trim() ? { description: e.description.trim() } : {}),
-              })),
-          }
-        : {}),
       ...((data?.profile_type ?? data?.cat_pro) === 'garde'
         ? { tarifs_garde: tarifsGarde }
         : {}),
@@ -1711,53 +1696,12 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </Card>
         )}
 
-        {/* Tarifs éducateur/comportementaliste */}
+        {/* Éducateur : tarifs, bilan préalable, forfaits et options sont dans
+            Prestations & tarifs (source unique des prix). */}
         {catPro === 'education' && (
-          <Card title="Tarifs par type de prestation (€)">
-            <p className="text-xs text-gray-400 mb-3">Laissez à 0 les prestations que vous ne proposez pas.</p>
-            <div className="flex items-center justify-between gap-4 mb-4">
-              <p className="text-xs font-medium text-gray-600 flex-1">Afficher mes tarifs sur ma fiche publique</p>
-              <button type="button" onClick={() => setTarifsEducationVisibles(v => !v)}
-                className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
-                style={{ backgroundColor: tarifsEducationVisibles ? '#7B5EA7' : '#9CA3AF' }}>
-                <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
-                  style={{ transform: tarifsEducationVisibles ? 'translateX(20px)' : 'translateX(0)' }} />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {PRESTATIONS_EDUCATION.map(({ value, label }) => (
-                <div key={value}>
-                  <label className="text-xs font-medium text-gray-500 block mb-1">{label}</label>
-                  <input type="number" min={0} step={1}
-                    value={tarifsEducation[value] ?? 0}
-                    onChange={e => setTarifsEducation(t => ({ ...t, [value]: Number(e.target.value) }))}
-                    className={inputCls} />
-                </div>
-              ))}
-            </div>
-            <p className="text-xs font-medium text-gray-600 mt-4 mb-2">Autres prestations</p>
-            <div className="space-y-2">
-              {tarifsEducationExtra.map((e, i) => (
-                <div key={i} className="bg-gray-50 rounded-xl p-2 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <input placeholder="Nom de la prestation" value={e.label}
-                      onChange={ev => setTarifsEducationExtra(prev => prev.map((x, j) => j === i ? { ...x, label: ev.target.value } : x))}
-                      className={`${inputCls} flex-1`} />
-                    <input type="number" min={0} step={1} value={e.prix}
-                      onChange={ev => setTarifsEducationExtra(prev => prev.map((x, j) => j === i ? { ...x, prix: Number(ev.target.value) } : x))}
-                      className={`${inputCls} w-20`} />
-                    <button type="button" onClick={() => setTarifsEducationExtra(prev => prev.filter((_, j) => j !== i))}
-                      className="text-red-400 hover:text-red-600 text-lg px-1">×</button>
-                  </div>
-                  <input placeholder="Description (facultatif)" value={e.description}
-                    onChange={ev => setTarifsEducationExtra(prev => prev.map((x, j) => j === i ? { ...x, description: ev.target.value } : x))}
-                    className={`${inputCls} w-full text-xs`} />
-                </div>
-              ))}
-              <button type="button"
-                onClick={() => setTarifsEducationExtra(prev => [...prev, { label: '', prix: 0, description: '' }])}
-                className="text-sm font-semibold text-[#7B5EA7] hover:underline">+ Ajouter une prestation</button>
-            </div>
+          <Card title="Tarifs, bilans et forfaits">
+            <p className="text-xs text-gray-500 mb-2">Vos cours, bilans, forfaits et options tarifaires se règlent dans « Prestations &amp; tarifs ». Ce sont ces prix qui s&apos;affichent sur votre fiche, dans les réservations et dans vos devis.</p>
+            <a href="/education/prestations" className="text-sm font-semibold text-[#0C5C6C]">Ouvrir Prestations &amp; tarifs</a>
           </Card>
         )}
 
@@ -1909,27 +1853,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </div>
         )}
 
-        {/* Bilan préalable obligatoire (éducateur) */}
-        {catPro === 'education' && (
-          <Card title="Exiger un bilan avant les cours">
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-xs text-gray-500 flex-1">
-                Un nouveau client ne pourra réserver qu&apos;un bilan tant qu&apos;il n&apos;a pas eu de séance confirmée avec vous.
-              </p>
-              <button type="button" onClick={() => setEducationBilanRequis(v => !v)}
-                className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
-                style={{ backgroundColor: educationBilanRequis ? '#7B5EA7' : '#9CA3AF' }}>
-                <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
-                  style={{ transform: educationBilanRequis ? 'translateX(20px)' : 'translateX(0)' }} />
-              </button>
-            </div>
-            <label className="text-xs font-medium text-gray-500 block mt-4 mb-1">Décrivez ce bilan (déroulé, durée, tarif)</label>
-            <textarea rows={3} value={educationBilanDescription}
-              onChange={e => setEducationBilanDescription(e.target.value)}
-              className={`${inputCls} w-full`} />
-          </Card>
-        )}
-
         {/* Trajet à domicile (éducateur/comportementaliste et santé/ostéo) */}
         {(catPro === 'education' || catPro === 'sante') && (
           <Card title="Trajet à domicile">
@@ -1966,9 +1889,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </Card>
         )}
 
-        {/* Forfaits éducateur/comportementaliste ou garde */}
-        {(catPro === 'education' || catPro === 'garde') && (
-          <Card title={catPro === 'garde' ? 'Forfaits (packs de visites ou de promenades)' : 'Forfaits (packs de séances)'}>
+        {/* Forfaits garde (éducateur : dans Prestations & tarifs) */}
+        {catPro === 'garde' && (
+          <Card title="Forfaits (packs de visites ou de promenades)">
             {loadingForfaits ? (
               <p className="text-sm text-gray-400">Chargement…</p>
             ) : forfaits.length === 0 ? (
@@ -1986,13 +1909,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                         Supprimer
                       </button>
                     </div>
-                    {catPro === 'education' && (
-                      <label className="flex items-center gap-2 mt-1 text-xs text-gray-600 cursor-pointer">
-                        <input type="checkbox" checked={f.affiche_public}
-                          onChange={e => toggleForfaitPublic(f.id, e.target.checked)} />
-                        Afficher sur ma fiche publique
-                      </label>
-                    )}
                   </div>
                 ))}
               </div>

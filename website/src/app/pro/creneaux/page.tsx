@@ -139,7 +139,7 @@ export default function ProCreneauxPage() {
   useEffect(() => {
     if (!user || catPro !== 'education') return;
     let q = supabase.from('prestations_education').select('id, nom')
-      .eq('pro_uid', user.uid).eq('type', 'collectif').eq('actif', true);
+      .eq('pro_uid', user.uid).eq('type', 'collectif').eq('actif', true).eq('reservable', true);
     if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId);
     q.then(({ data }) => setCoursCollectifs((data ?? []) as { id: string; nom: string }[]));
   }, [user, activeProfileId, catPro]);

@@ -823,6 +823,8 @@ async function generateOccurrencesForSerie(serie, horizonEnd) {
             lieu: serie.lieu || null,
             notes: serie.notes || null,
             instructeur_profile_id: serie.instructeur_profile_id || null,
+            // Cours du catalogue (Prestations & tarifs) : source du prix.
+            prestation_id: serie.prestation_id || null,
             serie_id: serie.id,
         }]);
         const cours = inserted[0];

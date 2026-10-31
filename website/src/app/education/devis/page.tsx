@@ -9,6 +9,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { usePlanGarde } from '@/lib/use-plan';
 import { apiFetch } from '@/lib/api-fetch';
 import { rechercherUtilisateurs } from '@/lib/user-lookup';
+import { chargerPrestationsEducation } from '@/lib/prestations-education';
 
 interface Ligne { description: string; quantite: number; prix_unitaire: number; total: number; }
 
@@ -83,6 +84,8 @@ function DevisPageInner() {
   const [tarifsBase, setTarifsBase] = useState<Record<string, number>>({});
   const [forfaits, setForfaits] = useState<{ id: string; nom: string; prix: number }[]>([]);
   const [tarifsExtra, setTarifsExtra] = useState<{ label: string; prix: number }[]>([]);
+  // Éducateur : cours du catalogue « Prestations & tarifs » (source des prix).
+  const [coursCatalogue, setCoursCatalogue] = useState<{ id: string; nom: string; prix: number }[]>([]);
   const [newLink, setNewLink] = useState<string | null>(null);
   // devisId -> token du contrat (documents_animaux) rattaché, pour construire
   // les liens /signer-contrat/<token> (même système que les contrats éleveur).
@@ -166,6 +169,10 @@ function DevisPageInner() {
         const forfaitsTable = pt === 'garde' ? 'forfaits_garde' : 'forfaits_education';
         const { data: forfaitsData } = await supabase.from(forfaitsTable).select('id,nom,prix').eq('pro_uid', user.uid).eq('actif', true);
         setForfaits((forfaitsData ?? []) as { id: string; nom: string; prix: number }[]);
+        if (pt === 'education') {
+          const cat = await chargerPrestationsEducation(user.uid, activeProfileId || null, { reservablesSeulement: true });
+          setCoursCatalogue(cat.filter(c => (c.prix ?? 0) > 0).map(c => ({ id: c.id, nom: c.nom, prix: Number(c.prix) })));
+        }
       }
       const animalIds = [...new Set(((acc.data ?? []) as { animal_id: string }[]).map(a => a.animal_id))];
       const preAnimal = prefillRef.current?.animalId;
@@ -538,26 +545,14 @@ function DevisPageInner() {
               {/* Lignes */}
               <div className="border-t pt-4">
                 <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Prestations</p>
-                {(Object.keys(tarifs).length > 0 || forfaits.length > 0) && (
+                {(Object.keys(tarifs).length > 0 || forfaits.length > 0 || coursCatalogue.length > 0) && (
                   <div className="flex flex-wrap gap-2 mb-3">
-                    {catPro === 'education' && tarifs.cours_individuel && (
-                      <button onClick={() => addLigne('Cours individuel', tarifs.cours_individuel)}
+                    {catPro === 'education' && coursCatalogue.map(c => (
+                      <button key={c.id} onClick={() => addLigne(c.nom, c.prix)}
                         className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
-                        + Cours individuel ({tarifs.cours_individuel} €)
+                        + {c.nom} ({c.prix} €)
                       </button>
-                    )}
-                    {catPro === 'education' && tarifs.cours_collectif && (
-                      <button onClick={() => addLigne('Cours collectif', tarifs.cours_collectif)}
-                        className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
-                        + Cours collectif ({tarifs.cours_collectif} €)
-                      </button>
-                    )}
-                    {catPro === 'education' && tarifs.evaluation && (
-                      <button onClick={() => addLigne('Évaluation', tarifs.evaluation)}
-                        className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
-                        + Évaluation ({tarifs.evaluation} €)
-                      </button>
-                    )}
+                    ))}
                     {catPro === 'education' && !!tarifs.domicile_supplement && (
                       <button onClick={() => addLigne('Supplément à domicile', tarifs.domicile_supplement)}
                         className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">

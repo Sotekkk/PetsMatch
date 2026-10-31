@@ -4280,7 +4280,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       try {
         var q = Supabase.instance.client.from('prestations_education')
             .select('id, nom').eq('pro_uid', AgendaContexte.uid ?? '')
-            .eq('type', 'collectif').eq('actif', true);
+            .eq('type', 'collectif').eq('actif', true).eq('reservable', true);
         if (AgendaContexte.profileId.isNotEmpty) q = q.eq('pro_profile_id', AgendaContexte.profileId);
         coursCollectifs = List<Map<String, dynamic>>.from(await q);
       } catch (_) {}

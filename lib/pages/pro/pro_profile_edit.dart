@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/education_prestations_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart' show AgendaContexte;
@@ -138,19 +139,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     ('autre',           'Autre prestation'),
   ];
 
-  // Éducateur/comportementaliste : tarifs par type de prestation (€)
-  Map<String, int> _tarifsEducation = {};
-  static const _prestationsEducation = [
-    ('cours_individuel',    'Cours individuel'),
-    ('cours_collectif',     'Cours collectif (par participant)'),
-    ('evaluation',          'Évaluation comportementale'),
-    ('domicile_supplement', 'Supplément à domicile'),
-  ];
-
-  // Éducateur/comportementaliste : forfaits (packs de séances)
+  // Garde : forfaits (packs de visites / promenades). Éducateur : tarifs,
+  // bilan et forfaits dans EducationPrestationsPage.
   List<Map<String, dynamic>> _forfaits = [];
   bool _loadingForfaits = false;
-  bool _educationBilanRequis = true;
 
   // Santé (ostéo/kiné) : tarifs par type de prestation (€)
   Map<String, int> _tarifsSante = {};
@@ -184,13 +176,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   };
   bool get _isBookingPro => _catProAvecRdv.contains(_catPro);
 
-  // Éducateur : vitrine publique
-  bool _tarifsEducationVisibles = false;
-  // Prestations libres nommées par l'éducateur : [{label, prix, description}]
-  List<Map<String, dynamic>> _tarifsEducationExtra = [];
-  // Idem pour le pet-sitter / promeneur.
+  // Prestations libres nommées par le pet-sitter / promeneur : [{label, prix, description}]
   List<Map<String, dynamic>> _tarifsGardeExtra = [];
-  final _educationBilanDescCtrl = TextEditingController();
 
   // Éducateur : trajet à domicile — origine par défaut (cabinet ou "autre
   // domicile") utilisée pour calculer le temps de trajet des créneaux à
@@ -265,7 +252,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       _phoneCtrl, _emailContactCtrl, _siteWebCtrl, _instagramCtrl, _facebookCtrl,
       _addressSearchCtrl, _rueCtrl, _villeCtrl, _cpCtrl, _paysCtrl,
       _tvaCtrl, _formeJuridiqueCtrl, _capitalCtrl, _rcsCtrl, _rmCtrl, _ibanCtrl, _bicCtrl,
-      _educationBilanDescCtrl,
     ]) { c.dispose(); }
     super.dispose();
   }
@@ -418,11 +404,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             (row['tarifs_logements'] as Map).map((k, v) =>
                 MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
         }
-        if (row['tarifs_education'] is Map) {
-          _tarifsEducation = Map<String, int>.from(
-            (row['tarifs_education'] as Map).map((k, v) =>
-                MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
-        }
         if (row['tarifs_garde'] is Map) {
           _tarifsGarde = Map<String, int>.from(
             (row['tarifs_garde'] as Map).map((k, v) =>
@@ -438,28 +419,14 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             (row['tarifs_taxi'] as Map).map((k, v) =>
                 MapEntry(k.toString(), (v as num?)?.toDouble() ?? 0)));
         }
-        _educationBilanRequis = row['education_bilan_requis'] as bool? ?? true;
         _delaiMinReservationH = (row['delai_min_reservation_h'] as num?)?.toInt() ?? 0;
         _annulationLimiteH = (row['annulation_limite_h'] as num?)?.toInt() ?? 0;
         _trajetOrigineDefaut = row['trajet_origine_defaut']?.toString() ?? 'cabinet';
         _autreDomicileCtrl.text = row['autre_domicile_adresse']?.toString() ?? '';
         _autreDomicileLat = (row['autre_domicile_lat'] as num?)?.toDouble();
         _autreDomicileLng = (row['autre_domicile_lng'] as num?)?.toDouble();
-        _tarifsEducationVisibles = row['tarifs_education_visibles'] as bool? ?? false;
         _tarifsSanteVisibles = row['tarifs_sante_visibles'] as bool? ?? false;
         _tarifsToilettageVisibles = row['tarifs_toilettage_visibles'] as bool? ?? true;
-        _educationBilanDescCtrl.text = row['education_bilan_description']?.toString() ?? '';
-        if (row['tarifs_education_extra'] is List) {
-          _tarifsEducationExtra = [
-            for (final e in (row['tarifs_education_extra'] as List))
-              if (e is Map)
-                {
-                  'label': e['label']?.toString() ?? '',
-                  'prix': (e['prix'] as num?)?.toInt() ?? 0,
-                  'description': e['description']?.toString() ?? '',
-                },
-          ];
-        }
         if (row['tarifs_garde_extra'] is List) {
           _tarifsGardeExtra = [
             for (final e in (row['tarifs_garde_extra'] as List))
@@ -529,7 +496,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         if (c != null) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 400), alignment: 0.05);
       });
     }
-    if (_catPro == 'education' || _catPro == 'garde') await _loadForfaits();
+    if (_catPro == 'garde') await _loadForfaits();
   }
 
   String get _forfaitsTable => _catPro == 'garde' ? 'forfaits_garde' : 'forfaits_education';
@@ -631,8 +598,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   }
 
   // Prestations libres : on ne garde que les lignes avec un libellé.
-  List<Map<String, dynamic>> _cleanTarifsExtra([List<Map<String, dynamic>>? src]) => [
-        for (final e in (src ?? _tarifsEducationExtra))
+  List<Map<String, dynamic>> _cleanTarifsExtra(List<Map<String, dynamic>> src) => [
+        for (final e in src)
           if ((e['label']?.toString().trim() ?? '').isNotEmpty)
             {
               'label': e['label'].toString().trim(),
@@ -891,7 +858,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'durees_motifs':      _dureesMotifs,
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
-          if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
           if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
@@ -900,10 +866,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'toilettage') 'tarifs_toilettage_visibles': _tarifsToilettageVisibles,
           if (_catPro == 'sante') 'tarifs_sante_extra': _cleanTarifsExtra(_tarifsSanteExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
-          if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
-          if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
-          if (_catPro == 'education') 'tarifs_education_extra': _cleanTarifsExtra(),
-          if (_catPro == 'education') 'education_bilan_description': _educationBilanDescCtrl.text.trim(),
           if (_isBookingPro) 'delai_min_reservation_h': _delaiMinReservationH,
           if (_isBookingPro) 'annulation_limite_h': _annulationLimiteH,
           if (_catPro == 'education' || _catPro == 'sante') 'trajet_origine_defaut': _trajetOrigineDefaut,
@@ -956,7 +918,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'durees_motifs':        _dureesMotifs,
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
-          if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
           if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
@@ -965,10 +926,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'toilettage') 'tarifs_toilettage_visibles': _tarifsToilettageVisibles,
           if (_catPro == 'sante') 'tarifs_sante_extra': _cleanTarifsExtra(_tarifsSanteExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
-          if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
-          if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
-          if (_catPro == 'education') 'tarifs_education_extra': _cleanTarifsExtra(),
-          if (_catPro == 'education') 'education_bilan_description': _educationBilanDescCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
             'acaced_doc_url': acacedDocUrl,
@@ -1009,7 +966,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'durees_motifs':      _dureesMotifs,
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
-          if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
           if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
@@ -1018,10 +974,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'toilettage') 'tarifs_toilettage_visibles': _tarifsToilettageVisibles,
           if (_catPro == 'sante') 'tarifs_sante_extra': _cleanTarifsExtra(_tarifsSanteExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
-          if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
-          if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
-          if (_catPro == 'education') 'tarifs_education_extra': _cleanTarifsExtra(),
-          if (_catPro == 'education') 'education_bilan_description': _educationBilanDescCtrl.text.trim(),
           if (_isBookingPro) 'delai_min_reservation_h': _delaiMinReservationH,
           if (_isBookingPro) 'annulation_limite_h': _annulationLimiteH,
           if (_catPro == 'education' || _catPro == 'sante') 'trajet_origine_defaut': _trajetOrigineDefaut,
@@ -1566,67 +1518,19 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     ),
                   ],
 
-                  // ── Tarifs éducateur/comportementaliste ───────────────────
+                  // ── Éducateur : tarifs, bilan préalable, forfaits et options sont dans
+                  // Prestations & tarifs (source unique des prix). ─────────────────
                   if (_catPro == 'education') ...[
                     const SizedBox(height: 24),
-                    _sectionTitle('Tarifs par type de prestation (€)'),
+                    _sectionTitle('Tarifs, bilans et forfaits'),
                     const SizedBox(height: 4),
-                    Text(
-                      'Laissez à 0 les prestations que vous ne proposez pas.',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(children: [
-                      Expanded(child: Text('Afficher mes tarifs sur ma fiche publique',
-                          style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
-                              fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
-                      Switch(
-                        value: _tarifsEducationVisibles,
-                        activeThumbColor: const Color(0xFF7B5EA7),
-                        onChanged: (v) => setState(() => _tarifsEducationVisibles = v),
-                      ),
-                    ]),
-                    const SizedBox(height: 12),
-                    ..._prestationsEducation.map((t) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(children: [
-                        Expanded(child: Text(t.$2,
-                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
-                                fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
-                        const SizedBox(width: 12),
-                        SizedBox(
-                          width: 90,
-                          child: TextFormField(
-                            initialValue: (_tarifsEducation[t.$1] ?? 0).toString(),
-                            keyboardType: TextInputType.number,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                            decoration: InputDecoration(
-                              suffixText: '€',
-                              suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
-                              filled: true, fillColor: Colors.white,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
-                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
-                            ),
-                            onChanged: (val) {
-                              final v = int.tryParse(val);
-                              if (v != null && v >= 0) {
-                                setState(() => _tarifsEducation = {..._tarifsEducation, t.$1: v});
-                              }
-                            },
-                          ),
-                        ),
-                      ]),
-                    )),
-                    const SizedBox(height: 4),
-                    _tarifsExtraEditor(
-                      _tarifsEducationExtra,
-                      (v) => setState(() => _tarifsEducationExtra = v),
+                    Text('Vos cours, bilans, forfaits et options tarifaires se règlent dans « Prestations & tarifs ». '
+                        'Ce sont ces prix qui s\'affichent sur votre fiche, dans les réservations et dans vos devis.',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+                    TextButton(
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EducationPrestationsPage())),
+                      child: const Text('Ouvrir Prestations & tarifs',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
                     ),
                   ],
 
@@ -1793,42 +1697,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     ),
                   ],
 
-                  // ── Bilan préalable obligatoire (éducateur) ───────────────
-                  if (_catPro == 'education') ...[
-                    const SizedBox(height: 24),
-                    Row(children: [
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        _sectionTitle('Exiger un bilan avant les cours'),
-                        const SizedBox(height: 4),
-                        Text('Un nouveau client ne pourra réserver qu\'un bilan tant qu\'il n\'a pas eu de séance confirmée avec vous.',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
-                      ])),
-                      Switch(
-                        value: _educationBilanRequis,
-                        activeThumbColor: const Color(0xFF7B5EA7),
-                        onChanged: (v) => setState(() => _educationBilanRequis = v),
-                      ),
-                    ]),
-                    const SizedBox(height: 10),
-                    TextFormField(
-                      controller: _educationBilanDescCtrl,
-                      maxLines: 3,
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                      decoration: InputDecoration(
-                        labelText: 'Décrivez ce bilan (déroulé, durée, tarif)',
-                        labelStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600),
-                        alignLabelWithHint: true,
-                        filled: true, fillColor: Colors.white,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
-                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
-                      ),
-                    ),
-                  ],
-
                   // ── Trajet à domicile (éducateur/comportementaliste ET santé
                   // — les deux peuvent proposer des créneaux à domicile avec
                   // calcul intelligent du temps de trajet, cf. "Mes créneaux"
@@ -1877,8 +1745,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     ]),
                   ],
 
-                  // ── Forfaits éducateur/comportementaliste ou garde ────────
-                  if (_catPro == 'education' || _catPro == 'garde') ...[
+                  // ── Forfaits garde (éducateur : dans Prestations & tarifs) ─
+                  if (_catPro == 'garde') ...[
                     const SizedBox(height: 24),
                     Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                       _sectionTitle(_catPro == 'garde' ? 'Forfaits (packs de visites ou de promenades)' : 'Forfaits (packs de séances)'),

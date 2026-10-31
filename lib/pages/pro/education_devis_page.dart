@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
+import 'package:PetsMatch/utils/prestations_education.dart';
 
 const _kTeal = Color(0xFF0C5C6C);
 const _kPurple = Color(0xFF7B5EA7);
@@ -332,7 +333,9 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
 
   Map<String, dynamic> _tarifs = {};
   Map<String, dynamic> _tarifsBase = {};
-  List<Map<String, dynamic>> _tarifsExtra = []; // éducateur : prestations libres
+  List<Map<String, dynamic>> _tarifsExtra = []; // éducateur : options tarifaires
+  // Éducateur : cours du catalogue « Prestations & tarifs » (source des prix).
+  List<Map<String, dynamic>> _coursCatalogue = [];
   List<Map<String, dynamic>> _forfaits = [];
   List<Map<String, dynamic>> _animaux = [];
   String? _animalId;
@@ -433,8 +436,12 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
           : null;
       final forfaitsRows = await _supa.from(forfaitsTable)
           .select('id,nom,prix').eq('pro_uid', uid).eq('actif', true);
+      final cours = isEducation
+          ? await chargerPrestationsEducation(uid, profileId: pid, reservablesSeulement: true)
+          : <Map<String, dynamic>>[];
       if (mounted) {
         setState(() {
+          _coursCatalogue = cours.where((c) => ((c['prix'] as num?) ?? 0) > 0).toList();
           _tarifsBase = (tarifsRow?[_tarifsCol] as Map?)?.cast<String, dynamic>() ?? {};
           _tarifs = _tarifsBase;
           _tarifsExtra = [
@@ -647,12 +654,9 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
           const Text('Prestations', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
           const SizedBox(height: 8),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            if (User_Info.catPro == 'education' && _tarifs['cours_individuel'] != null)
-              _quickAddChip('Cours individuel', _tarifs['cours_individuel'] as num),
-            if (User_Info.catPro == 'education' && _tarifs['cours_collectif'] != null)
-              _quickAddChip('Cours collectif', _tarifs['cours_collectif'] as num),
-            if (User_Info.catPro == 'education' && _tarifs['evaluation'] != null)
-              _quickAddChip('Évaluation', _tarifs['evaluation'] as num),
+            if (User_Info.catPro == 'education')
+              for (final c in _coursCatalogue)
+                _quickAddChip(c['nom']?.toString() ?? 'Cours', c['prix'] as num),
             if (User_Info.catPro == 'education' && (_tarifs['domicile_supplement'] as num? ?? 0) > 0)
               _quickAddChip('Supplément à domicile', _tarifs['domicile_supplement'] as num),
             if (User_Info.catPro == 'education')

@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { useEducationAccess } from '@/hooks/useEducationAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { chargerPrestationsEducation, type PrestationEducation } from '@/lib/prestations-education';
 
 const TEAL = '#0C5C6C';
 const PURPLE = '#7B5EA7';
@@ -232,6 +233,23 @@ function CreateCoursModal({ proUid, proProfileId, onClose, onSaved }: {
   const [dateFin, setDateFin] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Cours collectif du catalogue (Prestations & tarifs) : donne le prix et
+  // pré-remplit titre, durée, capacité et lieu.
+  const [catalogue, setCatalogue] = useState<PrestationEducation[]>([]);
+  const [prestationId, setPrestationId] = useState('');
+  useEffect(() => {
+    chargerPrestationsEducation(proUid, proProfileId, { reservablesSeulement: true })
+      .then(l => setCatalogue(l.filter(p => p.type === 'collectif')));
+  }, [proUid, proProfileId]);
+  function choisirPrestation(id: string) {
+    setPrestationId(id);
+    const p = catalogue.find(x => x.id === id);
+    if (!p) return;
+    setTitre(p.nom);
+    setDuree(String(p.duree_minutes));
+    if (p.capacite_max) setCapacite(String(p.capacite_max));
+    if (p.lieu_adresse) setLieu(p.lieu_adresse);
+  }
 
   const HORIZON_SEMAINES = 8;
 
@@ -255,6 +273,7 @@ function CreateCoursModal({ proUid, proProfileId, onClose, onSaved }: {
         duree_minutes: dureeMinutes,
         capacite_max: capaciteMax,
         lieu: lieuVal,
+        prestation_id: prestationId || null,
         notes: notesVal,
         date_fin: dateFin || null,
       }).select('id').single();
@@ -291,6 +310,7 @@ function CreateCoursModal({ proUid, proProfileId, onClose, onSaved }: {
         duree_minutes: dureeMinutes,
         capacite_max: capaciteMax,
         lieu: lieuVal,
+        prestation_id: prestationId || null,
         notes: notesVal,
         ...(serieId ? { serie_id: serieId } : {}),
       }).select('id').single();
@@ -316,6 +336,17 @@ function CreateCoursModal({ proUid, proProfileId, onClose, onSaved }: {
       <div className="bg-white rounded-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
         <h3 className="font-bold font-galey text-lg mb-4" style={{ color: PURPLE }}>Nouveau cours collectif</h3>
         <div className="space-y-3">
+          {catalogue.length > 0 ? (
+            <select value={prestationId} onChange={e => choisirPrestation(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-galey bg-white">
+              <option value="">Cours du catalogue (prix) — aucun</option>
+              {catalogue.map(p => (
+                <option key={p.id} value={p.id}>{p.nom}{p.prix != null ? ` — ${p.prix} € par participant` : ''}</option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-xs text-gray-500 font-galey">Ajoutez un cours collectif dans Prestations &amp; tarifs pour lui donner un prix.</p>
+          )}
           <input value={titre} onChange={e => setTitre(e.target.value)} placeholder="Titre du cours"
             className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-galey" />
           <div className="grid grid-cols-2 gap-3">

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/utils/prestations_education.dart' show supplementDomicile;
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/utils/geocoding_helper.dart';
@@ -60,6 +61,8 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
   final Map<String, String> _prestationAutres = {}; // animal id → prestation id
 
   bool _educationBilanRequis = true;
+  // Option tarifaire « Supplément à domicile » (Prestations & tarifs).
+  double _supplementDomicile = 0;
   bool _isFirstTimeClient = false;
   // Délai minimum (h) imposé par le pro entre maintenant et le début du cours.
   int _delaiMinReservationH = 0;
@@ -182,11 +185,12 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
 
   Future<void> _loadPrestations() async {
     try {
-      const cols = 'education_bilan_requis, delai_min_reservation_h, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng';
+      const cols = 'education_bilan_requis, tarifs_education, delai_min_reservation_h, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng';
       final row = (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
           ? await _supa.from('user_profiles_complet').select(cols).eq('id', widget.proProfileId!).maybeSingle()
           : await _supa.from('user_profiles_complet').select(cols).eq('uid', widget.proUid).eq('is_main', true).maybeSingle();
       _educationBilanRequis = row?['education_bilan_requis'] as bool? ?? true;
+      _supplementDomicile = supplementDomicile(row?['tarifs_education']);
       _delaiMinReservationH = (row?['delai_min_reservation_h'] as num?)?.toInt() ?? 0;
       _origineDefaut = row?['trajet_origine_defaut']?.toString() ?? 'cabinet';
       _autreDomicileLat = (row?['autre_domicile_lat'] as num?)?.toDouble();
@@ -194,7 +198,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
       _cabinetLat = (row?['latitude'] as num?)?.toDouble() ?? (row?['lat'] as num?)?.toDouble();
       _cabinetLng = (row?['longitude'] as num?)?.toDouble() ?? (row?['lng'] as num?)?.toDouble();
 
-      var q = _supa.from('prestations_education').select().eq('pro_uid', widget.proUid).eq('actif', true);
+      var q = _supa.from('prestations_education').select().eq('pro_uid', widget.proUid).eq('actif', true).eq('reservable', true);
       if (_resolvedProfileId != null && _resolvedProfileId!.isNotEmpty) {
         q = q.eq('pro_profile_id', _resolvedProfileId!);
       }
@@ -203,11 +207,10 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
 
       await _checkFirstTimeClient();
 
-      // Nouvelle famille + bilan exigé → ne proposer que les cours marqués
-      // "nécessite un bilan" (s'il en existe au moins un configuré).
-      if (_educationBilanRequis && _isFirstTimeClient) {
-        final bilans = all.where((p) => p['bilan_requis'] == true).toList();
-        if (bilans.isNotEmpty) all = bilans;
+      // Nouvelle famille + bilan exigé → ne proposer que les bilans (s'il en
+      // existe au moins un) et les cours « Réservable sans bilan préalable ».
+      if (_educationBilanRequis && _isFirstTimeClient && all.any((p) => p['bilan_requis'] == true)) {
+        all = all.where((p) => p['bilan_requis'] == true || p['sans_bilan_prealable'] == true).toList();
       }
 
       if (mounted) setState(() => _prestations = all);
@@ -385,11 +388,14 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
 
   String get _nomsAnimaux => _tousAnimaux.map((a) => a['nom']?.toString() ?? '').where((n) => n.isNotEmpty).join(' + ');
 
+  /// Supplément à domicile : une fois par déplacement.
+  num get _supplementApplique => !_isCollectif && _domicile ? _supplementDomicile : 0;
+
   num? get _prixTotal {
     final prix = (_selectedPrestation?['prix'] as num?);
     if (prix == null) return null;
     if (_isCollectif) return prix * (_tousAnimaux.isEmpty ? 1 : _tousAnimaux.length);
-    return _autresAnimaux.fold<num>(prix, (s, a) => s + ((_prestationDe(a)?['prix'] as num?) ?? 0));
+    return _autresAnimaux.fold<num>(prix, (s, a) => s + ((_prestationDe(a)?['prix'] as num?) ?? 0)) + _supplementApplique;
   }
 
   /// Détail par animal (rdv.animaux_detail) — null pour un seul animal.
@@ -732,7 +738,10 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           _recapLine('Date', DateFormat('EEEE d MMMM à HH:mm', 'fr_FR').format(dateHeure)),
           _recapLine('Durée', dureeRdvLabel(_duration)),
           if (_prixTotal != null)
-            _recapLine('Prix', '${_prixTotal!.toStringAsFixed(0)} €'),
+            _recapLine('Prix', '${_prixTotal!.toStringAsFixed(0)} €'
+                '${_supplementApplique > 0 ? ' (dont ${_supplementApplique.toStringAsFixed(0)} € de supplément à domicile)' : ''}'),
+          if ((prestation['conditions']?.toString().trim() ?? '').isNotEmpty)
+            _recapLine('Conditions', prestation['conditions'].toString().trim()),
           _lieuRecapLine(
             label: (_isCollectif || !_domicile)
                 ? ((prestation['lieu_adresse']?.toString().trim().isNotEmpty ?? false)
@@ -959,6 +968,9 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
         'date_heure': dateHeure.toUtc().toIso8601String(),
         'duree_minutes': _duration,
         'motif': _selectedPrestation!['nom']?.toString() ?? 'Cours',
+        if (_selectedPrestation!['id'] != null) 'prestation_id': _selectedPrestation!['id'],
+        // Prix figé à la réservation : un changement de tarif ne le modifie pas.
+        if (_prixTotal != null) 'prix_calcule': _prixTotal,
         if (_notesCtrl.text.trim().isNotEmpty) 'notes_client': _notesCtrl.text.trim(),
         if (_domicile && _adresseDomicileCtrl.text.trim().isNotEmpty) 'lieu': _adresseDomicileCtrl.text.trim(),
         if (_domicile && _domicileLat != null) 'lieu_lat': _domicileLat,
@@ -1070,6 +1082,9 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
                     Text(p['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                     if ((p['description'] as String?)?.isNotEmpty == true)
                       Text(p['description'] as String, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                    if ((p['conditions']?.toString().trim() ?? '').isNotEmpty)
+                      Text('Conditions : ${p['conditions'].toString().trim()}',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
                     Text('${p['duree_minutes']} min'
                         '${(p['prix'] as num?) != null ? ' · ${(p['prix'] as num).toStringAsFixed(0)} €' : ''}'
                         '${p['type'] == 'collectif' ? ' · en groupe (max ${(p['capacite_max'] as num?)?.toInt() ?? 6})' : ''}',

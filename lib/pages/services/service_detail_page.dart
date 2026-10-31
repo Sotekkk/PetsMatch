@@ -18,6 +18,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces, kPensionEspeceFermeLegacy, pensionTarifEquin;
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show SocialProfilePage;
 import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/utils/prestations_education.dart' as tarifs_edu;
 import 'package:intl/intl.dart';
 
 class ServiceDetailPage extends StatefulWidget {
@@ -52,6 +53,8 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   bool _inscrivant = false;
   List<Map<String, dynamic>> _prestations = [];
   List<Map<String, dynamic>> _forfaitsPublics = []; // éducateur : forfaits affiche_public
+  // Éducateur : catalogue (cours actifs) — source des prix affichés.
+  List<Map<String, dynamic>> _prestationsEdu = [];
   /// Pets Social n'est accessible aux PROS que premium (santé plafonne à
   /// 'pro', son palier le plus haut) — jamais aux non-premium, même pour
   /// juste être suivi. Cf. eleveur_nav.dart (même règle pour l'onglet).
@@ -144,6 +147,11 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       if (mounted) setState(() { _proData = row; _loading = false; });
       if (row?['cat_pro'] == 'education') {
         await _loadCoursCollectifs();
+        try {
+          final l = await tarifs_edu.chargerPrestationsEducation(row?['uid']?.toString() ?? '',
+              profileId: widget.profileTableId, reservablesSeulement: true);
+          if (mounted) setState(() => _prestationsEdu = l);
+        } catch (_) {}
         if (row?['tarifs_education_visibles'] == true) await _loadForfaitsPublics();
       }
       if (row?['cat_pro'] == 'photographe' || row?['cat_pro'] == 'toilettage') await _loadPrestations();
@@ -336,8 +344,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     if (animal == null || !mounted) return;
     setState(() => _inscrivant = true);
     try {
-      final tarifs = _proData?['tarifs_education'];
-      final prix = tarifs is Map ? (tarifs['cours_collectif'] as num?) : null;
+      final prix = _prixCoursCollectif(cours);
       final clientProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
       final animalId = animal['id']?.toString();
 
@@ -508,38 +515,27 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     return out;
   }
   /// Éducateur : tarifs à afficher publiquement (label, prix formaté), si le pro
-  /// a activé `tarifs_education_visibles`. Prestations fixes non nulles +
-  /// prestations libres.
+  /// a activé `tarifs_education_visibles` : cours du catalogue dont le prix est
+  /// affiché + options tarifaires (Prestations & tarifs).
   List<(String, String)> get _tarifsEducationPublics {
     if (_proData?['cat_pro'] != 'education' || _proData?['tarifs_education_visibles'] != true) {
       return [];
     }
-    const labels = {
-      'cours_individuel': 'Cours individuel',
-      'cours_collectif': 'Cours collectif (par participant)',
-      'evaluation': 'Évaluation comportementale',
-      'domicile_supplement': 'Supplément à domicile',
-    };
-    final out = <(String, String)>[];
-    final fixes = _proData?['tarifs_education'];
-    if (fixes is Map) {
-      for (final entry in labels.entries) {
-        final v = (fixes[entry.key] as num?)?.toDouble() ?? 0;
-        if (v > 0) out.add((entry.value, '${v.toStringAsFixed(0)} €'));
-      }
-    }
-    final extra = _proData?['tarifs_education_extra'];
-    if (extra is List) {
-      for (final e in extra) {
-        if (e is! Map) continue;
-        final label = e['label']?.toString().trim() ?? '';
-        if (label.isEmpty) continue;
-        final v = (e['prix'] as num?)?.toDouble() ?? 0;
-        final desc = e['description']?.toString().trim() ?? '';
-        out.add((desc.isEmpty ? label : '$label — $desc', v > 0 ? '${v.toStringAsFixed(0)} €' : '—'));
-      }
-    }
-    return out;
+    return [
+      for (final l in tarifs_edu.lignesTarifsPublics(
+          _prestationsEdu.where((p) => p['affiche_public'] != false).toList(),
+          _proData?['tarifs_education'], _proData?['tarifs_education_extra']))
+        (l.label, l.prix),
+    ];
+  }
+
+  /// Prix d'un cours collectif : celui du cours du catalogue relié, sinon le
+  /// seul cours collectif actif du catalogue s'il n'y en a qu'un.
+  num? _prixCoursCollectif(Map<String, dynamic> c) {
+    final lie = _prestationsEdu.where((p) => p['id'] == c['prestation_id']);
+    if (c['prestation_id'] != null && lie.isNotEmpty) return lie.first['prix'] as num?;
+    final collectifs = _prestationsEdu.where((p) => p['type'] == 'collectif').toList();
+    return collectifs.length == 1 ? collectifs.first['prix'] as num? : null;
   }
 
   String get _educationBilanDescription =>
@@ -1268,8 +1264,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                   final recurrent = c['serie_id'] != null;
                   final moi = _monInscription[c['id']];
                   final statutMoi = moi?['statut'] as String?;
-                  final tarifs = _proData?['tarifs_education'];
-                  final prixCours = tarifs is Map ? (tarifs['cours_collectif'] as num?) : null;
+                  final prixCours = _prixCoursCollectif(c);
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.all(12),
@@ -1302,7 +1297,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                                   : (complet || statutMoi == 'en_attente' || statutMoi == 'demande') ? Colors.orange.shade700 : Colors.grey.shade500),
                         ),
                         if (prixCours != null && prixCours > 0)
-                          Text('${prixCours.toStringAsFixed(0)} €',
+                          Text('${prixCours.toStringAsFixed(0)} € par participant',
                               style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF7B5EA7))),
                       ])),
                       const SizedBox(width: 8),

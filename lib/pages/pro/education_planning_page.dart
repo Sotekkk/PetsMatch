@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/owner_contact.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
+import 'package:PetsMatch/utils/prestations_education.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const _kEducationTeal = Color(0xFF0C5C6C);
@@ -19,15 +19,6 @@ class EducationPlanningPage extends StatefulWidget {
   const EducationPlanningPage({super.key, this.integre = false});
   @override
   State<EducationPlanningPage> createState() => _EducationPlanningPageState();
-}
-
-/// Profil éducateur du planning : le profil actif, sinon le profil éducateur
-/// du compte (profil actif vide = profil principal).
-String _profilEducation() {
-  final actif = User_Info.activeProfileId;
-  if (actif.isNotEmpty) return actif;
-  final edu = User_Info.availableProfiles.where((p) => p['profile_type'] == 'education');
-  return edu.isNotEmpty ? edu.first['id']?.toString() ?? '' : '';
 }
 
 class _EducationPlanningPageState extends State<EducationPlanningPage> {
@@ -72,7 +63,7 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
       // compte peut avoir un profil toiletteur / photographe dont les RDV n'ont
       // rien à faire ici, ni les RDV sans profil. Profil actif vide → profil
       // éducateur du compte.
-      final pid = _profilEducation();
+      final pid = profilEducationId();
       bool duProfil(Map<String, dynamic> x) =>
           pid.isNotEmpty && x['pro_profile_id']?.toString() == pid;
       final cours = List<Map<String, dynamic>>.from(results[1] as List)
@@ -370,6 +361,31 @@ class _CoursCollectifSheetState extends State<_CoursCollectifSheet> {
   bool _recurrent = false;
   DateTime? _dateFin;
   static const int _horizonSemaines = 8;
+  // Cours collectif du catalogue (Prestations & tarifs) : donne le prix et
+  // pré-remplit titre, durée, capacité et lieu.
+  List<Map<String, dynamic>> _catalogue = [];
+  String? _prestationId;
+
+  @override
+  void initState() {
+    super.initState();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      chargerPrestationsEducation(uid, profileId: profilEducationId(), reservablesSeulement: true).then((l) {
+        if (mounted) setState(() => _catalogue = l.where((p) => p['type'] == 'collectif').toList());
+      }).catchError((_) {});
+    }
+  }
+
+  void _choisirPrestation(String? id) {
+    setState(() => _prestationId = id);
+    final p = _catalogue.where((x) => x['id'] == id).firstOrNull;
+    if (p == null) return;
+    _titreCtrl.text = p['nom']?.toString() ?? '';
+    _dureeCtrl.text = '${p['duree_minutes'] ?? 90}';
+    if (p['capacite_max'] != null) _capaciteCtrl.text = '${p['capacite_max']}';
+    if ((p['lieu_adresse']?.toString() ?? '').isNotEmpty) _lieuCtrl.text = p['lieu_adresse'].toString();
+  }
 
   @override
   void dispose() {
@@ -389,7 +405,7 @@ class _CoursCollectifSheetState extends State<_CoursCollectifSheet> {
       final titre = _titreCtrl.text.trim();
       final lieu = _lieuCtrl.text.trim().isEmpty ? null : _lieuCtrl.text.trim();
       final notes = _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim();
-      final pid = _profilEducation();
+      final pid = profilEducationId();
       final profileId = pid.isNotEmpty ? pid : null;
 
       String? serieId;
@@ -403,6 +419,7 @@ class _CoursCollectifSheetState extends State<_CoursCollectifSheet> {
           'capacite_max': capaciteMax,
           'lieu': lieu,
           'notes': notes,
+          'prestation_id': _prestationId,
           if (_dateFin != null) 'date_fin': _dateFin!.toIso8601String().substring(0, 10),
         }).select('id').single();
         serieId = serie['id'] as String;
@@ -434,6 +451,7 @@ class _CoursCollectifSheetState extends State<_CoursCollectifSheet> {
           'capacite_max': capaciteMax,
           'lieu': lieu,
           'notes': notes,
+          'prestation_id': _prestationId,
           if (serieId != null) 'serie_id': serieId,
         }).select('id').single();
         // Visible dans "Mon agenda" (même mécanisme que les RDV confirmés).
@@ -471,6 +489,26 @@ class _CoursCollectifSheetState extends State<_CoursCollectifSheet> {
             const Text('Nouveau cours collectif',
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
             const SizedBox(height: 16),
+            if (_catalogue.isNotEmpty) ...[
+              DropdownButtonFormField<String?>(
+                initialValue: _prestationId,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Cours du catalogue (prix)', border: OutlineInputBorder()),
+                items: [
+                  const DropdownMenuItem<String?>(value: null, child: Text('Aucun')),
+                  for (final p in _catalogue)
+                    DropdownMenuItem<String?>(value: p['id']?.toString(),
+                        child: Text('${p['nom']}${p['prix'] != null ? ' — ${(p['prix'] as num).toStringAsFixed(0)} € par participant' : ''}',
+                            overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: _choisirPrestation,
+              ),
+              const SizedBox(height: 12),
+            ] else ...[
+              Text('Ajoutez un cours collectif dans Prestations & tarifs pour lui donner un prix.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+              const SizedBox(height: 12),
+            ],
             TextField(controller: _titreCtrl, decoration: const InputDecoration(
                 labelText: 'Titre du cours', hintText: 'Ex : Éducation chiot', border: OutlineInputBorder())),
             const SizedBox(height: 12),

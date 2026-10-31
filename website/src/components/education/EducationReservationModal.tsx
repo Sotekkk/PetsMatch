@@ -10,6 +10,7 @@ import { getClientKnownAddress } from '@/lib/client-address';
 import { AnimalMultiPickerField } from '@/components/AnimalPickerField';
 import AutresAnimauxRdv, { fmtDureeRdv } from '@/components/rdv/AutresAnimauxRdv';
 import AdresseGoogleInput from '@/components/AdresseGoogleInput';
+import { supplementDomicile } from '@/lib/prestations-education';
 
 // Vitesse moyenne heuristique (à vol d'oiseau) + marge de sécurité — même
 // principe que lib/pages/pro/education_reservation_page.dart (app), utilisé
@@ -29,6 +30,7 @@ interface Prestation {
   duree_minutes: number; prix?: number | null; bilan_requis: boolean; domicile_ok: boolean;
   lieu_adresse?: string | null; lieu_lat?: number | null; lieu_lng?: number | null;
   type?: 'individuel' | 'collectif' | null; capacite_max?: number | null;
+  sans_bilan_prealable?: boolean; conditions?: string | null;
 }
 // Séance de groupe déjà planifiée (cours collectif), rapprochée d'un créneau fixe.
 type CoursSeance = { date_heure: string; coursId: string; capacite: number; inscrits: number };
@@ -78,6 +80,8 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   const [autresAnimaux, setAutresAnimaux] = useState<(number | string)[]>([]);
   const [prestationsAutres, setPrestationsAutres] = useState<Record<string, string>>({});
   // Créneau choisi : la demande ne part qu'après « Valider la demande » (récapitulatif).
+  // Option tarifaire « Supplément à domicile » (Prestations & tarifs).
+  const [supplementDom, setSupplementDom] = useState(0);
   const [slotChoisi, setSlotChoisi] = useState<{ date: string; heure: string } | null>(null);
   const [notes, setNotes] = useState('');
 
@@ -118,12 +122,12 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
     if (!user) { router.push('/connexion'); return; }
     if (!profileLoaded) return; // attend la lecture du profil actif (localStorage) avant de scoper les animaux
     (async () => {
-      const cols = 'id, education_bilan_requis, delai_min_reservation_h, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng';
+      const cols = 'id, education_bilan_requis, tarifs_education, delai_min_reservation_h, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng';
       const proRow = proProfileId
         ? await supabase.from('user_profiles_complet').select(cols).eq('id', proProfileId).maybeSingle()
         : await supabase.from('user_profiles_complet').select(cols).eq('uid', proUid).eq('is_main', true).maybeSingle();
       const proData = proRow.data as {
-        id?: string; education_bilan_requis?: boolean; delai_min_reservation_h?: number | null;
+        id?: string; education_bilan_requis?: boolean; tarifs_education?: Record<string, number> | null; delai_min_reservation_h?: number | null;
         trajet_origine_defaut?: string;
         autre_domicile_lat?: number; autre_domicile_lng?: number;
         latitude?: number; longitude?: number; lat?: number; lng?: number;
@@ -135,6 +139,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       setResolvedProfileId(profileId || null);
       const bReq = proData?.education_bilan_requis ?? true;
       setBilanRequis(bReq);
+      setSupplementDom(supplementDomicile(proData?.tarifs_education));
       setDelaiMinH(proData?.delai_min_reservation_h ?? 0);
       setOrigineDefaut(proData?.trajet_origine_defaut ?? 'cabinet');
       if (proData?.autre_domicile_lat != null && proData?.autre_domicile_lng != null) {
@@ -150,14 +155,15 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       const firstTime = (priorRdv ?? []).length === 0;
       setIsFirstTime(firstTime);
 
-      let pQ = supabase.from('prestations_education').select('id, nom, description, duree_minutes, prix, bilan_requis, domicile_ok, lieu_adresse, lieu_lat, lieu_lng, type, capacite_max')
-        .eq('pro_uid', proUid).eq('actif', true);
+      let pQ = supabase.from('prestations_education').select('id, nom, description, duree_minutes, prix, bilan_requis, domicile_ok, lieu_adresse, lieu_lat, lieu_lng, type, capacite_max, sans_bilan_prealable, conditions')
+        .eq('pro_uid', proUid).eq('actif', true).eq('reservable', true);
       if (profileId) pQ = pQ.eq('pro_profile_id', profileId);
       const { data: pRows } = await pQ.order('ordre').order('created_at');
       let all = (pRows ?? []) as Prestation[];
       if (bReq && firstTime) {
-        const bilans = all.filter(p => p.bilan_requis);
-        if (bilans.length > 0) all = bilans;
+        // Nouveau client : bilans + cours marqués « Réservable sans bilan préalable ».
+        const bilans = all.filter(p => p.bilan_requis || p.sans_bilan_prealable);
+        if (all.some(p => p.bilan_requis)) all = bilans;
       }
       setPrestations(all);
 
@@ -307,9 +313,12 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   const dureePrincipale = selectedPrestation?.duree_minutes ?? 60;
   // Durée totale de la séance : somme des cours de chaque animal (individuel).
   const duration = dureePrincipale + (isCollectif ? 0 : animauxEnPlus.reduce<number>((s, id) => s + (prestationDe(id)?.duree_minutes ?? dureePrincipale), 0));
-  const prixTotal = selectedPrestation?.prix == null ? null
+  const prixCours = selectedPrestation?.prix == null ? null
     : isCollectif ? selectedPrestation.prix * Math.max(1, tousAnimaux.length)
     : animauxEnPlus.reduce<number>((s, id) => s + (prestationDe(id)?.prix ?? 0), selectedPrestation.prix);
+  // Supplément à domicile : une fois par déplacement.
+  const supplementApplique = !isCollectif && domicile ? supplementDom : 0;
+  const prixTotal = prixCours == null ? null : prixCours + supplementApplique;
   /** Détail par animal (rdv.animaux_detail) — null pour un seul animal. */
   const detailAnimaux = animauxEnPlus.length > 0 && selectedAnimalId != null
     ? tousAnimaux.map((id, i) => {
@@ -545,6 +554,9 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
         date_heure: dateHeure.toISOString(),
         duree_minutes: duration,
         motif: selectedPrestation.nom,
+        prestation_id: selectedPrestation.id,
+        // Prix figé à la réservation : un changement de tarif ne le modifie pas.
+        ...(prixTotal != null ? { prix_calcule: prixTotal } : {}),
         ...(notes.trim() ? { notes_client: notes.trim() } : {}),
         ...(domicile && adresseDomicile.trim() ? { lieu: adresseDomicile.trim() } : {}),
         ...(domicile && domicileLatLng ? { lieu_lat: domicileLatLng.lat, lieu_lng: domicileLatLng.lng } : {}),
@@ -631,6 +643,9 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                       {p.duree_minutes} min{p.prix ? ` · ${p.prix.toFixed(0)} €` : ''}
                       {p.type === 'collectif' ? ` · en groupe (max ${p.capacite_max ?? 6})` : ''}
                     </p>
+                    {p.conditions?.trim() && (
+                      <p className="text-xs text-gray-500 mt-0.5" style={{ fontFamily: 'Galey, sans-serif' }}>Conditions : {p.conditions.trim()}</p>
+                    )}
                     {p.type === 'collectif' && p.lieu_adresse && (
                       <p className="text-xs mt-0.5" style={{ fontFamily: 'Galey, sans-serif', color: catColor }}>
                         📍 {p.lieu_adresse}
@@ -849,7 +864,8 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                   ...(detailAnimaux && !isCollectif ? detailAnimaux.map(d => ['', `${d.nom} — ${d.motif} · ${fmtDureeRdv(d.duree_minutes)}`] as [string, string]) : []),
                   ['Date', `${DAY_FMT.format(dh)} à ${slotChoisi.heure.slice(0, 5)}`],
                   ['Durée', fmtDureeRdv(duration)],
-                  ...(prixTotal != null ? [['Prix', `${prixTotal.toFixed(0)} €`] as [string, string]] : []),
+                  ...(prixTotal != null ? [['Prix', `${prixTotal.toFixed(0)} €${supplementApplique > 0 ? ` (dont ${supplementApplique} € de supplément à domicile)` : ''}`] as [string, string]] : []),
+                  ...(selectedPrestation.conditions?.trim() ? [['Conditions', selectedPrestation.conditions.trim()] as [string, string]] : []),
                   ['Lieu', isCollectif || !domicile ? (selectedPrestation.lieu_adresse || 'Chez le professionnel') : `À domicile — ${adresseDomicile}`],
                   ...(s.capacite != null ? [['Places', `${s.inscrits}/${s.capacite}${s.complet ? ' — liste d’attente' : ''}`] as [string, string]] : []),
                 ];
