@@ -837,7 +837,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     final sansEtapes = picked.where((e) => ((e['etapes'] as List?) ?? const []).isEmpty).length;
     final avecEtapes = picked.length - sansEtapes;
     String? objectifId;
-    bool rappels = false;
+    // Rappel quotidien au client (8 h) + tâche du jour dans son agenda.
+    bool rappels = true;
 
     final confirmed = await showModalBottomSheet<bool>(
       context: context,

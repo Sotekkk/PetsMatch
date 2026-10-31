@@ -13,6 +13,7 @@ import 'package:PetsMatch/utils/controle_dates.dart';
 import 'package:PetsMatch/widgets/carnet/prises_traitement.dart';
 import 'package:PetsMatch/utils/resume_traitement.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/exercice_tache.dart';
 import 'package:PetsMatch/utils/forfait_education.dart' show libelleCompteurs;
 import 'package:PetsMatch/pages/particulier/balades/choix_animaux_balade.dart';
 import 'package:flutter/services.dart';
@@ -5673,8 +5674,15 @@ class _EducationTabPState extends State<_EducationTabP> {
     setState(() => ex.addAll(maj));
     try {
       await _supa.from('exercices_attribues').update(maj).eq('id', ex['id']);
+      // Tâche du jour dans l'agenda : cochée avec la validation.
+      try { await cocherTacheExercice(ex['id'].toString(), valider); } catch (_) {}
     } catch (_) {
-      if (mounted) setState(() => ex..clear()..addAll(avant));
+      if (mounted) {
+        setState(() => ex..clear()..addAll(avant));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('La validation n\'a pas pu être enregistrée. Réessayez dans un instant.', style: TextStyle(fontFamily: 'Galey')),
+            behavior: SnackBarBehavior.floating));
+      }
     }
   }
 

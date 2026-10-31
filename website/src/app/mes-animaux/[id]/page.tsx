@@ -51,6 +51,7 @@ import ReproducteurSelect from '@/components/animaux/ReproducteurSelect';
 import { chargerReproducteurs, chargerReproducteursExterieurs, raisonNonEligible, type Reproducteur } from '@/lib/reproducteurs';
 import ImagePrivee, { VideoPrivee } from '@/components/ImagePrivee';
 import { COLS_FORFAIT_SOUSCRIT, libelleCompteurs } from '@/lib/forfait-education';
+import { cocherTacheExercice } from '@/lib/exercice-tache';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -1662,7 +1663,13 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
     const maj = majValidation(ex, action);
     setExercices(prev => prev.map(x => x.id === ex.id ? { ...x, ...maj } : x));
     const { error } = await supabase.from('exercices_attribues').update(maj).eq('id', ex.id);
-    if (error) setExercices(prev => prev.map(x => x.id === ex.id ? ex : x));
+    if (error) {
+      setExercices(prev => prev.map(x => x.id === ex.id ? ex : x));
+      alert('La validation n’a pas pu être enregistrée. Réessayez dans un instant.');
+      return;
+    }
+    // Tâche du jour dans l'agenda : cochée avec la validation.
+    await cocherTacheExercice(ex.id, action === 'valider').catch(() => {});
   }
 
   async function uploadRetourImg(file: File) {

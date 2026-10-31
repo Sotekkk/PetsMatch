@@ -2614,7 +2614,7 @@ function PatientDetailPageInner() {
     const { data } = await supabase.from('exercices_bibliotheque')
       .select('id, titre, description, media, etapes').eq('pro_uid', user.uid).eq('actif', true).order('created_at', { ascending: false });
     setBiblio((data ?? []) as EducExercice[]);
-    setAttrPicker({ ids: new Set(), cadence: '', echeance: echeanceDans(DUREE_DEFAUT_JOURS) ?? '', rappels: false, duree: DUREE_DEFAUT_JOURS, nbValidations: 1 });
+    setAttrPicker({ ids: new Set(), cadence: '', echeance: echeanceDans(DUREE_DEFAUT_JOURS) ?? '', rappels: true, duree: DUREE_DEFAUT_JOURS, nbValidations: 1 });
   }
 
   async function attribuerExercices() {

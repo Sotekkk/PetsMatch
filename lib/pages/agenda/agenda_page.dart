@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/exercice_tache.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1142,6 +1143,11 @@ class _AgendaPageState extends State<AgendaPage> {
               // Mise à jour optimiste immédiate
               setState(() => t['statut'] = newStatut);
               await _supa.from('taches_elevage').update({'statut': newStatut}).eq('id', t['id']);
+              // Exercice d'éducation : la tâche du jour valide (ou annule) la réussite.
+              final err = await validerExerciceDepuisTache(t['notes']?.toString(), newStatut == 'fait');
+              if (err != null && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err, style: const TextStyle(fontFamily: 'Galey'))));
+              }
               _loadTasks();
             },
             child: AnimatedContainer(

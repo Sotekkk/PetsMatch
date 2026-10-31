@@ -748,6 +748,27 @@ exports.sendExerciceReminders = functions
             } catch (e) {
                 console.error(`notifications insert error (exo ${ex.id}):`, e.message);
             }
+            // Tâche du jour dans l'agenda du propriétaire (à cocher : valide
+            // l'exercice — site agenda / appli agenda_page, notes « exercice:<id> »).
+            try {
+                const deja = await supabaseSelect("taches_elevage",
+                    `notes=eq.${encodeURIComponent(`exercice:${ex.id}`)}&date=eq.${todayStr}&select=id`);
+                if (!Array.isArray(deja) || deja.length === 0) {
+                    await supabaseInsert("taches_elevage", [{
+                        titre: `Exercice : ${titreExo}`,
+                        animal_id: String(ex.animal_id),
+                        animal_nom: animalNom || null,
+                        uid_eleveur: ownerUid,
+                        date: todayStr,
+                        statut: "a_faire",
+                        profil_source: "particulier",
+                        notes: `exercice:${ex.id}`,
+                        ...(ex.owner_profile_id ? {profile_id: ex.owner_profile_id} : {}),
+                    }]);
+                }
+            } catch (e) {
+                console.error(`taches_elevage insert error (exo ${ex.id}):`, e.message);
+            }
             try {
                 await supabaseInsert("notifs_sent",
                     [{key: dedupKey, sent_at: new Date().toISOString()}]);

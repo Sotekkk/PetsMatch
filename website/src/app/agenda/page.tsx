@@ -1,4 +1,5 @@
 'use client';
+import { validerExerciceDepuisTache } from '@/lib/exercice-tache';
 
 import { useEffect, useState, useCallback } from 'react';
 import MotifAnnulationChamp, { MOTIFS_CLIENT } from '@/components/rdv/MotifAnnulationChamp';
@@ -66,6 +67,8 @@ interface Task {
   etape_id?: string | null;
   animal_id?: string | null;
   profil_source?: string | null;
+  /** 'exercice:<id>' : tâche du jour d'un exercice d'éducation. */
+  notes?: string | null;
 }
 
 interface TaskGroupe {
@@ -642,7 +645,7 @@ export default function AgendaPage() {
     // _loadTasks (d1/d2, p1/p2) pour garder les deux plateformes alignées.
     const taskFrom = new Date(focusedMonth.year, focusedMonth.month - 1, 1).toISOString().slice(0, 10);
     const taskTo   = new Date(focusedMonth.year, focusedMonth.month + 2, 0).toISOString().slice(0, 10);
-    const manuelCols = 'id,titre,date,statut,uid_eleveur,assigne_a,profile_id,profil_source,eleveur_profile_id,animal_id';
+    const manuelCols = 'id,titre,date,statut,uid_eleveur,assigne_a,profile_id,profil_source,eleveur_profile_id,animal_id,notes';
     const protoCols  = 'id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id,profile_id,profil_source,eleveur_profile_id';
 
     let d1Res: { data: unknown[] | null } = { data: [] };
@@ -847,6 +850,9 @@ export default function AgendaPage() {
       const newStatut = t.statut === 'fait' ? 'a_faire' : 'fait';
       setTasks(prev => prev.map(x => x.id === t.id ? { ...x, statut: newStatut } : x));
       await supabase.from('taches_elevage').update({ statut: newStatut }).eq('id', t.id);
+      // Exercice d'éducation : la tâche du jour valide (ou annule) la réussite.
+      const err = await validerExerciceDepuisTache(t.notes, newStatut === 'fait').catch(() => null);
+      if (err) alert(err);
     }
   }
 
