@@ -1769,7 +1769,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     final nb = reparti ? (indiv + coll > 0 ? indiv + coll : 1) : (int.tryParse(nbCtrl.text.trim()) ?? 1);
     final proUid = FirebaseAuth.instance.currentUser?.uid;
     try {
-      await _supa.from('forfaits_souscrits').insert({
+      final fsRow = await _supa.from('forfaits_souscrits').insert({
         if (forfaitId != null) 'forfait_id': forfaitId,
         'pro_uid': proUid,
         if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
@@ -1782,7 +1782,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         'type_seances': typeSeances,
         if (reparti) 'nb_indiv_total': indiv,
         if (reparti) 'nb_coll_total': coll,
-      });
+      }).select('id').single();
       await _load();
       // Payé d'avance : facture du forfait préparée.
       if (prix != null && prix > 0 && mounted) {
@@ -1804,6 +1804,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             description: 'Forfait payé d\'avance', prixTTC: prix,
           )],
           sourceAnimalId: widget.animalId, clientUid: _ownerUid, clientProfileId: widget.ownerProfileId,
+          forfaitSouscritId: fsRow['id']?.toString(),
         )));
         if (mounted) await _load();
       }

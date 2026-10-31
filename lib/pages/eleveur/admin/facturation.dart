@@ -727,6 +727,8 @@ class CreerFacturePage extends StatefulWidget {
   final String? factureParenteId; // facture corrigée (pour un avoir)
   final bool franchiseInitiale;
   // Traçabilité optionnelle (facture émise depuis un RDV / un animal — garde…).
+  /// Facture d'un forfait éducateur : reliée à forfaits_souscrits.facture_id.
+  final String? forfaitSouscritId;
   final String? sourceRdvId;      // RDV « ancre »
   final List<String> sourceRdvIds; // tous les RDV couverts (garde multi-jours)
   final String? sourceAnimalId;
@@ -749,6 +751,7 @@ class CreerFacturePage extends StatefulWidget {
     this.factureParenteId,
     this.franchiseInitiale = false,
     this.sourceRdvId,
+    this.forfaitSouscritId,
     this.sourceRdvIds = const [],
     this.sourceAnimalId,
     this.sourcePensionEntreeId,
@@ -1096,6 +1099,13 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
           }).eq('id', factureId);
           d['statut'] = 'payee';
           d['datePaiement'] = datePaiement;
+        } catch (_) {}
+      }
+
+      if (widget.forfaitSouscritId != null) {
+        try {
+          await Supabase.instance.client.from('forfaits_souscrits')
+              .update({'facture_id': factureId}).eq('id', widget.forfaitSouscritId!);
         } catch (_) {}
       }
 

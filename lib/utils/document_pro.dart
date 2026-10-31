@@ -121,6 +121,17 @@ Future<Map<String, dynamic>?> joindreCompteRenduProAuRdv(BuildContext context, S
 }
 
 /// Octets d'un compte rendu chargé (pour l'e-mail de fin de séance).
+/// Octets d'un document par son URL (stockage privé : lien signé).
+Future<Uint8List?> octetsUrlDocument(String url) async {
+  if (url.isEmpty) return null;
+  try {
+    final res = await http.get(Uri.parse(await lienDocument(url)));
+    return res.statusCode == 200 ? res.bodyBytes : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 Future<Uint8List?> octetsDocumentPro(String documentId) async {
   try {
     final row = await Supabase.instance.client.from('documents_animaux').select('url').eq('id', documentId).maybeSingle();

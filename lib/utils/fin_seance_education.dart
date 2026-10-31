@@ -1,3 +1,4 @@
+import 'dart:convert';
 // Éducateur : fin de séance d'un RDV — compte rendu de séance / bilan avec
 // les exercices à faire et le programme de travail (PDF signé) et facture,
 // envoyés au client en un seul e-mail, facture acquittée ; devis et facture
@@ -16,7 +17,7 @@ import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, D
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart' show compteRenduPdfBytes, ageAnimal, sexeAnimal;
 import 'package:PetsMatch/pages/pro/transmission_document.dart' show envoyerDocumentsParEmail;
 import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv;
-import 'package:PetsMatch/utils/document_pro.dart' show comptesRendusProDuRdv, lignesCrsPro, ajouterPiecesCrsPro;
+import 'package:PetsMatch/utils/document_pro.dart' show comptesRendusProDuRdv, lignesCrsPro, ajouterPiecesCrsPro, octetsUrlDocument;
 import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro, octetsSignature;
 import 'package:PetsMatch/widgets/rich_text_view.dart' show richTextToPlain;
 
@@ -185,6 +186,42 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
   } catch (_) {}
   // Mes comptes rendus chargés (photo / PDF) : envoyés à la place des comptes rendus rédigés.
   final crsPro = await comptesRendusProDuRdv(rdvId);
+  // Séance décomptée d'un forfait : sa facture (payé d'avance) ; contrats de
+  // l'animal (PetsMatch signé, ou chargé).
+  Map<String, dynamic>? factureForfait;
+  final contrats = <({String id, String titre, String? url})>[];
+  final uidPro = rdv['pro_uid']?.toString();
+  final aid = rdv['animal_id']?.toString();
+  try {
+    final fsid = rdv['forfait_souscrit_id']?.toString();
+    if (fsid != null) {
+      final fs = await supa.from('forfaits_souscrits').select('facture_id').eq('id', fsid).maybeSingle();
+      final fid = fs?['facture_id']?.toString();
+      if (fid != null) {
+        factureForfait = await supa.from('factures').select().eq('id', fid).neq('statut', 'annulee').maybeSingle();
+      } else if (aid != null && uidPro != null) {
+        // Forfait attribué avant le lien facture ↔ forfait : dernière facture « Forfait … ».
+        final fl = await supa.from('factures').select().eq('uid_eleveur', uidPro).eq('source_animal_id', aid)
+            .neq('statut', 'annulee').order('created_at', ascending: false).limit(10);
+        for (final x in fl as List) {
+          if (RegExp(r'"(description|designation)":"Forfait ').hasMatch(jsonEncode(x['lignes'] ?? []))) {
+            factureForfait = Map<String, dynamic>.from(x as Map);
+            break;
+          }
+        }
+      }
+    }
+    if (aid != null && uidPro != null) {
+      final ct = await supa.from('documents_animaux').select('id, type, titre, url, pdf_signe_url, statut')
+          .eq('uid_eleveur', uidPro).eq('animal_id', aid).inFilter('type', ['contrat_education', 'contrat_document_pro'])
+          .not('statut', 'in', '(annule,refuse)').order('created_at', ascending: false);
+      for (final d in ct as List) {
+        final url = _v(d['pdf_signe_url']).isNotEmpty ? _v(d['pdf_signe_url'])
+            : d['type'] == 'contrat_document_pro' ? _v(d['url']) : '';
+        contrats.add((id: d['id'].toString(), titre: _v(d['titre']).isEmpty ? 'Contrat' : _v(d['titre']), url: url.isEmpty ? null : url));
+      }
+    }
+  } catch (_) {}
   // Plusieurs animaux : chaque compte rendu porte le nom de son animal.
   final nomsAnimaux = {for (final a in animauxDetailRdv(rdv)) a['id'].toString(): _v(a['nom'])};
   String nomDe(Map<String, dynamic> s) => nomsAnimaux[s['animal_id']?.toString()] ?? animalNom;
@@ -193,7 +230,9 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
     for (final s in seances) 'edu:${s['id']}': crsPro.isEmpty,
     for (final d in crsPro) 'pro:${d['id']}': true,
     if (facture != null) 'fac:${facture['id']}': true,
+    if (factureForfait != null) 'facf:${factureForfait['id']}': true,
   };
+  var acquitteeForfait = false;
   final dejaPayee = facture?['statut'] == 'payee';
   var acquittee = false;
   var mode = 'Carte bancaire';
@@ -225,7 +264,29 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
           if (facture != null)
             ligne('fac:${facture['id']}', 'Facture ${facture['numero_affichage'] ?? ''}',
                 '${((facture['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}'),
-          if (facture == null) ...[
+          if (factureForfait != null)
+            ligne('facf:${factureForfait['id']}', 'Facture du forfait ${factureForfait['numero_affichage'] ?? ''}',
+                '${((factureForfait['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} € TTC — '
+                '${factureForfait['statut'] == 'payee' || acquitteeForfait ? 'acquittée' : 'à régler'}'),
+          if (factureForfait != null && factureForfait['statut'] != 'payee') ...[
+            SwitchListTile(
+              value: acquitteeForfait, activeThumbColor: _teal, contentPadding: EdgeInsets.zero, dense: true,
+              onChanged: (v) => setM(() => acquitteeForfait = v),
+              title: const Text('Facture du forfait acquittée (réglée)', style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+            ),
+            if (acquitteeForfait && !acquittee) Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final m in const ['Carte bancaire', 'Espèces', 'Chèque', 'Virement'])
+                ChoiceChip(label: Text(m, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)), selected: mode == m,
+                    selectedColor: _teal.withValues(alpha: 0.2), onSelected: (_) => setM(() => mode = m)),
+            ]),
+          ],
+          for (final c in contrats)
+            c.url != null ? ligne('ctr:${c.id}', c.titre, 'Contrat')
+                : ListTile(dense: true, contentPadding: EdgeInsets.zero,
+                    title: Text(c.titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey)),
+                    subtitle: const Text('PDF disponible une fois signé', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
+          // Séance décomptée d'un forfait : pas de facture à la séance.
+          if (facture == null && rdv['forfait_souscrit_id'] == null) ...[
             const SizedBox(height: 6),
             SizedBox(width: double.infinity, child: OutlinedButton.icon(
               onPressed: () => Navigator.pop(ctx, 'facture'),
@@ -251,7 +312,7 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
           Row(children: [
             Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx),
                 child: const Text('Fermer', style: TextStyle(fontFamily: 'Galey')))),
-            if (acquittee) ...[
+            if (acquittee || acquitteeForfait) ...[
               const SizedBox(width: 8),
               Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx, 'acquitter'),
                   child: const Text('Acquitter seulement', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5)))),
@@ -281,6 +342,11 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
       await supa.from('factures').update(maj).eq('id', facture['id']);
       facture = {...facture, ...maj};
     }
+    if (factureForfait != null && acquitteeForfait && factureForfait['statut'] != 'payee') {
+      final maj = {'statut': 'payee', 'mode_paiement': mode, 'date_paiement': DateTime.now().toUtc().toIso8601String()};
+      await supa.from('factures').update(maj).eq('id', factureForfait['id']);
+      factureForfait = {...factureForfait, ...maj};
+    }
     if (choix != 'envoyer') {
       messenger.showSnackBar(const SnackBar(content: Text('Facture acquittée.', style: TextStyle(fontFamily: 'Galey')),
           behavior: SnackBarBehavior.floating));
@@ -294,6 +360,17 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
           bytes: await pdfSeanceEducation(s, proProfileId: pid, proprietaire: clientNom)));
     }
     await ajouterPiecesCrsPro(pieces, crsPro, coches);
+    if (factureForfait != null && coches['facf:${factureForfait['id']}'] == true) {
+      pieces.add((type: 'facture', nomFichier: 'Facture-forfait-${factureForfait['numero_affichage'] ?? ''}${factureForfait['statut'] == 'payee' ? '-acquittee' : ''}.pdf',
+          bytes: await facturePdfDepuisLigne(factureForfait)));
+    }
+    for (final c in contrats) {
+      if (c.url == null || coches['ctr:${c.id}'] != true) continue;
+      final octets = await octetsUrlDocument(c.url!);
+      if (octets != null) {
+        pieces.add((type: 'compte_rendu', nomFichier: '${c.titre.replaceAll(RegExp(r'[\\/:*?"<>|]'), '-')}.pdf', bytes: octets));
+      }
+    }
     if (facture != null && coches['fac:${facture['id']}'] == true) {
       pieces.add((type: 'facture', nomFichier: 'Facture-${facture['numero_affichage'] ?? ''}${facture['statut'] == 'payee' ? '-acquittee' : ''}.pdf',
           bytes: await facturePdfDepuisLigne(facture)));

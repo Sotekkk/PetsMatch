@@ -10,7 +10,7 @@ import { seancesEducationDuRdv, pdfSeanceEducation, notifierFamilleSeances, type
 import { useAuth } from '@/lib/auth-context';
 import { maSignaturePro } from '@/lib/signature-pro';
 import { envoyerPiecesParEmail, pdfDepuisUrl } from '@/lib/transmission-document';
-import { ACCEPT_DOCUMENT_PRO, fichierEnPdf, chargerCompteRenduPro, comptesRendusProDuRdv, type DocumentProRdv } from '@/lib/document-pro';
+import { ACCEPT_DOCUMENT_PRO, TYPE_CONTRAT_PRO, fichierEnPdf, chargerCompteRenduPro, comptesRendusProDuRdv, type DocumentProRdv } from '@/lib/document-pro';
 import {
   chargerDocsConsultation, pdfCompteRendu, pdfFacture, pdfOrdonnance, type DocsConsultation,
 } from '@/lib/fin-consultation';
@@ -47,6 +47,11 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
   // Comptes rendus faits par le pro lui-même (PDF / photo) : envoyés à la place du compte rendu généré.
   const [crsPro, setCrsPro] = useState<DocumentProRdv[]>([]);
   const [depot, setDepot] = useState(false);
+  // Éducateur : facture du forfait (séance décomptée d'un forfait payé
+  // d'avance) et contrats de l'animal (chargé, ou PetsMatch signé).
+  const [factureForfait, setFactureForfait] = useState<DocsConsultation['facture']>(null);
+  const [acquitteeForfait, setAcquitteeForfait] = useState(false);
+  const [contrats, setContrats] = useState<{ id: string; titre: string; url: string | null }[]>([]);
 
   useEffect(() => {
     comptesRendusProDuRdv(rdvId).then(l => {
@@ -79,7 +84,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
       (async () => {
         const [seances, { data: r }, { data: fac }] = await Promise.all([
           seancesEducationDuRdv(rdvId),
-          supabase.from('rdv').select('animal_id, animal_nom_manuel, animaux_detail').eq('id', rdvId).maybeSingle(),
+          supabase.from('rdv').select('animal_id, animal_nom_manuel, animaux_detail, forfait_souscrit_id').eq('id', rdvId).maybeSingle(),
           supabase.from('factures').select('*').eq('source_rdv_id', rdvId).neq('statut', 'annulee').order('created_at', { ascending: false }).limit(1),
         ]);
         const aid = r?.animal_id != null ? String(r.animal_id) : null;
@@ -92,6 +97,31 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
           noms: { ...nomsDetail, ...(aid ? { [aid]: (an?.nom as string | undefined) ?? nomsDetail[aid] ?? (r?.animal_nom_manuel as string | undefined) ?? 'Animal' } : {}) },
           crs: [], ordos: [], facture, seances: [] });
         setCoches(c => ({ ...c, ...Object.fromEntries([...seances.map(s => [`edu:${s.id}`, true]), ...(facture ? [[`fac:${facture.id}`, true]] : [])]) }));
+        // Séance décomptée d'un forfait : sa facture (payé d'avance).
+        const fsid = (r as { forfait_souscrit_id?: string | null } | null)?.forfait_souscrit_id;
+        if (fsid) {
+          const { data: fs } = await supabase.from('forfaits_souscrits').select('facture_id').eq('id', fsid).maybeSingle();
+          const fid = (fs as { facture_id?: string | null } | null)?.facture_id;
+          let ff: unknown = null;
+          if (fid) ff = (await supabase.from('factures').select('*').eq('id', fid).neq('statut', 'annulee').maybeSingle()).data;
+          // Forfait attribué avant le lien facture ↔ forfait : dernière facture
+          // « Forfait … » de l'animal.
+          else if (aid && user) {
+            const { data: fl } = await supabase.from('factures').select('*').eq('uid_eleveur', user.uid).eq('source_animal_id', aid)
+              .neq('statut', 'annulee').order('created_at', { ascending: false }).limit(10);
+            ff = ((fl ?? []) as { lignes?: unknown }[]).find(x => /"(description|designation)":"Forfait /.test(JSON.stringify(x.lignes ?? []))) ?? null;
+          }
+          if (ff) { setFactureForfait(ff as DocsConsultation['facture']); setCoches(c => ({ ...c, [`facf:${(ff as { id: string }).id}`]: true })); }
+        }
+        // Contrats de l'animal : PDF signé (PetsMatch) ou document chargé.
+        if (aid && user) {
+          const { data: ct } = await supabase.from('documents_animaux').select('id, type, titre, url, pdf_signe_url, statut')
+            .eq('uid_eleveur', user.uid).eq('animal_id', aid).in('type', ['contrat_education', TYPE_CONTRAT_PRO])
+            .not('statut', 'in', '(annule,refuse)').order('created_at', { ascending: false });
+          const liste = ((ct ?? []) as { id: string; type: string; titre: string | null; url: string | null; pdf_signe_url: string | null }[])
+            .map(d => ({ id: d.id, titre: d.titre ?? 'Contrat', url: d.pdf_signe_url ?? (d.type === TYPE_CONTRAT_PRO ? d.url : null) }));
+          setContrats(liste);
+        }
       })();
       return;
     }
@@ -163,6 +193,13 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         if (error) { alert(`Facture non mise à jour : ${error.message}`); return; }
         facture = { ...facture, ...maj };
       }
+      let ffac = factureForfait;
+      if (ffac && acquitteeForfait && ffac.statut !== 'payee') {
+        const maj = { statut: 'payee', mode_paiement: mode, date_paiement: new Date().toISOString() };
+        const { error } = await supabase.from('factures').update(maj).eq('id', ffac.id);
+        if (error) { alert(`Facture du forfait non mise à jour : ${error.message}`); return; }
+        ffac = { ...ffac, ...maj };
+      }
       if (envoyer && nbCoches > 0) {
         const signature = await maSignaturePro(user.uid).catch(() => null);
         const praticien = `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim();
@@ -190,6 +227,13 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         }
         for (const o of docs.ordos) if (coches[`ordo:${o.id}`]) {
           pieces.push({ type: 'ordonnance', nomFichier: `Ordonnance-${nom(o.animal_id)}.pdf`, blob: await pdfOrdonnance(o) });
+        }
+        if (ffac && coches[`facf:${ffac.id}`]) {
+          pieces.push({ type: 'facture', nomFichier: `Facture-forfait-${ffac.numero_affichage ?? ''}${ffac.statut === 'payee' ? '-acquittee' : ''}.pdf`,
+            blob: await pdfFacture(ffac) });
+        }
+        for (const c of contrats) if (c.url && coches[`ctr:${c.id}`]) {
+          pieces.push({ type: 'compte_rendu', nomFichier: `${c.titre.replace(/[\\/:*?"<>|]/g, '-')}.pdf`, blob: await pdfDepuisUrl(c.url) });
         }
         if (facture && coches[`fac:${facture.id}`]) {
           pieces.push({ type: 'facture', nomFichier: `Facture-${facture.numero_affichage ?? ''}${facture.statut === 'payee' ? '-acquittee' : ''}.pdf`,
@@ -250,6 +294,26 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
             {docs.ordos.map(o => ligne(`ordo:${o.id}`, `Ordonnance — ${nom(o.animal_id)}`, o.doc_url ? undefined : 'PDF indisponible', !o.doc_url))}
             {docs.facture && ligne(`fac:${docs.facture.id}`, `Facture ${docs.facture.numero_affichage ?? ''}`,
               `${Number(docs.facture.total_ttc ?? 0).toFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}`)}
+            {factureForfait && ligne(`facf:${factureForfait.id}`, `Facture du forfait ${factureForfait.numero_affichage ?? ''}`,
+              `${Number(factureForfait.total_ttc ?? 0).toFixed(2)} € TTC — ${factureForfait.statut === 'payee' || acquitteeForfait ? 'acquittée' : 'à régler'}`)}
+            {factureForfait && factureForfait.statut !== 'payee' && (
+              <label className="flex items-center gap-3 cursor-pointer rounded-xl bg-[#0C5C6C]/5 px-3 py-2">
+                <input type="checkbox" checked={acquitteeForfait} onChange={e => setAcquitteeForfait(e.target.checked)} className="w-4 h-4" style={{ accentColor: '#0C5C6C' }} />
+                <span className="text-sm font-semibold text-[#1E2025]">Facture du forfait acquittée (réglée)</span>
+              </label>
+            )}
+            {acquitteeForfait && !acquittee && (
+              <div className="flex flex-wrap gap-1.5">
+                {MODES.map(m => (
+                  <button key={m} type="button" onClick={() => setMode(m)}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold border"
+                    style={mode === m ? { background: '#0C5C6C', color: 'white', borderColor: '#0C5C6C' } : { color: '#0C5C6C', borderColor: '#0C5C6C' }}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+            )}
+            {contrats.map(c => ligne(`ctr:${c.id}`, c.titre, c.url ? 'Contrat' : 'PDF disponible une fois signé', !c.url))}
           </div>
           {(toilettage || education) && !docs.facture && onPreparerFacture && (
             <button type="button" onClick={onPreparerFacture}
@@ -284,7 +348,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
           )}
           <div className="flex gap-2">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-600">Fermer</button>
-            {acquittee && (
+            {(acquittee || acquitteeForfait) && (
               <button type="button" disabled={envoi} onClick={() => valider(false)}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-[#0C5C6C] text-[#0C5C6C] disabled:opacity-40">
                 Acquitter sans envoyer

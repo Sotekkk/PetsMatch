@@ -2677,12 +2677,12 @@ function PatientDetailPageInner() {
       client_uid: ownerUid, animal_id: animalId,
       nom_snapshot: nom.trim(), nb_seances_total: nb || 1, ...(prix != null ? { prix_snapshot: prix } : {}),
     };
-    const { error } = await supabase.from('forfaits_souscrits').insert({
+    let { data: fsRow, error } = await supabase.from('forfaits_souscrits').insert({
       ...ligne, type_seances: type,
       ...(type === 'mixte' && (indiv != null || coll != null) ? { nb_indiv_total: indiv ?? 0, nb_coll_total: coll ?? 0 } : {}),
-    });
+    }).select('id').single();
     // Repli sans la colonne type_seances (migration pas encore passée).
-    if (error) await supabase.from('forfaits_souscrits').insert(ligne);
+    if (error) ({ data: fsRow, error } = await supabase.from('forfaits_souscrits').insert(ligne).select('id').single());
     setShowForfaitSousForm(false);
     await reloadForfaitsSous();
     // Payé d'avance : facture du forfait préparée, puis retour (dossier de la séance ou fiche).
@@ -2695,6 +2695,7 @@ function PatientDetailPageInner() {
       preparerFactureForfait({
         nomForfait: nom.trim(), nbSeances: nb || 1, prix, animalId, animalNom: animal?.nom ?? 'Animal',
         clientUid: ownerUid, clientProfileId: pp?.profile_id_proprio ?? null, client,
+        forfaitSouscritId: (fsRow as { id?: string } | null)?.id ?? null,
         retour: retourRdv ? retourDossierEducation(retourRdv) : `/mes-patients/${encodeURIComponent(animalId)}?tab=Programme`,
       });
       router.push('/elevage/facturation');

@@ -137,6 +137,8 @@ export async function coordClientForfait(proUid: string, animalId: string, rdvId
 export function preparerFactureForfait(o: {
   nomForfait: string; nbSeances: number; prix: number; animalId: string; animalNom: string;
   clientUid?: string | null; clientProfileId?: string | null; client: CoordClient; retour?: string;
+  /** Forfait du client : la facture émise y est reliée (forfaits_souscrits.facture_id). */
+  forfaitSouscritId?: string | null;
 }) {
   try {
     sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
@@ -146,6 +148,7 @@ export function preparerFactureForfait(o: {
       sourceAnimalId: o.animalId, clientUid: o.clientUid ?? undefined, clientProfileId: o.clientProfileId ?? undefined,
       notes: `Forfait payé d'avance — ${o.animalNom}`,
       ...(o.retour ? { retour: o.retour } : {}),
+      ...(o.forfaitSouscritId ? { forfaitSouscritId: o.forfaitSouscritId } : {}),
       lignes: [{ description: `Forfait ${o.nomForfait} (${o.nbSeances} séance${o.nbSeances > 1 ? 's' : ''}) — ${o.animalNom}`,
         quantite: 1, prixUnitaire: 0, prixTTC: o.prix, tva: 20 }],
     }));
