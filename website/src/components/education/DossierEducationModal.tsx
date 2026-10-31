@@ -59,6 +59,8 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   const [forfaitRdv, setForfaitRdv] = useState<ForfaitActif | null>(null);
   const [choixForfait, setChoixForfait] = useState<{ typeCours: 'individuel' | 'collectif' } | null>(null);
   const [decompte, setDecompte] = useState(false);
+  // Compte rendu de l'animal enregistré sans RDV (à rattacher à celui-ci).
+  const [crOrphelin, setCrOrphelin] = useState<{ id: string; date_seance: string | null } | null>(null);
   const [devis, setDevis] = useState<{ id: string; statut: string | null; total_ttc: number | null } | null>(null);
   const [facture, setFacture] = useState<{ id: string; statut: string | null; total_ttc: number | null; numero_affichage: string | null } | null>(null);
   const [coord, setCoord] = useState<Record<string, string>>({});
@@ -89,6 +91,11 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     ]);
     setAnimalNom((an.data as { nom?: string } | null)?.nom ?? detail.find(a => a.id === aid)?.nom ?? x.animal_nom_manuel ?? '');
     setCr((pr.data as typeof cr) ?? null);
+    if (!pr.data && aid) {
+      const { data: orph } = await supabase.from('education_progression').select('id, date_seance')
+        .eq('animal_id', aid).is('rdv_id', null).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      setCrOrphelin((orph as typeof crOrphelin) ?? null);
+    } else setCrOrphelin(null);
     setDevis(dv.error ? null : (dv.data as typeof devis) ?? null);
     setFacture((fa.data as typeof facture) ?? null);
     const c = (cc.data ?? {}) as Record<string, string>;
@@ -258,8 +265,12 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           {ligne('Compte rendu',
             !cr ? 'À rédiger' : cr.statut === 'brouillon' ? 'Brouillon' : cr.type === 'bilan' ? 'Bilan rédigé' : 'Rédigé',
             !cr ? GRIS : cr.statut === 'brouillon' ? AMBRE : VERT,
-            [btn(cr ? 'Modifier / voir' : 'Rédiger', () => fiche(`rdv=${encodeURIComponent(r.id)}`, 'Compte rendu')),
-              btn('Charger le mien', () => setDocPro('compte_rendu'))])}
+            [btn(cr ? 'Modifier / voir' : 'Rédiger', () => fiche(cr ? `editCr=${encodeURIComponent(cr.id)}` : `rdv=${encodeURIComponent(r.id)}`, 'Compte rendu')),
+              btn('Charger le mien', () => setDocPro('compte_rendu')),
+              ...(crOrphelin ? [btn(`Rattacher celui du ${crOrphelin.date_seance ? new Date(crOrphelin.date_seance).toLocaleDateString('fr-FR') : 'dernier'}`, async () => {
+                await supabase.from('education_progression').update({ rdv_id: r.id }).eq('id', crOrphelin.id);
+                await charger(); onChanged?.();
+              })] : [])])}
           {ligne('Exercices', nbExercices ? `${nbExercices} en cours` : 'Aucun en cours', nbExercices ? VERT : GRIS,
             [btn('Attribuer', () => fiche('tab=Programme', 'Exercices'))])}
           {ligne('Programme de travail', nbObjectifs ? `${nbObjectifs} objectif${nbObjectifs > 1 ? 's' : ''} en cours` : 'Aucun objectif', nbObjectifs ? VERT : GRIS,

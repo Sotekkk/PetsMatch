@@ -1235,6 +1235,26 @@ function PatientDetailPageInner() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     chargerGarde();
   }, [chargerGarde]);
+  // « Rédiger » depuis le dossier de la séance (?rdv=…) : nouveau compte rendu
+  // rattaché au RDV — aussi sur le profil principal (profil actif vide).
+  useEffect(() => {
+    if (catPro !== 'education' || !animalId) return;
+    const rdvId = searchParams.get('rdv');
+    if (!rdvId) return;
+    let annule = false;
+    (async () => {
+      const { data: r } = await supabase.from('rdv').select('id, lieu, duree_minutes').eq('id', rdvId).maybeSingle();
+      if (!r || annule) return;
+      const rr = r as { id: string; lieu: string | null; duree_minutes: number | null };
+      setSeanceRdvId(rr.id);
+      if (rr.lieu) { setSeanceLieu(rr.lieu); setSeanceType('domicile'); }
+      if (rr.duree_minutes) setSeanceDuree(String(rr.duree_minutes));
+      setShowAddRapport(true);
+      setTab('Séances');
+    })();
+    return () => { annule = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catPro, animalId, searchParams]);
   useEffect(() => {
     if (catPro !== 'education' || !animalId || !activeProfileId) return;
     let annule = false;
@@ -1246,18 +1266,6 @@ function PatientDetailPageInner() {
       const { data: ms, error: msErr } = await supabase.from('education_suivis').select('motif')
         .eq('pro_profile_id', activeProfileId).eq('animal_id', animalId).maybeSingle();
       if (!annule && !msErr) setMotifSuivi((ms as { motif: string | null } | null)?.motif ?? null);
-      const rdvId = searchParams.get('rdv');
-      if (rdvId && !annule) {
-        const { data: r } = await supabase.from('rdv').select('id, lieu, duree_minutes').eq('id', rdvId).maybeSingle();
-        if (r && !annule) {
-          const rr = r as { id: string; lieu: string | null; duree_minutes: number | null };
-          setSeanceRdvId(rr.id);
-          if (rr.lieu) { setSeanceLieu(rr.lieu); setSeanceType('domicile'); }
-          if (rr.duree_minutes) setSeanceDuree(String(rr.duree_minutes));
-          setShowAddRapport(true);
-          setTab('Séances');
-        }
-      }
     })();
     return () => { annule = true; };
   }, [catPro, animalId, activeProfileId, searchParams]);
@@ -2428,6 +2436,21 @@ function PatientDetailPageInner() {
       setSavingRapport(false);
     }
   }
+
+  // « Modifier / voir » depuis le dossier de la séance (?editCr=…) : le compte
+  // rendu existant du RDV, pas un nouveau.
+  const editCrFait = useRef(false);
+  useEffect(() => {
+    const id = searchParams.get('editCr');
+    if (!id || editCrFait.current || rapports.length === 0) return;
+    const r = rapports.find(x => x.id === id);
+    if (!r) return;
+    editCrFait.current = true;
+    startEditRapport(r);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTab('Séances');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rapports, searchParams]);
 
   function startEditRapport(r: { id: string; contenu: string; exercices_conseilles: string | null }) {
     setEditingRapportId(r.id);
