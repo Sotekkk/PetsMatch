@@ -17,6 +17,7 @@ import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 
 import LienDocument from '@/components/LienDocument';
 import { allerOuFermer } from '@/lib/panneau';
+import ReglementsFacture from '@/components/facturation/ReglementsFacture';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Ligne {
@@ -63,6 +64,8 @@ interface Facture {
   type_facture?: string;
   pdf_url?: string;
   pdf_hash?: string;
+  uid_eleveur?: string;
+  montant_regle?: number;
 }
 
 // Facture préparée hors de cette page (ex : registre pension) et déposée en
@@ -102,9 +105,10 @@ interface FacturePrefill {
 const STATUT_STYLE: Record<string, string> = {
   emise: 'bg-amber-100 text-amber-700',
   payee: 'bg-green-100 text-green-700',
+  partiellement_payee: 'bg-sky-100 text-sky-700',
   annulee: 'bg-red-100 text-red-600',
 };
-const STATUT_LABEL: Record<string, string> = { emise: 'Émise', payee: 'Payée', annulee: 'Annulée' };
+const STATUT_LABEL: Record<string, string> = { emise: 'Émise', payee: 'Payée', partiellement_payee: 'Partiellement payée', annulee: 'Annulée' };
 
 function today() { return new Date().toISOString().slice(0, 10); }
 function addDays(n: number) {
@@ -488,12 +492,22 @@ export default function FacturationPage() {
                 </button>
               </div>
             )}
+            {/* Règlements : partiels ou solde ; statut recalculé en base. */}
+            {selected.type_facture !== 'avoir' && (
+              <ReglementsFacture facture={selected} uid={selected.uid_eleveur ?? user?.uid ?? ''}
+                onChange={maj => {
+                  setFactures(prev => prev.map(f => f.id === selected.id ? { ...f, ...maj } as Facture : f));
+                  setSelected(prev => prev && prev.id === selected.id ? { ...prev, ...maj } as Facture : prev);
+                }} />
+            )}
+            {selected.statut === 'partiellement_payee' && (
+              <button onClick={async () => imprimerPdf(await facturePdfBlob(factureVersPdfData(selected as unknown as Record<string, unknown>)))}
+                className="w-full border border-gray-200 text-gray-600 font-semibold py-2 rounded-xl text-sm mb-3">
+                Facture avec le reste à payer (PDF)
+              </button>
+            )}
             {selected.statut === 'emise' && (
               <div className="flex gap-2 mb-3">
-                <button onClick={() => handleStatutChange(selected.id, 'payee')}
-                  className="flex-1 bg-[#6E9E57] hover:bg-[#5A8A45] text-white font-semibold py-2 rounded-xl text-sm transition-colors">
-                  Marquer payée
-                </button>
                 <button onClick={() => handleStatutChange(selected.id, 'annulee')}
                   className="flex-1 border border-red-200 hover:bg-red-50 text-red-500 font-medium py-2 rounded-xl text-sm transition-colors">
                   Annuler

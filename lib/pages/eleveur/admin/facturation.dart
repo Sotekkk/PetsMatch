@@ -111,6 +111,8 @@ Map<String, dynamic> _supaToUi(Map<String, dynamic> r) => {
   'noteComplementaire': r['note_complementaire'],
   'statut':             r['statut'],
   'datePaiement':       r['date_paiement'],
+  'montantRegle':       r['montant_regle'],
+  'uidEleveur':         r['uid_eleveur'],
 };
 
 const _kEscompteDefaut = 'Escompte pour paiement anticipé : néant.';
@@ -258,7 +260,7 @@ class _FacturationPageState extends State<FacturationPage> {
       d['dateFacture'],
       d['nomClient'],
       d['emailClient'],
-      d['statut'] == 'payee' ? 'Payée' : d['statut'] == 'annulee' ? 'Annulée' : 'Émise',
+      _libelleStatut(d['statut']),
       (d['totalHT'] ?? 0.0).toStringAsFixed(2),
       (d['totalTVA'] ?? 0.0).toStringAsFixed(2),
       (d['totalTTC'] ?? 0.0).toStringAsFixed(2),
@@ -426,8 +428,9 @@ class _FactureCard extends StatelessWidget {
 
   const _FactureCard({required this.data, required this.docId, required this.statut, required this.onTap});
 
-  Color get _statutColor => statut == 'payee' ? _green : statut == 'annulee' ? Colors.red : const Color(0xFFE9A825);
-  String get _statutLabel => statut == 'payee' ? 'Payée' : statut == 'annulee' ? 'Annulée' : 'Émise';
+  Color get _statutColor => statut == 'payee' ? _green : statut == 'annulee' ? Colors.red
+      : statut == 'partiellement_payee' ? const Color(0xFF0284C7) : const Color(0xFFE9A825);
+  String get _statutLabel => _libelleStatut(statut);
 
   @override
   Widget build(BuildContext context) {
@@ -471,6 +474,9 @@ class _FactureCard extends StatelessWidget {
     );
   }
 }
+
+String _libelleStatut(Object? s) => s == 'payee' ? 'Payée' : s == 'annulee' ? 'Annulée'
+    : s == 'partiellement_payee' ? 'Partiellement payée' : 'Émise';
 
 // ─────────────────────────────────────────────────────────────
 // 2. DETAIL / REPRINT PAGE
@@ -538,6 +544,17 @@ class FactureDetailPage extends StatelessWidget {
                     ])),
                   );
                   if (mode == null) return;
+                  final reste = (((data['totalTTC'] as num?) ?? 0) - ((data['montantRegle'] as num?) ?? 0)) ;
+                  if (reste > 0.005) {
+                    // Règlement du reste : total réglé et statut recalculés en base.
+                    await Supabase.instance.client.from('facture_reglements').insert({
+                      'facture_id': docId, 'uid_eleveur': (data['uidEleveur'] ?? '').toString(),
+                      'montant': (reste * 100).roundToDouble() / 100, 'mode': mode,
+                      'date_reglement': DateTime.now().toIso8601String().substring(0, 10),
+                    });
+                    if (context.mounted) Navigator.pop(context);
+                    return;
+                  }
                   maj['mode_paiement'] = mode;
                   maj['date_paiement'] = DateTime.now().toUtc().toIso8601String();
                 } else {
@@ -547,7 +564,9 @@ class FactureDetailPage extends StatelessWidget {
                 if (context.mounted) Navigator.pop(context);
               },
               itemBuilder: (_) => [
-                const PopupMenuItem(value: 'emise', child: Text('Marquer Émise')),
+                // Des règlements existent : on les supprime dans « Règlements ».
+                if (((data['montantRegle'] as num?) ?? 0) <= 0)
+                  const PopupMenuItem(value: 'emise', child: Text('Marquer Émise')),
                 const PopupMenuItem(value: 'payee', child: Text('Marquer Payée (acquittée)')),
                 const PopupMenuItem(value: 'annulee', child: Text('Annuler')),
               ],
@@ -617,6 +636,10 @@ class FactureDetailPage extends StatelessWidget {
             if ((data['delaiPaiement'] ?? '').isNotEmpty)
               _DetailRow(label: 'Délai', value: '${data['delaiPaiement']} jours'),
           ])),
+          if ((data['typeFacture'] ?? '') != 'avoir' && !['annulee', 'brouillon'].contains(data['statut'])) ...[
+            const SizedBox(height: 16),
+            _ReglementsFacture(data: data, docId: docId, readOnly: readOnly),
+          ],
           if ((data['noteComplementaire'] ?? '').isNotEmpty) ...[
             const SizedBox(height: 16),
             _Card(child: Text(data['noteComplementaire'], style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
@@ -1649,6 +1672,7 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
       ?? (franchise ? ht(l) : arrondi(ht(l) * (1 + ((l['tauxTVA'] as num?) ?? 0) / 100)));
   final isAvoir = d['typeFacture'] == 'avoir';
   final payee = d['statut'] == 'payee';
+  final dejaRegle = payee ? 0.0 : ((d['montantRegle'] as num?) ?? 0).toDouble();
   // Client professionnel (SIRET / n° de TVA) : pénalités de retard et
   // indemnité de recouvrement ; pas pour un particulier.
   final clientPro = (d['siretClient'] ?? '').toString().trim().isNotEmpty || (d['tvaClient'] ?? '').toString().trim().isNotEmpty;
@@ -1776,7 +1800,7 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
               pw.Text('Échéance : ${d['dateEcheance']}', style: pw.TextStyle(font: bold, fontSize: 10)),
             // Statut du règlement (distinct de l'état du document).
             if (!isAvoir)
-              pw.Text('Statut : ${payee ? 'Payée' : 'À payer'}', style: pw.TextStyle(font: bold, fontSize: 10)),
+              pw.Text('Statut : ${payee ? 'Payée' : dejaRegle > 0 ? 'Partiellement payée' : 'À payer'}', style: pw.TextStyle(font: bold, fontSize: 10)),
           ]),
         ],
       ),
@@ -1852,6 +1876,10 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
                 pw.Text('${totalTTC.toStringAsFixed(2)} €', style: pw.TextStyle(font: bold, fontSize: 11, color: PdfColors.white)),
               ]),
             ),
+            if (!isAvoir && dejaRegle > 0) ...[
+              _pdfTotalRow('Déjà réglé', eur(dejaRegle), font),
+              _pdfTotalRow('Reste à payer', eur(totalTTC - dejaRegle > 0 ? totalTTC - dejaRegle : 0), bold),
+            ],
           ]),
         ),
       ),
@@ -2190,5 +2218,190 @@ class _MentionsLegales extends StatelessWidget {
             style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _dark)),
       ]),
     );
+  }
+}
+
+// Règlements d'une facture émise (facture_reglements) : paiements partiels,
+// solde, reste à payer ; total réglé et statut recalculés en base.
+// Miroir site : components/facturation/ReglementsFacture.tsx.
+class _ReglementsFacture extends StatefulWidget {
+  final Map<String, dynamic> data;
+  final String docId;
+  final bool readOnly;
+  const _ReglementsFacture({required this.data, required this.docId, this.readOnly = false});
+  @override
+  State<_ReglementsFacture> createState() => _ReglementsFactureState();
+}
+
+class _ReglementsFactureState extends State<_ReglementsFacture> {
+  static const _modes = ['Carte bancaire', 'Espèces', 'Chèque', 'Virement'];
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>> _liste = [];
+  bool _enCours = false;
+
+  @override
+  void initState() { super.initState(); _charger(); }
+
+  Future<void> _charger() async {
+    try {
+      final rows = await _supa.from('facture_reglements').select('id, montant, date_reglement, mode, reference')
+          .eq('facture_id', widget.docId).order('date_reglement').order('created_at');
+      if (mounted) setState(() => _liste = List<Map<String, dynamic>>.from(rows));
+    } catch (_) {}
+  }
+
+  /// Statut et total réglé à jour dans la fiche (et le PDF).
+  Future<void> _rafraichirFacture() async {
+    final f = await _supa.from('factures').select('statut, montant_regle, mode_paiement, date_paiement').eq('id', widget.docId).maybeSingle();
+    if (f == null || !mounted) return;
+    setState(() {
+      widget.data['statut'] = f['statut'];
+      widget.data['montantRegle'] = f['montant_regle'];
+      widget.data['modePaiement'] = f['mode_paiement'];
+      widget.data['datePaiement'] = f['date_paiement'];
+    });
+  }
+
+  double get _total => ((widget.data['totalTTC'] as num?) ?? 0).toDouble();
+  double get _regle => widget.data['statut'] == 'payee' && _liste.isEmpty
+      ? _total // marquée payée avant les règlements
+      : _liste.fold(0.0, (s, r) => s + ((r['montant'] as num?) ?? 0).toDouble());
+  double get _reste { final r = ((_total - _regle) * 100).roundToDouble() / 100; return r > 0 ? r : 0; }
+  String _eur(num v) => '${v.toStringAsFixed(2).replaceAll('.', ',')} €';
+  String _date(Object? v) { final d = DateTime.tryParse(v?.toString() ?? ''); return d == null ? '' : DateFormat('dd/MM/yyyy').format(d); }
+
+  Future<void> _enregistrer(double montant, String mode, DateTime date, String reference) async {
+    if (montant <= 0) return;
+    setState(() => _enCours = true);
+    try {
+      await _supa.from('facture_reglements').insert({
+        'facture_id': widget.docId, 'uid_eleveur': (widget.data['uidEleveur'] ?? '').toString(),
+        'montant': (montant * 100).roundToDouble() / 100, 'mode': mode,
+        'date_reglement': DateFormat('yyyy-MM-dd').format(date),
+        if (reference.trim().isNotEmpty) 'reference': reference.trim(),
+      });
+      await _charger();
+      await _rafraichirFacture();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Règlement non enregistré : $e')));
+    } finally {
+      if (mounted) setState(() => _enCours = false);
+    }
+  }
+
+  Future<void> _supprimer(Map<String, dynamic> r) async {
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Supprimer le règlement', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: Text('Supprimer le règlement de ${_eur((r['montant'] as num?) ?? 0)} du ${_date(r['date_reglement'])} ?',
+          style: const TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+      ],
+    ));
+    if (ok != true) return;
+    await _supa.from('facture_reglements').delete().eq('id', r['id']);
+    await _charger();
+    await _rafraichirFacture();
+  }
+
+  Future<void> _formulaire() async {
+    final montantCtrl = TextEditingController(text: _reste.toStringAsFixed(2));
+    final refCtrl = TextEditingController();
+    var mode = _modes.first;
+    var date = DateTime.now();
+    final valider = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(ctx).viewInsets.bottom + 16),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Enregistrer un règlement', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: TextField(controller: montantCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Montant (€)', isDense: true, border: OutlineInputBorder()))),
+            const SizedBox(width: 10),
+            Expanded(child: OutlinedButton(
+              onPressed: () async {
+                final d = await showDatePicker(context: ctx, initialDate: date, firstDate: DateTime(2020), lastDate: DateTime.now().add(const Duration(days: 365)));
+                if (d != null) setM(() => date = d);
+              },
+              child: Text(DateFormat('dd/MM/yyyy').format(date), style: const TextStyle(fontFamily: 'Galey')),
+            )),
+          ]),
+          const SizedBox(height: 10),
+          Wrap(spacing: 6, children: [
+            for (final m in _modes)
+              ChoiceChip(label: Text(m, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)), selected: mode == m,
+                  onSelected: (_) => setM(() => mode = m)),
+          ]),
+          const SizedBox(height: 10),
+          TextField(controller: refCtrl, decoration: const InputDecoration(
+              labelText: 'Référence (n° de chèque, virement…) — facultatif', isDense: true, border: OutlineInputBorder())),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler'))),
+            const SizedBox(width: 10),
+            Expanded(child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(ctx, true), child: const Text('Enregistrer'))),
+          ]),
+        ]),
+      )),
+    );
+    if (valider == true) {
+      await _enregistrer(double.tryParse(montantCtrl.text.replaceAll(',', '.')) ?? 0, mode, date, refCtrl.text);
+    }
+  }
+
+  Future<void> _solder() async {
+    final mode = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const ListTile(title: Text('Réglée par', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+        for (final m in _modes)
+          ListTile(title: Text(m, style: const TextStyle(fontFamily: 'Galey')), onTap: () => Navigator.pop(ctx, m)),
+      ])),
+    );
+    if (mode != null) await _enregistrer(_reste, mode, DateTime.now(), '');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        const Expanded(child: Text('Règlements', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14))),
+        Text('Réglé ${_eur(_regle)}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.black54)),
+      ]),
+      Text('Reste à payer ${_eur(_reste)}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+      for (final r in _liste)
+        Row(children: [
+          Expanded(child: Text(
+            '${_date(r['date_reglement'])} · ${r['mode'] ?? '—'}${(r['reference'] ?? '').toString().isNotEmpty ? ' · ${r['reference']}' : ''}',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.black87))),
+          Text(_eur((r['montant'] as num?) ?? 0), style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+          if (!widget.readOnly)
+            IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.black38), tooltip: 'Supprimer',
+                onPressed: () => _supprimer(r)),
+        ]),
+      if (!widget.readOnly && _reste > 0) ...[
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(child: OutlinedButton(
+            style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
+            onPressed: _enCours ? null : _formulaire,
+            child: const Text('Enregistrer un règlement', textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', fontSize: 12)))),
+          const SizedBox(width: 8),
+          Expanded(child: ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _green, foregroundColor: Colors.white),
+            onPressed: _enCours ? null : _solder,
+            child: Text('Solder (${_eur(_reste)})', textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)))),
+        ]),
+      ],
+    ]));
   }
 }

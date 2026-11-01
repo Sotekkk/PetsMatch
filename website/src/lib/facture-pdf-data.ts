@@ -22,5 +22,6 @@ export function factureVersPdfData(f: Record<string, unknown>, acquittee = f.sta
     franchise: t('regime_tva') === 'franchise', modePaiement: t('mode_paiement'), delaiPaiement: t('delai_paiement'),
     noteComplementaire: t('note_complementaire'),
     acquittee: acquittee ? { date: t('date_paiement'), mode: t('mode_paiement') } : null,
+    dejaRegle: n('montant_regle'),
   };
 }

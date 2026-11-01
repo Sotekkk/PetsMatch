@@ -111,7 +111,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
           return dEnvoi != null && dEnvoi.isBefore(seuil15j);
         }).map((f) => {...f, '_table': 'pension_factures'}),
         ...facturesNew.where((f) {
-          if (f['statut'] != 'emise') return false;
+          if (f['statut'] != 'emise' && f['statut'] != 'partiellement_payee') return false;
           final d = DateTime.tryParse((f['created_at'] ?? f['date_facture'])?.toString() ?? '');
           return d != null && d.isBefore(seuil15j);
         }).map((f) => {...f, '_table': 'factures'}),
@@ -1103,7 +1103,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
           .eq('pro_uid', _uid).eq('pro_profile_id', pid).eq('statut', 'envoyee')
           .order('date_envoi');
       final rowsNew = await _supa.from('factures').select()
-          .eq('profile_id', pid).eq('statut', 'emise')
+          .eq('profile_id', pid).inFilter('statut', ['emise', 'partiellement_payee'])
           .not('source_pension_entree_id', 'is', null)
           .order('created_at');
       impayees = [
@@ -1116,7 +1116,8 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
         ...List<Map<String, dynamic>>.from(rowsNew as List).map((f) => {
               'id': f['id'], '_table': 'factures',
               'nom': '${f['prenom_client'] ?? ''} ${f['nom_client'] ?? ''}'.trim(),
-              'montant': (f['total_ttc'] as num?)?.toDouble() ?? 0,
+              // Reste à payer (règlements partiels déduits).
+              'montant': ((f['total_ttc'] as num?)?.toDouble() ?? 0) - ((f['montant_regle'] as num?)?.toDouble() ?? 0),
               'date': f['date_facture'] ?? f['created_at'],
             }),
       ];
