@@ -92,18 +92,20 @@ Future<List<FacturePrefillLigne>> lignesFactureOsteo(String proProfileId, List<M
     if (p?['tarifs_sante'] is Map) tarifs = Map<String, dynamic>.from(p!['tarifs_sante'] as Map);
   } catch (_) {}
   double? tarif(String k) => double.tryParse('${tarifs[k] ?? ''}'.replaceAll(',', '.'));
-  FacturePrefillLigne ligne(String d, double? ttc) => FacturePrefillLigne(designation: d, prixTTC: ttc, quantite: 1);
   final plusieurs = {for (final s in seances) s['animal_id']}.length > 1;
-  final lignes = [
+  final lignes = <FacturePrefillLigne>[
     for (final s in seances)
       () {
         final bilan = (s['type_suivi']?.toString() ?? '').startsWith('bilan');
-        final pre = plusieurs && s['animal_id'] != null ? '${noms[s['animal_id'].toString()] ?? 'Animal'} — ' : '';
-        return ligne('$pre${bilan ? 'Consultation (bilan)' : 'Séance'}', tarif(bilan ? 'consultation' : 'seance'));
+        final aid = s['animal_id']?.toString();
+        return FacturePrefillLigne(designation: bilan ? 'Consultation (bilan)' : 'Séance',
+            prixTTC: tarif(bilan ? 'consultation' : 'seance'), quantite: 1,
+            animalId: aid, animalNom: aid == null ? null : noms[aid]);
       }(),
   ];
+  // Déplacement : commun à tous les animaux du RDV (compté une fois).
   if (seances.any((s) => s['lieu'] == 'exterieur' || s['lieu'] == 'domicile')) {
-    lignes.add(ligne('Supplément déplacement', tarif('deplacement')));
+    lignes.add(FacturePrefillLigne(designation: 'Supplément déplacement', prixTTC: tarif('deplacement'), quantite: 1, commune: plusieurs));
   }
   return lignes;
 }

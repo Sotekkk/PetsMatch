@@ -245,8 +245,8 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
         sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined, clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
         retour,
         lignes: detail.length > 0
-          ? detail.map(a => ({ description: [a.motif?.trim() || 'Séance d’éducation', a.nom].filter(Boolean).join(' — ') + ` — ${debut.toLocaleDateString('fr-FR')}`,
-              quantite: 1, prixUnitaire: 0, prixTTC: prixAnimaux[detail.indexOf(a)] ?? 0, tva: 20 }))
+          ? detail.map(a => ({ description: `${a.motif?.trim() || 'Séance d’éducation'} — ${debut.toLocaleDateString('fr-FR')}`,
+              quantite: 1, prixUnitaire: 0, prixTTC: prixAnimaux[detail.indexOf(a)] ?? 0, tva: 20, animalId: a.id, animalNom: a.nom }))
           : [{ description: [r.motif?.trim() || 'Séance d’éducation', animalNom].filter(Boolean).join(' — ') + ` — ${debut.toLocaleDateString('fr-FR')}`,
           quantite: 1, prixUnitaire: 0, prixTTC: prixSeance, tva: 20 }],
       }));

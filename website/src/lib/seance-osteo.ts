@@ -78,9 +78,12 @@ export async function lignesFactureOsteo(proProfileId: string, seances: SeanceRd
   const lignes = seances.map(s => {
     const bilan = (s.type_suivi ?? '').startsWith('bilan');
     const pre = plusieurs && s.animal_id ? `${noms[s.animal_id] ?? 'Animal'} — ` : '';
-    return ligne(`${pre}${bilan ? 'Consultation (bilan)' : 'Séance'}`, tarif(bilan ? 'consultation' : 'seance'));
+    return { ...ligne(`${plusieurs ? '' : pre}${bilan ? 'Consultation (bilan)' : 'Séance'}`, tarif(bilan ? 'consultation' : 'seance')),
+      ...(s.animal_id ? { animalId: s.animal_id, animalNom: noms[s.animal_id] ?? null } : {}) };
   });
-  if (seances.some(s => s.lieu === 'exterieur' || s.lieu === 'domicile')) lignes.push(ligne('Supplément déplacement', tarif('deplacement')));
+  // Déplacement : commun à tous les animaux du RDV (compté une fois).
+  if (seances.some(s => s.lieu === 'exterieur' || s.lieu === 'domicile'))
+    lignes.push({ ...ligne('Supplément déplacement', tarif('deplacement')), ...(plusieurs ? { commune: true } : {}) });
   return lignes;
 }
 

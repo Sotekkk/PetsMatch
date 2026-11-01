@@ -703,6 +703,10 @@ class FacturePrefillLigne {
   final double? prixTTC;
   final double quantite;
   final double tauxTVA;
+  /// Rattachement : un animal (section du PDF) ou prestation commune.
+  final String? animalId;
+  final String? animalNom;
+  final bool commune;
   const FacturePrefillLigne({
     required this.designation,
     this.description = '',
@@ -710,6 +714,9 @@ class FacturePrefillLigne {
     this.prixTTC,
     this.quantite = 1,
     this.tauxTVA = 20,
+    this.animalId,
+    this.animalNom,
+    this.commune = false,
   });
 }
 
@@ -809,6 +816,34 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
 
   // Lignes
   List<_Ligne> _lignes = [];
+  /// Animaux de la facture (lignes préparées + animal source) : nom et
+  /// identification, pour rattacher chaque ligne à un animal ou au dossier client.
+  List<({String id, String nom, String identification})> _animauxFacture = [];
+
+  Future<void> _chargerAnimauxFacture() async {
+    final ids = {
+      for (final l in widget.lignesPrefill) if ((l.animalId ?? '').isNotEmpty) l.animalId!,
+      if ((widget.sourceAnimalId ?? '').isNotEmpty) widget.sourceAnimalId!,
+    }.toList();
+    if (ids.isEmpty) return;
+    try {
+      final rows = await Supabase.instance.client.from('animaux').select('id, nom, identification').inFilter('id', ids);
+      final liste = [
+        for (final a in rows as List)
+          (id: a['id'].toString(), nom: (a['nom'] ?? 'Animal').toString(), identification: (a['identification'] ?? '').toString()),
+      ];
+      if (!mounted) return;
+      setState(() {
+        _animauxFacture = liste;
+        // Un seul animal et lignes non rattachées : toutes à cet animal.
+        for (final l in _lignes) {
+          if (l.commune) continue;
+          final a = liste.where((x) => x.id == l.animalId).firstOrNull ?? (liste.length == 1 && l.animalId == null ? liste.first : null);
+          if (a != null) { l.animalId = a.id; l.animalNom = a.nom; l.animalIdentification = a.identification; }
+        }
+      });
+    } catch (_) {}
+  }
 
   @override
   void initState() {
@@ -831,10 +866,14 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
         ..quantite.text = l.quantite.toStringAsFixed(0)
         ..prixHT.text = l.prixHT.toStringAsFixed(2)
         ..tauxTVA = l.tauxTVA
-        ..prixTTCRef = l.prixTTC;
+        ..prixTTCRef = l.prixTTC
+        ..animalId = l.animalId
+        ..animalNom = l.animalNom
+        ..commune = l.commune;
       _lignes.add(ligne);
     }
     _appliquerPrixTTC();
+    _chargerAnimauxFacture();
     _loadUserData();
   }
 
@@ -1368,6 +1407,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
               index: e.key,
               ligne: e.value,
               franchise: _franchise,
+              animaux: _animauxFacture,
               onChanged: () => setState(_appliquerPrixTTC),
               onDelete: () => setState(() => _lignes.removeAt(e.key)),
             )),
@@ -1449,6 +1489,11 @@ class _Ligne {
   /// Prix TTC de référence (prérempli depuis un tarif affiché TTC) ; null
   /// dès que le prix HT est modifié à la main.
   double? prixTTCRef;
+  /// Rattachement (sections du PDF) : animal ou prestation commune.
+  String? animalId;
+  String? animalNom;
+  String? animalIdentification;
+  bool commune = false;
 
   double get _qty => double.tryParse(quantite.text) ?? 1;
   double get _pu => double.tryParse(prixHT.text) ?? 0;
@@ -1465,6 +1510,11 @@ class _Ligne {
     'totalHT': totalHT,
     'montantTVA': montantTVA,
     'totalTTC': totalTTC,
+    if (commune) 'commune': true
+    else if (animalId != null || animalNom != null) ...{
+      'animalId': animalId, 'animalNom': animalNom,
+      if ((animalIdentification ?? '').isNotEmpty) 'animalIdentification': animalIdentification,
+    },
   };
 }
 
@@ -1474,7 +1524,10 @@ class _LigneCard extends StatefulWidget {
   final bool franchise;
   final VoidCallback onChanged;
   final VoidCallback onDelete;
-  const _LigneCard({required this.index, required this.ligne, required this.franchise, required this.onChanged, required this.onDelete});
+  /// Animaux de la facture : rattachement de la ligne (animal ou commune).
+  final List<({String id, String nom, String identification})> animaux;
+  const _LigneCard({required this.index, required this.ligne, required this.franchise, required this.onChanged, required this.onDelete,
+    this.animaux = const []});
 
   @override
   State<_LigneCard> createState() => _LigneCardState();
@@ -1505,6 +1558,28 @@ class _LigneCardState extends State<_LigneCard> {
           IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20), onPressed: widget.onDelete, padding: EdgeInsets.zero),
         ]),
         const SizedBox(height: 8),
+        if (widget.animaux.isNotEmpty) ...[
+          DropdownButtonFormField<String>(
+            key: ValueKey('rat-${widget.index}-${l.commune ? 'commune' : l.animalId ?? ''}'),
+            initialValue: l.commune ? 'commune' : (l.animalId ?? ''),
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Rattachement', isDense: true, border: OutlineInputBorder()),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('Non rattachée', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+              for (final a in widget.animaux)
+                DropdownMenuItem(value: a.id, child: Text('Animal : ${a.nom}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+              if (widget.animaux.length > 1)
+                const DropdownMenuItem(value: 'commune', child: Text('Prestation commune (tous les animaux)', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+            ],
+            onChanged: (v) => setState(() {
+              final a = widget.animaux.where((x) => x.id == v).firstOrNull;
+              l.commune = v == 'commune';
+              l.animalId = a?.id; l.animalNom = a?.nom; l.animalIdentification = a?.identification;
+              widget.onChanged();
+            }),
+          ),
+          const SizedBox(height: 8),
+        ],
         _Field(ctrl: l.designation, label: 'Désignation (objet de la vente/prestation)', required: true, onChanged: (_) => widget.onChanged()),
         _Field(ctrl: l.description, label: 'Description détaillée (facultatif)', onChanged: (_) => widget.onChanged()),
         Row(children: [
@@ -1516,7 +1591,7 @@ class _LigneCardState extends State<_LigneCard> {
           const SizedBox(height: 8),
           Text('Taux TVA : ${l.tauxTVA.toStringAsFixed(0)} %',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _dark)),
-          Wrap(spacing: 6, children: [5.5, 10.0, 20.0].map((t) {
+          Wrap(spacing: 6, children: [0.0, 5.5, 10.0, 20.0].map((t) {
             final active = l.tauxTVA == t;
             return ChoiceChip(
               label: Text('${t.toStringAsFixed(t == 5.5 ? 1 : 0)} %'),

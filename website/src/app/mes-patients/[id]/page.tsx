@@ -1844,7 +1844,7 @@ function PatientDetailPageInner() {
     const idsCr = (await crsDuRdv(rdvId, detail.map(a => a.id))).filter(c => c.statut !== 'brouillon').map(c => c.id);
     const [{ data: crsData }, { data: ans }, { data: t }, { data: ph }, { data: deja }] = await Promise.all([
       idsCr.length ? supabase.from('comptes_rendus').select('*').in('id', idsCr).order('created_at') : Promise.resolve({ data: [] }),
-      supabase.from('animaux').select('id, nom, espece, sexe, poids').in('id', detail.map(a => a.id)),
+      supabase.from('animaux').select('id, nom, espece, sexe, poids, identification').in('id', detail.map(a => a.id)),
       supabase.from('user_profiles_complet').select('tarifs_veto').eq('id', activeProfileId).maybeSingle(),
       supabase.from('inventaire_items').select('nom, prix_vente').eq('eleveur_profile_id', activeProfileId),
       supabase.from('factures').select('id').eq('source_rdv_id', rdvId).limit(1),
@@ -1858,24 +1858,24 @@ function PatientDetailPageInner() {
     for (const a of detail) {
       const cr = crs.filter(c => String(c.animal_id) === a.id).pop();
       if (!cr) continue;
-      const an = ((ans ?? []) as { id: string; nom: string; espece: string | null; sexe: string | null; poids: number | null }[]).find(x => String(x.id) === a.id);
+      const an = ((ans ?? []) as { id: string; nom: string; espece: string | null; sexe: string | null; poids: number | null; identification?: string | null }[]).find(x => String(x.id) === a.id);
       const { vac, trt } = await carnetDuCr(a.id, cr);
       const nom = an?.nom ?? a.nom;
       lignes.push(...lignesConsultation({
-        an: an ?? {}, prefixe: nom, motif: cr.motif ?? a.motif ?? '', actes: cr.actes ?? [], poids: cr.poids ?? null, produits: cr.produits ?? [],
+        an: an ?? {}, prefixe: '', motif: cr.motif ?? a.motif ?? '', actes: cr.actes ?? [], poids: cr.poids ?? null, produits: cr.produits ?? [],
         vaccins: ((vac ?? []) as { vaccin: string | null; lot: string | null; date: string; date_rappel: string | null }[])
           .map(v => ({ nom: v.vaccin ?? 'Vaccin', lot: v.lot ?? '', date: String(v.date).slice(0, 10), rappel: v.date_rappel ? String(v.date_rappel).slice(0, 10) : null })),
         traitements: [...new Set(((trt ?? []) as { nom: string | null }[]).map(x => x.nom ?? '').filter(Boolean))]
           .map(n => ({ nom: n, type: 'medicament', phases: [], rappels: false, notes: '' })),
         tarif, prixPharma,
-      }));
+      }).map(l => ({ ...l, animalId: a.id, animalNom: nom, animalIdentification: an?.identification ?? null })));
       noms.push(nom);
     }
     if (lignes.length === 0) return;
     if ((deja ?? []).length > 0 && !confirm('Une facture existe déjà pour cette visite. En préparer une autre ?')) return;
     const total = lignes.reduce((s, l) => s + l.prixUnitaire * l.quantite * 1.2, 0);
     const aCompleter = lignes.filter(l => l.prixUnitaire === 0).length;
-    const recap = lignes.map(l => `• ${l.description} : ${l.prixUnitaire ? `${(l.prixUnitaire * 1.2).toFixed(2)} €` : 'à compléter'}`).join('\n');
+    const recap = lignes.map(l => `• ${(l as { animalNom?: string }).animalNom ? `${(l as { animalNom?: string }).animalNom} — ` : ''}${l.description} : ${l.prixUnitaire ? `${(l.prixUnitaire * 1.2).toFixed(2)} €` : 'à compléter'}`).join('\n');
     if (!confirm(`Facturer la visite (${noms.length} animaux) ?\n\n${recap}\n\nTotal estimé : ${total.toFixed(2)} € TTC${aCompleter ? ` (${aCompleter} prix à compléter)` : ''}\nTout reste modifiable avant l'émission.`)) return;
     const rr = r as { client_uid: string | null; client_profile_id: string | null; client_nom_manuel: string | null; client_email_manuel: string | null; client_telephone_manuel: string | null };
     const c = { prenom: '', nom: '', email: '', tel: '', rue: '', cp: '', ville: '', pays: '', siret: '', tva: '' };

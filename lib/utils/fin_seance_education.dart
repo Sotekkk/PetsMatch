@@ -87,8 +87,9 @@ Future<void> factureDepuisRdv(BuildContext context, Map<String, dynamic> rdv, {S
     // Plusieurs animaux : une ligne par animal (son cours, son prix).
     lignesPrefill: detail.isNotEmpty
         ? [for (final a in detail) FacturePrefillLigne(
-            designation: [_v(a['motif']).isEmpty ? 'Séance d’éducation' : _v(a['motif']), _v(a['nom'])].where((x) => x.isNotEmpty).join(' — '),
+            designation: _v(a['motif']).isEmpty ? 'Séance d’éducation' : _v(a['motif']),
             description: seanceDu, prixTTC: prixAnimaux[detail.indexOf(a)],
+            animalId: a['id']?.toString(), animalNom: _v(a['nom']),
           )]
         : [FacturePrefillLigne(
       designation: [_v(rdv['motif']).isEmpty ? 'Séance d’éducation' : _v(rdv['motif']), animalNom].where((x) => x.isNotEmpty).join(' — '),

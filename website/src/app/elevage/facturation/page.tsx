@@ -27,6 +27,11 @@ interface Ligne {
   /** Prix affiché TTC (tarif annoncé au client) : le HT est déduit selon le
    *  régime de TVA ; abandonné dès que le prix HT est saisi à la main. */
   prixTTC?: number;
+  /** Rattachement : un animal (section du PDF) ou prestation commune. */
+  animalId?: string | null;
+  animalNom?: string | null;
+  animalIdentification?: string | null;
+  commune?: boolean;
 }
 
 /** Lignes à prix TTC : HT recalculé selon la franchise et le taux de la ligne. */
@@ -616,6 +621,35 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
   );
   const [saving, setSaving] = useState(false);
   const [siretVerrouille, setSiretVerrouille] = useState(false);
+  // Animaux de la facture (lignes préparées + animal source) : nom et
+  // identification, pour rattacher chaque ligne à un animal ou au dossier client.
+  const [animauxFacture, setAnimauxFacture] = useState<{ id: string; nom: string; identification: string }[]>([]);
+  useEffect(() => {
+    const ids = [...new Set([...(prefill?.lignes ?? []).map(l => l.animalId).filter(Boolean) as string[],
+      ...(prefill?.sourceAnimalId ? [prefill.sourceAnimalId] : [])])];
+    if (ids.length === 0) return;
+    supabase.from('animaux').select('id, nom, identification').in('id', ids).then(({ data }) => {
+      const liste = ((data ?? []) as { id: string; nom: string | null; identification: string | null }[])
+        .map(a => ({ id: String(a.id), nom: a.nom ?? 'Animal', identification: a.identification ?? '' }));
+      setAnimauxFacture(liste);
+      // Un seul animal et lignes non rattachées : toutes à cet animal.
+      setLignes(prev => prev.map(l => {
+        if (l.commune) return l;
+        const a = liste.find(x => x.id === l.animalId) ?? (liste.length === 1 && !l.animalId ? liste[0] : undefined);
+        return a ? { ...l, animalId: a.id, animalNom: a.nom, animalIdentification: a.identification || null } : l;
+      }));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  function rattacher(i: number, v: string) {
+    setLignes(prev => prev.map((l, idx) => {
+      if (idx !== i) return l;
+      if (v === 'commune') return { ...l, commune: true, animalId: null, animalNom: null, animalIdentification: null };
+      const a = animauxFacture.find(x => x.id === v);
+      return a ? { ...l, commune: false, animalId: a.id, animalNom: a.nom, animalIdentification: a.identification || null }
+        : { ...l, commune: false, animalId: null, animalNom: null, animalIdentification: null };
+    }));
+  }
 
   useEffect(() => {
     async function loadEmetteur() {
@@ -704,6 +738,9 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       tauxTVA: franchise ? 0 : l.tva,
       totalHT: l.quantite * l.prixUnitaire,
       totalTTC: l.quantite * l.prixUnitaire * (franchise ? 1 : 1 + l.tva / 100),
+      // Rattachement (sections du PDF) : animal ou prestation commune.
+      ...(l.commune ? { commune: true } : l.animalId || l.animalNom
+        ? { animalId: l.animalId ?? null, animalNom: l.animalNom ?? null, animalIdentification: l.animalIdentification ?? null } : {}),
     }));
     const payload = {
       uid_eleveur:    uid,
@@ -990,6 +1027,14 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
                       className={`col-span-2 ${inp}`} placeholder="TVA%" />
                   )}
                   <button type="button" onClick={() => removeLigne(i)} className="col-span-1 text-red-400 hover:text-red-600 text-lg">×</button>
+                  {animauxFacture.length > 0 && (
+                    <select value={l.commune ? 'commune' : l.animalId ?? ''} onChange={e => rattacher(i, e.target.value)}
+                      className={`col-span-12 ${inp} text-xs`} aria-label="Rattachement de la ligne">
+                      <option value="">Non rattachée</option>
+                      {animauxFacture.map(a => <option key={a.id} value={a.id}>Animal : {a.nom}</option>)}
+                      {animauxFacture.length > 1 && <option value="commune">Prestation commune (tous les animaux)</option>}
+                    </select>
+                  )}
                 </div>
               ))}
             </div>
