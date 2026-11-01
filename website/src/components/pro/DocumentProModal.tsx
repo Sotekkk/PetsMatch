@@ -33,7 +33,9 @@ export default function DocumentProModal({ rdv, mode, clientNom, animalNom, proN
   const cr = mode === 'compte_rendu';
   const [fichier, setFichier] = useState<File | null>(null);
   const [titre, setTitre] = useState(cr ? `Compte rendu${animalNom ? ` — ${animalNom}` : ''}` : `Contrat — ${clientNom}`);
-  const [envoyer, setEnvoyer] = useState(true);
+  // Compte rendu : seulement enregistré avec le RDV ; il part avec « Terminer
+  // et envoyer » (fin de séance). Envoi immédiat possible (métiers sans fin de séance).
+  const [envoyer, setEnvoyer] = useState(false);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -102,7 +104,7 @@ export default function DocumentProModal({ rdv, mode, clientNom, animalNom, proN
         <div>
           <h2 className="font-bold text-lg text-[#1E2025]">{cr ? 'Charger mon compte rendu' : 'Charger mon contrat'}</h2>
           <p className="text-xs text-gray-500 mt-0.5">{cr
-            ? 'Votre propre document (PDF ou photo) : c’est lui qui est envoyé au client et rangé avec le rendez-vous.'
+            ? 'Votre propre document (PDF ou photo), rangé avec le rendez-vous. Il est envoyé au client avec « Terminer et envoyer », à la place du compte rendu généré.'
             : 'Votre propre contrat (PDF ou photo) : le client le lit et le signe en ligne, comme un contrat PetsMatch.'}</p>
         </div>
         <label className="block">

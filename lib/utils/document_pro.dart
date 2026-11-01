@@ -269,7 +269,9 @@ Future<bool> showDocumentProSheet(BuildContext context, {
   if (!context.mounted) return false;
   final titreCtrl = TextEditingController(text: cr ? 'Compte rendu${animalNom.isNotEmpty ? ' — $animalNom' : ''}' : 'Contrat — $clientNom');
   Uint8List? pdf;
-  var envoyer = true;
+  // Compte rendu : seulement enregistré avec le RDV ; il part avec « Terminer
+  // et envoyer » (fin de séance). Envoi immédiat possible (métiers sans fin de séance).
+  var envoyer = false;
   var enCours = false;
   final ok = await showModalBottomSheet<bool>(
     context: context, isScrollControlled: true,
@@ -281,7 +283,7 @@ Future<bool> showDocumentProSheet(BuildContext context, {
             style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),
         Text(cr
-            ? 'Votre propre document (photo ou PDF) : c’est lui qui est envoyé au client et rangé avec le rendez-vous.'
+            ? 'Votre propre document (photo ou PDF), rangé avec le rendez-vous. Il est envoyé au client avec « Terminer et envoyer », à la place du compte rendu généré.'
             : 'Votre propre contrat (photo ou PDF) : le client le lit et le signe en ligne, comme un contrat PetsMatch.',
             style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
         const SizedBox(height: 14),
@@ -299,7 +301,7 @@ Future<bool> showDocumentProSheet(BuildContext context, {
             decoration: const InputDecoration(labelText: 'Titre', border: OutlineInputBorder(), isDense: true)),
         if (cr)
           CheckboxListTile(
-            value: envoyer, onChanged: (v) => setM(() => envoyer = v ?? true),
+            value: envoyer, onChanged: (v) => setM(() => envoyer = v ?? false),
             contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, activeColor: _teal,
             title: Text('Envoyer au client maintenant (e-mail${rdv['client_uid'] != null ? ' et notification' : ''})',
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
@@ -358,7 +360,7 @@ Future<bool> showDocumentProSheet(BuildContext context, {
     )),
   );
   if (ok == true) {
-    messenger.showSnackBar(SnackBar(content: Text(cr ? 'Compte rendu enregistré.' : 'Contrat envoyé au client pour signature.',
+    messenger.showSnackBar(SnackBar(content: Text(cr ? (envoyer ? 'Compte rendu enregistré et envoyé.' : 'Compte rendu enregistré : il partira avec « Terminer et envoyer ».') : 'Contrat envoyé au client pour signature.',
         style: const TextStyle(fontFamily: 'Galey')), behavior: SnackBarBehavior.floating));
   }
   return ok == true;
