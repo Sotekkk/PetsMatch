@@ -14,6 +14,7 @@ import { ACCEPT_DOCUMENT_PRO, TYPE_CONTRAT_PRO, fichierEnPdf, chargerCompteRendu
 import {
   chargerDocsConsultation, pdfCompteRendu, pdfFacture, pdfOrdonnance, type DocsConsultation,
 } from '@/lib/fin-consultation';
+import { envoyerContratParEmail } from '@/lib/contrat-email';
 
 const MODES = ['Carte bancaire', 'Espèces', 'Chèque', 'Virement'];
 
@@ -51,7 +52,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
   // d'avance) et contrats de l'animal (chargé, ou PetsMatch signé).
   const [factureForfait, setFactureForfait] = useState<DocsConsultation['facture']>(null);
   const [acquitteeForfait, setAcquitteeForfait] = useState(false);
-  const [contrats, setContrats] = useState<{ id: string; titre: string; url: string | null }[]>([]);
+  const [contrats, setContrats] = useState<{ id: string; titre: string; url: string | null; token: string | null; email: string | null }[]>([]);
 
   useEffect(() => {
     comptesRendusProDuRdv(rdvId).then(l => {
@@ -115,12 +116,18 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         }
         // Contrats de l'animal : PDF signé (PetsMatch) ou document chargé.
         if (aid && user) {
-          const { data: ct } = await supabase.from('documents_animaux').select('id, type, titre, url, pdf_signe_url, statut')
+          const { data: ct } = await supabase.from('documents_animaux').select('id, type, titre, url, pdf_signe_url, statut, token, metadata')
             .eq('uid_eleveur', user.uid).eq('animal_id', aid).in('type', ['contrat_education', TYPE_CONTRAT_PRO])
             .not('statut', 'in', '(annule,refuse)').order('created_at', { ascending: false });
-          const liste = ((ct ?? []) as { id: string; type: string; titre: string | null; url: string | null; pdf_signe_url: string | null }[])
-            .map(d => ({ id: d.id, titre: d.titre ?? 'Contrat', url: d.pdf_signe_url ?? (d.type === TYPE_CONTRAT_PRO ? d.url : null) }));
+          const liste = ((ct ?? []) as { id: string; type: string; titre: string | null; url: string | null; pdf_signe_url: string | null;
+            statut: string; token: string | null; metadata: Record<string, unknown> | null }[])
+            .map(d => ({ id: d.id, titre: d.titre ?? 'Contrat', token: d.token,
+              email: ((d.metadata?.acquereur_email ?? d.metadata?.client_email) as string | undefined) ?? null,
+              // PDF : signé (PetsMatch) ou document chargé ; sinon pas encore signé.
+              url: d.statut === 'signe' ? (d.pdf_signe_url ?? d.url) : (d.type === TYPE_CONTRAT_PRO ? d.url : null) }));
           setContrats(liste);
+          // Contrat pas encore signé : lien de signature proposé (coché).
+          setCoches(c => ({ ...c, ...Object.fromEntries(liste.filter(x => !x.url && x.token).map(x => [`sig:${x.id}`, true])) }));
         }
       })();
       return;
@@ -241,12 +248,38 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         }
         const noms = [...new Set([...docs.crs.map(c => nom(c.animal_id)), ...(docs.seances ?? []).filter(s => s.animal_id).map(s => nom(s.animal_id!)),
           ...((toilettage || education) && docs.animalIdPrincipal ? [nom(docs.animalIdPrincipal)] : [])])];
-        const ok = await envoyerPiecesParEmail(pieces, {
+        const ok = pieces.length === 0 ? true : await envoyerPiecesParEmail(pieces, {
           emailParDefaut: (facture?.email_client as string | null) ?? null, destinataireNom: clientNom,
           expediteur: userData?.nameElevage || praticien, animalNom: noms.join(', '),
           animalId: docs.animalIdPrincipal ?? docs.crs[0]?.animal_id ?? docs.seances?.find(s => s.animal_id)?.animal_id ?? null,
         });
         if (!ok) return;
+        // Contrats non signés : lien de signature (notification si le client a
+        // un compte, e-mail sinon — clients sans compte compris).
+        const aSigner = contrats.filter(c => !c.url && c.token && coches[`sig:${c.id}`]);
+        if (aSigner.length) {
+          const { data: rv } = await supabase.from('rdv').select('client_uid, client_profile_id, client_email_manuel').eq('id', rdvId).maybeSingle();
+          const r2 = rv as { client_uid?: string | null; client_profile_id?: string | null; client_email_manuel?: string | null } | null;
+          const { data: cc } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: rdvId });
+          let email = (cc as { email?: string } | null)?.email || r2?.client_email_manuel || (facture?.email_client as string | null) || '';
+          for (const c of aSigner) {
+            if (r2?.client_uid) {
+              await supabase.from('notifications').insert({
+                uid: r2.client_uid, type: 'contrat_invite', title: 'Contrat de prestation à signer',
+                body: `${userData?.nameElevage || 'Votre professionnel'} vous envoie le contrat — vérifiez et signez`,
+                ...(r2.client_profile_id ? { profile_id: r2.client_profile_id } : {}),
+                data: { token: c.token, url: `/signer-contrat/${c.token}` }, read: false,
+              });
+            }
+            const dest = c.email || email || window.prompt('E-mail du client pour le lien de signature', '') || '';
+            if (dest.trim()) {
+              email = dest;
+              await envoyerContratParEmail({ email: dest, clientNom: clientNom ?? 'Client', proProfileId, token: c.token!, titre: c.titre });
+            } else if (!r2?.client_uid) {
+              alert('Lien de signature non envoyé : aucune adresse e-mail.');
+            }
+          }
+        }
         // Trace de l'envoi : affichée dans le dossier de la séance.
         await supabase.from('rdv').update({ documents_envoyes_le: new Date().toISOString() }).eq('id', rdvId);
         // Éducateur : la famille est prévenue dans l'appli à l'envoi.
@@ -315,7 +348,10 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
                 ))}
               </div>
             )}
-            {contrats.map(c => ligne(`ctr:${c.id}`, c.titre, c.url ? 'Contrat' : 'PDF disponible une fois signé', !c.url))}
+            {contrats.map(c => c.url
+              ? ligne(`ctr:${c.id}`, c.titre, 'Contrat signé (PDF)')
+              : c.token ? ligne(`sig:${c.id}`, `${c.titre} — à signer`, 'Envoyer le lien de signature au client (e-mail, et notification s’il a un compte)')
+              : ligne(`ctr:${c.id}`, c.titre, 'PDF disponible une fois signé', true))}
           </div>
           {(toilettage || education) && !docs.facture && onPreparerFacture && (
             <button type="button" onClick={onPreparerFacture}

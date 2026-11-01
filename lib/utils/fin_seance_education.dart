@@ -16,6 +16,8 @@ import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFactur
 import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill;
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart' show compteRenduPdfBytes, ageAnimal, sexeAnimal;
 import 'package:PetsMatch/pages/pro/transmission_document.dart' show envoyerDocumentsParEmail;
+import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show envoyerContratParEmail;
+import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv;
 import 'package:PetsMatch/utils/document_pro.dart' show comptesRendusProDuRdv, lignesCrsPro, ajouterPiecesCrsPro, octetsUrlDocument;
 import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro, octetsSignature;
@@ -189,7 +191,7 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
   // Séance décomptée d'un forfait : sa facture (payé d'avance) ; contrats de
   // l'animal (PetsMatch signé, ou chargé).
   Map<String, dynamic>? factureForfait;
-  final contrats = <({String id, String titre, String? url})>[];
+  final contrats = <({String id, String titre, String? url, String? token})>[];
   final uidPro = rdv['pro_uid']?.toString();
   final aid = rdv['animal_id']?.toString();
   try {
@@ -212,13 +214,15 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
       }
     }
     if (aid != null && uidPro != null) {
-      final ct = await supa.from('documents_animaux').select('id, type, titre, url, pdf_signe_url, statut')
+      final ct = await supa.from('documents_animaux').select('id, type, titre, url, pdf_signe_url, statut, token')
           .eq('uid_eleveur', uidPro).eq('animal_id', aid).inFilter('type', ['contrat_education', 'contrat_document_pro'])
           .not('statut', 'in', '(annule,refuse)').order('created_at', ascending: false);
       for (final d in ct as List) {
-        final url = _v(d['pdf_signe_url']).isNotEmpty ? _v(d['pdf_signe_url'])
+        // PDF : signé (PetsMatch) ou document chargé ; sinon pas encore signé.
+        final url = d['statut'] == 'signe' ? (_v(d['pdf_signe_url']).isNotEmpty ? _v(d['pdf_signe_url']) : _v(d['url']))
             : d['type'] == 'contrat_document_pro' ? _v(d['url']) : '';
-        contrats.add((id: d['id'].toString(), titre: _v(d['titre']).isEmpty ? 'Contrat' : _v(d['titre']), url: url.isEmpty ? null : url));
+        contrats.add((id: d['id'].toString(), titre: _v(d['titre']).isEmpty ? 'Contrat' : _v(d['titre']),
+            url: url.isEmpty ? null : url, token: _v(d['token']).isEmpty ? null : _v(d['token'])));
       }
     }
   } catch (_) {}
@@ -231,6 +235,8 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
     for (final d in crsPro) 'pro:${d['id']}': true,
     if (facture != null) 'fac:${facture['id']}': true,
     if (factureForfait != null) 'facf:${factureForfait['id']}': true,
+    // Contrat pas encore signé : lien de signature proposé (coché).
+    for (final c in contrats) if (c.url == null && c.token != null) 'sig:${c.id}': true,
   };
   var acquitteeForfait = false;
   final dejaPayee = facture?['statut'] == 'payee';
@@ -281,7 +287,9 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
             ]),
           ],
           for (final c in contrats)
-            c.url != null ? ligne('ctr:${c.id}', c.titre, 'Contrat')
+            c.url != null ? ligne('ctr:${c.id}', c.titre, 'Contrat signé (PDF)')
+                : c.token != null ? ligne('sig:${c.id}', '${c.titre} — à signer',
+                    'Envoyer le lien de signature au client (e-mail, et notification s\'il a un compte)')
                 : ListTile(dense: true, contentPadding: EdgeInsets.zero,
                     title: Text(c.titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey)),
                     subtitle: const Text('PDF disponible une fois signé', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
@@ -389,9 +397,34 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
     }
     final c = await _client(rdv);
     fermerAttente();
-    if (pieces.isEmpty || !context.mounted) return;
-    final envoye = await envoyerDocumentsParEmail(context, pieces: pieces, animalNom: animalNom, destinataireNom: clientNom,
+    if (!context.mounted) return;
+    final aSigner = contrats.where((x) => x.url == null && x.token != null && coches['sig:${x.id}'] == true).toList();
+    if (pieces.isEmpty && aSigner.isEmpty) return;
+    final envoye = pieces.isEmpty ? true : await envoyerDocumentsParEmail(context, pieces: pieces, animalNom: animalNom, destinataireNom: clientNom,
         emailParDefaut: (c['email'] ?? '').isNotEmpty ? c['email'] : null, animalId: rdv['animal_id']?.toString());
+    // Contrats non signés : lien de signature (notification si le client a un
+    // compte, e-mail sinon — clients sans compte compris).
+    for (final x in aSigner) {
+      final clientUid = rdv['client_uid']?.toString() ?? '';
+      if (clientUid.isNotEmpty) {
+        try {
+          await supa.from('notifications').insert({
+            'uid': clientUid, 'type': 'contrat_invite', 'title': 'Contrat de prestation à signer',
+            'body': '${User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : 'Votre professionnel'} vous envoie le contrat — vérifiez et signez',
+            if ((rdv['client_profile_id']?.toString() ?? '').isNotEmpty) 'profile_id': rdv['client_profile_id'],
+            'data': {'token': x.token, 'url': '$kSiteBaseUrl/signer-contrat/${x.token}'},
+            'read': false,
+          });
+        } catch (_) {}
+      }
+      final mail = await envoyerContratParEmail({...rdv, if ((c['email'] ?? '').isNotEmpty) 'client_email_manuel': c['email']}, x.token!,
+          titre: x.titre, nomClient: clientNom);
+      messenger.showSnackBar(SnackBar(behavior: SnackBarBehavior.floating, content: Text(
+          mail ? 'Lien de signature envoyé par e-mail.'
+              : clientUid.isNotEmpty ? "Lien de signature envoyé dans l'appli du client (pas d'e-mail connu)."
+              : 'Lien de signature non envoyé : aucune adresse e-mail pour ce client.',
+          style: const TextStyle(fontFamily: 'Galey'))));
+    }
     // Trace de l'envoi (dossier de la séance) ; la famille est prévenue dans
     // l'appli (les comptes rendus d'un RDV ne notifient pas à l'enregistrement).
     if (envoye) {
