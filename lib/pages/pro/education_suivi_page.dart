@@ -1301,7 +1301,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           // Contrat : généré par PetsMatch (signé en ligne) ou chargé.
           chip(Icons.draw_outlined, 'Contrat PetsMatch', () => ouvrirContratEducation(context, rdv: rdv,
               animalId: widget.animalId, clientNom: widget.ownerName.isEmpty ? 'Client' : widget.ownerName,
-              proProfileId: rdv['pro_profile_id']?.toString())),
+              proProfileId: rdv['pro_profile_id']?.toString(), forfait: _forfaitActif)),
           chip(Icons.upload_file_outlined, 'Charger mon contrat', () async {
             await showDocumentProSheet(context, rdv: rdv, mode: 'contrat', clientNom: widget.ownerName,
                 animalNom: widget.animalNom, proNom: proNom, catPro: 'education');

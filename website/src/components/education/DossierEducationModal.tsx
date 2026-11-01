@@ -73,6 +73,8 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   // Contrat : généré par PetsMatch (signé en ligne, Premium) ou chargé par le pro.
   const [contrat, setContrat] = useState<ContratEducation | null>(null);
   const [creationContrat, setCreationContrat] = useState(false);
+  // Contrat à générer : intitulé (forfait ou séance) et montant, modifiables.
+  const [formContrat, setFormContrat] = useState<{ forfait: string; prestation: string; montant: string } | null>(null);
   const { plan: formule } = useEducationPlan();
 
   const charger = useCallback(async () => {
@@ -195,13 +197,31 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
       alert('Le contrat PetsMatch signé en ligne est inclus dans la formule Premium. Vous pouvez charger votre propre contrat (photo ou PDF).');
       return;
     }
+    // Forfait en cours : contrat du forfait au prix de la formule complète ;
+    // sinon la séance à son tarif.
+    const f = forfaitRdv ?? forfait;
+    if (f) {
+      setFormContrat({ forfait: `${f.nom_snapshot} (${f.nb_seances_total} séance${f.nb_seances_total > 1 ? 's' : ''})`,
+        prestation: f.nom_snapshot, montant: f.prix_snapshot != null ? String(f.prix_snapshot) : '' });
+    } else {
+      const prix = await tarifSeanceRdv(r);
+      setFormContrat({ forfait: '', prestation: r.motif?.trim() || 'Séance d’éducation', montant: prix > 0 ? String(prix) : '' });
+    }
+  }
+
+  async function creerContrat() {
+    if (!r || !user?.uid || !formContrat) return;
     setCreationContrat(true);
     try {
       const token = await creerContratEducation({
         proUid: user.uid, proProfileId: pid || null, animalId: aidSel ?? null,
         clientNom: [coord.prenom, coord.nom].filter(Boolean).join(' ') || nomClient,
-        clientEmail: coord.email || null, prestation: r.motif, rdvId: r.id,
+        clientEmail: coord.email || null, clientTel: coord.tel || null,
+        clientAdresse: [coord.rue, [coord.cp, coord.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') || null,
+        prestation: formContrat.prestation, forfait: formContrat.forfait.trim() || null,
+        montant: formContrat.montant.trim() ? Number(formContrat.montant.replace(',', '.')) : null, rdvId: r.id,
       });
+      setFormContrat(null);
       if (!token) { alert('Création du contrat impossible, réessayez.'); return; }
       ouvrir(`/signer-contrat/${token}`, 'Contrat de prestation');
       charger();
@@ -332,6 +352,30 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
         <button type="button" onClick={onClose} className="w-full mt-3 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
       </div>
 
+      {formContrat && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4" onClick={() => setFormContrat(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 space-y-3" onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
+            <p className="font-bold text-[#1F2A2E]">Contrat de prestation</p>
+            <label className="block text-xs text-gray-500">{formContrat.forfait ? 'Forfait' : 'Prestation'}
+              <input value={formContrat.forfait || formContrat.prestation}
+                onChange={e => setFormContrat(formContrat.forfait ? { ...formContrat, forfait: e.target.value } : { ...formContrat, prestation: e.target.value })}
+                className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+            </label>
+            <label className="block text-xs text-gray-500">{formContrat.forfait ? 'Montant de la formule complète (€ TTC)' : 'Montant (€ TTC)'}
+              <input type="number" min={0} value={formContrat.montant} onChange={e => setFormContrat({ ...formContrat, montant: e.target.value })}
+                className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+            </label>
+            <p className="text-[11px] text-gray-500">Vos coordonnées (adresse, téléphone, SIRET) et celles du client sont reprises automatiquement.</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setFormContrat(null)} className="flex-1 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-600">Annuler</button>
+              <button type="button" disabled={creationContrat} onClick={creerContrat}
+                className="flex-[2] py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-40" style={{ background: TEAL }}>
+                {creationContrat ? 'Création…' : 'Créer le contrat'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {choixForfait && forfait && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4" onClick={() => setChoixForfait(null)}>
           <div className="bg-white rounded-2xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>

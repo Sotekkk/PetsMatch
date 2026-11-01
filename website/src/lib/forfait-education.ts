@@ -20,10 +20,11 @@ export interface ForfaitActif {
   /** Forfait mixte réparti : tant de séances individuelles + tant de collectives. */
   nb_indiv_total?: number | null; nb_coll_total?: number | null;
   nb_indiv_utilisees?: number | null; nb_coll_utilisees?: number | null;
+  prix_snapshot?: number | null;
 }
 
 export const COLS_FORFAIT_SOUSCRIT =
-  'id, nom_snapshot, nb_seances_total, nb_seances_utilisees, type_seances, statut, nb_indiv_total, nb_coll_total, nb_indiv_utilisees, nb_coll_utilisees';
+  'id, nom_snapshot, nb_seances_total, nb_seances_utilisees, type_seances, statut, nb_indiv_total, nb_coll_total, nb_indiv_utilisees, nb_coll_utilisees, prix_snapshot';
 
 /** Forfait mixte avec un nombre de séances par type. */
 export const estReparti = (f: ForfaitActif) => f.nb_indiv_total != null || f.nb_coll_total != null;

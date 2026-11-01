@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/utils/fin_seance_education.dart' show clientDuRdv;
+import 'package:PetsMatch/utils/prestations_education.dart' show tarifSeanceRdv;
 
 // Éducateur : contrat de prestation généré par PetsMatch (documents_animaux
 // type contrat_education, signé en ligne) — depuis « Mes Contrats » ou le
@@ -11,6 +13,8 @@ import 'package:PetsMatch/services/plan_service.dart';
 /// Ouvre le contrat PetsMatch de l'animal (le crée s'il n'existe pas).
 Future<void> ouvrirContratEducation(BuildContext context, {
   required Map<String, dynamic> rdv, required String? animalId, required String clientNom, String? proProfileId,
+  /// Forfait en cours : contrat du forfait au prix de la formule complète.
+  Map<String, dynamic>? forfait,
 }) async {
   final supa = Supabase.instance.client;
   final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -32,17 +36,54 @@ Future<void> ouvrirContratEducation(BuildContext context, {
         return;
       }
       final motif = rdv['motif']?.toString().trim() ?? '';
+      // Intitulé et montant, modifiables : forfait (formule complète) ou séance.
+      final nbF = (forfait?['nb_seances_total'] as num?)?.toInt() ?? 0;
+      final libelleCtrl = TextEditingController(text: forfait != null
+          ? '${forfait['nom_snapshot'] ?? 'Forfait'} ($nbF séance${nbF > 1 ? 's' : ''})'
+          : (motif.isNotEmpty ? motif : 'Séance d\'éducation'));
+      final prixDefaut = forfait != null ? ((forfait['prix_snapshot'] as num?)?.toDouble() ?? 0) : await tarifSeanceRdv(rdv);
+      final montantCtrl = TextEditingController(text: prixDefaut > 0 ? prixDefaut.toStringAsFixed(prixDefaut == prixDefaut.roundToDouble() ? 0 : 2) : '');
+      if (!context.mounted) return;
+      final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Contrat de prestation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: libelleCtrl, decoration: InputDecoration(labelText: forfait != null ? 'Forfait' : 'Prestation')),
+          TextField(controller: montantCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(labelText: forfait != null ? 'Montant de la formule complète (€ TTC)' : 'Montant (€ TTC)')),
+          const SizedBox(height: 8),
+          Text('Vos coordonnées (adresse, téléphone, SIRET) et celles du client sont reprises automatiquement.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Créer le contrat')),
+        ],
+      ));
+      final libelle = libelleCtrl.text.trim();
+      final montant = double.tryParse(montantCtrl.text.trim().replaceAll(',', '.'));
+      libelleCtrl.dispose(); montantCtrl.dispose();
+      if (ok != true) return;
+      final c = await clientDuRdv(rdv);
+      final adresse = [c['rue'] ?? '', '${c['cp'] ?? ''} ${c['ville'] ?? ''}'.trim()].where((x) => x.isNotEmpty).join(', ');
+      final nomClient = [c['prenom'] ?? '', c['nom'] ?? ''].where((x) => x.isNotEmpty).join(' ');
       final row = await supa.from('documents_animaux').insert({
         'animal_id': animalId,
         'uid_eleveur': uid,
         'pro_profile_id': (proProfileId ?? '').isNotEmpty ? proProfileId : null,
         'type': 'contrat_education',
-        'titre': 'Contrat de prestation d\'éducation — $clientNom',
+        'titre': 'Contrat de prestation d\'éducation — ${nomClient.isNotEmpty ? nomClient : clientNom}',
         'statut': 'brouillon',
         'metadata': {
-          'acquereur_nom': clientNom,
-          if ((rdv['client_email_manuel']?.toString() ?? '').isNotEmpty) 'acquereur_email': rdv['client_email_manuel'],
-          'prestation': motif.isNotEmpty ? motif : 'Prestation d\'éducation canine',
+          'acquereur_nom': nomClient.isNotEmpty ? nomClient : clientNom,
+          if ((c['email'] ?? '').isNotEmpty) 'acquereur_email': c['email'],
+          if ((c['tel'] ?? '').isNotEmpty) 'acquereur_tel': c['tel'],
+          if (adresse.isNotEmpty) 'acquereur_adresse': adresse,
+          'prestation': libelle.isNotEmpty ? libelle : 'Prestation d\'éducation canine',
+          if (forfait != null) 'forfait': libelle,
+          if (montant != null && montant > 0) 'lignes': [
+            {'description': libelle, 'quantite': 1, 'prix_unitaire': montant, 'total': montant},
+          ],
+          if (montant != null && montant > 0) 'total_ttc': montant,
           'rdv_id': rdv['id'],
         },
       }).select('token').single();

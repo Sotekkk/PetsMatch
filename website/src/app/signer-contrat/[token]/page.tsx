@@ -124,14 +124,17 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       // Le profil créateur du contrat : celui rattaché au document (pro_profile_id) si
       // renseigné, sinon le profil principal du compte (contrats créés avant ce champ).
       const profQuery = supabase.from('user_profiles_complet')
-        .select('firstname,lastname,nom,adresse,siret,numero_elevage,ville_pro,ville,phone_number,email_contact,rue,code_postal,phone,telephone');
+        .select('firstname,lastname,nom,adresse,siret,numero_elevage,ville_pro,ville,phone_number,email_contact,rue,code_postal,phone,telephone,rue_pro,code_postal_pro');
       const [{ data: cp }, { data: userRow }] = await Promise.all([
         data.pro_profile_id
           ? profQuery.eq('id', data.pro_profile_id).maybeSingle()
           : profQuery.eq('uid', data.uid_eleveur).eq('is_main', true).maybeSingle(),
         supabase.from('users_complet').select('email').eq('uid', data.uid_eleveur).maybeSingle(),
       ]);
+      // Adresse professionnelle (pros) si renseignée.
+      const adressePro = cp ? [cp.rue_pro, [cp.code_postal_pro, cp.ville_pro].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '';
       const profil = cp ? {
+        adresse_pro: adressePro,
         firstname: cp.firstname, lastname: cp.lastname, name_elevage: cp.nom,
         adress_elevage: cp.adresse || [cp.rue, cp.code_postal, cp.ville].filter(Boolean).join(', '),
         adress: cp.adresse, siret: cp.siret,
@@ -484,6 +487,9 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             race: animalInfo.race,
             client_nom: meta.acquereur_nom || clientInfo.nom,
             client_contact: meta.acquereur_email || clientInfo.contact,
+            client_tel: meta.acquereur_tel,
+            client_adresse: meta.acquereur_adresse,
+            forfait: meta.forfait,
             date_prestation: datePrestation ?? (metaLoose.date_cession as string | undefined),
             lignes: Array.isArray(metaLoose.lignes) ? (metaLoose.lignes as LigneEducation[]) : undefined,
             total_ttc: metaLoose.total_ttc ? Number(metaLoose.total_ttc) : undefined,
@@ -491,9 +497,9 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           },
           {
             nom: elvNom,
-            adresse: profil?.adress_elevage ?? profil?.adress ?? '',
+            adresse: profil?.adresse_pro || profil?.adress_elevage || profil?.adress || '',
             email: profil?.email ?? '',
-            tel: elvTel,
+            tel: profil?.phone_number ?? '',
             siret: profil?.siret ?? '',
           },
           {

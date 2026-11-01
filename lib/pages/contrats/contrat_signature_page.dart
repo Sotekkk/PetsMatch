@@ -132,7 +132,10 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
 
   Map<String, dynamic> _mapEleveur(Map<String, dynamic>? up) {
     up ??= {};
-    final adresse = (up['adresse'] as String?) ??
+    // Pros : adresse professionnelle si renseignée.
+    final adressePro = [up['rue_pro'], [up['code_postal_pro'], up['ville_pro']].where((e) => e != null && '$e'.isNotEmpty).join(' ')]
+        .where((e) => e != null && '$e'.isNotEmpty).join(', ');
+    final adresse = adressePro.isNotEmpty ? adressePro : (up['adresse'] as String?) ??
         [up['rue'], up['code_postal'], up['ville']].where((e) => e != null && '$e'.isNotEmpty).join(', ');
     return {
       'name_elevage': up['nom'],
@@ -143,6 +146,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       'email': up['email_contact'],
       'code_iso_elevage': '+33',
       'numero_elevage': up['numero_elevage'] ?? up['phone_number'],
+      'phone_number': up['phone_number'],
     };
   }
 
@@ -192,7 +196,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     // Profil vendeur : celui indiqué sur le doc (pro_profile_id), sinon le
     // profil éleveur du compte, sinon is_main — pour prendre le bon
     // téléphone / adresse / email.
-    const upFields = 'id, nom, firstname, lastname, adresse, rue, ville, ville_pro, code_postal, siret, numero_elevage, phone_number, email_contact';
+    const upFields = 'id, nom, firstname, lastname, adresse, rue, ville, ville_pro, code_postal, siret, numero_elevage, phone_number, email_contact, rue_pro, code_postal_pro';
     final elvUid = _doc!['uid_eleveur'] as String;
     final proPid = _doc!['pro_profile_id'] as String?;
     Map<String, dynamic>? up;
@@ -426,10 +430,14 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       } else if (type == 'contrat_education') {
         final lignesRaw = (meta['lignes'] as List?) ?? const [];
         _pdfBytes = await contratEducationPdfBytes(
-          animal: _animal == null ? null : animalPdf, prestataire: _eleveur!,
+          animal: _animal == null ? null : animalPdf,
+          // Éducateur : son téléphone (pas le numéro d'élevage).
+          prestataire: {..._eleveur!, if ((_eleveur!['phone_number']?.toString() ?? '').isNotEmpty) 'numero_elevage': _eleveur!['phone_number']},
           clientNom: m('acquereur_nom'),
           clientEmail: m('acquereur_email'),
           clientTel: m('acquereur_tel'),
+          clientAdresse: m('acquereur_adresse'),
+          forfait: m('forfait'),
           lignes: lignesRaw.map((l) => Map<String, dynamic>.from(l as Map)).toList(),
           totalTtc: (meta['total_ttc'] as num?)?.toDouble() ?? 0,
           datePrestation: m('date_prestation').isNotEmpty ? DateTime.tryParse(m('date_prestation')) : null,

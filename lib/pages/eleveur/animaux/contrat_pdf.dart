@@ -1101,7 +1101,9 @@ pw.Widget _ligneRow(String desc, String qte, String pu, String total, {bool head
 Future<Uint8List> contratEducationPdfBytes({
   Map<String, dynamic>? animal,
   required Map<String, dynamic> prestataire,
-  String clientNom = '', String clientEmail = '', String clientTel = '',
+  String clientNom = '', String clientEmail = '', String clientTel = '', String clientAdresse = '',
+  /// Forfait de séances (intitulé) : le montant est celui de la formule complète.
+  String forfait = '',
   List<Map<String, dynamic>> lignes = const [],
   double totalTtc = 0,
   DateTime? datePrestation, DateTime? dateValidite,
@@ -1143,8 +1145,10 @@ Future<Uint8List> contratEducationPdfBytes({
       pw.Text('ET :', style: _bold()),
       pw.SizedBox(height: 3),
       _line('Le Client', clientNom.trim().isEmpty ? null : clientNom.trim()),
+      _line('Demeurant à', clientAdresse.trim().isEmpty ? null : clientAdresse.trim()),
       _line('Téléphone', clientTel.trim().isEmpty ? null : clientTel.trim()),
       _line('Email', clientEmail.trim().isEmpty ? null : clientEmail.trim()),
+      if (forfait.trim().isNotEmpty) ...[pw.SizedBox(height: 6), _line('Formule', forfait.trim())],
 
       pw.SizedBox(height: 10),
       pw.Text('Article 1 : Objet du contrat', style: _artTitle()),

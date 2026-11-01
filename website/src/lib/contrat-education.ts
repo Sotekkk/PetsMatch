@@ -18,6 +18,10 @@ export interface PrestationEducation {
   race?: string;
   client_nom?: string;
   client_contact?: string;
+  client_tel?: string;
+  client_adresse?: string;
+  /** Forfait de séances : intitulé (le montant est dans lignes / total_ttc). */
+  forfait?: string;
   date_prestation?: string;
   lignes?: LigneEducation[];
   total_ttc?: number;
@@ -129,13 +133,15 @@ export function generateContratEducationHTML(
 
 <div class="parties">
   <b>${prestation.client_nom || 'Le Client'}</b>, ci-après désigné « le Client »<br>
-  ${prestation.client_contact ? 'Contact : ' + prestation.client_contact : ''}
+  ${prestation.client_adresse ? prestation.client_adresse + '<br>' : ''}
+  ${prestation.client_tel ? 'Tél : ' + prestation.client_tel + (prestation.client_contact ? ' — ' : '') : ''}${prestation.client_contact ?? ''}
 </div>
 
 <h2>Objet du contrat</h2>
 <table class="info-table">
   ${prestation.animal_nom ? `<tr><td>Animal</td><td>${prestation.animal_nom} ${prestation.espece ? '(' + prestation.espece + (prestation.race ? ' — ' + prestation.race : '') + ')' : ''}</td></tr>` : ''}
-  ${prestation.date_prestation ? `<tr><td>Date de la prestation</td><td>${fmt(prestation.date_prestation)}</td></tr>` : ''}
+  ${prestation.forfait ? `<tr><td>Formule</td><td>${prestation.forfait}</td></tr>` : ''}
+  ${prestation.date_prestation ? `<tr><td>${prestation.forfait ? 'Première séance' : 'Date de la prestation'}</td><td>${fmt(prestation.date_prestation)}</td></tr>` : ''}
   ${prestation.date_validite ? `<tr><td>Devis valable jusqu'au</td><td>${fmt(prestation.date_validite)}</td></tr>` : ''}
 </table>
 
@@ -198,7 +204,13 @@ export async function contratEducationAnimal(proUid: string, animalId: string): 
 export async function creerContratEducation(o: {
   proUid: string; proProfileId: string | null; animalId: string | null; clientNom: string;
   clientEmail?: string | null; prestation?: string | null; rdvId?: string | null;
+  clientTel?: string | null; clientAdresse?: string | null;
+  /** Montant convenu (séance ou forfait complet) et intitulé du forfait. */
+  montant?: number | null; forfait?: string | null;
 }): Promise<string | null> {
+  const libelle = o.forfait?.trim() || o.prestation?.trim() || 'Prestation d\'éducation canine';
+  const lignes = o.montant != null && o.montant > 0
+    ? [{ description: libelle, quantite: 1, prix_unitaire: o.montant, total: o.montant }] : undefined;
   const { data } = await supabase.from('documents_animaux').insert({
     animal_id: o.animalId,
     uid_eleveur: o.proUid,
@@ -209,7 +221,11 @@ export async function creerContratEducation(o: {
     metadata: {
       acquereur_nom: o.clientNom,
       ...(o.clientEmail ? { acquereur_email: o.clientEmail } : {}),
-      prestation: o.prestation?.trim() || 'Prestation d\'éducation canine',
+      ...(o.clientTel ? { acquereur_tel: o.clientTel } : {}),
+      ...(o.clientAdresse ? { acquereur_adresse: o.clientAdresse } : {}),
+      prestation: libelle,
+      ...(o.forfait ? { forfait: o.forfait } : {}),
+      ...(lignes ? { lignes, total_ttc: o.montant } : {}),
       ...(o.rdvId ? { rdv_id: o.rdvId } : {}),
     },
   }).select('token').single();
