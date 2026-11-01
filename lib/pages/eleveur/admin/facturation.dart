@@ -1566,10 +1566,102 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
   final totalTTC = (d['totalTTC'] ?? 0.0) as num;
   final tealPdf = PdfColor.fromHex('#0C5C6C');
   final greyLight = PdfColor.fromHex('#F8F8F6');
+  final sectionBg = PdfColor.fromHex('#ECF4F5');
+  double arrondi(num v) => (v * 100).roundToDouble() / 100;
+  String eur(num v) => '${arrondi(v).toStringAsFixed(2)} €';
+  double ht(Map<String, dynamic> l) => arrondi(((l['quantite'] as num?) ?? 1) * ((l['prixUnitaireHT'] as num?) ?? 0));
+  double ttcL(Map<String, dynamic> l) => (l['totalTTC'] as num?)?.toDouble()
+      ?? (franchise ? ht(l) : arrondi(ht(l) * (1 + ((l['tauxTVA'] as num?) ?? 0) / 100)));
+  final isAvoir = d['typeFacture'] == 'avoir';
+  final payee = d['statut'] == 'payee';
+  // Client professionnel (SIRET / n° de TVA) : pénalités de retard et
+  // indemnité de recouvrement ; pas pour un particulier.
+  final clientPro = (d['siretClient'] ?? '').toString().trim().isNotEmpty || (d['tvaClient'] ?? '').toString().trim().isNotEmpty;
+
+  // Regroupement : une section par animal (ordre d'apparition), puis les
+  // prestations communes ; chaque ligne n'apparaît qu'une fois.
+  final sections = <({String cle, String nom, String ident, List<Map<String, dynamic>> lignes})>[];
+  final communes = <Map<String, dynamic>>[];
+  final sansAnimal = <Map<String, dynamic>>[];
+  for (final l in lignes) {
+    if (l['commune'] == true) { communes.add(l); continue; }
+    final cle = (l['animalId'] ?? l['animalNom'] ?? '').toString();
+    if (cle.isEmpty) { sansAnimal.add(l); continue; }
+    final i = sections.indexWhere((x) => x.cle == cle);
+    if (i >= 0) {
+      sections[i].lignes.add(l);
+    } else {
+      sections.add((cle: cle, nom: (l['animalNom'] ?? 'Animal').toString(), ident: (l['animalIdentification'] ?? '').toString(), lignes: [l]));
+    }
+  }
+  final groupe = sections.length > 1 || (sections.isNotEmpty && (communes.isNotEmpty || sansAnimal.isNotEmpty));
+  final colonnes = franchise
+      ? {0: const pw.FlexColumnWidth(4), 1: const pw.FlexColumnWidth(1), 2: const pw.FlexColumnWidth(2), 3: const pw.FlexColumnWidth(2)}
+      : {0: const pw.FlexColumnWidth(3), 1: const pw.FlexColumnWidth(1), 2: const pw.FlexColumnWidth(1.5), 3: const pw.FlexColumnWidth(1), 4: const pw.FlexColumnWidth(1.5)};
+  pw.TableRow ligneRow(Map<String, dynamic> l, int i) => pw.TableRow(
+        decoration: pw.BoxDecoration(color: i.isEven ? PdfColors.white : greyLight),
+        children: [
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Text(l['designation'] ?? '', style: pw.TextStyle(font: bold, fontSize: 10)),
+              if ((l['description'] ?? '').isNotEmpty)
+                pw.Text(l['description'], style: pw.TextStyle(font: font, fontSize: 9, color: PdfColor.fromHex('#666666'))),
+            ]),
+          ),
+          _pdfCell(l['quantite']?.toStringAsFixed(0) ?? '1', font, center: true),
+          _pdfCell('${(l['prixUnitaireHT'] ?? 0.0).toStringAsFixed(2)} €', font, center: true),
+          if (!franchise) _pdfCell('${(l['tauxTVA'] ?? 0).toStringAsFixed(0)} %', font, center: true),
+          _pdfCell(eur(ttcL(l)), bold, center: true),
+        ],
+      );
+  pw.Widget tableLignes(List<Map<String, dynamic>> ls) => pw.Table(
+        border: pw.TableBorder(bottom: pw.BorderSide(color: PdfColor.fromHex('#E0E0E0'))),
+        columnWidths: colonnes,
+        children: [for (var i = 0; i < ls.length; i++) ligneRow(ls[i], i)],
+      );
+  pw.Widget enteteSection(String titre) => pw.Container(
+        width: double.infinity, color: sectionBg,
+        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: pw.Text(titre, style: pw.TextStyle(font: bold, fontSize: 10, color: tealPdf)),
+      );
+  pw.Widget sousTotal(String titre, List<Map<String, dynamic>> ls) => pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: pw.Row(mainAxisAlignment: pw.MainAxisAlignment.end, children: [
+          pw.Text('Sous-total $titre : ', style: pw.TextStyle(font: bold, fontSize: 9.5, color: PdfColor.fromHex('#444444'))),
+          pw.Text(eur(ls.fold<double>(0, (a, l) => a + ttcL(l))), style: pw.TextStyle(font: bold, fontSize: 9.5)),
+        ]),
+      );
+  final blocsLignes = <pw.Widget>[
+    if (!groupe && sections.length == 1)
+      pw.Padding(padding: const pw.EdgeInsets.only(bottom: 4),
+          child: pw.Text('Animal : ${sections.first.nom}${sections.first.ident.isNotEmpty ? ' — Identification : ${sections.first.ident}' : ''}',
+              style: pw.TextStyle(font: bold, fontSize: 10, color: tealPdf))),
+    if (!groupe) tableLignes(lignes)
+    else ...[
+      for (final sct in sections) ...[
+        enteteSection('${sct.nom.toUpperCase()}${sct.ident.isNotEmpty ? '   ·   Identification : ${sct.ident}' : ''}'),
+        tableLignes(sct.lignes),
+        sousTotal(sct.nom, sct.lignes),
+      ],
+      if (sansAnimal.isNotEmpty) ...[enteteSection('AUTRES PRESTATIONS'), tableLignes(sansAnimal), sousTotal('autres prestations', sansAnimal)],
+      if (communes.isNotEmpty) ...[enteteSection('PRESTATIONS COMMUNES'), tableLignes(communes), sousTotal('prestations communes', communes)],
+    ],
+  ];
+  // Récapitulatif de TVA par taux.
+  final parTaux = <double, double>{};
+  for (final l in lignes) {
+    final t = ((l['tauxTVA'] as num?) ?? 0).toDouble();
+    parTaux[t] = (parTaux[t] ?? 0) + ht(l);
+  }
+  final taux = parTaux.entries.toList()..sort((a, b) => b.key.compareTo(a.key));
 
   pdf.addPage(pw.MultiPage(
     pageFormat: PdfPageFormat.a4,
     margin: const pw.EdgeInsets.all(32),
+    footer: (ctx) => pw.Align(alignment: pw.Alignment.center, child: pw.Text(
+        '${isAvoir ? "Facture d'avoir" : 'Facture'} N° ${_numAff(d)} — page ${ctx.pageNumber} / ${ctx.pagesCount}',
+        style: pw.TextStyle(font: font, fontSize: 7.5, color: PdfColor.fromHex('#999999')))),
     build: (ctx) => [
       // Header
       pw.Row(
@@ -1607,6 +1699,9 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
             pw.Text('Prestation : ${d['datePrestation'] ?? ''}', style: pw.TextStyle(font: font, fontSize: 10)),
             if ((d['dateEcheance'] ?? '').isNotEmpty)
               pw.Text('Échéance : ${d['dateEcheance']}', style: pw.TextStyle(font: bold, fontSize: 10)),
+            // Statut du règlement (distinct de l'état du document).
+            if (!isAvoir)
+              pw.Text('Statut : ${payee ? 'Payée' : 'À payer'}', style: pw.TextStyle(font: bold, fontSize: 10)),
           ]),
         ],
       ),
@@ -1639,12 +1734,9 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
         ),
       ),
       pw.SizedBox(height: 20),
-      // Table
+      // En-tête des colonnes, puis lignes (sections par animal / communes)
       pw.Table(
-        border: pw.TableBorder(bottom: pw.BorderSide(color: PdfColor.fromHex('#E0E0E0'))),
-        columnWidths: franchise
-            ? {0: const pw.FlexColumnWidth(4), 1: const pw.FlexColumnWidth(1), 2: const pw.FlexColumnWidth(2), 3: const pw.FlexColumnWidth(2)}
-            : {0: const pw.FlexColumnWidth(3), 1: const pw.FlexColumnWidth(1), 2: const pw.FlexColumnWidth(1.5), 3: const pw.FlexColumnWidth(1), 4: const pw.FlexColumnWidth(1.5)},
+        columnWidths: colonnes,
         children: [
           pw.TableRow(
             decoration: pw.BoxDecoration(color: tealPdf),
@@ -1656,25 +1748,9 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
               _pdfCell('Total TTC', bold, white: true, center: true),
             ],
           ),
-          ...lignes.map((l) => pw.TableRow(
-            decoration: pw.BoxDecoration(color: lignes.indexOf(l).isEven ? PdfColors.white : greyLight),
-            children: [
-              pw.Padding(
-                padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-                  pw.Text(l['designation'] ?? '', style: pw.TextStyle(font: bold, fontSize: 10)),
-                  if ((l['description'] ?? '').isNotEmpty)
-                    pw.Text(l['description'], style: pw.TextStyle(font: font, fontSize: 9, color: PdfColor.fromHex('#666666'))),
-                ]),
-              ),
-              _pdfCell(l['quantite']?.toStringAsFixed(0) ?? '1', font, center: true),
-              _pdfCell('${(l['prixUnitaireHT'] ?? 0.0).toStringAsFixed(2)} €', font, center: true),
-              if (!franchise) _pdfCell('${(l['tauxTVA'] ?? 20.0).toStringAsFixed(0)} %', font, center: true),
-              _pdfCell('${(l['totalTTC'] ?? l['totalHT'] ?? 0.0).toStringAsFixed(2)} €', bold, center: true),
-            ],
-          )),
         ],
       ),
+      ...blocsLignes,
       pw.SizedBox(height: 16),
       // Totaux
       pw.Align(
@@ -1684,7 +1760,14 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
           child: pw.Column(children: [
             if (!franchise) ...[
               _pdfTotalRow('Total HT', '${totalHT.toStringAsFixed(2)} €', font),
-              _pdfTotalRow('TVA', '${totalTVA.toStringAsFixed(2)} €', font),
+              if (taux.length > 1 || (taux.length == 1 && taux.first.key == 0)) ...[
+                for (final t in taux)
+                  _pdfTotalRow(t.key == 0 ? 'Exonéré / 0 % (base ${eur(t.value)})' : 'TVA ${t.key.toStringAsFixed(t.key == t.key.roundToDouble() ? 0 : 1)} % (base ${eur(t.value)})',
+                      eur(t.value * t.key / 100), font),
+                if (taux.length > 1) _pdfTotalRow('Total TVA', '${totalTVA.toStringAsFixed(2)} €', font),
+              ] else
+                _pdfTotalRow(taux.isEmpty ? 'TVA' : 'TVA ${taux.first.key.toStringAsFixed(taux.first.key == taux.first.key.roundToDouble() ? 0 : 1)} %',
+                    '${totalTVA.toStringAsFixed(2)} €', font),
             ],
             pw.Container(
               color: tealPdf,
@@ -1742,7 +1825,9 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
             style: pw.TextStyle(font: font, fontSize: 8, color: PdfColor.fromHex('#555555')),
           ),
           pw.Text(
-            'En cas de retard de paiement, pénalités au taux de 3 fois le taux d\'intérêt légal en vigueur (exigibles sans rappel le lendemain de la date d\'échéance) et indemnité forfaitaire de recouvrement de 40 € (art. L441-10 et D441-5 du Code de commerce).',
+            clientPro
+                ? 'En cas de retard de paiement, pénalités au taux de 3 fois le taux d\'intérêt légal en vigueur (exigibles sans rappel le lendemain de la date d\'échéance) et indemnité forfaitaire de recouvrement de 40 € (art. L441-10 et D441-5 du Code de commerce).'
+                : 'Paiement selon les conditions indiquées ci-dessus.',
             style: pw.TextStyle(font: font, fontSize: 8, color: PdfColor.fromHex('#555555')),
           ),
         ]),

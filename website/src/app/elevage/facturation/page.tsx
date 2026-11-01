@@ -10,6 +10,7 @@ import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { useGardeAccess } from '@/hooks/useGardeAccess';
 import { usePlan, usePensionPlan, usePlanGarde, useProfessionPlanCode, PROFESSION_TOP_TIER } from '@/lib/use-plan';
 import { facturePdfBlob } from '@/lib/facture-pdf';
+import { factureVersPdfData } from '@/lib/facture-pdf-data';
 import { imprimerPdf, envoyerPdfParEmail } from '@/lib/transmission-document';
 import { apiFetch } from '@/lib/api-fetch';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
@@ -243,30 +244,7 @@ export default function FacturationPage() {
 
   /** PDF de la facture acquittée (mention « ACQUITTÉE »), à imprimer ou envoyer. */
   async function pdfAcquitte(f: Facture): Promise<Blob> {
-    const r = f as unknown as Record<string, unknown>;
-    const t = (k: string) => (r[k] as string | null | undefined) ?? null;
-    const lignes = ((f.lignes ?? []) as unknown as Record<string, unknown>[]).map(l => ({
-      designation: String(l.designation ?? l.description ?? ''),
-      description: '',
-      quantite: Number(l.quantite ?? 1),
-      prixUnitaireHT: Number(l.prixUnitaireHT ?? l.prixHT ?? l.prixUnitaire ?? 0),
-      tauxTVA: Number(l.tauxTVA ?? l.tva ?? 0),
-    }));
-    return facturePdfBlob({
-      numero: f.numero_affichage ?? String(f.numero_facture ?? ''),
-      typeFacture: f.type_facture ?? null,
-      dateFacture: f.date_facture, datePrestation: f.date_prestation, dateEcheance: f.date_echeance,
-      nomEmetteur: t('nom_emetteur'), rueEmetteur: t('rue_emetteur'), cpEmetteur: t('cp_emetteur'), villeEmetteur: t('ville_emetteur'),
-      paysEmetteur: t('pays_emetteur'), telEmetteur: t('tel_emetteur'), emailEmetteur: t('email_emetteur'), siretEmetteur: t('siret_emetteur'),
-      tvaEmetteur: t('tva_emetteur'), formeJuridiqueEmetteur: t('forme_juridique_emetteur'), capitalEmetteur: t('capital_emetteur'),
-      rcsEmetteur: t('rcs_emetteur'), rmEmetteur: t('rm_emetteur'),
-      prenomClient: f.prenom_client, nomClient: f.nom_client, rueClient: f.rue_client, cpClient: f.cp_client,
-      villeClient: f.ville_client, paysClient: f.pays_client, emailClient: f.email_client,
-      lignes, totalHT: f.total_ht ?? 0, totalTVA: f.total_tva ?? 0, totalTTC: f.total_ttc ?? 0,
-      franchise: t('regime_tva') === 'franchise', modePaiement: t('mode_paiement'), delaiPaiement: t('delai_paiement'),
-      noteComplementaire: t('note_complementaire'),
-      acquittee: { date: t('date_paiement'), mode: t('mode_paiement') },
-    });
+    return facturePdfBlob(factureVersPdfData(f as unknown as Record<string, unknown>, true));
   }
 
   async function envoyerParEmail(f: Facture) {

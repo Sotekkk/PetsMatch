@@ -15,6 +15,7 @@ interface Ligne {
   prixUnitaireHT?: number;
   prixUnitaire?: number;
   tauxTVA?: number;
+  animalId?: string | null; animalNom?: string | null; animalIdentification?: string | null; commune?: boolean;
   tva?: number;
   totalHT?: number;
   totalTTC?: number;
@@ -170,8 +171,27 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
     const taux = Number(l.tauxTVA ?? l.tva ?? 0);
     const ht = l.totalHT != null ? Number(l.totalHT) : qte * pu;
     const ttc = franchise ? ht : (l.totalTTC != null ? Number(l.totalTTC) : ht * (1 + taux / 100));
-    return { lib: l.designation || l.description || '', desc: l.designation ? (l.description || '') : '', qte, pu, taux, ht, ttc };
+    return { lib: l.designation || l.description || '', desc: l.designation ? (l.description || '') : '', qte, pu, taux, ht, ttc,
+      cle: l.commune ? '' : (l.animalId || l.animalNom || ''), animal: l.animalNom || '', ident: l.animalIdentification || '', commune: l.commune === true };
   });
+  // Sections par animal puis prestations communes (même logique que le PDF).
+  type L = typeof lignes[number];
+  const sections: { titre: string; ident: string; lignes: L[] }[] = [];
+  for (const l of lignes.filter(x => !x.commune && x.cle)) {
+    let sec = sections.find(x => x.titre === (l.animal || 'Animal') && x.ident === l.ident);
+    if (!sec) { sec = { titre: l.animal || 'Animal', ident: l.ident, lignes: [] }; sections.push(sec); }
+    sec.lignes.push(l);
+  }
+  const communes = lignes.filter(x => x.commune);
+  const autres = lignes.filter(x => !x.commune && !x.cle);
+  const groupe = sections.length > 1 || (sections.length >= 1 && (communes.length > 0 || autres.length > 0));
+  const blocs: { titre: string; ident: string; lignes: L[] }[] = groupe
+    ? [...sections, ...(autres.length ? [{ titre: 'Autres prestations', ident: '', lignes: autres }] : []),
+       ...(communes.length ? [{ titre: 'Prestations communes', ident: '', lignes: communes }] : [])]
+    : [{ titre: '', ident: '', lignes }];
+  const parTaux = new Map<number, number>();
+  for (const l of lignes) parTaux.set(l.taux, (parTaux.get(l.taux) ?? 0) + l.ht);
+  const clientPro = !!(f.siret_client || f.tva_client);
   const totalHT = f.total_ht ?? lignes.reduce((s, l) => s + l.ht, 0);
   const totalTVA = franchise ? 0 : (f.total_tva ?? lignes.reduce((s, l) => s + (l.ttc - l.ht), 0));
   const totalTTC = f.total_ttc ?? (totalHT + totalTVA);
@@ -240,22 +260,46 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
             {!franchise && <span className="text-right">TVA</span>}
             <span className="text-right">{franchise ? 'Total' : 'Total TTC'}</span>
           </div>
-          {lignes.map((l, i) => (
-            <div key={i} className={`grid ${franchise ? 'grid-cols-[1fr_50px_90px_90px]' : 'grid-cols-[1fr_46px_78px_54px_88px]'} gap-2 px-4 py-2.5 text-xs ${i % 2 ? 'bg-gray-50' : 'bg-white'}`}>
-              <span className="text-gray-700">
-                <span className="font-medium">{l.lib}</span>
-                {l.desc && <span className="block text-gray-400">{l.desc}</span>}
-              </span>
-              <span className="text-right text-gray-500">{l.qte}</span>
-              <span className="text-right text-gray-500">{eur(l.pu)}</span>
-              {!franchise && <span className="text-right text-gray-500">{l.taux}%</span>}
-              <span className="text-right font-medium text-[#1F2A2E]">{eur(l.ttc)}</span>
+          {!groupe && sections.length === 1 && (
+            <div className="px-4 py-2 text-xs font-bold text-[#0C5C6C] bg-white">
+              Animal : {sections[0].titre}{sections[0].ident ? ` — Identification : ${sections[0].ident}` : ''}
+            </div>
+          )}
+          {blocs.map((b, bi) => (
+            <div key={bi}>
+              {b.titre && (
+                <div className="px-4 py-2 text-xs font-bold text-[#0C5C6C] bg-[#ECF4F5] uppercase tracking-wide">
+                  {b.titre}{b.ident ? <span className="normal-case font-semibold text-gray-500"> · Identification : {b.ident}</span> : null}
+                </div>
+              )}
+              {b.lignes.map((l, i) => (
+                <div key={i} className={`grid ${franchise ? 'grid-cols-[1fr_50px_90px_90px]' : 'grid-cols-[1fr_46px_78px_54px_88px]'} gap-2 px-4 py-2.5 text-xs ${i % 2 ? 'bg-gray-50' : 'bg-white'}`}>
+                  <span className="text-gray-700">
+                    <span className="font-medium">{l.lib}</span>
+                    {l.desc && <span className="block text-gray-400">{l.desc}</span>}
+                  </span>
+                  <span className="text-right text-gray-500">{l.qte}</span>
+                  <span className="text-right text-gray-500">{eur(l.pu)}</span>
+                  {!franchise && <span className="text-right text-gray-500">{l.taux}%</span>}
+                  <span className="text-right font-medium text-[#1F2A2E]">{eur(l.ttc)}</span>
+                </div>
+              ))}
+              {b.titre && (
+                <div className="flex justify-between px-4 py-1.5 text-xs font-semibold text-gray-600 border-t border-gray-100">
+                  <span>Sous-total {b.titre.toLowerCase() === 'prestations communes' ? 'prestations communes' : b.titre}</span>
+                  <span>{eur(b.lignes.reduce((a, l) => a + l.ttc, 0))}</span>
+                </div>
+              )}
             </div>
           ))}
           <div className="bg-gray-50 px-4 py-3 border-t border-gray-200">
             <div className="totals ml-auto max-w-[240px] space-y-1">
               {!franchise && <div className="flex justify-between text-xs text-gray-500"><span>Total HT</span><span>{eur(totalHT)}</span></div>}
-              {!franchise && <div className="flex justify-between text-xs text-gray-500"><span>TVA</span><span>{eur(totalTVA)}</span></div>}
+              {!franchise && ([...parTaux.keys()].length > 1
+                ? [...parTaux.entries()].sort((a, b) => b[0] - a[0]).map(([t, base]) => (
+                    <div key={t} className="flex justify-between text-xs text-gray-500"><span>TVA {t} % (base {eur(base)})</span><span>{eur(base * t / 100)}</span></div>
+                  ))
+                : <div className="flex justify-between text-xs text-gray-500"><span>TVA{[...parTaux.keys()][0] != null ? ` ${[...parTaux.keys()][0]} %` : ''}</span><span>{eur(totalTVA)}</span></div>)}
               <div className="flex justify-between text-base font-bold text-[#1F2A2E]"><span>{franchise ? 'Total' : 'Total TTC'}</span><span>{eur(totalTTC)}</span></div>
             </div>
           </div>
@@ -270,7 +314,10 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
         <div className="mentions border border-gray-200 rounded-xl p-3 text-[11px] text-gray-500 space-y-1">
           {franchise && <p className="font-semibold text-gray-700">TVA non applicable, art. 293 B du CGI.</p>}
           <p>{escompte}</p>
-          <p>En cas de retard de paiement : pénalités au taux de 3 fois le taux d&apos;intérêt légal en vigueur ({annee}), exigibles sans rappel le lendemain de la date d&apos;échéance, et indemnité forfaitaire de recouvrement de 40 € (art. L441-10 et D441-5 du Code de commerce).</p>
+          {/* Pénalités et indemnité de recouvrement : clients professionnels seulement. */}
+          {clientPro
+            ? <p>En cas de retard de paiement : pénalités au taux de 3 fois le taux d&apos;intérêt légal en vigueur ({annee}), exigibles sans rappel le lendemain de la date d&apos;échéance, et indemnité forfaitaire de recouvrement de 40 € (art. L441-10 et D441-5 du Code de commerce).</p>
+            : <p>Paiement selon les conditions indiquées ci-dessus.</p>}
         </div>
 
         <p className="text-[10px] text-gray-400 text-center border-t pt-3">Réf. {f.id}</p>
