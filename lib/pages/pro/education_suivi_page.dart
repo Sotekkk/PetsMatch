@@ -20,6 +20,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:PetsMatch/widgets/animal/pro_animal_entete.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
 import 'package:PetsMatch/utils/document_pro.dart' show showDocumentProSheet;
+import 'package:PetsMatch/utils/document_prive.dart' show ouvrirDocument;
 import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv, choisirAnimalRdv;
 import 'package:PetsMatch/utils/fin_seance_education.dart' show devisDepuisRdv, factureDepuisRdv, finSeanceEducation, clientDuRdv;
 
@@ -85,6 +86,10 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   bool _rdvTraite = false;
   /// Mode dossier : le RDV de la séance.
   Map<String, dynamic>? _rdvDossier;
+  /// RDV du dossier = bilan (cours de type « Bilan » du catalogue).
+  bool _rdvEstBilan = false;
+  /// Bilans chargés par le pro (documents_animaux « compte_rendu_pro » titrés « Bilan… »).
+  List<Map<String, dynamic>> _bilansCharges = [];
   bool _loading = true;
 
   @override
@@ -189,11 +194,25 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           if (mounted) setState(() => _prochainRdv = r);
         } catch (_) {}
       }
+      try {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid != null) {
+          final bc = await _supa.from('documents_animaux').select('id, titre, url, created_at')
+              .eq('animal_id', widget.animalId).eq('uid_eleveur', uid).eq('type', 'compte_rendu_pro').ilike('titre', 'Bilan%')
+              .order('created_at', ascending: false);
+          if (mounted) setState(() => _bilansCharges = List<Map<String, dynamic>>.from(bc as List));
+        }
+      } catch (_) {}
       // Compte rendu d'une séance précise (depuis le tableau de bord / l'agenda).
       if (widget.dossier && widget.rdvId != null && _rdvDossier == null) {
         try {
           final r = await _supa.from('rdv').select().eq('id', widget.rdvId!).maybeSingle();
-          if (mounted) setState(() => _rdvDossier = r);
+          var bilan = RegExp('bilan', caseSensitive: false).hasMatch(r?['motif']?.toString() ?? '');
+          if (r?['prestation_id'] != null) {
+            final pe = await _supa.from('prestations_education').select('bilan_requis').eq('id', r!['prestation_id']).maybeSingle();
+            bilan = pe?['bilan_requis'] == true;
+          }
+          if (mounted) setState(() { _rdvDossier = r; _rdvEstBilan = bilan; });
         } catch (_) {}
       }
       if (widget.rdvId != null && !widget.dossier && !_rdvTraite && mounted) {
@@ -445,8 +464,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   /// Compte rendu de séance (ou bilan) : rapide ou détaillé, brouillon ou
   /// finalisé (seul le finalisé est envoyé à la famille). [existing] reprend
   /// un brouillon, [rdv] pré-remplit depuis la séance de l'agenda.
-  Future<void> _editSeance({Map<String, dynamic>? existing, Map<String, dynamic>? rdv}) async {
-    String typeSeance = existing?['type_seance']?.toString() ??
+  Future<void> _editSeance({Map<String, dynamic>? existing, Map<String, dynamic>? rdv, bool bilan = false}) async {
+    String typeSeance = (existing == null && bilan ? 'bilan' : null) ?? existing?['type_seance']?.toString() ??
         (existing?['type'] == 'bilan' ? 'bilan' : null) ??
         ((rdv?['lieu']?.toString().trim() ?? '').isNotEmpty ? 'domicile' : 'individuelle');
     final contenuCtrl = TextEditingController(text: richTextToPlain(existing?['contenu']?.toString() ?? ''));
@@ -1249,9 +1268,10 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                 ownerProfileId: widget.ownerProfileId, ownerName: widget.ownerName,
                 rdvId: widget.rdvId, dossier: true)));
             }),
-          chip(Icons.edit_note_outlined, crRdv == null ? 'Compte rendu' : 'Modifier le compte rendu', () async {
+          chip(Icons.edit_note_outlined,
+              '${crRdv == null ? 'Rédiger' : 'Modifier'} ${_rdvEstBilan ? 'le bilan' : 'le compte rendu'}', () async {
             _tab.animateTo(2);
-            await _editSeance(existing: crRdv, rdv: rdv);
+            await _editSeance(existing: crRdv, rdv: rdv, bilan: _rdvEstBilan);
           }),
           chip(Icons.fitness_center_outlined, 'Exercices', () async { _tab.animateTo(1); await _attribuerExercices(); }),
           chip(Icons.track_changes_outlined, 'Programme', () async { _tab.animateTo(1); await _editObjectif(); }),
@@ -1273,9 +1293,10 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           chip(Icons.request_quote_outlined, 'Devis', () => devisDepuisRdv(context, rdv, animalNom: widget.animalNom)),
           if (rdv['forfait_souscrit_id'] == null)
             chip(Icons.receipt_long_outlined, 'Facture', () => factureDepuisRdv(context, rdv, animalNom: widget.animalNom)),
-          chip(Icons.upload_file_outlined, 'Charger mon compte rendu', () async {
+          chip(Icons.upload_file_outlined, _rdvEstBilan ? 'Charger mon bilan' : 'Charger mon compte rendu', () async {
             await showDocumentProSheet(context, rdv: rdv, mode: 'compte_rendu', clientNom: widget.ownerName,
-                animalNom: widget.animalNom, proNom: proNom, catPro: 'education');
+                animalNom: widget.animalNom, proNom: proNom, catPro: 'education',
+                titre: _rdvEstBilan ? 'Bilan comportemental — ${widget.animalNom}' : null);
           }),
           // Contrat : généré par PetsMatch (signé en ligne) ou chargé.
           chip(Icons.draw_outlined, 'Contrat PetsMatch', () => ouvrirContratEducation(context, rdv: rdv,
@@ -1528,6 +1549,24 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
 
   // ── Documents ──────────────────────────────────────────────────────────────
 
+  /// Bilan chargé (PDF / photo) hors RDV : rattaché au dernier RDV de l'animal chez moi s'il y en a un.
+  Future<void> _chargerBilan() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    Map<String, dynamic>? r;
+    try {
+      r = await _supa.from('rdv').select('id, client_uid, client_profile_id, pro_profile_id')
+          .eq('pro_uid', uid).eq('animal_id', widget.animalId).order('date_heure', ascending: false).limit(1).maybeSingle();
+    } catch (_) {}
+    if (!mounted) return;
+    final ok = await showDocumentProSheet(context,
+        rdv: {'id': r?['id'], 'animal_id': widget.animalId, 'client_uid': r?['client_uid'] ?? _ownerUid,
+          'client_profile_id': r?['client_profile_id'] ?? widget.ownerProfileId, 'pro_profile_id': r?['pro_profile_id']},
+        mode: 'compte_rendu', clientNom: widget.ownerName, animalNom: widget.animalNom, proNom: _proNom, catPro: 'education',
+        titre: 'Bilan comportemental — ${widget.animalNom}');
+    if (ok && mounted) await _load();
+  }
+
   Widget _documentsTab() {
     final bilans = _seances.where((x) => x['type'] == 'bilan' && x['statut'] != 'brouillon').toList();
     final crs = _seances.where((x) => x['type'] != 'bilan' && x['statut'] != 'brouillon').toList();
@@ -1552,8 +1591,32 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
       color: _kOrange,
       child: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 40), children: [
         _carte(titre: 'Bilans comportementaux', icone: Icons.psychology_outlined,
-            child: bilans.isEmpty ? _texteDiscret('Aucun bilan finalisé.')
-                : Column(children: [for (final b in bilans) ligneDoc(b, 'Bilan')])),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Wrap(spacing: 8, runSpacing: 6, children: [
+                OutlinedButton(
+                  onPressed: () async { _tab.animateTo(2); await _editSeance(bilan: true); },
+                  style: OutlinedButton.styleFrom(foregroundColor: _kOrange, side: const BorderSide(color: _kOrange)),
+                  child: const Text('Rédiger un bilan avec PetsMatch', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+                ),
+                OutlinedButton(
+                  onPressed: _chargerBilan,
+                  style: OutlinedButton.styleFrom(foregroundColor: _kOrange, side: const BorderSide(color: _kOrange)),
+                  child: const Text('Charger mon bilan (PDF / photo)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+                ),
+              ]),
+              const SizedBox(height: 6),
+              for (final d in _bilansCharges)
+                ListTile(
+                  contentPadding: EdgeInsets.zero, dense: true,
+                  leading: const Icon(Icons.picture_as_pdf_outlined, color: Color(0xFF0C5C6C)),
+                  title: Text('${d['titre'] ?? 'Bilan'} — ${_dateFr(d['created_at']?.toString())}',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Mon document · ouvrir', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  onTap: () => ouvrirDocument(context, d['url']?.toString()),
+                ),
+              if (bilans.isEmpty && _bilansCharges.isEmpty) _texteDiscret('Aucun bilan finalisé.')
+              else for (final b in bilans) ligneDoc(b, 'Bilan'),
+            ])),
         _carte(titre: 'Comptes rendus de séance', icone: Icons.article_outlined,
             child: crs.isEmpty ? _texteDiscret('Aucun compte rendu finalisé.')
                 : Column(children: [for (final c in crs.take(10)) ligneDoc(c, kEduTypesSeance[c['type_seance']] ?? 'Séance')])),

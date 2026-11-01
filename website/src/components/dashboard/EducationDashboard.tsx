@@ -134,6 +134,10 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
       .map(s => ({ cle: s.id, animalId: String(s.animal_id), texte: `${animaux[String(s.animal_id)]?.nom ?? 'Animal'} · brouillon du ${new Date(s.date_seance).toLocaleDateString('fr-FR')}`,
         href: `/mes-patients/${s.animal_id}?tab=Séances` })),
   ];
+  // Séances passées pas encore marquées « Terminé » (à clôturer).
+  const aCloturer = rdvs.filter(r => r.statut === 'confirme'
+    && new Date(debut(r).getTime() + (r.duree_minutes ?? 60) * 60000) < now)
+    .sort((a, b) => debut(b).getTime() - debut(a).getTime());
   const statut = (r: Rdv) => {
     if (r.statut === 'termine') return { label: 'Terminée', fg: '#4B5563', bg: '#F1F2F4' };
     const fin = new Date(debut(r).getTime() + (r.duree_minutes ?? 60) * 60000);
@@ -236,6 +240,24 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
                           </span>
                         </Link>
                       ))}
+                    </div>
+                  )}
+                </Section>
+
+                <Section titre="Séances à clôturer" icone={<Icone nom="horloge" taille={18} />} compteur={aCloturer.length}>
+                  {aCloturer.length === 0 ? <p className="text-sm text-gray-400">Toutes les séances passées sont clôturées.</p> : (
+                    <div className="space-y-1">
+                      {aCloturer.slice(0, 6).map(r => (
+                        <Link key={r.id} href={`/mes-rdv?onglet=a_venir&rdv=${encodeURIComponent(r.id)}`}
+                          className="flex items-center gap-2 py-1.5 hover:bg-gray-50 rounded-lg">
+                          <span className="text-[#D97706]"><Icone nom="horloge" taille={18} /></span>
+                          <span className="flex-1 text-sm text-[#1E2025] truncate">{nomAnimal(r)} · {nomClient(r)} · séance du {jm(debut(r))}</span>
+                          <span className="text-xs font-bold text-[#0C5C6C]">Clôturer</span>
+                        </Link>
+                      ))}
+                      {aCloturer.length > 6 && (
+                        <Link href="/mes-rdv?onglet=a_venir" className="block text-xs font-semibold text-[#0C5C6C] pt-1">Voir les {aCloturer.length} séances</Link>
+                      )}
                     </div>
                   )}
                 </Section>

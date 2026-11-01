@@ -40,6 +40,7 @@ import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVe
 import { uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
 import { allerOuFermer } from '@/lib/panneau';
 import { COLS_FORFAIT_SOUSCRIT, TYPES_SEANCES, coordClientForfait, libelleCompteurs, libelleTypeSeances, preparerFactureForfait, type TypeSeances } from '@/lib/forfait-education';
+import DocumentProModal from '@/components/pro/DocumentProModal';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -1269,6 +1270,8 @@ function PatientDetailPageInner() {
       if (!r || annule) return;
       const rr = r as { id: string; lieu: string | null; duree_minutes: number | null };
       setSeanceRdvId(rr.id);
+      // RDV de bilan (dossier de la séance) : compte rendu de type bilan.
+      if (searchParams.get('bilan') === '1') setRapportType('bilan');
       if (rr.lieu) { setSeanceLieu(rr.lieu); setSeanceType('domicile'); }
       if (rr.duree_minutes) setSeanceDuree(String(rr.duree_minutes));
       setShowAddRapport(true);
@@ -2511,6 +2514,30 @@ function PatientDetailPageInner() {
   }
 
   // ── Objectifs (plan de travail) ──
+  // Bilans chargés par le pro (PDF / photo) : documents_animaux « compte_rendu_pro » titrés « Bilan… ».
+  const [bilansCharges, setBilansCharges] = useState<{ id: string; titre: string | null; url: string; created_at: string }[]>([]);
+  const [chargementBilan, setChargementBilan] = useState<{ id: string; animal_id: string; client_uid: string | null; client_profile_id: string | null; pro_profile_id: string | null } | null>(null);
+  const rechargerBilansCharges = useCallback(async () => {
+    if (!animalId || !user?.uid) return;
+    const { data } = await supabase.from('documents_animaux').select('id, titre, url, created_at')
+      .eq('animal_id', animalId).eq('uid_eleveur', user.uid).eq('type', 'compte_rendu_pro').ilike('titre', 'Bilan%')
+      .order('created_at', { ascending: false });
+    setBilansCharges((data ?? []) as typeof bilansCharges);
+  }, [animalId, user?.uid]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (catPro === 'education') rechargerBilansCharges();
+  }, [catPro, rechargerBilansCharges]);
+  async function ouvrirChargementBilan() {
+    if (!user?.uid || !animalId) return;
+    // Rattaché au dernier RDV de l'animal chez moi, s'il y en a un.
+    const { data: r } = await supabase.from('rdv').select('id, client_uid, client_profile_id, pro_profile_id')
+      .eq('pro_uid', user.uid).eq('animal_id', animalId).order('date_heure', { ascending: false }).limit(1).maybeSingle();
+    const x = r as { id: string; client_uid: string | null; client_profile_id: string | null; pro_profile_id: string | null } | null;
+    setChargementBilan({ id: x?.id ?? '', animal_id: String(animalId), client_uid: x?.client_uid ?? animal?.uid_proprietaire ?? null,
+      client_profile_id: x?.client_profile_id ?? null, pro_profile_id: x?.pro_profile_id ?? (activeProfileId || null) });
+  }
+
   async function ajouterObjectifSeance() {
     const libelle = nouvelObjSeance.trim();
     if (!libelle || !user?.uid || !animalId) return;
@@ -3658,7 +3685,33 @@ function PatientDetailPageInner() {
         {isEducation && tab === 'Documents' && (
           <>
             <Card title="Bilans comportementaux">
-              {rapports.filter(r => r.type === 'bilan' && r.statut !== 'brouillon').length === 0 ? <EmptyState text="Aucun bilan finalisé" /> : (
+              {hasReportAccess && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <button type="button" onClick={() => { setTab('Séances'); setRapportType('bilan'); setShowAddRapport(true); }}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-xl text-white" style={{ background: '#EF6C00' }}>
+                    Rédiger un bilan avec PetsMatch
+                  </button>
+                  <button type="button" onClick={ouvrirChargementBilan}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-xl border" style={{ borderColor: '#EF6C00', color: '#B24E00' }}>
+                    Charger mon bilan (PDF / photo)
+                  </button>
+                </div>
+              )}
+              {bilansCharges.map(d => (
+                <button key={d.id} type="button" onClick={() => ouvrirDocument(d.url)} className="w-full text-left py-2 border-b border-gray-50">
+                  <p className="text-sm font-semibold">{d.titre ?? 'Bilan'} — {fmtDateShort(d.created_at)}</p>
+                  <p className="text-xs text-gray-500">Mon document · ouvrir</p>
+                </button>
+              ))}
+              {chargementBilan && (
+                <DocumentProModal rdv={chargementBilan} mode="compte_rendu" catPro="education"
+                  clientNom={owner ? `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim() || 'Client' : 'Client'}
+                  animalNom={animal?.nom ?? ''} proNom={userData?.nameElevage ?? ''}
+                  titreParDefaut={`Bilan comportemental — ${animal?.nom ?? 'animal'}`}
+                  onClose={() => setChargementBilan(null)}
+                  onDone={() => { setChargementBilan(null); rechargerBilansCharges(); }} />
+              )}
+              {rapports.filter(r => r.type === 'bilan' && r.statut !== 'brouillon').length === 0 ? (bilansCharges.length === 0 && <EmptyState text="Aucun bilan finalisé" />) : (
                 <div className="divide-y divide-gray-50">
                   {rapports.filter(r => r.type === 'bilan' && r.statut !== 'brouillon').map(r => (
                     <button key={r.id} onClick={() => setTab('Séances')} className="w-full text-left py-2">

@@ -19,12 +19,14 @@ import {
 
 const TEAL = '#0C5C6C';
 
-export default function DocumentProModal({ rdv, mode, clientNom, animalNom, proNom, catPro, onClose, onDone }: {
+export default function DocumentProModal({ rdv, mode, clientNom, animalNom, proNom, catPro, titreParDefaut, onClose, onDone }: {
   rdv: RdvDocumentPro & { client_email_manuel?: string | null };
   mode: 'compte_rendu' | 'contrat';
   /** Métier du pro (abonnements.profil_type) : contrat = formule payante, comme le contrat PetsMatch. */
   catPro: string;
   clientNom: string; animalNom?: string; proNom: string;
+  /** Titre proposé (ex. « Bilan comportemental — Médor »). */
+  titreParDefaut?: string;
   onClose: () => void;
   /** Après dépôt : [id] du document créé. */
   onDone: (id: string) => void;
@@ -32,7 +34,7 @@ export default function DocumentProModal({ rdv, mode, clientNom, animalNom, proN
   const { user } = useAuth();
   const cr = mode === 'compte_rendu';
   const [fichier, setFichier] = useState<File | null>(null);
-  const [titre, setTitre] = useState(cr ? `Compte rendu${animalNom ? ` — ${animalNom}` : ''}` : `Contrat — ${clientNom}`);
+  const [titre, setTitre] = useState(titreParDefaut ?? (cr ? `Compte rendu${animalNom ? ` — ${animalNom}` : ''}` : `Contrat — ${clientNom}`));
   // Compte rendu : seulement enregistré avec le RDV ; il part avec « Terminer
   // et envoyer » (fin de séance). Envoi immédiat possible (métiers sans fin de séance).
   const [envoyer, setEnvoyer] = useState(false);

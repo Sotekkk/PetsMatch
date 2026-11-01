@@ -60,7 +60,8 @@ export async function chargerCompteRenduPro(blob: Blob, o: { rdv: RdvDocumentPro
   const url = await deposer(blob, o.uid);
   const { data, error } = await supabase.from('documents_animaux').insert({
     uid_eleveur: o.uid, ...(o.proProfileId ? { pro_profile_id: o.proProfileId } : {}),
-    animal_id: o.rdv.animal_id ?? null, rdv_id: o.rdv.id, type: TYPE_CR_PRO, titre: o.titre, url, statut: 'envoye',
+    // Sans RDV (ex. bilan chargé depuis la fiche) : rdv_id vide.
+    animal_id: o.rdv.animal_id ?? null, rdv_id: o.rdv.id || null, type: TYPE_CR_PRO, titre: o.titre, url, statut: 'envoye',
     metadata: { client_uid: o.rdv.client_uid ?? null, client_profile_id: o.rdv.client_profile_id ?? null },
   }).select('id').single();
   if (error) throw new Error(error.message);

@@ -63,6 +63,8 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   const [decompte, setDecompte] = useState(false);
   // Compte rendu de l'animal enregistré sans RDV (à rattacher à celui-ci).
   const [crOrphelin, setCrOrphelin] = useState<{ id: string; date_seance: string | null } | null>(null);
+  // RDV de bilan (cours de type « Bilan » du catalogue) : bilan comportemental.
+  const [estBilan, setEstBilan] = useState(false);
   const [devis, setDevis] = useState<{ id: string; statut: string | null; total_ttc: number | null } | null>(null);
   const [facture, setFacture] = useState<{ id: string; statut: string | null; total_ttc: number | null; numero_affichage: string | null } | null>(null);
   const [coord, setCoord] = useState<Record<string, string>>({});
@@ -93,6 +95,10 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     ]);
     setAnimalNom((an.data as { nom?: string } | null)?.nom ?? detail.find(a => a.id === aid)?.nom ?? x.animal_nom_manuel ?? '');
     setCr((pr.data as typeof cr) ?? null);
+    if (x.prestation_id) {
+      const { data: pe } = await supabase.from('prestations_education').select('bilan_requis').eq('id', x.prestation_id).maybeSingle();
+      setEstBilan(!!(pe as { bilan_requis?: boolean } | null)?.bilan_requis);
+    } else setEstBilan(/bilan/i.test(x.motif ?? ''));
     if (!pr.data && aid) {
       const { data: orph } = await supabase.from('education_progression').select('id, date_seance')
         .eq('animal_id', aid).is('rdv_id', null).order('created_at', { ascending: false }).limit(1).maybeSingle();
@@ -271,10 +277,10 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
         )}
 
         <div className="mt-3">
-          {ligne('Compte rendu',
+          {ligne(estBilan ? 'Bilan comportemental' : 'Compte rendu',
             !cr ? 'À rédiger' : cr.statut === 'brouillon' ? 'Brouillon' : cr.type === 'bilan' ? 'Bilan rédigé' : 'Rédigé',
             !cr ? GRIS : cr.statut === 'brouillon' ? AMBRE : VERT,
-            [btn(cr ? 'Modifier / voir' : 'Rédiger', () => fiche(cr ? `editCr=${encodeURIComponent(cr.id)}` : `rdv=${encodeURIComponent(r.id)}`, 'Compte rendu')),
+            [btn(cr ? 'Modifier / voir' : 'Rédiger', () => fiche(cr ? `editCr=${encodeURIComponent(cr.id)}` : `rdv=${encodeURIComponent(r.id)}${estBilan ? '&bilan=1' : ''}`, estBilan ? 'Bilan comportemental' : 'Compte rendu')),
               btn('Charger le mien', () => setDocPro('compte_rendu')),
               ...(crOrphelin ? [btn(`Rattacher celui du ${crOrphelin.date_seance ? new Date(crOrphelin.date_seance).toLocaleDateString('fr-FR') : 'dernier'}`, async () => {
                 await supabase.from('education_progression').update({ rdv_id: r.id }).eq('id', crOrphelin.id);
@@ -354,6 +360,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
       {docPro && (
         <DocumentProModal mode={docPro} catPro="education" rdv={{ ...r, animal_id: aidSel, pro_profile_id: pid || null }} clientNom={nomClient}
           animalNom={animalNom || undefined} proNom={user?.displayName ?? ''} onClose={() => setDocPro(null)}
+          titreParDefaut={docPro === 'compte_rendu' && estBilan ? `Bilan comportemental${animalNom ? ` — ${animalNom}` : ''}` : undefined}
           onDone={() => { setDocPro(null); charger(); onChanged?.(); }} />
       )}
     </div>

@@ -316,6 +316,8 @@ class _EducationDashboardState extends State<EducationDashboard> {
       final colonne = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _suivisSection(suivis, now),
         const SizedBox(height: 16),
+        _clotureSection(),
+        const SizedBox(height: 16),
         _crSection(aFinaliser),
         if (deplacements.isNotEmpty) ...[
           const SizedBox(height: 16),
@@ -513,6 +515,38 @@ class _EducationDashboardState extends State<EducationDashboard> {
                 ].join(' · '), style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _muted)),
               ])),
               const Icon(Icons.chevron_right, color: _muted, size: 18),
+            ]),
+          ),
+        ),
+    ]));
+  }
+
+  // Séances à clôturer (passées, pas encore « Terminé ») ---------------------
+
+  Widget _clotureSection() {
+    final now = DateTime.now();
+    final items = _rdvs.where((r) => r['statut'] == 'confirme'
+        && _debut(r).add(Duration(minutes: (r['duree_minutes'] as num?)?.toInt() ?? 60)).isBefore(now)).toList()
+      ..sort((a, b) => _debut(b).compareTo(_debut(a)));
+    return DashCarte(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      DashTitre('Séances à clôturer', icone: Icons.schedule_outlined, compteur: items.length,
+          trailing: items.length > 6 ? DashLien('Voir tout', onTap: () => _go(const ProAgendaPage(initialTabIndex: 1))) : null),
+      const SizedBox(height: 6),
+      if (items.isEmpty)
+        const Padding(padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('Toutes les séances passées sont clôturées.', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted))),
+      for (final r in items.take(6))
+        InkWell(
+          onTap: () => _go(ProAgendaPage(initialTabIndex: 1, focusRdvId: r['id']?.toString())),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            child: Row(children: [
+              const Icon(Icons.schedule_outlined, color: _ambre, size: 20),
+              const SizedBox(width: 10),
+              Expanded(child: Text('${_nomAnimal(r)} · ${_nomClient(r)} · séance du ${_jm(_debut(r))}',
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _ink))),
+              const Text('Clôturer', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _teal)),
             ]),
           ),
         ),

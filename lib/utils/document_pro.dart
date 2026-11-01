@@ -90,7 +90,8 @@ Future<String> chargerCompteRenduPro(Uint8List pdf, {required Map<String, dynami
   final row = await Supabase.instance.client.from('documents_animaux').insert({
     'uid_eleveur': FirebaseAuth.instance.currentUser?.uid,
     if ((proProfileId ?? '').isNotEmpty) 'pro_profile_id': proProfileId,
-    'animal_id': rdv['animal_id']?.toString(), 'rdv_id': rdv['id'].toString(),
+    // Sans RDV (ex. bilan chargé depuis la fiche) : rdv_id vide.
+    'animal_id': rdv['animal_id']?.toString(), 'rdv_id': (rdv['id']?.toString() ?? '').isEmpty ? null : rdv['id'].toString(),
     'type': kTypeCrPro, 'titre': titre, 'url': url, 'statut': 'envoye',
     'metadata': {'client_uid': rdv['client_uid'], 'client_profile_id': rdv['client_profile_id']},
   }).select('id').single();
@@ -258,6 +259,8 @@ Future<Uint8List> contratProSigne(Uint8List original, {
 Future<bool> showDocumentProSheet(BuildContext context, {
   required Map<String, dynamic> rdv, required String mode, required String clientNom, String animalNom = '', String proNom = '',
   required String catPro,
+  /// Titre proposé (ex. « Bilan comportemental — Médor »).
+  String? titre,
 }) async {
   final cr = mode == 'compte_rendu';
   final messenger = ScaffoldMessenger.of(context);
@@ -267,7 +270,7 @@ Future<bool> showDocumentProSheet(BuildContext context, {
     return false;
   }
   if (!context.mounted) return false;
-  final titreCtrl = TextEditingController(text: cr ? 'Compte rendu${animalNom.isNotEmpty ? ' — $animalNom' : ''}' : 'Contrat — $clientNom');
+  final titreCtrl = TextEditingController(text: titre ?? (cr ? 'Compte rendu${animalNom.isNotEmpty ? ' — $animalNom' : ''}' : 'Contrat — $clientNom'));
   Uint8List? pdf;
   // Compte rendu : seulement enregistré avec le RDV ; il part avec « Terminer
   // et envoyer » (fin de séance). Envoi immédiat possible (métiers sans fin de séance).
