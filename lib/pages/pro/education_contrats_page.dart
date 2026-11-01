@@ -52,7 +52,7 @@ class _EducationContratsPageState extends State<EducationContratsPage> {
     }
     try {
       final pid = User_Info.activeProfileId;
-      var q = _supa.from('documents_animaux').select().eq('uid_eleveur', uid).eq('type', 'contrat_education');
+      var q = _supa.from('documents_animaux').select().eq('uid_eleveur', uid).eq('type', 'contrat_education').neq('statut', 'annule');
       if (pid.isNotEmpty) q = q.eq('pro_profile_id', pid);
       final rows = await q.order('created_at', ascending: false);
       final list = List<Map<String, dynamic>>.from(rows as List);
@@ -93,6 +93,28 @@ class _EducationContratsPageState extends State<EducationContratsPage> {
         return (label: '🚫 Refusé', color: Colors.red);
       default:
         return (label: 'Brouillon', color: Colors.grey);
+    }
+  }
+
+  /// Supprimer = annuler (le lien de signature ne marche plus) ; jamais un contrat signé.
+  Future<void> _supprimer(Map<String, dynamic> c) async {
+    if (c['statut'] == 'signe') return;
+    final nom = ((c['metadata'] as Map?)?['acquereur_nom'] ?? 'ce client').toString();
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Supprimer ce contrat ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: Text('Contrat de $nom : le lien de signature ne fonctionnera plus.', style: const TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+      ],
+    ));
+    if (ok != true) return;
+    try {
+      await _supa.from('documents_animaux')
+          .update({'statut': 'annule', 'cancelled_at': DateTime.now().toUtc().toIso8601String()}).eq('id', c['id']);
+      if (mounted) setState(() => _contrats.removeWhere((x) => x['id'] == c['id']));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Suppression impossible : $e')));
     }
   }
 
@@ -367,6 +389,13 @@ class _EducationContratsPageState extends State<EducationContratsPage> {
                                         fontFamily: 'Galey', fontSize: 10.5,
                                         fontWeight: FontWeight.w700, color: sm.color)),
                               ),
+                              if (c['statut'] != 'signe')
+                                IconButton(
+                                  onPressed: () => _supprimer(c),
+                                  tooltip: 'Supprimer le contrat',
+                                  icon: Icon(Icons.delete_outline, size: 20, color: Colors.red.shade400),
+                                  visualDensity: VisualDensity.compact,
+                                ),
                             ]),
                             const SizedBox(height: 4),
                             Text([

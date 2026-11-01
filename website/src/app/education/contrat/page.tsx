@@ -56,7 +56,7 @@ export default function EducationContratPage() {
   const load = useCallback(async () => {
     if (!user) return;
     let q = supabase.from('documents_animaux').select('id, token, statut, animal_id, titre, created_at, metadata')
-      .eq('uid_eleveur', user.uid).eq('type', 'contrat_education');
+      .eq('uid_eleveur', user.uid).eq('type', 'contrat_education').neq('statut', 'annule');
     if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId) as typeof q;
     const { data } = await q.order('created_at', { ascending: false });
     const rows = (data ?? []) as DocRow[];
@@ -110,6 +110,16 @@ export default function EducationContratPage() {
       _client_email: cInfo.get(p.client_uid as string)?.email ?? '',
       _animal_nom: p.animal_id ? aNames.get(p.animal_id) ?? '' : '',
     })));
+  }
+
+  /** Supprimer = annuler (le lien de signature ne marche plus) ; jamais un contrat signé. */
+  async function supprimerContrat(d: DocRow) {
+    if (d.statut === 'signe') return;
+    if (!confirm(`Supprimer le contrat de ${String(d.metadata?.acquereur_nom ?? 'ce client')} ? Le lien de signature ne fonctionnera plus.`)) return;
+    const { error } = await supabase.from('documents_animaux')
+      .update({ statut: 'annule', cancelled_at: new Date().toISOString() }).eq('id', d.id);
+    if (error) { alert(`Suppression impossible : ${error.message}`); return; }
+    setDocs(prev => prev.filter(x => x.id !== d.id));
   }
 
   async function creerContrat(p: Paire) {
@@ -198,7 +208,16 @@ export default function EducationContratPage() {
                       ].filter(Boolean).join(' · ')}
                     </p>
                   </div>
-                  <span className={`text-xs font-galey font-bold px-2.5 py-1 rounded-full ${meta.cls}`}>{meta.label}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`text-xs font-galey font-bold px-2.5 py-1 rounded-full ${meta.cls}`}>{meta.label}</span>
+                    {d.statut !== 'signe' && (
+                      <button type="button" title="Supprimer le contrat"
+                        onClick={e => { e.preventDefault(); e.stopPropagation(); supprimerContrat(d); }}
+                        className="text-xs font-galey font-semibold px-2.5 py-1 rounded-full border border-red-200 text-red-500 hover:bg-red-50">
+                        Supprimer
+                      </button>
+                    )}
+                  </div>
                 </div>
               </a>
             );
