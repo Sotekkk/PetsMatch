@@ -410,6 +410,9 @@ export default function MesPatientsPage() {
         ) : (
           <div className="space-y-2">
             {filtered.map(g => {
+              const largeurActions = (id: string) =>
+                (catPro === 'sante' ? 10 : catPro === 'veterinaire' ? 6.5 : (catPro === 'education' || catPro === 'garde') ? 2.25 : 0)
+                + (!id.startsWith('rdv-') ? 2.25 : 0);
               const a = g.animal;
               if (!a) return null;
               return (
@@ -438,27 +441,28 @@ export default function MesPatientsPage() {
                         </span>
                       )}
                     </div>
-                    {(catPro === 'education' || catPro === 'garde') && <span className="w-7" />}
-                    {!g.id.startsWith('rdv-') && <span className="w-7" />}
+                    {/* Place des actions (rangées à droite, par-dessus la carte) */}
+                    <span className="shrink-0" style={{ width: `${largeurActions(g.id)}rem` }} />
                     <span className="text-gray-300 text-lg">›</span>
                   </Link>
-                  {/* Ostéo / kiné : une seule action, comme dans l'appli */}
-                  {catPro === 'sante' && (
-                    <Link href={`/sante/suivis/nouveau?animalId=${encodeURIComponent(String(a.id))}&espece=${encodeURIComponent(a.espece ?? 'chien')}`}
-                      className="absolute top-1/2 -translate-y-1/2 right-16 text-xs font-semibold px-2.5 py-1.5 rounded-lg border bg-white"
-                      style={{ borderColor: '#0C5C6C', color: '#0C5C6C' }}>
-                      Nouvelle consultation
-                    </Link>
-                  )}
-                  {catPro === 'veterinaire' && (
-                    <button type="button" onClick={() => setHistorique({ id: String(a.id), nom: a.nom })} title="Historique"
-                      className="absolute top-1/2 -translate-y-1/2 right-9 text-xs font-semibold px-2.5 py-1.5 rounded-lg border bg-white"
-                      style={{ borderColor: '#0C5C6C', color: '#0C5C6C' }}>
-                      🕘 Historique
-                    </button>
-                  )}
-                  {(catPro === 'education' || catPro === 'garde') && user && (
-                    <div className="absolute top-1/2 -translate-y-1/2 right-9">
+                  {/* Actions de la carte, côte à côte (ne se chevauchent plus) */}
+                  <div className="absolute top-1/2 -translate-y-1/2 right-9 flex items-center gap-1.5">
+                    {/* Ostéo / kiné : une seule action, comme dans l'appli */}
+                    {catPro === 'sante' && (
+                      <Link href={`/sante/suivis/nouveau?animalId=${encodeURIComponent(String(a.id))}&espece=${encodeURIComponent(a.espece ?? 'chien')}`}
+                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border bg-white"
+                        style={{ borderColor: '#0C5C6C', color: '#0C5C6C' }}>
+                        Nouvelle consultation
+                      </Link>
+                    )}
+                    {catPro === 'veterinaire' && (
+                      <button type="button" onClick={() => setHistorique({ id: String(a.id), nom: a.nom })} title="Historique"
+                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border bg-white"
+                        style={{ borderColor: '#0C5C6C', color: '#0C5C6C' }}>
+                        Historique
+                      </button>
+                    )}
+                    {(catPro === 'education' || catPro === 'garde') && user && (
                       <OwnerContactButton
                         animalId={String(a.id)}
                         animalNom={a.nom}
@@ -466,18 +470,16 @@ export default function MesPatientsPage() {
                         myUid={user.uid}
                         myProfileId={activeProfileId ?? null}
                       />
-                    </div>
-                  )}
-                  {!g.id.startsWith('rdv-') && (
-                    <button
-                      onClick={(e) => { e.preventDefault(); revokeGrant(g.id, a.nom); }}
-                      title="Me retirer"
-                      className="absolute top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-                      style={{ right: (catPro === 'education' || catPro === 'garde') ? '2.75rem' : '2.25rem' }}
-                    >
-                      <span className="text-sm">✕</span>
-                    </button>
-                  )}
+                    )}
+                    {!g.id.startsWith('rdv-') && (
+                      <button
+                        onClick={(e) => { e.preventDefault(); revokeGrant(g.id, a.nom); }}
+                        title="Me retirer"
+                        className="w-7 h-7 flex items-center justify-center rounded-full text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors">
+                        <span className="text-sm">✕</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
