@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { PlanAlimentationDepuisLigne } from '@/components/alimentation/PlanAlimentationLecture';
 import { useParams } from 'next/navigation';
 import { supabaseLien } from '@/lib/supabase';
+import LienDocument from '@/components/LienDocument';
 import { SECTIONS_PARTAGE } from '@/components/animaux/PartageAnimalModal';
 
 // Fiche d'un animal partagée par lien / QR code, en lecture seule : seuls les
@@ -184,7 +185,7 @@ export default function PartageAnimalPage() {
                 {animal.documents.map((d, i) => (
                   <li key={i}>
                     {d.url
-                      ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-[#0C5C6C] font-semibold underline">{d.nom ?? 'Document'}</a>
+                      ? <LienDocument href={d.url} lienSecret={token} target="_blank" rel="noopener noreferrer" className="text-[#0C5C6C] font-semibold underline">{d.nom ?? 'Document'}</LienDocument>
                       : <span>{d.nom ?? 'Document'}</span>}
                     {d.date_expiration && <span className="text-gray-400 text-xs"> · expire le {jour(d.date_expiration)}</span>}
                   </li>

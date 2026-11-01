@@ -5,6 +5,7 @@
 // traitements, vaccinations, chirurgies), rdv (profil actif).
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import LienDocument from '@/components/LienDocument';
 import { supabase } from '@/lib/supabase';
 import { titreCompteRendu } from '@/lib/morpho';
 
@@ -278,12 +279,14 @@ export function DocumentsSantePro({ animalId, pid, osteo = false }: { animalId: 
     return () => { annule = true; };
   }, [animalId, pid, osteo]);
   if (!d) return <div className="flex justify-center py-10"><div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
+  // Document privé (stockage `documents`) : lien temporaire via LienDocument
+  // (un lien direct répond « Bucket not found »).
   const ligne = (cle: string, titre: string, sous: string, href?: string | null) => (
-    <a key={cle} href={href ?? undefined} target={href?.startsWith('http') ? '_blank' : undefined} rel="noreferrer"
+    <LienDocument key={cle} href={href ?? undefined} target={href?.startsWith('http') ? '_blank' : undefined} rel="noreferrer"
       className={`block py-2 border-t border-gray-50 first:border-0 ${href ? 'hover:bg-gray-50' : 'pointer-events-none'}`}>
       <p className="text-sm font-semibold">{titre}</p>
       {sous && <p className="text-xs text-gray-500 truncate">{sous}</p>}
-    </a>
+    </LienDocument>
   );
   return osteo ? (
     <div className="space-y-4">
