@@ -247,6 +247,8 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
           animalId: docs.animalIdPrincipal ?? docs.crs[0]?.animal_id ?? docs.seances?.find(s => s.animal_id)?.animal_id ?? null,
         });
         if (!ok) return;
+        // Trace de l'envoi : affichée dans le dossier de la séance.
+        await supabase.from('rdv').update({ documents_envoyes_le: new Date().toISOString() }).eq('id', rdvId);
         // Éducateur : la famille est prévenue dans l'appli à l'envoi.
         if (education) await notifierFamilleSeances(seancesEdu.filter(s => coches[`edu:${s.id}`]), userData?.nameElevage || praticien).catch(() => {});
       }
@@ -356,7 +358,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
             )}
             <button type="button" disabled={envoi || nbCoches === 0} onClick={() => valider(true)}
               className="flex-[2] py-2.5 rounded-xl text-sm font-semibold text-white bg-[#0C5C6C] disabled:opacity-40">
-              {envoi ? '…' : `Envoyer (${nbCoches})`}
+              {envoi ? 'Préparation et envoi…' : `Envoyer (${nbCoches})`}
             </button>
           </div>
         </>)}

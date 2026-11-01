@@ -31,7 +31,7 @@ interface RdvRow {
   client_nom_manuel?: string | null; client_email_manuel?: string | null; client_telephone_manuel?: string | null;
   pro_profile_id?: string | null; prix_calcule?: number | null; animaux_detail?: unknown;
   pro_uid?: string | null; lieu_lat?: number | null;
-  prestation_id?: string | null; forfait_souscrit_id?: string | null;
+  prestation_id?: string | null; forfait_souscrit_id?: string | null; documents_envoyes_le?: string | null;
 }
 
 /** Lien de retour vers ce dossier (après une action dans une autre page). */
@@ -316,7 +316,13 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           className="w-full mt-4 py-3 rounded-xl text-sm font-bold text-white" style={{ background: TEAL }}>
           Terminer et envoyer au client
         </button>
-        <p className="text-[11px] text-gray-400 mt-1.5 text-center">Compte rendu avec exercices et programme (PDF signé) et facture, en un seul e-mail.</p>
+        {r.documents_envoyes_le ? (
+          <p className="text-xs font-semibold text-center mt-1.5" style={{ color: '#2E7D32' }}>
+            {`Documents envoyés au client le ${new Date(r.documents_envoyes_le).toLocaleDateString('fr-FR')} à ${new Date(r.documents_envoyes_le).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`}
+          </p>
+        ) : (
+          <p className="text-[11px] text-gray-400 mt-1.5 text-center">Compte rendu avec exercices et programme (PDF signé) et facture, en un seul e-mail.</p>
+        )}
         <button type="button" onClick={onClose} className="w-full mt-3 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
       </div>
 

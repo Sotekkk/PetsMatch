@@ -1233,7 +1233,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Séance${d == null ? '' : ' du ${_dateFr(rdv['date_heure']?.toString())} à ${d.hour.toString().padLeft(2, '0')}h${d.minute.toString().padLeft(2, '0')}'}'
             '${animauxDetailRdv(rdv).isNotEmpty ? ' · ${widget.animalNom}' : ''}'
-            '${crRdv == null ? ' · compte rendu à rédiger' : crRdv['statut'] == 'brouillon' ? ' · compte rendu en brouillon' : ' · compte rendu rédigé'}',
+            '${crRdv == null ? ' · compte rendu à rédiger' : crRdv['statut'] == 'brouillon' ? ' · compte rendu en brouillon' : ' · compte rendu rédigé'}'
+            '${DateTime.tryParse(rdv['documents_envoyes_le']?.toString() ?? '') != null ? ' · documents envoyés le ${_dateFr(rdv['documents_envoyes_le'].toString())}' : ''}',
             style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
         const SizedBox(height: 6),
         SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [

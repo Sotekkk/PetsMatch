@@ -330,6 +330,8 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
   );
   if (choix == null || !context.mounted) return;
   final messenger = ScaffoldMessenger.of(context);
+  var attenteOuverte = false;
+  void fermerAttente() { if (attenteOuverte && context.mounted) { Navigator.of(context, rootNavigator: true).pop(); attenteOuverte = false; } }
   try {
     if (choix == 'facture') {
       await factureDepuisRdv(context, rdv, animalNom: animalNom);
@@ -352,6 +354,16 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
           behavior: SnackBarBehavior.floating));
       return;
     }
+    // Préparation des PDF (compte rendu, facture, contrat) : quelques secondes.
+    if (!context.mounted) return;
+    showDialog<void>(context: context, barrierDismissible: false, builder: (_) => const AlertDialog(
+      content: Row(children: [
+        SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: _teal)),
+        SizedBox(width: 14),
+        Expanded(child: Text('Préparation des documents…', style: TextStyle(fontFamily: 'Galey'))),
+      ]),
+    ));
+    attenteOuverte = true;
     final pieces = <({String type, String nomFichier, Uint8List bytes})>[];
     final nomA = animalNom.isEmpty ? 'animal' : animalNom;
     for (final s in seances) {
@@ -375,14 +387,15 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
       pieces.add((type: 'facture', nomFichier: 'Facture-${facture['numero_affichage'] ?? ''}${facture['statut'] == 'payee' ? '-acquittee' : ''}.pdf',
           bytes: await facturePdfDepuisLigne(facture)));
     }
-    if (pieces.isEmpty || !context.mounted) return;
     final c = await _client(rdv);
-    if (!context.mounted) return;
+    fermerAttente();
+    if (pieces.isEmpty || !context.mounted) return;
     final envoye = await envoyerDocumentsParEmail(context, pieces: pieces, animalNom: animalNom, destinataireNom: clientNom,
         emailParDefaut: (c['email'] ?? '').isNotEmpty ? c['email'] : null, animalId: rdv['animal_id']?.toString());
-    // La famille est prévenue dans l'appli à l'envoi (les comptes rendus d'un
-    // RDV ne notifient pas à l'enregistrement).
+    // Trace de l'envoi (dossier de la séance) ; la famille est prévenue dans
+    // l'appli (les comptes rendus d'un RDV ne notifient pas à l'enregistrement).
     if (envoye) {
+      try { await supa.from('rdv').update({'documents_envoyes_le': DateTime.now().toUtc().toIso8601String()}).eq('id', rdvId); } catch (_) {}
       final proNom = User_Info.nameElevage.isNotEmpty
           ? User_Info.nameElevage
           : [User_Info.firstname, User_Info.lastname].where((x) => x.isNotEmpty && x != 'none').join(' ');
@@ -408,6 +421,7 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
       }
     }
   } catch (e) {
+    fermerAttente();
     messenger.showSnackBar(SnackBar(content: Text('Impossible : $e', style: const TextStyle(fontFamily: 'Galey')),
         behavior: SnackBarBehavior.floating));
   }

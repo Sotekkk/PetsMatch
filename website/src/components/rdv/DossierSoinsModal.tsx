@@ -33,17 +33,20 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
 }) {
   const [docs, setDocs] = useState<DocumentProRdv[]>([]);
   const [facture, setFacture] = useState<{ statut: string | null; total_ttc: number | null; numero_affichage: string | null } | null>(null);
+  const [envoyeLe, setEnvoyeLe] = useState<string | null>(null);
   const veto = metier === 'veterinaire';
 
   useEffect(() => {
     let annule = false;
     (async () => {
-      const [d, { data: f }] = await Promise.all([
+      const [d, { data: f }, { data: rv }] = await Promise.all([
         comptesRendusProDuRdv(rdvId).catch(() => [] as DocumentProRdv[]),
         supabase.from('factures').select('statut, total_ttc, numero_affichage').eq('source_rdv_id', rdvId).neq('statut', 'annulee')
           .or('type_facture.is.null,type_facture.not.in.(acompte,avoir)').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('rdv').select('documents_envoyes_le').eq('id', rdvId).maybeSingle(),
       ]);
       if (annule) return;
+      setEnvoyeLe((rv as { documents_envoyes_le?: string | null } | null)?.documents_envoyes_le ?? null);
       setDocs(d);
       setFacture((f as typeof facture) ?? null);
     })();
@@ -136,7 +139,13 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
         <button type="button" onClick={onFin} className="w-full mt-4 py-3 rounded-xl text-sm font-bold text-white" style={{ background: TEAL }}>
           {veto ? 'Terminer la consultation et envoyer' : 'Terminer la séance et envoyer'}
         </button>
-        <p className="text-[11px] text-gray-400 mt-1.5 text-center">Compte rendu (le vôtre ou celui de PetsMatch), ordonnance et facture, en un seul e-mail.</p>
+        {envoyeLe ? (
+          <p className="text-xs font-semibold text-center mt-1.5" style={{ color: VERT }}>
+            {`Documents envoyés au client le ${new Date(envoyeLe).toLocaleDateString('fr-FR')} à ${new Date(envoyeLe).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`}
+          </p>
+        ) : (
+          <p className="text-[11px] text-gray-400 mt-1.5 text-center">Compte rendu (le vôtre ou celui de PetsMatch), ordonnance et facture, en un seul e-mail.</p>
+        )}
       </div>
     </div>
   );
