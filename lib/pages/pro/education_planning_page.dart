@@ -96,11 +96,14 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
       final rAnimalNames = <String, String>{};
       if (rClientProfileIds.isNotEmpty) {
         final profs = await _supa.from('user_profiles_complet')
-            .select('id, firstname, lastname, nom').inFilter('id', rClientProfileIds);
+            .select('id, firstname, lastname, nom, profile_type').inFilter('id', rClientProfileIds);
         for (final p in profs as List) {
           final nom = (p['nom'] as String?)?.trim() ?? '';
           final composed = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
-          final name = nom.isNotEmpty ? nom : composed;
+          // Profil particulier : prénom + nom de la personne (le champ « nom » peut
+          // porter le nom d'élevage du compte) ; structure : son nom.
+          final name = p['profile_type'] == 'particulier'
+              ? (composed.isNotEmpty ? composed : nom) : (nom.isNotEmpty ? nom : composed);
           if (name.isNotEmpty) rProfileNames[p['id'] as String] = name;
         }
       }
@@ -651,11 +654,14 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
       final animalNames = <String, String>{};
       if (clientProfileIds.isNotEmpty) {
         final profs = await _supa.from('user_profiles_complet')
-            .select('id, firstname, lastname, nom').inFilter('id', clientProfileIds);
+            .select('id, firstname, lastname, nom, profile_type').inFilter('id', clientProfileIds);
         for (final p in profs as List) {
           final nom = (p['nom'] as String?)?.trim() ?? '';
           final composed = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
-          final name = nom.isNotEmpty ? nom : composed;
+          // Profil particulier : prénom + nom de la personne (le champ « nom » peut
+          // porter le nom d'élevage du compte) ; structure : son nom.
+          final name = p['profile_type'] == 'particulier'
+              ? (composed.isNotEmpty ? composed : nom) : (nom.isNotEmpty ? nom : composed);
           if (name.isNotEmpty) profileNames[p['id'] as String] = name;
         }
       }

@@ -2035,15 +2035,19 @@ export default function MesRdvPage() {
       // ⚠ Multi-profil : le nom vient du profil client_profile_id du RDV
       // (pas de name_elevage / is_main, qui affichent le nom d'élevage).
       const [profilesRes, usersRes, animauxRes] = await Promise.all([
-        clientProfileIds.length ? supabase.from('user_profiles_complet').select('id, firstname, lastname, nom').in('id', clientProfileIds) : Promise.resolve({ data: [] }),
+        clientProfileIds.length ? supabase.from('user_profiles_complet').select('id, firstname, lastname, nom, profile_type').in('id', clientProfileIds) : Promise.resolve({ data: [] }),
         clientUids.length ? supabase.from('users_complet').select('uid, firstname, lastname, prenom, nom').in('uid', clientUids) : Promise.resolve({ data: [] }),
         animalIds.length  ? supabase.from('animaux').select('id, nom').in('id', animalIds) : Promise.resolve({ data: [] }),
       ]);
 
       const profilesMap: Record<string, string> = {};
       for (const p of (profilesRes.data ?? [])) {
-        const rec = p as { id: string; firstname?: string; lastname?: string; nom?: string };
-        const name = (rec.nom ?? '').trim() || `${rec.firstname ?? ''} ${rec.lastname ?? ''}`.trim();
+        const rec = p as { id: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string };
+        // Profil particulier : prénom + nom de la personne (le champ « nom »
+        // peut porter le nom d'élevage du compte) ; structure : son nom.
+        const perso = `${rec.firstname ?? ''} ${rec.lastname ?? ''}`.trim();
+        const structure = (rec.nom ?? '').trim();
+        const name = rec.profile_type === 'particulier' ? (perso || structure) : (structure || perso);
         if (name) profilesMap[rec.id] = name;
       }
       const usersMap: Record<string, string> = {};

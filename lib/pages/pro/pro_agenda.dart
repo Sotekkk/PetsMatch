@@ -750,12 +750,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         try {
           final profs = await Supabase.instance.client
               .from('user_profiles_complet')
-              .select('id, firstname, lastname, nom')
+              .select('id, firstname, lastname, nom, profile_type')
               .inFilter('id', clientProfileIds);
           for (final p in profs) {
             final nom = (p['nom'] as String?)?.trim() ?? '';
             final composed = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
-            final name = nom.isNotEmpty ? nom : composed;
+            // Profil particulier : prénom + nom de la personne (le champ « nom » peut
+            // porter le nom d'élevage du compte) ; structure : son nom.
+            final name = p['profile_type'] == 'particulier'
+                ? (composed.isNotEmpty ? composed : nom) : (nom.isNotEmpty ? nom : composed);
             if (name.isNotEmpty) profileNames[p['id'] as String] = name;
           }
         } catch (_) {}
