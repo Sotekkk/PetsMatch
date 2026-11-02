@@ -33,7 +33,8 @@ import LienDocument from '@/components/LienDocument';
 import ConsultationsVet, { type CrVet, type OrdoVet } from '@/components/pro/ConsultationsVet';
 import HistoriquePatient from '@/components/pro/HistoriquePatient';
 import { ouvrirDocument } from '@/lib/document-prive';
-import { ordonnancePdfBlob, compteRenduPdfBlob, ageAnimal, sexeAnimal } from '@/lib/ordonnance-pdf';
+import { ordonnancePdfBlob, compteRenduPdfBlob, ageAnimal, sexeAnimal, type LigneOrdonnance } from '@/lib/ordonnance-pdf';
+import OrdonnanceManuelleModal, { type SaisieOrdonnance } from '@/components/pro/OrdonnanceManuelleModal';
 import { imprimerPdf, pdfDepuisUrl, envoyerPdfParEmail } from '@/lib/transmission-document';
 import { phraseChampsARemplir, erreursDatesSante } from '@/lib/controle-dates';
 import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
@@ -105,6 +106,7 @@ interface CompteRendu {
 }
 interface Ordonnance {
   id: string; date_emit: string; doc_url: string | null; notes: string | null; pro_uid: string | null;
+  praticien_uid?: string | null;
 }
 interface RadioEntry {
   id: string; date: string; titre: string | null; notes: string | null; veterinaire: string | null; image_url?: string | null;
@@ -1128,6 +1130,8 @@ function PatientDetailPageInner() {
   const [formSeverite, setFormSeverite] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formPoids, setFormPoids] = useState('');
+  // Ordonnance hors CR : création (ordo null) ou PDF d'une ordonnance sans document.
+  const [ordoManuelle, setOrdoManuelle] = useState<{ ordo: Ordonnance | null } | null>(null);
   const [formTaille, setFormTaille] = useState('');
   const [savingForm, setSavingForm] = useState(false);
   // Contrôle des dates de l'acte (miroir carnet de santé du propriétaire).
@@ -1371,6 +1375,10 @@ function PatientDetailPageInner() {
   // allergies, traitements) : lu et écrit par le vétérinaire et l'ostéo / kiné
   // (pm_carnet_commun, migration_carnet_commun_pros.sql).
   const carnetCommun = identiteSeule && (catPro === 'veterinaire' || catPro === 'sante');
+  // Ordonnance hors CR : porte le nom et la signature de qui la produit → un
+  // vétérinaire (titulaire, ou praticien de l'espace clinique), jamais une ASV.
+  const peutPrescrire = catPro === 'veterinaire' && (!esp.espace || esp.praticien) && (hasWriteAccess || identiteSeule);
+  const nomPrescripteur = `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Vétérinaire';
   // Les rapports de séance sont le contenu propre de l'éducateur (ses notes de
   // séance), pas une modification de la fiche du propriétaire — n'importe quel
   // accès accordé (lecture ou écriture) suffit pour les gérer, comme côté app.
@@ -1604,38 +1612,12 @@ function PatientDetailPageInner() {
     if (traitementsCr.length) {
       try {
         const pid = activeProfileId || null;
-        const { data: cl } = pid
-          ? await supabase.from('user_profiles_complet').select('nom, rue_pro, code_postal_pro, ville_pro, phone_number, certifications').eq('id', pid).maybeSingle()
-          : { data: null };
-        const certs = (cl?.certifications ?? []) as { nom?: string; numero?: string }[];
-        const ordre = certs.find(c => (c.nom ?? '').toLowerCase().includes('ordre'))?.numero ?? '';
-        const prescripteur = `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Vétérinaire';
-        const proprio = owner ? `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim() : '';
-        const blob = await ordonnancePdfBlob({
-          cliniqueNom: (cl?.nom as string | undefined)?.trim() || 'Cabinet vétérinaire',
-          cliniqueAdresse: [cl?.rue_pro, `${cl?.code_postal_pro ?? ''} ${cl?.ville_pro ?? ''}`.trim()].filter(x => (x ?? '').toString().trim()).join(', '),
-          cliniqueTel: (cl?.phone_number as string | undefined) ?? '',
-          numeroOrdre: ordre,
-          prescripteur,
-          animalNom: animal?.nom ?? 'Animal',
-          animalEspeceRace: [animal?.espece, animal?.race].filter(Boolean).join(' · '),
-          animalSexe: sexeAnimal(animal?.sexe), animalAge: ageAnimal(animal?.date_naissance, (animal as { age_estime?: string | number | null } | null)?.age_estime),
-          signature,
-          animalIdentification: animal?.identification ?? '',
-          animalPoids: formPoids.trim() ? `${formPoids.trim().replace('.', ',')} kg` : animal?.poids != null ? `${animal.poids} kg` : '',
-          proprietaire: proprio,
-          lignes: traitementsCr.map(t => ({ medicament: t.nom, posologie: posologieComplete(t), notes: t.notes })),
-        });
-        const path = `ordonnances/${user.uid}/${Date.now()}.pdf`;
-        const { error: upErr } = await supabase.storage.from('documents').upload(path, blob, { upsert: true, contentType: 'application/pdf' });
-        if (upErr) throw upErr;
-        const docUrl = supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
-        let ownerProfileId: string | null = null;
-        if (ownerUid) {
-          const { data: op } = await supabase.from('user_profiles_complet').select('id')
-            .eq('uid', ownerUid).eq('profile_type', 'particulier').limit(1).maybeSingle();
-          ownerProfileId = (op?.id as string | undefined) ?? null;
-        }
+        const blob = await ordonnancePdf(
+          traitementsCr.map(t => ({ medicament: t.nom, posologie: posologieComplete(t), notes: t.notes })),
+          new Date(),
+          formPoids.trim() ? `${formPoids.trim().replace('.', ',')} kg` : animal?.poids != null ? `${animal.poids} kg` : '');
+        const docUrl = await stockerOrdonnancePdf(blob);
+        const ownerProfileId = await profilProprietaire(ownerUid);
         const { error: ordErr } = await supabase.from('ordonnances').insert({
           animal_id: animalId, pro_uid: proUid, ...(pid ? { pro_profile_id: pid, praticien_profile_id: (esp.espace ? esp.monProfil : null) ?? pid } : {}),
           owner_uid: ownerUid, ...(ownerProfileId ? { owner_profile_id: ownerProfileId } : {}),
@@ -1656,6 +1638,88 @@ function PatientDetailPageInner() {
     setVaccins((v.data ?? []) as VaccinEntry[]);
     setTraitements((t.data ?? []) as TraitementEntry[]);
     if (erreurs.length) alert(`Non enregistré : ${erreurs.join(', ')} — vérifiez l'accès au carnet de l'animal.`);
+  }
+
+  /** PDF d'ordonnance : en-tête de la clinique, patient, prescripteur = vétérinaire connecté. */
+  async function ordonnancePdf(lignes: LigneOrdonnance[], date: Date, poids: string) {
+    const pid = activeProfileId || null;
+    const { data: cl } = pid
+      ? await supabase.from('user_profiles_complet').select('nom, rue_pro, code_postal_pro, ville_pro, phone_number, certifications').eq('id', pid).maybeSingle()
+      : { data: null };
+    const certs = (cl?.certifications ?? []) as { nom?: string; numero?: string }[];
+    const ordre = certs.find(c => (c.nom ?? '').toLowerCase().includes('ordre'))?.numero ?? '';
+    const proprio = owner ? `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim() : '';
+    return ordonnancePdfBlob({
+      cliniqueNom: (cl?.nom as string | undefined)?.trim() || 'Cabinet vétérinaire',
+      cliniqueAdresse: [cl?.rue_pro, `${cl?.code_postal_pro ?? ''} ${cl?.ville_pro ?? ''}`.trim()].filter(x => (x ?? '').toString().trim()).join(', '),
+      cliniqueTel: (cl?.phone_number as string | undefined) ?? '',
+      numeroOrdre: ordre,
+      prescripteur: nomPrescripteur,
+      animalNom: animal?.nom ?? 'Animal',
+      animalEspeceRace: [animal?.espece, animal?.race].filter(Boolean).join(' · '),
+      animalSexe: sexeAnimal(animal?.sexe), animalAge: ageAnimal(animal?.date_naissance, (animal as { age_estime?: string | number | null } | null)?.age_estime),
+      signature,
+      animalIdentification: animal?.identification ?? '',
+      animalPoids: poids,
+      proprietaire: proprio,
+      lignes, date,
+    });
+  }
+
+  /** Dépose le PDF dans le bucket privé `documents` (ouvert par lien temporaire). */
+  async function stockerOrdonnancePdf(blob: Blob) {
+    const path = `ordonnances/${user!.uid}/${Date.now()}.pdf`;
+    const { error } = await supabase.storage.from('documents').upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+    if (error) throw error;
+    return supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
+  }
+
+  /** Profil particulier du propriétaire (destinataire de l'ordonnance). */
+  async function profilProprietaire(ownerUid: string | null) {
+    if (!ownerUid) return null;
+    const { data: op } = await supabase.from('user_profiles_complet').select('id')
+      .eq('uid', ownerUid).eq('profile_type', 'particulier').limit(1).maybeSingle();
+    return (op?.id as string | undefined) ?? null;
+  }
+
+  const saisieVersPdf = (s: SaisieOrdonnance) =>
+    ordonnancePdf(s.lignes, new Date(`${s.date}T12:00:00`), s.poids ? `${s.poids.replace('.', ',')} kg` : '');
+
+  async function rechargerOrdonnances() {
+    const { data } = await supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date_emit', { ascending: false });
+    setOrdonnances((data ?? []) as Ordonnance[]);
+  }
+
+  /** Ordonnance saisie hors compte rendu : créée avec son PDF. */
+  async function creerOrdonnanceManuelle(s: SaisieOrdonnance, blob: Blob) {
+    if (!user?.uid || !animalId) return;
+    const docUrl = await stockerOrdonnancePdf(blob);
+    const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+    const ownerProfileId = await profilProprietaire(ownerUid);
+    const pid = activeProfileId || null;
+    const { error } = await supabase.from('ordonnances').insert({
+      animal_id: animalId, pro_uid: proUid, ...(pid ? { pro_profile_id: pid, praticien_profile_id: (esp.espace ? esp.monProfil : null) ?? pid } : {}),
+      owner_uid: ownerUid, ...(ownerProfileId ? { owner_profile_id: ownerProfileId } : {}),
+      praticien_uid: user.uid, doc_url: docUrl, date_emit: s.date,
+      notes: s.lignes.map(l => l.medicament).join(', '),
+    });
+    if (error) throw error;
+    await rechargerOrdonnances();
+    await notifyOwner('ordonnance', nomPrescripteur);
+  }
+
+  /** Ordonnance ajoutée à la main sans document : PDF produit après coup. */
+  async function genererPdfOrdonnance(o: Ordonnance, s: SaisieOrdonnance, blob: Blob) {
+    if (!user?.uid) return;
+    const docUrl = await stockerOrdonnancePdf(blob);
+    const pid = activeProfileId || null;
+    const { data, error } = await supabase.from('ordonnances').update({
+      doc_url: docUrl, date_emit: s.date, praticien_uid: user.uid,
+      ...(pid ? { praticien_profile_id: (esp.espace ? esp.monProfil : null) ?? pid } : {}),
+    }).eq('id', o.id).or('doc_url.is.null,doc_url.eq.').select('id');
+    if (error) throw error;
+    if (!data?.length) throw new Error('ordonnance introuvable, déjà pourvue d’un PDF ou non modifiable avec vos droits');
+    await rechargerOrdonnances();
   }
 
   /** En-tête / patient / propriétaire des PDF (CR, ordonnance). */
@@ -2146,25 +2210,6 @@ function PatientDetailPageInner() {
         const { data } = await supabase.from('allergies').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setAllergies((data ?? []) as AllergieEntry[]);
         await notifyOwner('allergie', vetName);
-      } else if (addingType === 'ordonnance') {
-        const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
-        let ownerProfileId: string | null = null;
-        if (ownerUid) {
-          const { data: ownerProfile } = await supabase.from('user_profiles_complet').select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
-          ownerProfileId = ownerProfile?.id ?? null;
-        }
-        const pid = activeProfileId || null;
-        await supabase.from('ordonnances').insert({
-          animal_id: animalId,
-          pro_uid: proUid,
-          ...(pid ? { pro_profile_id: pid } : {}),
-          owner_uid: ownerUid,
-          ...(ownerProfileId ? { owner_profile_id: ownerProfileId } : {}),
-          date_emit: formDate,
-          notes: formNotes.trim() || null,
-        });
-        const { data } = await supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date_emit', { ascending: false });
-        setOrdonnances((data ?? []) as Ordonnance[]);
       } else if (addingType === 'radio') {
         // Pièce jointe : image ou PDF de l'examen (même stockage que le carnet du propriétaire).
         let imageUrl: string | null = null;
@@ -4325,7 +4370,7 @@ function PatientDetailPageInner() {
                 { label: 'Vaccin', onClick: () => setAddingType('vaccin') },
                 { label: 'Traitement', onClick: () => setAddingType('traitement') },
                 ...(carnetCommun ? [] : [
-                  { label: 'Ordonnance (PDF)', onClick: () => setAddingType('ordonnance') },
+                  ...(peutPrescrire ? [{ label: 'Ordonnance (PDF)', onClick: () => setOrdoManuelle({ ordo: null }) }] : []),
                   { label: 'Radio / Examen', onClick: () => setAddingType('radio') },
                 ]),
                 { label: 'Nouvelle mesure', onClick: () => setAddingType('mesure') },
@@ -4353,7 +4398,18 @@ function PatientDetailPageInner() {
               }}
               onTransmettreCr={(cr, action) => transmettreCr(cr as CompteRendu, action)}
               onTransmettreOrdo={(o, action) => transmettreOrdo(o as Ordonnance, action)}
+              onGenererPdfOrdo={peutPrescrire ? o => setOrdoManuelle({ ordo: o as Ordonnance }) : undefined}
             />
+            {ordoManuelle && (
+              <OrdonnanceManuelleModal
+                titre={ordoManuelle.ordo ? 'Générer le PDF de l’ordonnance' : 'Nouvelle ordonnance'}
+                dateInitiale={ordoManuelle.ordo?.date_emit?.slice(0, 10) ?? new Date().toLocaleDateString('sv-SE')}
+                saisieOrigine={ordoManuelle.ordo?.notes}
+                prescripteur={nomPrescripteur}
+                apercu={saisieVersPdf}
+                enregistrer={(s, blob) => ordoManuelle.ordo ? genererPdfOrdonnance(ordoManuelle.ordo, s, blob) : creerOrdonnanceManuelle(s, blob)}
+                onClose={() => setOrdoManuelle(null)} />
+            )}
             {historiqueOuvert && animal && (
               <HistoriquePatient animalId={String(animal.id)} animalNom={animal.nom ?? 'Patient'}
                 profileId={activeProfileId} onClose={() => setHistoriqueOuvert(false)} />
@@ -4388,7 +4444,6 @@ function PatientDetailPageInner() {
                 {addingType === 'antiparasitaire' && '🦟 Nouvel antiparasitaire'}
                 {addingType === 'chirurgie' && '🏥 Chirurgie / Hospitalisation'}
                 {addingType === 'allergie' && '⚠️ Nouvelle allergie / pathologie'}
-                {addingType === 'ordonnance' && '📄 Nouvelle ordonnance'}
                 {addingType === 'radio' && '🩻 Radio / Examen'}
                 {addingType === 'mesure' && '⚖️ Nouvelle mesure'}
               </h3>
@@ -4630,17 +4685,6 @@ function PatientDetailPageInner() {
                 <textarea value={formNotes} onChange={e => setFormNotes(e.target.value)} rows={2}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
               </div>
-            </>)}
-
-            {/* Ordonnance */}
-            {addingType === 'ordonnance' && (<>
-              <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Posologie / Instructions</label>
-                <textarea value={formNotes} onChange={e => setFormNotes(e.target.value)} rows={3}
-                  placeholder="Détail des médicaments, posologie…"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
-              </div>
-              <p className="text-xs text-gray-400">L&apos;upload de PDF sera disponible prochainement.</p>
             </>)}
 
             {/* Radio */}

@@ -66,6 +66,7 @@ import 'package:PetsMatch/utils/user_lookup.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/edit_cession_sheet.dart';
 import 'package:PetsMatch/utils/sante_couleurs.dart';
 import 'package:PetsMatch/utils/reproducteurs.dart';
+import 'package:PetsMatch/widgets/pro/ordonnance_manuelle_sheet.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
 
@@ -10880,6 +10881,8 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
   bool _peutCr = false;
   bool _peutCarnet = false;
   bool _peutOrdonnance = false;
+  /// Vétérinaire (pas ASV) : peut produire le PDF d'une ordonnance sans document.
+  bool _peutPrescrire = false;
   String? _vetProfileId;
   // ID de session — lie toutes les entrées ajoutées pendant cette visite
   late final String _sessionVisiteRef;
@@ -10915,7 +10918,8 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
     final cr = await AgendaContexte.peut('vet_cr_rediger') || await AgendaContexte.peut('vet_cr_valider');
     final carnet = await AgendaContexte.peut('vet_patients') || cr;
     final ordo = await AgendaContexte.peut('vet_ordonnances');
-    if (mounted) setState(() { _peutCr = cr; _peutCarnet = carnet; _peutOrdonnance = ordo; });
+    final prescrire = await peutPrescrireOrdonnance();
+    if (mounted) setState(() { _peutCr = cr; _peutCarnet = carnet; _peutOrdonnance = ordo; _peutPrescrire = prescrire; });
   }
 
   Future<void> _load() async {
@@ -11154,7 +11158,10 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
                 c: c, noms: _noms,
                 onOuvrir: () => showConsultationDetail(context, c: c, noms: _noms,
                     onGererCr: _peutCr || _peutOrdonnance ? _openCrPage : null,
-                    onSupprimerCr: _peutCr ? _supprimerCr : null),
+                    onSupprimerCr: _peutCr ? _supprimerCr : null,
+                    onGenererPdfOrdo: _peutPrescrire ? (o) async {
+                      if (await genererPdfOrdonnance(context, o)) await _load();
+                    } : null),
               ),
               const SizedBox(height: 8),
             ],
@@ -12491,11 +12498,15 @@ class _VetAddOrdoDialogState extends State<_VetAddOrdoDialog> {
       final today = _date;
       String? ownerProfileId;
       if (widget.ownerUid != null) {
-        final row = await Supabase.instance.client.from('user_profiles_complet').select('id').eq('uid', widget.ownerUid!).eq('is_main', true).maybeSingle();
+        final row = await Supabase.instance.client.from('user_profiles_complet').select('id')
+            .eq('uid', widget.ownerUid!).eq('profile_type', 'particulier').limit(1).maybeSingle();
         ownerProfileId = row?['id'] as String?;
       }
+      final monProfil = await AgendaContexte.monProfil();
       await Supabase.instance.client.from('ordonnances').insert({
-        'pro_uid':   widget.vetUid,
+        'pro_uid':   AgendaContexte.uid ?? widget.vetUid,
+        'praticien_uid': widget.vetUid,
+        if (monProfil != null) 'praticien_profile_id': monProfil,
         if (widget.vetProfileId != null) 'pro_profile_id': widget.vetProfileId,
         'animal_id': widget.animalId,
         if (widget.ownerUid != null) 'owner_uid': widget.ownerUid,

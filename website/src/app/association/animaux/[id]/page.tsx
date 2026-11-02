@@ -344,8 +344,8 @@ function ConsultationsTab({ animalId }: { animalId: string }) {
 
   useEffect(() => {
     Promise.all([
-      supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
-      supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
+      supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false }),
+      supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date_emit', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }),
     ]).then(([c, o]) => {
       setCrs((c.data ?? []) as HealthRecord[]);
       setOrdonnances((o.data ?? []) as HealthRecord[]);
@@ -368,7 +368,7 @@ function ConsultationsTab({ animalId }: { animalId: string }) {
       {crs.length > 0 && (
         <HealthSection title="Comptes rendus" icon="📋" color="#0C5C6C" count={crs.length}>
           {crs.map(r => {
-            const date = r.date as string | undefined;
+            const date = (r.valide_le ?? r.created_at) as string | undefined;
             const notes = (r.notes ?? r.contenu) as string | undefined;
             return (
               <div key={r.id} className="px-4 py-3 border-t border-gray-50">
@@ -388,7 +388,7 @@ function ConsultationsTab({ animalId }: { animalId: string }) {
       {ordonnances.length > 0 && (
         <HealthSection title="Ordonnances" icon="💊" color="#0C5C6C" count={ordonnances.length}>
           {ordonnances.map(r => {
-            const date = r.date as string | undefined;
+            const date = (r.date_emit ?? r.created_at) as string | undefined;
             const notes = r.notes as string | undefined;
             return (
               <div key={r.id} className="px-4 py-3 border-t border-gray-50">

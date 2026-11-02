@@ -79,7 +79,7 @@ function intervenant(c: Consultation, noms: Record<string, string>) {
 }
 const motifDe = (c: Consultation) => c.cr?.motif?.trim() || (c.cr ? 'Consultation' : 'Ordonnance');
 
-export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutValider, menuCarnet, onNouveauCr, onHistorique, onValider, onReprendre, onSupprimer, onFacturer, onModifier, onTransmettreCr, onTransmettreOrdo, crOuvert }: {
+export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutValider, menuCarnet, onNouveauCr, onHistorique, onValider, onReprendre, onSupprimer, onFacturer, onModifier, onTransmettreCr, onTransmettreOrdo, onGenererPdfOrdo, crOuvert }: {
   crs: CrVet[]; ordos: OrdoVet[];
   /** Compte rendu à ouvrir d'emblée (« Compte rendu fait » depuis un RDV). */
   crOuvert?: string | null;
@@ -98,6 +98,8 @@ export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutV
   onModifier?: (cr: CrVet) => void;
   onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email') => void;
   onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email') => void;
+  /** Ordonnance ajoutée à la main sans document : produire son PDF (vétérinaire seulement). */
+  onGenererPdfOrdo?: (o: OrdoVet) => void;
 }) {
   const consultations = useMemo(() => regrouperConsultations(crs, ordos), [crs, ordos]);
   const [noms, setNoms] = useState<Record<string, string>>({});
@@ -188,13 +190,14 @@ export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutV
           onSupprimer={onSupprimer && peutCr ? async cr => { setOuverte(null); await onSupprimer(cr); } : undefined}
           onFacturer={onFacturer && peutCr ? async cr => { setOuverte(null); await onFacturer(cr); } : undefined}
           onModifier={onModifier && peutValider ? cr => { setOuverte(null); onModifier(cr); } : undefined}
-          onTransmettreCr={onTransmettreCr} onTransmettreOrdo={onTransmettreOrdo} />
+          onTransmettreCr={onTransmettreCr} onTransmettreOrdo={onTransmettreOrdo}
+          onGenererPdfOrdo={onGenererPdfOrdo ? o => { setOuverte(null); onGenererPdfOrdo(o); } : undefined} />
       )}
     </div>
   );
 }
 
-function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValider, onReprendre, onSupprimer, onFacturer, onModifier, onTransmettreCr, onTransmettreOrdo }: {
+function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValider, onReprendre, onSupprimer, onFacturer, onModifier, onTransmettreCr, onTransmettreOrdo, onGenererPdfOrdo }: {
   c: Consultation; noms: Record<string, string>; onClose: () => void; peutValider: boolean;
   onValider: (cr: CrVet) => Promise<void>;
   onReprendre?: (cr: CrVet) => void;
@@ -203,6 +206,7 @@ function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValide
   onModifier?: (cr: CrVet) => void;
   onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email') => void;
   onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email') => void;
+  onGenererPdfOrdo?: (o: OrdoVet) => void;
 }) {
   const [journal, setJournal] = useState<Journal[]>([]);
   const [nomsJournal, setNomsJournal] = useState<Record<string, string>>({});
@@ -324,6 +328,9 @@ function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValide
                       <p className="text-sm font-semibold text-[#1E2025]">Émise le {jour(new Date(o.date_emit ?? o.created_at ?? ''))}</p>
                       {(prescripteur || o.notes) && <p className="text-xs text-gray-500 truncate">{[prescripteur, o.notes].filter(Boolean).join(' · ')}</p>}
                     </div>
+                    {!o.doc_url && (onGenererPdfOrdo
+                      ? <button onClick={() => onGenererPdfOrdo(o)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: TEAL }}>Générer le PDF</button>
+                      : <span className="text-xs text-gray-400">PDF non généré</span>)}
                     {o.doc_url && (
                       <>
                         <button onClick={() => onTransmettreOrdo(o, 'imprimer')} className={bouton} style={{ borderColor: TEAL, color: TEAL }}>Imprimer</button>

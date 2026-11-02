@@ -207,6 +207,8 @@ Future<void> showConsultationDetail(BuildContext context, {
   required Map<String, String> noms,
   VoidCallback? onGererCr,
   Future<void> Function(Map<String, dynamic> cr)? onSupprimerCr,
+  /// Ordonnance ajoutée à la main sans document : produire son PDF (vétérinaire seulement).
+  void Function(Map<String, dynamic> ordo)? onGenererPdfOrdo,
 }) => showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -214,7 +216,8 @@ Future<void> showConsultationDetail(BuildContext context, {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
       builder: (_) => DraggableScrollableSheet(
         expand: false, initialChildSize: 0.75, maxChildSize: 0.95, minChildSize: 0.4,
-        builder: (ctx, sc) => _ConsultationDetail(c: c, noms: noms, controller: sc, onGererCr: onGererCr, onSupprimerCr: onSupprimerCr),
+        builder: (ctx, sc) => _ConsultationDetail(c: c, noms: noms, controller: sc, onGererCr: onGererCr, onSupprimerCr: onSupprimerCr,
+            onGenererPdfOrdo: onGenererPdfOrdo),
       ),
     );
 
@@ -225,7 +228,9 @@ class _ConsultationDetail extends StatefulWidget {
   final VoidCallback? onGererCr;
   /// Supprimer le compte rendu (erreur de saisie) — après confirmation.
   final Future<void> Function(Map<String, dynamic> cr)? onSupprimerCr;
-  const _ConsultationDetail({required this.c, required this.noms, required this.controller, this.onGererCr, this.onSupprimerCr});
+  final void Function(Map<String, dynamic> ordo)? onGenererPdfOrdo;
+  const _ConsultationDetail({required this.c, required this.noms, required this.controller, this.onGererCr, this.onSupprimerCr,
+      this.onGenererPdfOrdo});
 
   @override
   State<_ConsultationDetail> createState() => _ConsultationDetailState();
@@ -351,7 +356,15 @@ class _ConsultationDetailState extends State<_ConsultationDetail> {
                 TextButton(
                   onPressed: () => ouvrirDocument(context, o['doc_url'].toString()),
                   child: const Text('Ouvrir', style: TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700)),
-                ),
+                )
+              else if (widget.onGenererPdfOrdo != null)
+                TextButton(
+                  onPressed: () { Navigator.pop(context); widget.onGenererPdfOrdo!(o); },
+                  child: const Text('Générer le PDF', style: TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700)),
+                )
+              else
+                const Padding(padding: EdgeInsets.only(right: 6),
+                  child: Text('PDF non généré', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _muted))),
             ]),
           ),
       ],
