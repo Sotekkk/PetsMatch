@@ -28,6 +28,7 @@ import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
+import 'package:PetsMatch/utils/facture_remise.dart';
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS
@@ -706,6 +707,9 @@ class FactureDetailPage extends StatelessWidget {
               prixHT: -((l['prixUnitaireHT'] as num?)?.toDouble() ?? 0),
               quantite: (l['quantite'] as num?)?.toDouble() ?? 1,
               tauxTVA: (l['tauxTVA'] as num?)?.toDouble() ?? 20,
+              // L'avoir annule le montant réellement facturé (remise comprise).
+              remisePct: (l['remisePct'] as num?)?.toDouble(),
+              remiseMotif: l['remiseMotif']?.toString(),
             )).toList(),
       ),
     ));
@@ -730,6 +734,9 @@ class FacturePrefillLigne {
   final String? animalId;
   final String? animalNom;
   final bool commune;
+  /// Remise en % (une par ligne) et son motif.
+  final double? remisePct;
+  final String? remiseMotif;
   const FacturePrefillLigne({
     required this.designation,
     this.description = '',
@@ -740,6 +747,8 @@ class FacturePrefillLigne {
     this.animalId,
     this.animalNom,
     this.commune = false,
+    this.remisePct,
+    this.remiseMotif,
   });
 }
 
@@ -892,7 +901,8 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
         ..prixTTCRef = l.prixTTC
         ..animalId = l.animalId
         ..animalNom = l.animalNom
-        ..commune = l.commune;
+        ..commune = l.commune
+        ..poserRemise(l.remisePct, l.remiseMotif);
       _lignes.add(ligne);
     }
     _appliquerPrixTTC();
@@ -1077,9 +1087,95 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     });
   }
 
-  double get _totalHT => _lignes.fold(0, (s, l) => s + l.totalHT);
-  double get _totalTVA => _lignes.fold(0, (s, l) => s + l.montantTVA);
-  double get _totalTTC => _franchise ? _totalHT : _totalHT + _totalTVA;
+  double get _totalHT => (_lignes.fold<double>(0, (s, l) => s + l.totalHT) * 100).roundToDouble() / 100;
+  double get _totalTVA => (_lignes.fold<double>(0, (s, l) => s + l.montantTVA) * 100).roundToDouble() / 100;
+  double get _totalTTC => _franchise ? _totalHT : ((_totalHT + _totalTVA) * 100).roundToDouble() / 100;
+  double get _totalRemises => (_lignes.fold<double>(0, (s, l) => s + l.montantRemiseHT) * 100).roundToDouble() / 100;
+
+  /// Remise sur toute la facture, sur un animal ou tarif dégressif : remplace
+  /// la remise des lignes visées (une seule par ligne, pas de cumul).
+  Future<void> _remiseFacture(String mode) async {
+    final pctCtrl = TextEditingController(text: '10');
+    final pct3Ctrl = TextEditingController(text: '20');
+    String? animal = _animauxFacture.length == 1 ? _animauxFacture.first.id : null;
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(ctx).viewInsets.bottom + 16),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(mode == 'globale' ? 'Remise sur toute la facture' : mode == 'animal' ? 'Remise sur un animal' : 'Tarif dégressif plusieurs animaux',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 12),
+          if (mode == 'animal') ...[
+            DropdownButtonFormField<String>(
+              initialValue: animal,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Animal', isDense: true, border: OutlineInputBorder()),
+              items: [for (final a in _animauxFacture) DropdownMenuItem(value: a.id, child: Text(a.nom, style: const TextStyle(fontFamily: 'Galey')))],
+              onChanged: (v) => setM(() => animal = v),
+            ),
+            const SizedBox(height: 10),
+          ],
+          Row(children: [
+            Expanded(child: TextField(controller: pctCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(labelText: mode == 'degressif' ? '2e animal (%)' : 'Remise (%)', isDense: true, border: const OutlineInputBorder()))),
+            if (mode == 'degressif') ...[
+              const SizedBox(width: 10),
+              Expanded(child: TextField(controller: pct3Ctrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: '3e et suivants (%)', isDense: true, border: OutlineInputBorder()))),
+            ],
+          ]),
+          if (mode == 'degressif')
+            const Padding(padding: EdgeInsets.only(top: 6), child: Text(
+                'Le 1er animal reste au plein tarif ; les prestations communes ne sont pas remisées.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.black45))),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler'))),
+            const SizedBox(width: 10),
+            Expanded(child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white),
+              onPressed: mode == 'animal' && animal == null ? null : () => Navigator.pop(ctx, true),
+              child: const Text('Appliquer'))),
+          ]),
+        ]),
+      )),
+    );
+    if (ok != true || !mounted) return;
+    double lire(TextEditingController c) => (double.tryParse(c.text.replaceAll(',', '.')) ?? 0).clamp(0, 100).toDouble();
+    final p = lire(pctCtrl), p3 = lire(pct3Ctrl);
+    final ordre = animauxDesLignes(_lignes.map((l) => (animalId: l.animalId, animalNom: l.animalNom, commune: l.commune)));
+    int rang(_Ligne l) => l.commune ? -1 : ordre.indexOf(l.animalId ?? l.animalNom ?? '');
+    final a = _animauxFacture.where((x) => x.id == animal).firstOrNull;
+    double? cible(_Ligne l) => switch (mode) {
+      'globale' => p,
+      'animal' => !l.commune && l.animalId == a?.id ? p : null,
+      _ => rang(l) < 1 ? null : rang(l) == 1 ? p : p3,
+    };
+    String motif(_Ligne l) => mode == 'globale' ? 'Remise globale' : mode == 'animal' ? 'Remise ${a?.nom ?? ''}'.trim()
+        : 'Tarif dégressif — ${rang(l) + 1}e animal';
+    final remplacees = _lignes.where((l) { final c = cible(l); return c != null && (l.remise ?? 0) > 0 && l.remise != c; }).length;
+    if (remplacees > 0) {
+      final go = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        content: Text('$remplacees ligne${remplacees > 1 ? 's ont' : ' a'} déjà une remise : elle sera remplacée (les remises ne se cumulent pas). Continuer ?',
+            style: const TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Continuer')),
+        ],
+      ));
+      if (go != true) return;
+    }
+    setState(() {
+      for (final l in _lignes) {
+        final c = cible(l);
+        if (c == null) continue;
+        l.poserRemise(c, motif(l));
+      }
+    });
+  }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -1431,6 +1527,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
               ligne: e.value,
               franchise: _franchise,
               animaux: _animauxFacture,
+              remisable: widget.typeFacture != 'avoir',
               onChanged: () => setState(_appliquerPrixTTC),
               onDelete: () => setState(() => _lignes.removeAt(e.key)),
             )),
@@ -1446,11 +1543,29 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
               ),
               onPressed: () => setState(() => _lignes.add(_Ligne())),
             ),
+            if (widget.typeFacture != 'avoir' && _lignes.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final m in [
+                  ('globale', 'Remise sur toute la facture'),
+                  if (_animauxFacture.isNotEmpty) ('animal', 'Remise sur un animal'),
+                  if (_animauxFacture.length > 1) ('degressif', 'Tarif dégressif plusieurs animaux'),
+                ])
+                  ActionChip(
+                    label: Text(m.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
+                    side: const BorderSide(color: _teal),
+                    backgroundColor: Colors.white,
+                    onPressed: () => _remiseFacture(m.$1),
+                  ),
+              ]),
+            ],
             const SizedBox(height: 16),
 
             // ── TOTAUX ──
             if (_lignes.isNotEmpty) ...[
               _Card(child: Column(children: [
+                if (_totalRemises > 0)
+                  _TotalRow(label: 'Dont remises accordées${_franchise ? '' : ' (HT)'}', value: '-${_totalRemises.toStringAsFixed(2)} €'),
                 if (!_franchise) ...[
                   _TotalRow(label: 'Total HT', value: '${_totalHT.toStringAsFixed(2)} €'),
                   _TotalRow(label: 'TVA', value: '${_totalTVA.toStringAsFixed(2)} €'),
@@ -1517,12 +1632,23 @@ class _Ligne {
   String? animalNom;
   String? animalIdentification;
   bool commune = false;
+  /// Remise en % (une seule par ligne, pas de cumul) et son motif.
+  double? remise;
+  String? remiseMotif;
+  final remiseCtrl = TextEditingController();
+  /// Remise posée hors du champ (prérempli, remise globale / animal / dégressif).
+  void poserRemise(double? p, String? motif) {
+    remise = (p ?? 0) > 0 ? p : null;
+    remiseMotif = remise == null ? null : motif;
+    remiseCtrl.text = remise == null ? '' : (remise! == remise!.roundToDouble() ? remise!.toStringAsFixed(0) : remise.toString());
+  }
 
   double get _qty => double.tryParse(quantite.text) ?? 1;
   double get _pu => double.tryParse(prixHT.text) ?? 0;
-  double get totalHT => _qty * _pu;
+  double get totalHT => htLigneRemisee(_qty, _pu, remise);
+  double get montantRemiseHT => montantRemise(_qty, _pu, remise);
   double get montantTVA => totalHT * tauxTVA / 100;
-  double get totalTTC => totalHT + montantTVA;
+  double get totalTTC => ((totalHT + montantTVA) * 100).roundToDouble() / 100;
 
   Map<String, dynamic> toMap() => {
     'designation': designation.text,
@@ -1533,6 +1659,9 @@ class _Ligne {
     'totalHT': totalHT,
     'montantTVA': montantTVA,
     'totalTTC': totalTTC,
+    if ((remise ?? 0) > 0) ...{
+      'remisePct': remise, 'remiseMotif': (remiseMotif ?? '').isEmpty ? 'Remise' : remiseMotif, 'montantRemiseHT': montantRemiseHT,
+    },
     if (commune) 'commune': true
     else if (animalId != null || animalNom != null) ...{
       'animalId': animalId, 'animalNom': animalNom,
@@ -1549,8 +1678,10 @@ class _LigneCard extends StatefulWidget {
   final VoidCallback onDelete;
   /// Animaux de la facture : rattachement de la ligne (animal ou commune).
   final List<({String id, String nom, String identification})> animaux;
+  /// Remise par ligne proposée (pas sur un avoir).
+  final bool remisable;
   const _LigneCard({required this.index, required this.ligne, required this.franchise, required this.onChanged, required this.onDelete,
-    this.animaux = const []});
+    this.animaux = const [], this.remisable = true});
 
   @override
   State<_LigneCard> createState() => _LigneCardState();
@@ -1610,6 +1741,25 @@ class _LigneCardState extends State<_LigneCard> {
           const SizedBox(width: 12),
           Expanded(child: _Field(ctrl: l.prixHT, label: 'Prix unitaire HT (€)', keyboard: const TextInputType.numberWithOptions(decimal: true), onChanged: (_) { l.prixTTCRef = null; setState(() {}); widget.onChanged(); })),
         ]),
+        if (widget.remisable)
+          Row(children: [
+            SizedBox(width: 120, child: TextFormField(
+              controller: l.remiseCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+              decoration: const InputDecoration(labelText: 'Remise (%)', isDense: true, border: OutlineInputBorder()),
+              onChanged: (v) => setState(() {
+                final p = (double.tryParse(v.replaceAll(',', '.')) ?? 0).clamp(0, 100).toDouble();
+                l.remise = p > 0 ? p : null;
+                l.remiseMotif = p > 0 ? ((l.remiseMotif ?? '').isEmpty ? 'Remise' : l.remiseMotif) : null;
+                widget.onChanged();
+              }),
+            )),
+            const SizedBox(width: 10),
+            if ((l.remise ?? 0) > 0)
+              Expanded(child: Text(libelleRemise(l.remise!, l.remiseMotif, l.montantRemiseHT),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.black54))),
+          ]),
         if (!widget.franchise) ...[
           const SizedBox(height: 8),
           Text('Taux TVA : ${l.tauxTVA.toStringAsFixed(0)} %',
@@ -1667,7 +1817,9 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
   final sectionBg = PdfColor.fromHex('#ECF4F5');
   double arrondi(num v) => (v * 100).roundToDouble() / 100;
   String eur(num v) => '${arrondi(v).toStringAsFixed(2)} €';
-  double ht(Map<String, dynamic> l) => arrondi(((l['quantite'] as num?) ?? 1) * ((l['prixUnitaireHT'] as num?) ?? 0));
+  double ht(Map<String, dynamic> l) => htLigneRemisee((l['quantite'] as num?) ?? 1, (l['prixUnitaireHT'] as num?) ?? 0, l['remisePct'] as num?);
+  double remiseL(Map<String, dynamic> l) => montantRemise((l['quantite'] as num?) ?? 1, (l['prixUnitaireHT'] as num?) ?? 0, l['remisePct'] as num?);
+  final totalRemises = arrondi(lignes.fold<double>(0, (a, l) => a + remiseL(l)));
   double ttcL(Map<String, dynamic> l) => (l['totalTTC'] as num?)?.toDouble()
       ?? (franchise ? ht(l) : arrondi(ht(l) * (1 + ((l['tauxTVA'] as num?) ?? 0) / 100)));
   final isAvoir = d['typeFacture'] == 'avoir';
@@ -1706,6 +1858,9 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
               pw.Text(l['designation'] ?? '', style: pw.TextStyle(font: bold, fontSize: 10)),
               if ((l['description'] ?? '').isNotEmpty)
                 pw.Text(l['description'], style: pw.TextStyle(font: font, fontSize: 9, color: PdfColor.fromHex('#666666'))),
+              if (((l['remisePct'] as num?) ?? 0) > 0)
+                pw.Text(libelleRemise(l['remisePct'] as num, l['remiseMotif']?.toString(), remiseL(l)),
+                    style: pw.TextStyle(font: font, fontSize: 8.5, color: PdfColor.fromHex('#555555'))),
             ]),
           ),
           _pdfCell(l['quantite']?.toStringAsFixed(0) ?? '1', font, center: true),
@@ -1857,6 +2012,8 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
         child: pw.Container(
           width: 200,
           child: pw.Column(children: [
+            if (totalRemises > 0)
+              _pdfTotalRow('Dont remises accordées${franchise ? '' : ' (HT)'}', '-${eur(totalRemises)}', font),
             if (!franchise) ...[
               _pdfTotalRow('Total HT', '${totalHT.toStringAsFixed(2)} €', font),
               if (taux.length > 1 || (taux.length == 1 && taux.first.key == 0)) ...[
@@ -2144,6 +2301,10 @@ class _TableRow extends StatelessWidget {
           Text(ligne['designation'] ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: _dark)),
           if ((ligne['description'] ?? '').isNotEmpty)
             Text(ligne['description'], style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          if (((ligne['remisePct'] as num?) ?? 0) > 0)
+            Text(libelleRemise(ligne['remisePct'] as num, ligne['remiseMotif']?.toString(),
+                montantRemise(qty, (ligne['prixUnitaireHT'] as num?) ?? 0, ligne['remisePct'] as num?)),
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
         ])),
         SizedBox(width: 52, child: Text(qty.toStringAsFixed(0), textAlign: TextAlign.right, style: const TextStyle(fontFamily: 'Galey', fontSize: 12))),
         SizedBox(width: 52, child: Text('${totalHT.toStringAsFixed(2)}', textAlign: TextAlign.right, style: const TextStyle(fontFamily: 'Galey', fontSize: 12))),

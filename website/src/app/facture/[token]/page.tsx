@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { htLigneRemisee, libelleRemise, montantRemise } from '@/lib/facture-remise';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,6 +20,8 @@ interface Ligne {
   tva?: number;
   totalHT?: number;
   totalTTC?: number;
+  remisePct?: number | null;
+  remiseMotif?: string | null;
 }
 
 interface Facture {
@@ -169,9 +172,10 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
     const qte = Number(l.quantite ?? 1);
     const pu = Number(l.prixUnitaireHT ?? l.prixUnitaire ?? 0);
     const taux = Number(l.tauxTVA ?? l.tva ?? 0);
-    const ht = l.totalHT != null ? Number(l.totalHT) : qte * pu;
+    const ht = l.totalHT != null ? Number(l.totalHT) : htLigneRemisee(qte, pu, l.remisePct);
+    const remise = Number(l.remisePct ?? 0) > 0 ? libelleRemise(Number(l.remisePct), l.remiseMotif, montantRemise(qte, pu, l.remisePct), '€') : '';
     const ttc = franchise ? ht : (l.totalTTC != null ? Number(l.totalTTC) : ht * (1 + taux / 100));
-    return { lib: l.designation || l.description || '', desc: l.designation ? (l.description || '') : '', qte, pu, taux, ht, ttc,
+    return { lib: l.designation || l.description || '', desc: l.designation ? (l.description || '') : '', remise, qte, pu, taux, ht, ttc,
       cle: l.commune ? '' : (l.animalId || l.animalNom || ''), animal: l.animalNom || '', ident: l.animalIdentification || '', commune: l.commune === true };
   });
   // Sections par animal puis prestations communes (même logique que le PDF).
@@ -192,6 +196,7 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
   const parTaux = new Map<number, number>();
   for (const l of lignes) parTaux.set(l.taux, (parTaux.get(l.taux) ?? 0) + l.ht);
   const clientPro = !!(f.siret_client || f.tva_client);
+  const totalRemises = Math.round((f.lignes ?? []).reduce((s, l) => s + montantRemise(Number(l.quantite ?? 1), Number(l.prixUnitaireHT ?? l.prixUnitaire ?? 0), l.remisePct), 0) * 100) / 100;
   const totalHT = f.total_ht ?? lignes.reduce((s, l) => s + l.ht, 0);
   const totalTVA = franchise ? 0 : (f.total_tva ?? lignes.reduce((s, l) => s + (l.ttc - l.ht), 0));
   const totalTTC = f.total_ttc ?? (totalHT + totalTVA);
@@ -277,6 +282,7 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
                   <span className="text-gray-700">
                     <span className="font-medium">{l.lib}</span>
                     {l.desc && <span className="block text-gray-400">{l.desc}</span>}
+                    {l.remise && <span className="block text-gray-500">{l.remise}</span>}
                   </span>
                   <span className="text-right text-gray-500">{l.qte}</span>
                   <span className="text-right text-gray-500">{eur(l.pu)}</span>
@@ -294,6 +300,7 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
           ))}
           <div className="bg-gray-50 px-4 py-3 border-t border-gray-200">
             <div className="totals ml-auto max-w-[240px] space-y-1">
+              {totalRemises > 0 && <div className="flex justify-between text-xs text-gray-500"><span>Dont remises accordées{franchise ? '' : ' (HT)'}</span><span>-{eur(totalRemises)}</span></div>}
               {!franchise && <div className="flex justify-between text-xs text-gray-500"><span>Total HT</span><span>{eur(totalHT)}</span></div>}
               {!franchise && ([...parTaux.keys()].length > 1
                 ? [...parTaux.entries()].sort((a, b) => b[0] - a[0]).map(([t, base]) => (

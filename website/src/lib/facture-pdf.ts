@@ -4,6 +4,8 @@
 // /facture/[token] : identité complète de l'émetteur, destinataire, lignes,
 // mentions légales obligatoires. Utilisé pour figer + archiver la facture.
 
+import { htLigneRemisee, libelleRemise, montantRemise } from './facture-remise';
+
 const TEAL: [number, number, number] = [12, 92, 108];
 
 const DARK_PAIEMENT: [number, number, number] = [30, 32, 37];
@@ -20,6 +22,9 @@ export interface FacturePdfLigne {
   animalIdentification?: string | null;
   /** … ou prestation commune au dossier client (comptée une seule fois). */
   commune?: boolean;
+  /** Remise en % (une seule par ligne) et son motif. */
+  remise?: number | null;
+  remiseMotif?: string | null;
 }
 
 /** Lignes JSON d'une facture (`factures.lignes`) → lignes du PDF. */
@@ -34,6 +39,8 @@ export function lignePdfDepuisJson(l: Record<string, unknown>): FacturePdfLigne 
     animalNom: (l.animalNom as string | null | undefined) ?? null,
     animalIdentification: (l.animalIdentification as string | null | undefined) ?? null,
     commune: l.commune === true,
+    remise: l.remisePct != null ? Number(l.remisePct) : null,
+    remiseMotif: (l.remiseMotif as string | null | undefined) ?? null,
   };
 }
 
@@ -186,12 +193,14 @@ export async function facturePdfBlob(d: FacturePdfData): Promise<Blob> {
   y += clH + 16;
 
   // ── Lignes ─────────────────────────────────────────────────────────────────
-  const ht = (l: FacturePdfLigne) => arrondi(Number(l.quantite ?? 1) * Number(l.prixUnitaireHT ?? 0));
+  const ht = (l: FacturePdfLigne) => htLigneRemisee(Number(l.quantite ?? 1), Number(l.prixUnitaireHT ?? 0), l.remise);
   const ttc = (l: FacturePdfLigne) => d.franchise ? ht(l) : arrondi(ht(l) * (1 + Number(l.tauxTVA ?? 0) / 100));
   const ligneTable = (l: FacturePdfLigne) => {
     const q = Number(l.quantite ?? 1);
     const pu = Number(l.prixUnitaireHT ?? 0);
-    const desig = [clean(l.designation), clean(l.description)].filter(Boolean).join(' — ');
+    const remise = Number(l.remise ?? 0) > 0
+      ? `\n${libelleRemise(Number(l.remise), l.remiseMotif, montantRemise(q, pu, l.remise))}` : '';
+    const desig = [clean(l.designation), clean(l.description)].filter(Boolean).join(' — ') + remise;
     return d.franchise
       ? [desig, String(q), eur(pu), eur(ht(l))]
       : [desig, String(q), eur(pu), `${Number(l.tauxTVA ?? 0)} %`, eur(ht(l)), eur(ttc(l))];
@@ -272,6 +281,9 @@ export async function facturePdfBlob(d: FacturePdfData): Promise<Blob> {
     y += bold ? 16 : 12;
   };
   if (y > 740) { doc.addPage(); y = 50; }
+  // Remises accordées (déjà déduites des montants HT des lignes).
+  const totalRemises = arrondi(d.lignes.reduce((a, l) => a + montantRemise(Number(l.quantite ?? 1), Number(l.prixUnitaireHT ?? 0), l.remise), 0));
+  if (totalRemises > 0) lineTotal(`Dont remises accordées${d.franchise ? '' : ' (HT)'}`, `-${eur(totalRemises)}`);
   if (!d.franchise) {
     lineTotal('Total HT', eur(d.totalHT));
     // Récapitulatif par taux (base HT et montant de TVA).

@@ -9,7 +9,7 @@ import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { useGardeAccess } from '@/hooks/useGardeAccess';
 import { usePlan, usePensionPlan, usePlanGarde, useProfessionPlanCode, PROFESSION_TOP_TIER } from '@/lib/use-plan';
-import { facturePdfBlob } from '@/lib/facture-pdf';
+import { facturePdfBlob, lignePdfDepuisJson } from '@/lib/facture-pdf';
 import { factureVersPdfData } from '@/lib/facture-pdf-data';
 import { imprimerPdf, envoyerPdfParEmail } from '@/lib/transmission-document';
 import { apiFetch } from '@/lib/api-fetch';
@@ -18,6 +18,7 @@ import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 import LienDocument from '@/components/LienDocument';
 import { allerOuFermer } from '@/lib/panneau';
 import ReglementsFacture from '@/components/facturation/ReglementsFacture';
+import { appliquerRemise, cibleDegressif, htLigneRemisee, libelleRemise, montantRemise, remisesRemplacees } from '@/lib/facture-remise';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Ligne {
@@ -33,6 +34,9 @@ interface Ligne {
   animalNom?: string | null;
   animalIdentification?: string | null;
   commune?: boolean;
+  /** Remise en % (une seule par ligne, pas de cumul) et son motif. */
+  remise?: number | null;
+  remiseMotif?: string | null;
 }
 
 /** Lignes à prix TTC : HT recalculé selon la franchise et le taux de la ligne. */
@@ -460,7 +464,14 @@ export default function FacturationPage() {
                       const ll = l as Ligne & { designation?: string; prixUnitaireHT?: number; tauxTVA?: number };
                       return (
                         <tr key={i} className="border-t border-gray-100">
-                          <td className="px-3 py-2 text-gray-700">{ll.designation || ll.description}</td>
+                          <td className="px-3 py-2 text-gray-700">{ll.designation || ll.description}
+                            {Number((ll as { remisePct?: number }).remisePct ?? 0) > 0 && (
+                              <span className="block text-[11px] text-gray-500">
+                                {libelleRemise(Number((ll as { remisePct?: number }).remisePct), (ll as { remiseMotif?: string }).remiseMotif,
+                                  montantRemise(Number(ll.quantite ?? 1), Number(ll.prixUnitaireHT ?? ll.prixUnitaire ?? 0), (ll as { remisePct?: number }).remisePct), '€')}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-3 py-2 text-right text-gray-600">{ll.quantite}</td>
                           <td className="px-3 py-2 text-right text-gray-600">{(ll.prixUnitaireHT ?? ll.prixUnitaire ?? 0).toFixed(2)} €</td>
                           <td className="px-3 py-2 text-right text-gray-600">{ll.tauxTVA ?? ll.tva ?? 0}%</td>
@@ -627,6 +638,9 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
             quantite: Number(ll.quantite ?? 1),
             prixUnitaire: -(Number(ll.prixUnitaireHT ?? ll.prixUnitaire ?? 0)),
             tva: Number(ll.tauxTVA ?? ll.tva ?? 20),
+            // Remise de la facture d'origine reprise : l'avoir annule le montant réellement facturé.
+            remise: (ll as { remisePct?: number }).remisePct ?? null,
+            remiseMotif: (ll as { remiseMotif?: string }).remiseMotif ?? null,
           };
         })
       : prefill?.lignes?.length
@@ -733,9 +747,41 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
     setLignes(prev => appliquerPrixTTC(prev, v));
   }
 
-  const totalHT  = lignes.reduce((s, l) => s + l.quantite * l.prixUnitaire, 0);
-  const totalTVA = franchise ? 0 : lignes.reduce((s, l) => s + l.quantite * l.prixUnitaire * l.tva / 100, 0);
-  const totalTTC = totalHT + totalTVA;
+  // Montants HT des lignes, remise déduite (arrondis au centime).
+  const htL = (l: Ligne) => htLigneRemisee(l.quantite, l.prixUnitaire, l.remise);
+  const totalHT  = Math.round(lignes.reduce((s, l) => s + htL(l), 0) * 100) / 100;
+  const totalTVA = franchise ? 0 : Math.round(lignes.reduce((s, l) => s + htL(l) * l.tva / 100, 0) * 100) / 100;
+  const totalTTC = Math.round((totalHT + totalTVA) * 100) / 100;
+  const totalRemises = Math.round(lignes.reduce((s, l) => s + montantRemise(l.quantite, l.prixUnitaire, l.remise), 0) * 100) / 100;
+
+  // Remises : une seule par ligne ; appliquer par animal / globale / dégressif
+  // remplace la remise des lignes visées (confirmation si elles en ont une).
+  const [remiseMode, setRemiseMode] = useState<'' | 'globale' | 'animal' | 'degressif'>('');
+  const [remisePct, setRemisePct] = useState('10');
+  const [remisePct3, setRemisePct3] = useState('20');
+  const [remiseAnimal, setRemiseAnimal] = useState('');
+  function remiseLigne(i: number, v: string) {
+    const p = Math.min(100, Math.max(0, Number(v.replace(',', '.')) || 0));
+    setLignes(prev => prev.map((l, idx) => idx !== i ? l : p > 0 ? { ...l, remise: p, remiseMotif: l.remiseMotif || 'Remise' } : { ...l, remise: null, remiseMotif: null }));
+  }
+  function appliquerRemiseFacture() {
+    const p = Math.min(100, Math.max(0, Number(remisePct.replace(',', '.')) || 0));
+    let cible: (l: Ligne) => number | null;
+    let motif: (l: Ligne) => string;
+    if (remiseMode === 'globale') { cible = () => p; motif = () => 'Remise globale'; }
+    else if (remiseMode === 'animal') {
+      const a = animauxFacture.find(x => x.id === remiseAnimal);
+      if (!a) return;
+      cible = l => !l.commune && l.animalId === a.id ? p : null; motif = () => `Remise ${a.nom}`;
+    } else if (remiseMode === 'degressif') {
+      const p3 = Math.min(100, Math.max(0, Number(remisePct3.replace(',', '.')) || 0));
+      ({ cible, motif } = cibleDegressif(lignes, p, p3));
+    } else return;
+    const n = remisesRemplacees(lignes, cible);
+    if (n > 0 && !confirm(`${n} ligne${n > 1 ? 's ont' : ' a'} déjà une remise : elle sera remplacée (les remises ne se cumulent pas). Continuer ?`)) return;
+    setLignes(prev => appliquerRemise(prev, cible, motif));
+    setRemiseMode('');
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -750,8 +796,10 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       quantite: l.quantite,
       prixUnitaireHT: l.prixUnitaire,
       tauxTVA: franchise ? 0 : l.tva,
-      totalHT: l.quantite * l.prixUnitaire,
-      totalTTC: l.quantite * l.prixUnitaire * (franchise ? 1 : 1 + l.tva / 100),
+      totalHT: htL(l),
+      totalTTC: Math.round(htL(l) * (franchise ? 1 : 1 + l.tva / 100) * 100) / 100,
+      ...(Number(l.remise ?? 0) > 0 ? { remisePct: Number(l.remise), remiseMotif: l.remiseMotif || 'Remise',
+        montantRemiseHT: montantRemise(l.quantite, l.prixUnitaire, l.remise) } : {}),
       // Rattachement (sections du PDF) : animal ou prestation commune.
       ...(l.commune ? { commune: true } : l.animalId || l.animalNom
         ? { animalId: l.animalId ?? null, animalNom: l.animalNom ?? null, animalIdentification: l.animalIdentification ?? null } : {}),
@@ -845,7 +893,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
         rcsEmetteur: emRcs, rmEmetteur: emRm,
         prenomClient, nomClient, rueClient, cpClient, villeClient, paysClient,
         emailClient, siretClient, tvaClient,
-        lignes: lignesNorm, totalHT, totalTVA, totalTTC,
+        lignes: lignesNorm.map(l => lignePdfDepuisJson(l)), totalHT, totalTVA, totalTTC,
         franchise, modePaiement, delaiPaiement, conditionsEscompte: escompte,
         noteComplementaire: note,
         acquittee: f.statut === 'payee' ? { date: datePaiement, mode: modePaiement } : null,
@@ -1041,21 +1089,68 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
                       className={`col-span-2 ${inp}`} placeholder="TVA%" />
                   )}
                   <button type="button" onClick={() => removeLigne(i)} className="col-span-1 text-red-400 hover:text-red-600 text-lg">×</button>
-                  {animauxFacture.length > 0 && (
-                    <select value={l.commune ? 'commune' : l.animalId ?? ''} onChange={e => rattacher(i, e.target.value)}
-                      className={`col-span-12 ${inp} text-xs`} aria-label="Rattachement de la ligne">
-                      <option value="">Non rattachée</option>
-                      {animauxFacture.map(a => <option key={a.id} value={a.id}>Animal : {a.nom}</option>)}
-                      {animauxFacture.length > 1 && <option value="commune">Prestation commune (tous les animaux)</option>}
-                    </select>
+                  <div className="col-span-12 flex gap-2 items-center">
+                    {animauxFacture.length > 0 && (
+                      <select value={l.commune ? 'commune' : l.animalId ?? ''} onChange={e => rattacher(i, e.target.value)}
+                        className={`flex-1 ${inp} text-xs`} aria-label="Rattachement de la ligne">
+                        <option value="">Non rattachée</option>
+                        {animauxFacture.map(a => <option key={a.id} value={a.id}>Animal : {a.nom}</option>)}
+                        {animauxFacture.length > 1 && <option value="commune">Prestation commune (tous les animaux)</option>}
+                      </select>
+                    )}
+                    {!isAvoir && (
+                      <label className="flex items-center gap-1 text-xs text-gray-500 ml-auto">Remise
+                        <input type="number" min="0" max="100" step="0.5" value={l.remise ?? ''} onChange={e => remiseLigne(i, e.target.value)}
+                          className={`w-16 ${inp} text-xs`} placeholder="0" aria-label="Remise en %" />%
+                      </label>
+                    )}
+                  </div>
+                  {Number(l.remise ?? 0) > 0 && (
+                    <p className="col-span-12 text-[11px] text-gray-500 -mt-1">
+                      {libelleRemise(Number(l.remise), l.remiseMotif, montantRemise(l.quantite, l.prixUnitaire, l.remise), '€')}
+                    </p>
                   )}
                 </div>
               ))}
             </div>
+            {!isAvoir && (
+              <div className="mt-2 space-y-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {([['globale', 'Remise sur toute la facture'], ...(animauxFacture.length > 0 ? [['animal', 'Remise sur un animal']] : []),
+                    ...(animauxFacture.length > 1 ? [['degressif', 'Tarif dégressif plusieurs animaux']] : [])] as [typeof remiseMode, string][]).map(([m, lib]) => (
+                    <button key={m} type="button" onClick={() => setRemiseMode(remiseMode === m ? '' : m)}
+                      className="px-3 py-1 rounded-full text-xs font-semibold border"
+                      style={remiseMode === m ? { background: '#0C5C6C', color: 'white', borderColor: '#0C5C6C' } : { color: '#0C5C6C', borderColor: '#0C5C6C' }}>{lib}</button>
+                  ))}
+                </div>
+                {remiseMode && (
+                  <div className="flex flex-wrap items-center gap-2 bg-gray-50 rounded-xl p-2 text-xs text-gray-600">
+                    {remiseMode === 'animal' && (
+                      <select value={remiseAnimal} onChange={e => setRemiseAnimal(e.target.value)} className={`${inp} text-xs`}>
+                        <option value="">Choisir l&apos;animal…</option>
+                        {animauxFacture.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
+                      </select>
+                    )}
+                    <label className="flex items-center gap-1">{remiseMode === 'degressif' ? '2e animal' : 'Remise'}
+                      <input type="number" min="0" max="100" step="0.5" value={remisePct} onChange={e => setRemisePct(e.target.value)} className={`w-16 ${inp} text-xs`} />%
+                    </label>
+                    {remiseMode === 'degressif' && (
+                      <label className="flex items-center gap-1">3e animal et suivants
+                        <input type="number" min="0" max="100" step="0.5" value={remisePct3} onChange={e => setRemisePct3(e.target.value)} className={`w-16 ${inp} text-xs`} />%
+                      </label>
+                    )}
+                    <button type="button" onClick={appliquerRemiseFacture} disabled={remiseMode === 'animal' && !remiseAnimal}
+                      className="ml-auto bg-[#0C5C6C] text-white font-semibold px-3 py-1.5 rounded-lg disabled:opacity-40">Appliquer</button>
+                    {remiseMode === 'degressif' && <p className="w-full text-[11px] text-gray-400">Le 1er animal reste au plein tarif ; les prestations communes ne sont pas remisées.</p>}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Totaux */}
           <div className="bg-gray-50 rounded-xl p-3 space-y-1 text-sm">
+            {totalRemises > 0 && <div className="flex justify-between text-gray-500"><span>Dont remises accordées{franchise ? '' : ' (HT)'}</span><span>-{totalRemises.toFixed(2)} €</span></div>}
             {!franchise && <div className="flex justify-between text-gray-500"><span>Total HT</span><span>{totalHT.toFixed(2)} €</span></div>}
             {!franchise && <div className="flex justify-between text-gray-500"><span>TVA</span><span>{totalTVA.toFixed(2)} €</span></div>}
             <div className="flex justify-between font-bold text-[#1F2A2E]"><span>{franchise ? 'Total' : 'Total TTC'}</span><span>{totalTTC.toFixed(2)} €</span></div>
