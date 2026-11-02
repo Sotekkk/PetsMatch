@@ -31,6 +31,7 @@ const REFERENCES: [string, string[]][] = [
   ['comptes_rendus', ['doc_url']],
   ['vet_consultations', ['ordonnance_url']],
   ['radios', ['image_url']],
+  ['chirurgies', ['preop_doc_url', 'operatoire_doc_url']],
   ['documents_animaux', ['url', 'pdf_original_url', 'pdf_signe_url']],
   ['cessions', ['contrat_url', 'certificat_url']],
   ['animaux', ['cession_contrat_url', 'cession_certificat_url', 'pedigree_url']],

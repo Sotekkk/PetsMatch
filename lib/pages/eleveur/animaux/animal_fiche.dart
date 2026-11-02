@@ -67,6 +67,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/edit_cession_sheet.dart';
 import 'package:PetsMatch/utils/sante_couleurs.dart';
 import 'package:PetsMatch/utils/reproducteurs.dart';
 import 'package:PetsMatch/widgets/pro/ordonnance_editeur_page.dart';
+import 'package:PetsMatch/widgets/pro/chirurgie_cr_page.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
 
@@ -6021,11 +6022,16 @@ class _SanteList extends StatefulWidget {
 class _SanteListState extends State<_SanteList> {
   List<Map<String, dynamic>> _data = [];
   bool _loading = true;
+  /// Comptes rendus pré / opératoire : vétérinaire ou ASV de la clinique.
+  bool _peutCrChir = false;
 
   @override
   void initState() {
     super.initState();
     _refresh();
+    if (widget.vetMode && widget.collection == 'chirurgies') {
+      peutPreparerCrChirurgie().then((v) { if (mounted) setState(() => _peutCrChir = v && widget.canWrite); });
+    }
   }
 
   Future<void> _refresh() async {
@@ -6228,6 +6234,9 @@ class _SanteListState extends State<_SanteList> {
                               ? () => _addEtape(d) : null,
                           collection: widget.collection,
                           canDelete: canDelete,
+                          onCrChirurgie: _peutCrChir ? (type) async {
+                            if (await ouvrirCrChirurgie(context, d, type: type)) await _refresh();
+                          } : null,
                         );
                       },
                     ),
@@ -6497,9 +6506,11 @@ class _SanteCard extends StatelessWidget {
   final String? collection;
   final bool canDelete;
   final bool canMute;
+  /// Intervention : rédiger / valider le CR préopératoire ou opératoire.
+  final void Function(String type)? onCrChirurgie;
   const _SanteCard({required this.title, required this.data, required this.icon,
       required this.onDelete, this.onTap, this.onEdit, this.onRappel, this.onEtape, this.collection, this.canDelete = true,
-      this.canMute = true});
+      this.canMute = true, this.onCrChirurgie});
 
   static const _overdueTables = {'vaccinations', 'vermifuges', 'antiparasitaires'};
 
@@ -6585,6 +6596,7 @@ class _SanteCard extends StatelessWidget {
   void _showDetail(BuildContext context) {
     const _skip = {'id', 'animal_id', 'created_at', 'vet_id', 'visite_ref',
                    'source', 'pro_uid', 'owner_uid', 'rdv_id', 'extra_data',
+                   'preop', 'operatoire', 'preop_doc_url', 'operatoire_doc_url', 'pro_profile_id', 'documents_historique',
                    'rappel_actif', 'rappel_frequence_jours', 'rappel_duree_jours',
                    'rappel_fin', 'rappel_heures'};
     final entries = data.entries.where((e) =>
@@ -6712,6 +6724,26 @@ class _SanteCard extends StatelessWidget {
             _OrdonnanceLinkSection(visiteRef: visiteRef!),
           if ((rdvId ?? '').isNotEmpty)
             _RdvLinkSection(rdvId: rdvId!),
+          // Intervention : comptes rendus pré / opératoire (PDF validés ; saisie côté clinique).
+          if (collection == 'chirurgies')
+            for (final t in ['preop', 'operatoire'])
+              if ((data['${t}_doc_url'] ?? '').toString().isNotEmpty || onCrChirurgie != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(children: [
+                    Expanded(child: Text(
+                      '${t == 'preop' ? 'CR préopératoire' : 'CR opératoire'}'
+                      '${data[t] is Map ? (data[t]['statut'] == 'valide' ? ' · validé' : ' · brouillon') : ''}',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600))),
+                    if ((data['${t}_doc_url'] ?? '').toString().isNotEmpty)
+                      TextButton(onPressed: () => ouvrirDocument(context, data['${t}_doc_url'].toString()),
+                          child: const Text('PDF', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF0C5C6C), fontWeight: FontWeight.w700))),
+                    if (onCrChirurgie != null)
+                      TextButton(onPressed: () { Navigator.pop(context); onCrChirurgie!(t); },
+                          child: Text(data[t] is Map ? 'Ouvrir' : 'Rédiger',
+                              style: const TextStyle(fontFamily: 'Galey', color: Color(0xFF0C5C6C), fontWeight: FontWeight.w700))),
+                  ]),
+                ),
           if (onEdit != null) ...[
             const SizedBox(height: 4),
             SizedBox(

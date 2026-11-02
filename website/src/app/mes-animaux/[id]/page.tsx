@@ -5621,7 +5621,8 @@ function AnimalFichePageInner() {
                 {key:'notes',label:'Notes'},
               ]}/>}>
             {health.chirurgies.map(r=>(
-              <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('chirurgies',r.id)}
+              <div key={r.id}>
+              <HealthRecord record={r} onDelete={()=>deleteHealthRecord('chirurgies',r.id)}
                 onSave={d=>updateHealthRecord('chirurgies',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
                 champsEdition={[
                 {key:'type',label:'Type',type:'select',options:[{value:'chirurgie',label:'Chirurgie'},{value:'hospitalisation',label:'Hospitalisation'}]},
@@ -5643,6 +5644,14 @@ function AnimalFichePageInner() {
                   {key:'protocole_postop',label:'Protocole post-opératoire',type:'textarea'},
                   {key:'notes',label:'Notes'},
                 ]}/>
+              {/* Comptes rendus pré / opératoire validés par le vétérinaire (PDF). */}
+              {(!!r.preop_doc_url || !!r.operatoire_doc_url) && (
+                <div className="flex flex-wrap gap-3 px-4 pb-3 -mt-1">
+                  {!!r.preop_doc_url && <LienDocument href={String(r.preop_doc_url)} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">Compte rendu préopératoire (PDF)</LienDocument>}
+                  {!!r.operatoire_doc_url && <LienDocument href={String(r.operatoire_doc_url)} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">Compte rendu opératoire (PDF)</LienDocument>}
+                </div>
+              )}
+              </div>
             ))}
             {health.chirurgies.length===0 && <p className="p-4 text-sm text-gray-400">Aucune intervention</p>}
           </HealthSection>

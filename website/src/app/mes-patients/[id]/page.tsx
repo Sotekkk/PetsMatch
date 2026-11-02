@@ -35,6 +35,8 @@ import HistoriquePatient from '@/components/pro/HistoriquePatient';
 import { ouvrirDocument } from '@/lib/document-prive';
 import { ordonnancePdfBlob, compteRenduPdfBlob, ageAnimal, sexeAnimal } from '@/lib/ordonnance-pdf';
 import OrdonnanceEditeur from '@/components/pro/OrdonnanceEditeur';
+import ChirurgieCrModal from '@/components/pro/ChirurgieCrModal';
+import { TITRE_CR_CHIR, texteCrChir, type DocCrChir, type TypeCrChir } from '@/lib/chirurgie-cr';
 import { ligneVide, lignesDe, resumeOrdo, type ContenuOrdo, type LigneOrdo, type OrdonnanceRow } from '@/lib/ordonnance';
 import { imprimerPdf, pdfDepuisUrl, envoyerPdfParEmail } from '@/lib/transmission-document';
 import { phraseChampsARemplir, erreursDatesSante } from '@/lib/controle-dates';
@@ -126,6 +128,10 @@ interface ChirurgieEntry {
   id: string; date: string; type: string | null; intitule: string; statut: string | null;
   clinique: string | null; protocole_preop: string | null; protocole_postop: string | null;
   notes: string | null; source: string | null; veterinaire: string | null;
+  // Comptes rendus pré / opératoire (migration_chirurgies_cr.sql).
+  preop?: DocCrChir | null; operatoire?: DocCrChir | null;
+  preop_doc_url?: string | null; operatoire_doc_url?: string | null;
+  pro_uid?: string | null; pro_profile_id?: string | null;
 }
 interface AllergieEntry {
   id: string; date: string | null; type: string | null; description: string;
@@ -1147,6 +1153,8 @@ function PatientDetailPageInner() {
   const [formPoids, setFormPoids] = useState('');
   // Éditeur d'ordonnance : brouillon (ordo), nouvelle (null), ou version
   // rectificative (remplace) ; fin : reprise du flux du CR à la fermeture.
+  // Comptes rendus pré / opératoire d'une intervention.
+  const [crChir, setCrChir] = useState<{ c: ChirurgieEntry; type: TypeCrChir } | null>(null);
   const [editeurOrdo, setEditeurOrdo] = useState<{ ordo: Ordonnance | null; remplace?: Ordonnance | null; fin?: () => void } | null>(null);
   const [formTaille, setFormTaille] = useState('');
   const [savingForm, setSavingForm] = useState(false);
@@ -1767,6 +1775,46 @@ function PatientDetailPageInner() {
    *  retour au RDV) attend sa fermeture. */
   const ouvrirEditeurOrdo = (e: { ordo: Ordonnance | null; remplace?: Ordonnance | null }) =>
     new Promise<void>(fin => setEditeurOrdo({ ...e, fin }));
+
+  /** PDF d'un compte rendu pré / opératoire (champs saisis seulement). */
+  async function crChirPdf(type: TypeCrChir, c: ChirurgieEntry, champs: Record<string, string>, apercu: boolean) {
+    const i = await infosDocument();
+    return compteRenduPdfBlob({
+      cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel, cliniqueEmail: i.cliniqueEmail,
+      praticien: nomPrescripteur,
+      animalNom: animal?.nom ?? 'Animal', animalEspeceRace: [animal?.espece, animal?.race].filter(Boolean).join(' · '),
+      animalSexe: sexeAnimal(animal?.sexe), animalAge: ageAnimal(animal?.date_naissance, (animal as { age_estime?: string | number | null } | null)?.age_estime),
+      animalIdentification: animal?.identification ?? '', proprietaire: i.proprio,
+      signature: apercu ? null : signature,
+      titre: `${TITRE_CR_CHIR[type].toUpperCase()}${apercu ? ' (APERÇU)' : ''}`,
+      contenu: texteCrChir(type, champs, c.date), date: new Date(`${c.date.slice(0, 10)}T12:00:00`),
+    });
+  }
+
+  /** Brouillon, ou validation (statut, validateur, version posés par le
+   *  serveur) puis PDF signé déposé une fois. */
+  async function enregistrerCrChir(c: ChirurgieEntry, type: TypeCrChir, champs: Record<string, string>, valider: boolean) {
+    const contenu = Object.fromEntries(Object.entries(champs).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v));
+    const { data, error } = await supabase.from('chirurgies').update({
+      [type]: { ...contenu, statut: valider ? 'valide' : 'brouillon' },
+      ...(c.pro_uid ? {} : { pro_uid: proUid, ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}) }),
+    }).eq('id', c.id).select('*').single();
+    if (error) throw error;
+    if (valider) {
+      try {
+        const blob = await crChirPdf(type, data as ChirurgieEntry, contenu as Record<string, string>, false);
+        const path = `chirurgies/${user!.uid}/${Date.now()}.pdf`;
+        const { error: eUp } = await supabase.storage.from('documents').upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+        if (eUp) throw eUp;
+        const url = supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
+        const { error: eMaj } = await supabase.from('chirurgies').update({ [`${type}_doc_url`]: url }).eq('id', c.id);
+        if (eMaj) throw eMaj;
+      } catch (e) { alert(`Compte rendu validé, mais PDF non enregistré : ${(e as Error).message}`); }
+      await notifyOwner('chirurgie', nomPrescripteur);
+    }
+    const { data: liste } = await supabase.from('chirurgies').select('*').eq('animal_id', animalId).order('date', { ascending: false });
+    setChirurgies((liste ?? []) as ChirurgieEntry[]);
+  }
 
   /** En-tête / patient / propriétaire des PDF (CR, ordonnance). */
   async function infosDocument() {
@@ -3362,6 +3410,30 @@ function PatientDetailPageInner() {
                       {c.protocole_preop && <p className="text-xs text-gray-400 mt-1"><span className="font-medium">Pré-op : </span>{c.protocole_preop}</p>}
                       {c.protocole_postop && <p className="text-xs text-gray-400 mt-1"><span className="font-medium">Post-op : </span>{c.protocole_postop}</p>}
                       {c.notes && <p className="text-xs text-gray-400 mt-1">{c.notes}</p>}
+                      {(peutPreparerOrdo || c.preop_doc_url || c.operatoire_doc_url) && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {(['preop', 'operatoire'] as const).map(t => {
+                            const d = c[t];
+                            const url = t === 'preop' ? c.preop_doc_url : c.operatoire_doc_url;
+                            const etat = !d ? '' : d.statut === 'valide' ? ' · validé' : ' · brouillon';
+                            return (
+                              <span key={t} className="inline-flex items-center gap-1">
+                                {peutPreparerOrdo && (
+                                  <button onClick={() => setCrChir({ c, type: t })}
+                                    className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${d?.statut === 'brouillon' ? 'border-[#F3E2BD] text-[#8A5A00] bg-[#FFF8EA]' : 'border-[#0C5C6C]/30 text-[#0C5C6C]'}`}>
+                                    {TITRE_CR_CHIR[t]}{etat}
+                                  </button>
+                                )}
+                                {url && (
+                                  <LienDocument href={url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">
+                                    {peutPreparerOrdo ? 'PDF' : `${TITRE_CR_CHIR[t]} (PDF)`}
+                                  </LienDocument>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -4483,6 +4555,13 @@ function PatientDetailPageInner() {
       </div>
 
       {/* ── Modales d'ajout ── */}
+      {crChir && (
+        <ChirurgieCrModal chirurgie={crChir.c} typeInitial={crChir.type} poidsFiche={animal?.poids}
+          peutValider={peutPrescrire}
+          apercu={(t, champs) => crChirPdf(t, crChir.c, champs, true)}
+          enregistrer={(t, champs, valider) => enregistrerCrChir(crChir.c, t, champs, valider)}
+          onClose={() => setCrChir(null)} />
+      )}
       {editeurOrdo && (() => {
         const { ordo, remplace } = editeurOrdo;
         const fermer = () => { editeurOrdo.fin?.(); setEditeurOrdo(null); };

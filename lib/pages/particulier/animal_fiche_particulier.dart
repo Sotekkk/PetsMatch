@@ -2338,6 +2338,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                     ('Protocole pré-opératoire', 'protocole_preop'),
                     ('Protocole post-opératoire', 'protocole_postop'),
                     ('Notes', 'notes'),
+                    ('Compte rendu préopératoire', 'preop_doc_url'),
+                    ('Compte rendu opératoire', 'operatoire_doc_url'),
                   ]),
                 );
               },
@@ -3374,10 +3376,13 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                         // Lien (ex. résultat de test génétique en ligne) : cliquable.
                         child: e.$2.startsWith('http') || e.$1 == 'Document joint' || e.$1 == 'Résultat en ligne'
                             ? GestureDetector(
-                                onTap: () => e.$1 == 'Document joint'
+                                // Compte rendu d'intervention : PDF privé (lien temporaire).
+                                onTap: () => e.$1.startsWith('Compte rendu')
+                                    ? ouvrirDocument(context, e.$2)
+                                    : e.$1 == 'Document joint'
                                     ? DocumentViewerPage.open(context, record['url']?.toString() ?? '', title: sectionTitle)
                                     : launchUrl(Uri.parse(lienWeb(e.$2)), mode: LaunchMode.externalApplication),
-                                child: Text(e.$1 == 'Document joint' ? nomFichier(e.$2) : e.$2,
+                                child: Text(e.$1.startsWith('Compte rendu') ? 'Ouvrir le PDF' : e.$1 == 'Document joint' ? nomFichier(e.$2) : e.$2,
                                     style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600,
                                         color: Color(0xFF0C5C6C), decoration: TextDecoration.underline)),
                               )
