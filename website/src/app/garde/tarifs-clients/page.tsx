@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useGardeAccess } from '@/hooks/useGardeAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { nomClientProfil } from '@/lib/nom-client';
 
 const TEAL = '#0C5C6C';
 
@@ -70,12 +71,8 @@ export default function TarifsClientsPage() {
     let names = new Map<string, string>();
     if (clientProfileIds.length) {
       const { data: profiles } = await supabase.from('user_profiles_complet')
-        .select('id, firstname, lastname, nom').in('id', clientProfileIds);
-      names = new Map((profiles ?? []).map(p => {
-        const nom = (p.nom as string | null)?.trim();
-        const full = nom || `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim();
-        return [p.id as string, full || 'Client'];
-      }));
+        .select('id, firstname, lastname, nom, profile_type').in('id', clientProfileIds);
+      names = new Map((profiles ?? []).map(p => [p.id as string, nomClientProfil(p, 'Client')]));
     }
 
     const clientRows: ClientRow[] = [...seenClients.entries()].map(([cpid, c]) => ({

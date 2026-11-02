@@ -13,6 +13,7 @@ import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_form_page.dart';
 import 'package:PetsMatch/pages/pro/owner_contact.dart';
 import 'package:PetsMatch/widgets/pro_day_timeline.dart';
+import 'package:PetsMatch/utils/nom_client.dart';
 
 /// Tableau de bord commun pour les pros non-vétérinaires :
 /// - cat_pro = 'sante'             → ostéo, kiné, naturo, acupuncteur, homéopathe
@@ -219,14 +220,11 @@ class _ProClientsPageState extends State<ProClientsPage>
       if (ownerProfileIds.isNotEmpty) {
         final profiles = await supa
             .from('user_profiles_complet')
-            .select('id, firstname, lastname, nom')
+            .select('id, firstname, lastname, nom, profile_type')
             .inFilter('id', ownerProfileIds);
         for (final u in profiles) {
           final pid = u['id'] as String;
-          final name = (u['nom'] as String?)?.isNotEmpty == true
-              ? u['nom'] as String
-              : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
-          ownerNames[pid] = name.isNotEmpty ? name : 'Propriétaire';
+          ownerNames[pid] = nomClientProfil(u, defaut: 'Propriétaire');
         }
       }
 
@@ -330,14 +328,11 @@ class _ProClientsPageState extends State<ProClientsPage>
       Map<String, Map<String, dynamic>> animalData = {};
 
       if (clientUids.isNotEmpty) {
-        final users = await supa.from('user_profiles_complet').select('uid, firstname, lastname, nom')
+        final users = await supa.from('user_profiles_complet').select('uid, firstname, lastname, nom, profile_type')
             .inFilter('uid', clientUids).eq('is_main', true);
         for (final u in users) {
           final uid = u['uid'] as String;
-          final name = (u['nom'] as String?)?.isNotEmpty == true
-              ? u['nom'] as String
-              : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
-          clientNames[uid] = name.isNotEmpty ? name : 'Client';
+          clientNames[uid] = nomClientProfil(u, defaut: 'Client');
         }
       }
       if (animalIds.isNotEmpty) {

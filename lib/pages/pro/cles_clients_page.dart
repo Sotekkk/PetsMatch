@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/nom_client.dart';
 
 // ── Gestion des clés — traçabilité des clés client détenues par un profil
 // garde (petsitter/promeneur). Les clients éligibles sont dérivés des RDV
@@ -82,21 +83,17 @@ class _ClesClientsPageState extends State<ClesClientsPage> {
             ? _supa.from('animaux').select('id, nom').inFilter('id', animalIds)
             : Future.value(<Map<String, dynamic>>[]),
         pids.isNotEmpty
-            ? _supa.from('user_profiles_complet').select('id, firstname, lastname, nom').inFilter('id', pids)
+            ? _supa.from('user_profiles_complet').select('id, firstname, lastname, nom, profile_type').inFilter('id', pids)
             : Future.value(<Map<String, dynamic>>[]),
         uidsNoPid.isNotEmpty
-            ? _supa.from('user_profiles_complet').select('uid, firstname, lastname, nom').inFilter('uid', uidsNoPid).eq('is_main', true)
+            ? _supa.from('user_profiles_complet').select('uid, firstname, lastname, nom, profile_type').inFilter('uid', uidsNoPid).eq('is_main', true)
             : Future.value(<Map<String, dynamic>>[]),
       ]);
 
       final animalNames = <String, String>{
         for (final a in (results[0] as List)) a['id'].toString(): a['nom']?.toString() ?? 'Animal',
       };
-      String nomOf(Map<String, dynamic> c) {
-        final nom = (c['nom'] as String?)?.trim();
-        final full = nom?.isNotEmpty == true ? nom! : '${c['firstname'] ?? ''} ${c['lastname'] ?? ''}'.trim();
-        return full.isNotEmpty ? full : 'Client';
-      }
+      String nomOf(Map<String, dynamic> c) => nomClientProfil(c, defaut: 'Client');
       final nameByPid = <String, String>{
         for (final p in (results[1] as List)) p['id'] as String: nomOf(p),
       };

@@ -15,6 +15,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/widgets/rdv/salles_clinique_widgets.dart';
+import 'package:PetsMatch/utils/nom_client.dart';
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1E2025);
@@ -186,10 +187,9 @@ class _PlanningCliniquePageState extends State<PlanningCliniquePage> {
     try {
       if (profils.isNotEmpty) {
         final rows = await supa.from('user_profiles_complet')
-            .select('id, firstname, lastname, nom').inFilter('id', profils.toList());
+            .select('id, firstname, lastname, nom, profile_type').inFilter('id', profils.toList());
         for (final p in rows as List) {
-          final n = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
-          clients[p['id'].toString()] = n.isNotEmpty ? n : (p['nom']?.toString() ?? '');
+          clients[p['id'].toString()] = nomClientProfil(p as Map);
         }
       }
     } catch (_) {}

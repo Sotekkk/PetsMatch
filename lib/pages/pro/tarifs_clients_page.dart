@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/nom_client.dart';
 
 // ── Tarifs clients personnalisés — permet de surcharger, pour un client
 // donné, le tarif standard (tarifs_garde) d'un type de prestation. Les
@@ -103,11 +104,9 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
       Map<String, String> clientNames = {};
       if (clientProfileIds.isNotEmpty) {
         final profiles = await _supa.from('user_profiles_complet')
-            .select('id, firstname, lastname, nom').inFilter('id', clientProfileIds);
+            .select('id, firstname, lastname, nom, profile_type').inFilter('id', clientProfileIds);
         for (final p in List<Map<String, dynamic>>.from(profiles as List)) {
-          final nom = (p['nom'] as String?)?.trim();
-          final full = nom?.isNotEmpty == true ? nom! : '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
-          clientNames[p['id'] as String] = full.isNotEmpty ? full : 'Client';
+          clientNames[p['id'] as String] = nomClientProfil(p, defaut: 'Client');
         }
       }
 

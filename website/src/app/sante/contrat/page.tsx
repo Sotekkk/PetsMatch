@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useSanteAccess } from '@/hooks/useSanteAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { useProfessionPlanCode, PROFESSION_TOP_TIER } from '@/lib/use-plan';
+import { nomClientProfil } from '@/lib/nom-client';
 
 interface DocRow {
   id: string;
@@ -93,13 +94,11 @@ export default function SanteContratPage() {
     const clientUids = [...new Set(candidats.map(p => p.client_uid as string))];
     const animalIds = [...new Set(candidats.map(p => p.animal_id).filter((a): a is string => !!a))];
     const [{ data: clients }, { data: anims }] = await Promise.all([
-      supabase.from('user_profiles_complet').select('uid, firstname, lastname, nom, email_contact').in('uid', clientUids).eq('is_main', true),
+      supabase.from('user_profiles_complet').select('uid, firstname, lastname, nom, profile_type, email_contact').in('uid', clientUids).eq('is_main', true),
       animalIds.length ? supabase.from('animaux').select('id, nom').in('id', animalIds) : Promise.resolve({ data: [] as { id: string; nom: string | null }[] }),
     ]);
     const cInfo = new Map((clients ?? []).map(c => {
-      const nom = (c.nom as string | null)?.trim();
-      const full = nom || `${c.firstname ?? ''} ${c.lastname ?? ''}`.trim();
-      return [c.uid, { nom: full || 'Client', email: (c.email_contact as string | null) ?? '' }];
+      return [c.uid, { nom: nomClientProfil(c, 'Client'), email: (c.email_contact as string | null) ?? '' }];
     }));
     const aNames = new Map((anims ?? []).map(a => [a.id, a.nom ?? '']));
     setPicker(candidats.map(p => ({

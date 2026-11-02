@@ -16,6 +16,7 @@ import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/utils/retards_rdv.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart' show AgendaContexte;
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
+import 'package:PetsMatch/utils/nom_client.dart';
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1E2025);
@@ -172,10 +173,9 @@ class _VetDashboardState extends State<VetDashboard> {
     try {
       if (profils.isNotEmpty) {
         final rows = await _supa.from('user_profiles_complet')
-            .select('id, firstname, lastname, nom').inFilter('id', profils.toList());
+            .select('id, firstname, lastname, nom, profile_type').inFilter('id', profils.toList());
         for (final p in rows as List) {
-          final n = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
-          _clients[p['id'].toString()] = n.isNotEmpty ? n : (p['nom']?.toString() ?? '');
+          _clients[p['id'].toString()] = nomClientProfil(p as Map);
         }
       }
     } catch (_) {}
