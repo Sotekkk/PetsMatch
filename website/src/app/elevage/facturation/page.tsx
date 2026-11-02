@@ -100,6 +100,9 @@ interface FacturePrefill {
   // les RDV couverts (rdv.facture_id), même logique que l'appli
   // (facturation.dart lignes 916-925).
   sourceRdvId?: string;
+  /** Facture d'une consultation / séance : envoyée au client à la fin de la
+   *  séance (avec CR, ordonnance…), pas à l'émission. */
+  envoiEnFinDeSeance?: boolean;
   sourceRdvIds?: string[];
   /** Acompte (pet-sitting : demande acceptée) — les RDV restent à facturer. */
   typeFacture?: 'acompte';
@@ -925,7 +928,11 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
     // jusqu'ici une facture créée depuis le site n'avertissait jamais le
     // client, il fallait cliquer sur « Envoyer par email » après coup.
     const emailTrim = emailClient.trim();
-    if (emailTrim) {
+    // Facture d'un RDV (consultation, séance) : envoyée à la fin de la
+    // consultation avec le compte rendu et l'ordonnance, pas en double ici.
+    // Miroir appli : CreerFacturePage._archiverEtEnvoyer.
+    const envoiEnFinDeSeance = !!prefill?.envoiEnFinDeSeance;
+    if (emailTrim && !envoiEnFinDeSeance) {
       try {
         const target = await trouverUtilisateurParEmail(emailTrim);
         const clientUid = target?.uid as string | undefined;

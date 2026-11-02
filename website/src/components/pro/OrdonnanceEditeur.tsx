@@ -9,12 +9,12 @@
 // Miroir appli : lib/widgets/pro/ordonnance_editeur_page.dart.
 
 import { useEffect, useMemo, useState } from 'react';
-import { controlerOrdo, ligneVide, nettoyerOrdo, VOIES, type ContenuOrdo, type LigneOrdo } from '@/lib/ordonnance';
+import { articleDe, completerDepuisArticle, controlerOrdo, ligneVide, nettoyerOrdo, VOIES, type ArticleOrdo, type ContenuOrdo, type LigneOrdo } from '@/lib/ordonnance';
 
 const TEAL = '#0C5C6C';
 
 export default function OrdonnanceEditeur({ titre, contenuInitial, dateInitiale, espece, rectifie, prescripteur, peutValider,
-  apercu, enregistrerBrouillon, valider, onClose }: {
+  chargerArticles, apercu, enregistrerBrouillon, valider, onClose }: {
   titre: string;
   contenuInitial: ContenuOrdo;
   /** AAAA-MM-JJ. */
@@ -25,6 +25,8 @@ export default function OrdonnanceEditeur({ titre, contenuInitial, dateInitiale,
   /** Vétérinaire connecté (nom porté sur l'ordonnance s'il valide). */
   prescripteur: string;
   peutValider: boolean;
+  /** Pharmacie de la clinique : suggestions et informations reprises. */
+  chargerArticles?: () => Promise<ArticleOrdo[]>;
   apercu: (c: ContenuOrdo, date: string) => Promise<Blob>;
   enregistrerBrouillon: (c: ContenuOrdo, date: string) => Promise<void>;
   valider: (c: ContenuOrdo, date: string) => Promise<void>;
@@ -39,6 +41,14 @@ export default function OrdonnanceEditeur({ titre, contenuInitial, dateInitiale,
   const [occupe, setOccupe] = useState<null | 'apercu' | 'brouillon' | 'valider'>(null);
 
   useEffect(() => () => { if (pdf) URL.revokeObjectURL(pdf.url); }, [pdf]);
+  const [articles, setArticles] = useState<ArticleOrdo[]>([]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { chargerArticles?.().then(setArticles).catch(() => {}); }, []);
+  /** Médicament choisi dans la pharmacie : champs vides complétés (dose jamais). */
+  const choisirMedicament = (i: number, nom: string) => {
+    setLignes(ls => ls.map((l, j) => j !== i ? l : completerDepuisArticle({ ...l, medicament: nom }, articleDe(nom, articles))));
+    setVerifie(false);
+  };
 
   const contenu = (): ContenuOrdo => nettoyerOrdo({ lignes, poids, remarques });
   const controle = useMemo(() => controlerOrdo({ lignes, poids, remarques }, espece), [lignes, poids, remarques, espece]);
@@ -147,6 +157,7 @@ export default function OrdonnanceEditeur({ titre, contenuInitial, dateInitiale,
               </div>
             </div>
             <datalist id="voies-ordonnance">{VOIES.map(v => <option key={v} value={v} />)}</datalist>
+            <datalist id="pharmacie-ordonnance">{articles.map(a => <option key={a.nom} value={a.nom} />)}</datalist>
             <div className="space-y-3">
               {lignes.map((l, i) => (
                 <div key={i} className="border border-gray-200 rounded-xl p-3 space-y-2">
@@ -157,7 +168,7 @@ export default function OrdonnanceEditeur({ titre, contenuInitial, dateInitiale,
                     )}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div><label className={etiquette}>Médicament *</label><input value={l.medicament} onChange={e => maj(i, 'medicament', e.target.value)} className={champ} /></div>
+                    <div><label className={etiquette}>Médicament *</label><input value={l.medicament} onChange={e => choisirMedicament(i, e.target.value)} list="pharmacie-ordonnance" className={champ} /></div>
                     <div><label className={etiquette}>Présentation et concentration</label><input value={l.presentation} onChange={e => maj(i, 'presentation', e.target.value)} placeholder="ex. comprimé 50 mg" className={champ} /></div>
                     <div className="sm:col-span-2"><label className={etiquette}>Principe actif</label><input value={l.principeActif} onChange={e => maj(i, 'principeActif', e.target.value)} className={champ} /></div>
                     <div className="sm:col-span-2"><label className={etiquette}>Posologie * (dose, prises, fréquence)</label>

@@ -3,12 +3,13 @@
 // éventuellement marquée acquittée. Miroir appli : _terminerConsultation
 // (lib/pages/pro/compte_rendu_page.dart).
 import { supabase } from '@/lib/supabase';
+import { clientDocument } from '@/lib/client-document';
 import { compteRenduPdfBlob, ageAnimal, sexeAnimal } from '@/lib/ordonnance-pdf';
 import { facturePdfBlob } from '@/lib/facture-pdf';
 import { factureVersPdfData } from '@/lib/facture-pdf-data';
 import { pdfDepuisUrl } from '@/lib/transmission-document';
 
-export interface CrConsultation { id: string; animal_id: string; contenu: string | null; created_at: string }
+export interface CrConsultation { id: string; animal_id: string; contenu: string | null; created_at: string; rdv_id?: string | null }
 export interface OrdoConsultation { id: string; animal_id: string; doc_url: string | null; created_at: string }
 export type FactureConsultation = Record<string, unknown> & { id: string; statut?: string | null; numero_affichage?: string | null };
 
@@ -20,7 +21,7 @@ export interface DocsConsultation {
 export async function chargerDocsConsultation(rdvId: string): Promise<DocsConsultation> {
   const [{ data: r }, { data: crs }, { data: ordos }, { data: fac }] = await Promise.all([
     supabase.from('rdv').select('animal_id, date_heure, pro_profile_id').eq('id', rdvId).maybeSingle(),
-    supabase.from('comptes_rendus').select('id, animal_id, contenu, created_at, statut').eq('rdv_id', rdvId).eq('statut', 'valide').order('created_at'),
+    supabase.from('comptes_rendus').select('id, animal_id, contenu, created_at, statut, rdv_id').eq('rdv_id', rdvId).eq('statut', 'valide').order('created_at'),
     supabase.from('ordonnances').select('id, animal_id, doc_url, created_at').eq('rdv_id', rdvId).in('statut', ['validee', 'signee']).order('created_at'),
     supabase.from('factures').select('*').eq('source_rdv_id', rdvId).neq('statut', 'annulee').order('created_at', { ascending: false }).limit(1),
   ]);
@@ -33,7 +34,7 @@ export async function chargerDocsConsultation(rdvId: string): Promise<DocsConsul
     const fin = new Date(debut.getTime() + 86400000);
     const aid = String(rr.animal_id);
     const [c2, o2, f2] = await Promise.all([
-      crsR.length ? null : supabase.from('comptes_rendus').select('id, animal_id, contenu, created_at, statut').eq('animal_id', aid)
+      crsR.length ? null : supabase.from('comptes_rendus').select('id, animal_id, contenu, created_at, statut, rdv_id').eq('animal_id', aid)
         .eq('pro_profile_id', rr.pro_profile_id).eq('statut', 'valide').gte('created_at', debut.toISOString()).lt('created_at', fin.toISOString()).order('created_at'),
       ordosR.length ? null : supabase.from('ordonnances').select('id, animal_id, doc_url, created_at').eq('animal_id', aid).in('statut', ['validee', 'signee'])
         .eq('pro_profile_id', rr.pro_profile_id).gte('created_at', debut.toISOString()).lt('created_at', fin.toISOString()).order('created_at'),
@@ -75,21 +76,9 @@ export async function pdfCompteRendu(cr: CrConsultation, o: {
   ]);
   const c = (cl ?? {}) as Record<string, unknown>;
   const a = (an ?? {}) as Record<string, unknown>;
-  let proprio = '';
-  if (a.client_clinique_id) {
-    const { data: cc } = await supabase.from('clients_clinique').select('nom, prenom').eq('id', a.client_clinique_id as string).maybeSingle();
-    proprio = `${v(cc?.prenom)} ${v(cc?.nom)}`.trim();
-  } else {
-    // Nom et prénom du propriétaire : colonnes privées du profil, lues par la
-    // même fonction que la facture (le pro y a droit pour son patient).
-    const { data: cf } = await supabase.rpc('pm_client_facturation', { p_animal_id: cr.animal_id });
-    const j = (cf ?? null) as Record<string, string> | null;
-    proprio = `${v(j?.prenom)} ${v(j?.nom)}`.trim();
-    if (!proprio && a.uid_proprietaire) {
-      const { data: u } = await supabase.from('users_complet').select('firstname, lastname').eq('uid', a.uid_proprietaire as string).maybeSingle();
-      proprio = `${v(u?.firstname)} ${v(u?.lastname)}`.trim();
-    }
-  }
+  // Nom et coordonnées du propriétaire : même cascade que la facture.
+  const cli = await clientDocument(cr.animal_id, { rdvId: cr.rdv_id ?? null }).catch(() => null);
+  let proprio = cli?.nom ?? '';
   if (!proprio) proprio = v(o.proprietaire);
   return compteRenduPdfBlob({
     cliniqueNom: v(c.nom) || (o.nomParDefaut ?? 'Cabinet vétérinaire'),
@@ -101,7 +90,7 @@ export async function pdfCompteRendu(cr: CrConsultation, o: {
     praticien: `${v(c.firstname)} ${v(c.lastname)}`.trim() || o.praticien,
     animalNom: v(a.nom) || 'Animal', animalEspeceRace: [a.espece, a.race].filter(x => v(x)).join(' · '),
     animalSexe: sexeAnimal(a.sexe as string | null), animalAge: ageAnimal(a.date_naissance as string | null, a.age_estime as string | null),
-    animalIdentification: v(a.identification), proprietaire: proprio,
+    animalIdentification: v(a.identification), proprietaire: proprio, proprietaireCoord: cli?.coord ?? [],
     contenu: cr.contenu ?? '', date: new Date(cr.created_at), signature: o.signature,
     titre: o.titre, prefixePraticien: o.prefixePraticien, libelleAnimal: o.libelleAnimal,
   });

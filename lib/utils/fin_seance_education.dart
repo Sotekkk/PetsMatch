@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/client_document.dart';
 import 'dart:convert';
 // Éducateur : fin de séance d'un RDV — compte rendu de séance / bilan avec
 // les exercices à faire et le programme de travail (PDF signé) et facture,
@@ -97,6 +98,7 @@ Future<void> factureDepuisRdv(BuildContext context, Map<String, dynamic> rdv, {S
       prixTTC: prixSeance,
     )],
     sourceRdvId: rdv['id'].toString(), sourceAnimalId: rdv['animal_id']?.toString(),
+    envoiEnFinDeSeance: true,
     clientUid: rdv['client_uid']?.toString(), clientProfileId: rdv['client_profile_id']?.toString(),
   )));
 }
@@ -154,6 +156,11 @@ Future<Uint8List> pdfSeanceEducation(Map<String, dynamic> s, {String? proProfile
   final adresse = (_v(pro?['rue_pro']).isNotEmpty || _v(pro?['ville_pro']).isNotEmpty)
       ? [_v(pro?['rue_pro']), '${_v(pro?['code_postal_pro'])} ${_v(pro?['ville_pro'])}'.trim()]
       : [_v(pro?['rue']), '${_v(pro?['code_postal'])} ${_v(pro?['ville'])}'.trim()];
+  // Nom et coordonnées du client : même cascade que la facture.
+  ClientDocument? cli;
+  if (aid != null) {
+    try { cli = await clientDocument(aid, rdvId: s['rdv_id']?.toString()); } catch (_) {}
+  }
   return compteRenduPdfBytes(
     cliniqueNom: _v(pro?['nom']).isNotEmpty ? _v(pro?['nom']) : 'Éducateur canin',
     cliniqueAdresse: adresse.where((x) => x.isNotEmpty).join(', '),
@@ -163,7 +170,8 @@ Future<Uint8List> pdfSeanceEducation(Map<String, dynamic> s, {String? proProfile
     animalNom: _v(a?['nom']).isEmpty ? 'Animal' : _v(a?['nom']),
     animalEspeceRace: [_v(a?['espece']), _v(a?['race'])].where((x) => x.isNotEmpty).join(' · '),
     animalSexe: sexeAnimal(a?['sexe']), animalAge: ageAnimal(a?['date_naissance'], a?['age_estime']),
-    animalIdentification: _v(a?['identification']), proprietaire: proprietaire,
+    animalIdentification: _v(a?['identification']),
+    proprietaire: (cli?.nom ?? '').isNotEmpty ? cli!.nom : proprietaire, proprietaireCoord: cli?.coord ?? const [],
     contenu: await _contenu(s, proProfileId),
     date: DateTime.tryParse(_v(s['date_seance']).isNotEmpty ? _v(s['date_seance']) : _v(s['created_at'])),
     signature: octetsSignature(await maSignaturePro()),

@@ -242,7 +242,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
       sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
         nomClient: coord.nom || nomClient, prenomClient: coord.prenom || undefined, emailClient: coord.email || undefined, telClient: coord.tel || undefined,
         rueClient: coord.rue || undefined, cpClient: coord.cp || undefined, villeClient: coord.ville || undefined,
-        sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined, clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
+        sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined, envoiEnFinDeSeance: true, clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
         retour,
         lignes: detail.length > 0
           ? detail.map(a => ({ description: `${a.motif?.trim() || 'Séance d’éducation'} — ${debut.toLocaleDateString('fr-FR')}`,

@@ -12,6 +12,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
 import 'package:PetsMatch/utils/ordonnance.dart';
+import 'package:PetsMatch/utils/client_document.dart';
 import 'package:PetsMatch/widgets/pro/ordonnance_editeur_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne, facturePdfDepuisLigne;
@@ -993,9 +994,32 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           final a = await _supa.from('animaux').select('poids').eq('id', animalId).maybeSingle();
           poids = (a?['poids'] ?? '').toString();
         }
+        // Médicaments de la pharmacie : présentation, voie, instructions… reprises,
+        // quantité à délivrer suggérée (à vérifier) ; la dose reste celle saisie.
+        var articles = <Map<String, dynamic>>[];
+        if (_profilPro != null) {
+          try {
+            articles = List<Map<String, dynamic>>.from(await _supa.from('inventaire_items')
+                .select(colonnesArticleOrdo).eq('eleveur_profile_id', _profilPro!) as List);
+          } catch (_) {}
+        }
+        final lignes = [
+          for (final t in prescrits) () {
+            final a = articleDe(t.nom, articles);
+            final l = completerDepuisArticle(t.versLigneOrdo(), a);
+            if (l.quantite.trim().isEmpty) {
+              final q = quantiteSuggeree([
+                for (final ph in t.phases)
+                  (doses: [for (final k in _prisesTriees(ph.prises)) ph.doseDe(k)], frequenceJours: ph.frequenceJours, dureeJours: ph.dureeJours),
+              ], a);
+              if (q.isNotEmpty) { l.quantite = q; l.quantiteCalculee = q; }
+            }
+            return l;
+          }(),
+        ];
         final brouillon = await creerBrouillonOrdonnance(
           animalId: animalId,
-          contenu: ContenuOrdo(lignes: [for (final t in prescrits) t.versLigneOrdo()], poids: poids),
+          contenu: ContenuOrdo(lignes: lignes, poids: poids),
           date: today, rdvId: rdvId, ownerUid: owner.uid, ownerProfileId: owner.profileId,
         );
         if (_peutOrdonnances && mounted) {
@@ -1729,6 +1753,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       lignesPrefill: lignes,
       noteInitiale: note ?? 'Consultation de ${an?['nom'] ?? 'votre animal'}',
       sourceRdvId: rdvId ?? r?['id']?.toString(),
+      envoiEnFinDeSeance: true,
       sourceAnimalId: animalId,
       clientUid: owner.uid,
       clientProfileId: owner.profileId,
@@ -1881,7 +1906,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel, cliniqueEmail: i.cliniqueEmail,
           praticien: i.praticien, animalNom: i.animal, animalEspeceRace: i.especeRace, animalSexe: i.sexe, animalAge: i.age,
           signature: octetsSignature(_signature), animalIdentification: i.identification,
-          proprietaire: i.proprio, contenu: cr['contenu']?.toString() ?? '',
+          proprietaire: i.proprio, proprietaireCoord: i.proprioCoord, contenu: cr['contenu']?.toString() ?? '',
           date: DateTime.tryParse(cr['created_at']?.toString() ?? '')?.toLocal(),
         )));
       }
@@ -2304,7 +2329,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   /// pas PetsMatch — e-mail pré-rempli).
   Future<({String clinique, String adresse, String tel, String animal, String especeRace,
       String identification, String proprio, String? email, String cliniqueEmail, String praticien,
-      String sexe, String age})> _infosDocument([String? pourAnimal]) async {
+      String sexe, String age, List<String> proprioCoord})> _infosDocument([String? pourAnimal]) async {
     final animalId = pourAnimal ?? (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
     final pro = _profilPro;
     Map<String, dynamic>? cl, an, client;
@@ -2325,6 +2350,12 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     } catch (_) {}
     var proprio = widget.clientName;
     if (client != null) proprio = '${client['prenom'] ?? ''} ${client['nom'] ?? ''}'.trim();
+    // Nom et coordonnées du propriétaire : même cascade que la facture.
+    ClientDocument? cli;
+    if (animalId != null) {
+      try { cli = await clientDocument(animalId, rdvId: (widget.rdv?['id'] ?? _rdvSource?['id'])?.toString()); } catch (_) {}
+    }
+    if ((cli?.nom ?? '').isNotEmpty) proprio = cli!.nom;
     bool vide(dynamic v) => (v?.toString().trim() ?? '').isEmpty;
     return (
       clinique: (cl?['nom'] as String?)?.trim().isNotEmpty == true ? cl!['nom'] as String : 'Cabinet vétérinaire',
@@ -2341,7 +2372,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       especeRace: [an?['espece'], an?['race']].where((x) => (x?.toString() ?? '').isNotEmpty).join(' · '),
       identification: (an?['identification'] ?? '').toString(),
       proprio: proprio,
-      email: client?['email'] as String?,
+      email: cli?.email ?? client?['email'] as String?,
+      proprioCoord: cli?.coord ?? const <String>[],
     );
   }
 
@@ -2360,7 +2392,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         animalNom: i.animal, animalEspeceRace: i.especeRace, animalSexe: i.sexe, animalAge: i.age,
         signature: octetsSignature(_signature),
         animalIdentification: i.identification,
-        proprietaire: i.proprio, contenu: cr['contenu']?.toString() ?? '',
+        proprietaire: i.proprio, proprietaireCoord: i.proprioCoord, contenu: cr['contenu']?.toString() ?? '',
         date: DateTime.tryParse(cr['created_at']?.toString() ?? '')?.toLocal(),
       ),
     );

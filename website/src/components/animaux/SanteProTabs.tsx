@@ -8,6 +8,9 @@ import Link from 'next/link';
 import LienDocument from '@/components/LienDocument';
 import { supabase } from '@/lib/supabase';
 import { titreCompteRendu } from '@/lib/morpho';
+import { useAuth } from '@/lib/auth-context';
+import { maSignaturePro } from '@/lib/signature-pro';
+import { pdfCompteRendu, type CrConsultation } from '@/lib/fin-consultation';
 
 const TEAL = '#0C5C6C';
 const ROUGE = '#B3261E';
@@ -260,7 +263,28 @@ export function SyntheseOsteo({ animalId, pid, onIdentite, onSeances }: { animal
 }
 
 export function DocumentsSantePro({ animalId, pid, osteo = false }: { animalId: string; pid: string | null; osteo?: boolean }) {
+  const { user, userData } = useAuth();
   const [d, setD] = useState<{ crs: Row[]; ordos: Row[]; seances: Row[] } | null>(null);
+  const [ouverture, setOuverture] = useState<string | null>(null);
+  /** Compte rendu du vétérinaire connecté (validé par lui, ou rédigé et validé
+   *  sur son propre compte) : PDF produit à la demande, avec sa signature. */
+  const crAMoi = (c: Row) => c.statut !== 'brouillon' && !!user?.uid
+    && (c.valide_par_uid === user.uid || (!c.valide_par_uid && (c.redige_par_uid === user.uid || c.pro_uid === user.uid)));
+  async function ouvrirCrPdf(c: Row) {
+    if (!user) return;
+    const onglet = window.open('', '_blank');
+    setOuverture(String(c.id));
+    try {
+      const signature = await maSignaturePro(user.uid).catch(() => null);
+      const praticien = `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim();
+      const blob = await pdfCompteRendu(c as unknown as CrConsultation, { proProfileId: (c.pro_profile_id as string | null) ?? pid, praticien, signature, emailCompte: user.email });
+      const url = URL.createObjectURL(blob);
+      if (onglet) onglet.location.href = url; else window.open(url, '_blank');
+    } catch (e) {
+      onglet?.close();
+      alert(`PDF indisponible : ${(e as Error).message}`);
+    } finally { setOuverture(null); }
+  }
   useEffect(() => {
     let annule = false;
     (async () => {
@@ -299,7 +323,13 @@ export function DocumentsSantePro({ animalId, pid, osteo = false }: { animalId: 
   ) : (
     <div className="space-y-4">
       <Carte titre="Comptes rendus">
-        {d.crs.length === 0 ? <Discret t="Aucun compte rendu." /> : d.crs.map(c => ligne(String(c.id), `Compte rendu — ${dateFr(c.created_at)}`, texte(c.contenu), (c.doc_url as string) || null))}
+        {d.crs.length === 0 ? <Discret t="Aucun compte rendu." /> : d.crs.map(c => !c.doc_url && crAMoi(c) ? (
+          <button key={String(c.id)} onClick={() => ouvrirCrPdf(c)} disabled={ouverture === String(c.id)}
+            className="block w-full text-left py-2 border-t border-gray-50 first:border-0 hover:bg-gray-50 disabled:opacity-60">
+            <p className="text-sm font-semibold">Compte rendu — {dateFr(c.created_at)} <span className="text-xs font-semibold" style={{ color: TEAL }}>{ouverture === String(c.id) ? 'Préparation du PDF…' : 'PDF'}</span></p>
+            {texte(c.contenu) && <p className="text-xs text-gray-500 truncate">{texte(c.contenu)}</p>}
+          </button>
+        ) : ligne(String(c.id), `Compte rendu — ${dateFr(c.created_at)}`, texte(c.contenu), (c.doc_url as string) || null))}
       </Carte>
       <Carte titre="Ordonnances">
         {d.ordos.length === 0 ? <Discret t="Aucune ordonnance." /> : d.ordos.map(o => ligne(String(o.id), `Ordonnance — ${dateFr(o.date_emit ?? o.created_at)}`, texte(o.notes), (o.doc_url as string) || null))}

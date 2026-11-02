@@ -101,6 +101,8 @@ Future<Uint8List> ordonnancePdfBytes({
   String animalIdentification = '',
   String animalPoids = '',
   String proprietaire = '',
+  /// Coordonnées du propriétaire (adresse, téléphone, e-mail), sous son nom.
+  List<String> proprietaireCoord = const [],
   required List<LigneOrdonnance> lignes,
   String? remarques,
   DateTime? date,
@@ -245,6 +247,7 @@ Future<Uint8List> ordonnancePdfBytes({
             pw.Text('Propriétaire', style: pw.TextStyle(fontSize: 9, color: _teal, fontWeight: pw.FontWeight.bold)),
             pw.SizedBox(height: 3),
             pw.Text(proprietaire.isEmpty ? '—' : proprietaire, style: const pw.TextStyle(fontSize: 10, color: _dark)),
+            for (final l in proprietaireCoord) pw.Text(l, style: const pw.TextStyle(fontSize: 9, color: _dark)),
           ])),
         ]),
       ),
@@ -291,6 +294,8 @@ Future<Uint8List> compteRenduPdfBytes({
   String animalAge = '',
   String animalIdentification = '',
   String proprietaire = '',
+  /// Coordonnées du propriétaire (adresse, téléphone, e-mail), sous son nom.
+  List<String> proprietaireCoord = const [],
   required String contenu,
   DateTime? date,
   /// Signature manuscrite du vétérinaire (PNG).
@@ -342,6 +347,7 @@ Future<Uint8List> compteRenduPdfBytes({
           pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
             pw.Text('Propriétaire', style: pw.TextStyle(fontSize: 9, color: _teal, fontWeight: pw.FontWeight.bold)),
             pw.Text(proprietaire.isEmpty ? '—' : proprietaire, style: const pw.TextStyle(fontSize: 10, color: _dark)),
+            for (final l in proprietaireCoord) pw.Text(l, style: const pw.TextStyle(fontSize: 9, color: _dark)),
           ])),
         ]),
       ),

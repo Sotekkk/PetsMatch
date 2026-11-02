@@ -25,6 +25,8 @@ export interface OrdonnanceData {
   animalIdentification?: string;
   animalPoids?: string;
   proprietaire?: string;
+  /** Coordonnées du propriétaire (adresse, téléphone, e-mail), sous son nom. */
+  proprietaireCoord?: string[];
   lignes: LigneOrdonnance[];
   remarques?: string;
   date?: Date;
@@ -93,16 +95,21 @@ export async function ordonnancePdfBlob(d: OrdonnanceData): Promise<Blob> {
   const boxTop = y;
   const infosOrdo = ([['Espèce / race', d.animalEspeceRace], ['Sexe', d.animalSexe], ['Âge', d.animalAge],
     ['Identification', d.animalIdentification], ['Poids', d.animalPoids]] as const).filter(([, v]) => !!v) as [string, string][];
-  const hOrdo = Math.max(78, 44 + infosOrdo.length * 11);
-  doc.setFillColor(244, 247, 246); doc.roundedRect(M, boxTop, W - 2 * M, hOrdo, 6, 6, 'F');
   const col2 = M + (W - 2 * M) / 2 + 8;
+  doc.setFontSize(9);
+  const coordOrdo = (d.proprietaireCoord ?? []).flatMap(l => doc.splitTextToSize(l, W - M - col2 - 10) as string[]);
+  doc.setFontSize(10);
+  const nomProprio = doc.splitTextToSize(d.proprietaire || '—', W - M - col2 - 10) as string[];
+  const hOrdo = Math.max(78, 44 + Math.max(infosOrdo.length, coordOrdo.length + nomProprio.length - 1) * 11);
+  doc.setFillColor(244, 247, 246); doc.roundedRect(M, boxTop, W - 2 * M, hOrdo, 6, 6, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...TEAL);
   doc.text('Patient', M + 10, boxTop + 16); doc.text('Propriétaire', col2, boxTop + 16);
   doc.setFontSize(11); doc.setTextColor(...DARK);
   doc.text(d.animalNom, M + 10, boxTop + 31);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-  doc.text(doc.splitTextToSize(d.proprietaire || '—', W - M - col2 - 10), col2, boxTop + 31);
+  doc.text(nomProprio, col2, boxTop + 31);
   doc.setFontSize(9);
+  coordOrdo.forEach((l, i) => doc.text(l, col2, boxTop + 44 + (nomProprio.length - 1) * 12 + i * 11));
   let yy = boxTop + 44;
   for (const [l, v] of infosOrdo) {
     doc.setTextColor(...GREY); doc.text(`${l} : `, M + 10, yy);
@@ -184,6 +191,8 @@ export interface CompteRenduData {
   praticien: string; animalNom: string; animalEspeceRace?: string; animalSexe?: string; animalAge?: string;
   animalIdentification?: string;
   proprietaire?: string; contenu: string; date?: Date;
+  /** Coordonnées du propriétaire (adresse, téléphone, e-mail), sous son nom. */
+  proprietaireCoord?: string[];
   /** Signature manuscrite du vétérinaire (data-URL PNG). */
   signature?: string | null;
   /** Autres métiers (éducateur…) : titre du document, « Dr » ou rien devant le
@@ -234,14 +243,17 @@ export async function compteRenduPdfBlob(d: CompteRenduData): Promise<Blob> {
   y += 16; doc.setDrawColor(221, 226, 220); doc.line(M, y, W - M, y); y += 14;
   const infosPatient = ([['Espèce / race', d.animalEspeceRace], ['Sexe', d.animalSexe], ['Âge', d.animalAge],
     ['Identification', d.animalIdentification]] as const).filter(([, v]) => !!v) as [string, string][];
-  const hBoite = Math.max(64, 40 + infosPatient.length * 11);
-  doc.setFillColor(244, 247, 246); doc.roundedRect(M, y, W - 2 * M, hBoite, 6, 6, 'F');
   const col2 = M + (W - 2 * M) / 2 + 8;
+  doc.setFontSize(9);
+  const coordCr = (d.proprietaireCoord ?? []).flatMap(l => doc.splitTextToSize(l, W - M - col2 - 10) as string[]);
+  const hBoite = Math.max(64, 40 + Math.max(infosPatient.length, coordCr.length) * 11);
+  doc.setFillColor(244, 247, 246); doc.roundedRect(M, y, W - 2 * M, hBoite, 6, 6, 'F');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...TEAL);
   doc.text(d.libelleAnimal ?? 'Patient', M + 10, y + 16); doc.text('Propriétaire', col2, y + 16);
   doc.setFontSize(11); doc.setTextColor(...DARK); doc.text(d.animalNom, M + 10, y + 31);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(d.proprietaire || '—', col2, y + 31);
   doc.setFontSize(9);
+  coordCr.forEach((l, i) => doc.text(l, col2, y + 45 + i * 11));
   infosPatient.forEach(([l, v], i) => {
     doc.setTextColor(...GREY); doc.text(`${l} : `, M + 10, y + 45 + i * 11);
     doc.setTextColor(...DARK); doc.text(majuscule(v), M + 10 + doc.getTextWidth(`${l} : `), y + 45 + i * 11);

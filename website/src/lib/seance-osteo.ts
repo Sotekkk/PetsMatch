@@ -121,7 +121,7 @@ export async function preparerFactureOsteo(rdvId: string, proProfileId: string):
     prenomClient: c.prenom, nomClient: c.nom, emailClient: c.email, telClient: c.tel,
     rueClient: c.rue, cpClient: c.cp, villeClient: c.ville, paysClient: c.pays, siretClient: c.siret, tvaClient: c.tva, lignes,
     notes: `Séance${nomsListe.length > 1 ? 's' : ''} de ${nomsListe.join(', ') || 'votre animal'}`,
-    sourceRdvId: rdvId, sourceAnimalId: animalRef ?? undefined,
+    sourceRdvId: rdvId, sourceAnimalId: animalRef ?? undefined, envoiEnFinDeSeance: true,
     clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
     retour: `/mes-rdv?rdv=${encodeURIComponent(rdvId)}`,
   }));

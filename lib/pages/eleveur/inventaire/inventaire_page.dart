@@ -938,6 +938,9 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   DateTime? _peremption;
   bool _froid = false;
   bool _stupefiant = false;
+  // Repris sur l'ordonnance (migration_pharmacie_ordonnance.sql).
+  final _ordo = {for (final k in ['presentation', 'principe_actif', 'contenance', 'contenance_unite', 'voie', 'instructions', 'mentions'])
+    k: TextEditingController()};
 
   String _cat   = 'alimentation';
   String _unite = 'kg';
@@ -965,6 +968,10 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
       _peremption = DateTime.tryParse(item['date_peremption']?.toString() ?? '');
       _froid = item['froid'] as bool? ?? false;
       _stupefiant = item['stupefiant'] as bool? ?? false;
+      for (final e in _ordo.entries) {
+        final v = item[e.key];
+        e.value.text = v == null ? '' : (v is num ? v.toString().replaceAll(RegExp(r'\.0$'), '') : v.toString());
+      }
     } else if (widget.veto) {
       _cat = 'medicament';
       _unite = 'boite';
@@ -973,6 +980,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
 
   @override
   void dispose() {
+    for (final c in _ordo.values) { c.dispose(); }
     _nomCtrl.dispose(); _qteCtrl.dispose();
     _seuilCtrl.dispose(); _notesCtrl.dispose();
     super.dispose();
@@ -1010,6 +1018,11 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
           'prix_vente': double.tryParse(_prixCtrl.text.replaceAll(',', '.')),
           'froid': _froid,
           'stupefiant': _stupefiant,
+          // Médicaments : informations reprises sur l'ordonnance.
+          for (final e in _ordo.entries)
+            e.key: e.key == 'contenance'
+                ? double.tryParse(e.value.text.trim().replaceAll(',', '.'))
+                : (e.value.text.trim().isEmpty ? null : e.value.text.trim()),
         },
       };
       if (widget.item != null) {
@@ -1201,6 +1214,28 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                   value: _stupefiant,
                   onChanged: (v) => setState(() => _stupefiant = v),
                 ),
+                if (['medicament', 'antiparasitaire', 'vaccin'].contains(_cat)) ...[
+                  const Divider(),
+                  const Text("Pour l'ordonnance (repris quand ce médicament est prescrit ; la dose se saisit à chaque fois)",
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  TextField(controller: _ordo['presentation'], decoration: _dec('Présentation et concentration', 'ex. comprimé sécable 50 mg')),
+                  const SizedBox(height: 10),
+                  TextField(controller: _ordo['principe_actif'], decoration: _dec('Principe actif', '')),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    Expanded(child: TextField(controller: _ordo['contenance'], decoration: _dec('Contenance', 'ex. 30'),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true))),
+                    const SizedBox(width: 10),
+                    Expanded(child: TextField(controller: _ordo['contenance_unite'], decoration: _dec('Unité de prise', 'comprimés, mL…'))),
+                  ]),
+                  const SizedBox(height: 10),
+                  TextField(controller: _ordo['voie'], decoration: _dec("Voie d'administration", 'Orale, cutanée…')),
+                  const SizedBox(height: 10),
+                  TextField(controller: _ordo['instructions'], decoration: _dec('Instructions habituelles', 'ex. pendant le repas')),
+                  const SizedBox(height: 10),
+                  TextField(controller: _ordo['mentions'], decoration: _dec('Mentions réglementaires', "temps d'attente, catégorie…")),
+                ],
                 const SizedBox(height: 10),
               ],
               // Notes

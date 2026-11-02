@@ -14,6 +14,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
 import 'package:PetsMatch/utils/chirurgie_cr.dart';
+import 'package:PetsMatch/utils/client_document.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/utils/signature_pro.dart';
@@ -107,6 +108,9 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
         if (cc != null) proprio = '${cc['prenom'] ?? ''} ${cc['nom'] ?? ''}'.trim();
       } catch (_) {}
     }
+    ClientDocument? cli;
+    try { cli = await clientDocument(c['animal_id'].toString()); } catch (_) {}
+    if ((cli?.nom ?? '').isNotEmpty) proprio = cli!.nom;
     final adresse = [clinique?['rue_pro'], '${clinique?['code_postal_pro'] ?? ''} ${clinique?['ville_pro'] ?? ''}'.trim()]
         .where((x) => (x?.toString() ?? '').trim().isNotEmpty).join(', ');
     return compteRenduPdfBytes(
@@ -121,6 +125,7 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
       animalAge: ageAnimal(animal?['date_naissance'], animal?['age_estime']),
       animalIdentification: (animal?['identification'] ?? '').toString(),
       proprietaire: proprio,
+      proprietaireCoord: cli?.coord ?? const [],
       contenu: texteCrChir(_type, champs, c['date']?.toString()),
       date: DateTime.tryParse((c['date'] ?? '').toString()),
       signature: apercu ? null : octetsSignature(await maSignaturePro()),

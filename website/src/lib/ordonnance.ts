@@ -21,6 +21,85 @@ export interface LigneOrdo {
   instructions: string;
   /** Mentions réglementaires (temps d'attente, catégorie…) saisies par le vétérinaire. */
   mentions: string;
+  /** Quantité suggérée par le calcul (posologie × durée ÷ contenance) : tant
+   *  que quantite lui est égale, elle est signalée « à vérifier ». */
+  quantiteCalculee?: string;
+  /** Médicament de la pharmacie marqué stupéfiant. */
+  stupefiant?: boolean;
+}
+
+/** Article de la pharmacie (migration_pharmacie_ordonnance.sql). */
+export interface ArticleOrdo {
+  nom: string; presentation?: string | null; principe_actif?: string | null;
+  contenance?: number | null; contenance_unite?: string | null; voie?: string | null;
+  instructions?: string | null; mentions?: string | null; stupefiant?: boolean | null;
+}
+
+export const COLONNES_ARTICLE_ORDO = 'nom, presentation, principe_actif, contenance, contenance_unite, voie, instructions, mentions, stupefiant';
+
+/** Article de même nom (sans tenir compte de la casse ni des accents). */
+export function articleDe(nom: string, articles: ArticleOrdo[]): ArticleOrdo | null {
+  const n = sansAccent(nom);
+  return n ? articles.find(a => sansAccent(a.nom) === n) ?? null : null;
+}
+
+/** Champs vides de la ligne complétés par l'article (rien n'est écrasé). */
+export function completerDepuisArticle(l: LigneOrdo, a: ArticleOrdo | null): LigneOrdo {
+  if (!a) return l;
+  const garde = (actuel: string, val?: string | null) => actuel.trim() ? actuel : String(val ?? '').trim();
+  return {
+    ...l,
+    presentation: garde(l.presentation, a.presentation),
+    principeActif: garde(l.principeActif, a.principe_actif),
+    voie: garde(l.voie, a.voie),
+    instructions: garde(l.instructions, a.instructions),
+    mentions: garde(l.mentions, a.mentions),
+    ...(a.stupefiant ? { stupefiant: true } : {}),
+  };
+}
+
+function sansAccent(x: string) { return x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase(); }
+
+/** Unité de prise ramenée à une forme commune (cp, comprimés → comprime). */
+function uniteCommune(u: string): string {
+  const x = sansAccent(u).replace(/\.$/, '');
+  if (/^(cp|cps|comp|comprime|comprimes)$/.test(x)) return 'comprime';
+  if (/^(gel|gelule|gelules)$/.test(x)) return 'gelule';
+  if (/^(ml|millilitre|millilitres)$/.test(x)) return 'ml';
+  return x.replace(/s$/, '');
+}
+
+/** « 1 cp », « ½ cp », « 1,5 mL », « 1/2 comprimé » → { n, unite } ; null si incertain. */
+function doseNumerique(d: string): { n: number; unite: string } | null {
+  const m = /^\s*(\d+(?:[.,]\d+)?)?\s*(½|¼|¾|1\/2|1\/4|3\/4)?\s*([a-zA-ZÀ-ÿ.]+)\s*$/.exec(d);
+  if (!m || (!m[1] && !m[2])) return null;
+  const frac: Record<string, number> = { '½': 0.5, '¼': 0.25, '¾': 0.75, '1/2': 0.5, '1/4': 0.25, '3/4': 0.75 };
+  const n = (m[1] ? parseFloat(m[1].replace(',', '.')) : 0) + (m[2] ? frac[m[2]] : 0);
+  return n > 0 ? { n, unite: uniteCommune(m[3]) } : null;
+}
+
+/** Phase de traitement saisie dans le compte rendu. */
+export interface PhasePosologie { dose: string; prises: string[]; frequenceJours: number; dureeJours: number | null; doses?: Record<string, string> }
+
+/** Quantité à délivrer SUGGÉRÉE : seulement si toutes les doses sont des
+ *  nombres dans l'unité de la boîte et que la durée est connue ; sinon ''. */
+export function quantiteSuggeree(phases: PhasePosologie[], a: ArticleOrdo | null): string {
+  if (!a?.contenance || !a.contenance_unite || !phases.length) return '';
+  const unite = uniteCommune(a.contenance_unite);
+  let total = 0;
+  for (const p of phases) {
+    if (!p.dureeJours || !p.prises.length) return '';
+    const jours = Math.ceil(p.dureeJours / Math.max(1, p.frequenceJours));
+    const doses = p.doses && p.prises.length > 1 ? p.prises.map(k => p.doses?.[k]?.trim() || p.dose) : p.prises.map(() => p.dose);
+    for (const d of doses) {
+      const x = doseNumerique(d);
+      if (!x || x.unite !== unite) return '';
+      total += x.n * jours;
+    }
+  }
+  const boites = Math.ceil(total / a.contenance);
+  const fmt = (n: number) => String(Math.round(n * 100) / 100).replace('.', ',');
+  return `${boites} conditionnement${boites > 1 ? 's' : ''} de ${fmt(a.contenance)} ${a.contenance_unite} (${fmt(total)} ${a.contenance_unite} pour le traitement)`;
 }
 
 export interface ContenuOrdo { lignes: LigneOrdo[]; poids?: string; remarques?: string }
@@ -68,7 +147,7 @@ export function especeDeRente(espece?: string | null): boolean {
 export function controlerOrdo(c: ContenuOrdo, espece?: string | null): { bloquants: string[]; avertissements: string[] } {
   const bloquants: string[] = [];
   const avertissements: string[] = [];
-  const lignes = c.lignes.filter(l => Object.values(l).some(v => String(v ?? '').trim()));
+  const lignes = c.lignes.filter(l => Object.entries(l).some(([k, v]) => k !== 'stupefiant' && k !== 'quantiteCalculee' && String(v ?? '').trim()));
   if (!lignes.length) bloquants.push('Au moins un médicament');
   const rente = especeDeRente(espece);
   lignes.forEach((l, i) => {
@@ -78,6 +157,8 @@ export function controlerOrdo(c: ContenuOrdo, espece?: string | null): { bloquan
     if (!l.duree.trim()) bloquants.push(`${n} : durée du traitement`);
     if (!l.voie.trim()) avertissements.push(`${n} : voie d'administration non précisée`);
     if (!l.quantite.trim()) avertissements.push(`${n} : quantité à délivrer non précisée`);
+    else if (l.quantiteCalculee && l.quantite.trim() === l.quantiteCalculee) avertissements.push(`${n} : quantité calculée d'après la posologie et le conditionnement — à vérifier`);
+    if (l.stupefiant) avertissements.push(`${n} : médicament classé stupéfiant — vérifiez les règles de prescription particulières`);
     if (rente && !l.mentions.trim()) avertissements.push(`${n} : espèce pouvant être destinée à la consommation — indiquez le temps d'attente ou l'exclusion dans les mentions réglementaires`);
   });
   return { bloquants, avertissements };
@@ -87,8 +168,8 @@ export function controlerOrdo(c: ContenuOrdo, espece?: string | null): { bloquan
 export function nettoyerOrdo(c: ContenuOrdo): ContenuOrdo {
   return {
     lignes: c.lignes
-      .map(l => Object.fromEntries(Object.entries(l).map(([k, v]) => [k, String(v ?? '').trim()])) as unknown as LigneOrdo)
-      .filter(l => Object.values(l).some(Boolean)),
+      .map(l => Object.fromEntries(Object.entries(l).map(([k, v]) => [k, typeof v === 'boolean' ? v : String(v ?? '').trim()])) as unknown as LigneOrdo)
+      .filter(l => Object.entries(l).some(([k, v]) => k !== 'stupefiant' && k !== 'quantiteCalculee' && !!v)),
     ...(c.poids?.trim() ? { poids: c.poids.trim() } : {}),
     ...(c.remarques?.trim() ? { remarques: c.remarques.trim() } : {}),
   };

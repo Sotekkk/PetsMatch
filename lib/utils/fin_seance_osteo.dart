@@ -238,6 +238,7 @@ Future<void> finSeanceOsteo(BuildContext context, {required String rdvId, String
         lignesPrefill: lignes,
         noteInitiale: 'Séance${seances.length > 1 ? 's' : ''} de ${listeNoms.isEmpty ? 'votre animal' : listeNoms}',
         sourceRdvId: rdvId, sourceAnimalId: animalRef,
+        envoiEnFinDeSeance: true,
         clientUid: r?['client_uid']?.toString(), clientProfileId: r?['client_profile_id']?.toString(),
       )));
       // Facture faite : la fin de séance reprend (envoi, acquittée).

@@ -29,6 +29,14 @@ interface Item {
   prix_vente?: number | null;
   froid?: boolean | null;
   stupefiant?: boolean | null;
+  // Repris sur l'ordonnance (migration_pharmacie_ordonnance.sql).
+  presentation?: string | null;
+  principe_actif?: string | null;
+  contenance?: number | null;
+  contenance_unite?: string | null;
+  voie?: string | null;
+  instructions?: string | null;
+  mentions?: string | null;
 }
 
 interface Mouvement {
@@ -703,6 +711,12 @@ function ItemFormModal({ item, uid, profileId, veto = false, onClose, onSaved }:
   const [prixVente,  setPrixVente]  = useState(item?.prix_vente != null ? String(item.prix_vente) : '');
   const [froid,      setFroid]      = useState(!!item?.froid);
   const [stupefiant, setStupefiant] = useState(!!item?.stupefiant);
+  const [ordo, setOrdo] = useState({
+    presentation: item?.presentation ?? '', principe_actif: item?.principe_actif ?? '',
+    contenance: item?.contenance != null ? String(item.contenance) : '', contenance_unite: item?.contenance_unite ?? '',
+    voie: item?.voie ?? '', instructions: item?.instructions ?? '', mentions: item?.mentions ?? '',
+  });
+  const majOrdo = (k: keyof typeof ordo, v: string) => setOrdo(o => ({ ...o, [k]: v }));
   const [nom,       setNom]       = useState(item?.nom        ?? '');
   const [cat,       setCat]       = useState<Categorie>(item?.categorie  ?? (veto ? 'medicament' : 'alimentation'));
   const [unite,     setUnite]     = useState<Unite>(item?.unite      ?? (veto ? 'boite' : 'kg'));
@@ -734,6 +748,11 @@ function ItemFormModal({ item, uid, profileId, veto = false, onClose, onSaved }:
         date_peremption: peremption || null,
         prix_vente: prixVente ? parseFloat(prixVente.replace(',', '.')) : null,
         froid, stupefiant,
+        // Médicaments : informations reprises sur l'ordonnance.
+        presentation: ordo.presentation.trim() || null, principe_actif: ordo.principe_actif.trim() || null,
+        contenance: ordo.contenance ? parseFloat(ordo.contenance.replace(',', '.')) || null : null,
+        contenance_unite: ordo.contenance_unite.trim() || null, voie: ordo.voie.trim() || null,
+        instructions: ordo.instructions.trim() || null, mentions: ordo.mentions.trim() || null,
       } : {}),
     };
     if (item) {
@@ -845,6 +864,41 @@ function ItemFormModal({ item, uid, profileId, veto = false, onClose, onSaved }:
                 <input type="checkbox" className="mt-1" checked={stupefiant} onChange={e => setStupefiant(e.target.checked)} />
                 <span>🔒 Stupéfiant <span className="block text-xs text-gray-400">Chaque entrée / sortie est inscrite au registre, avec son motif.</span></span>
               </label>
+              {['medicament', 'antiparasitaire', 'vaccin'].includes(cat) && (
+                <div className="space-y-3 border-t border-gray-100 pt-3">
+                  <p className="text-xs font-semibold text-gray-500">Pour l&apos;ordonnance <span className="font-normal">(repris quand ce médicament est prescrit ; la dose se saisit à chaque fois)</span></p>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Présentation et concentration</label>
+                    <input className={iCls} value={ordo.presentation} onChange={e => majOrdo('presentation', e.target.value)} placeholder="ex. comprimé sécable 50 mg" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Principe actif</label>
+                    <input className={iCls} value={ordo.principe_actif} onChange={e => majOrdo('principe_actif', e.target.value)} />
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Contenance du conditionnement</label>
+                      <input type="number" min="0" step="any" className={iCls} value={ordo.contenance} onChange={e => majOrdo('contenance', e.target.value)} placeholder="ex. 30" />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-xs font-semibold text-gray-500 mb-1 block">Unité de prise</label>
+                      <input className={iCls} value={ordo.contenance_unite} onChange={e => majOrdo('contenance_unite', e.target.value)} placeholder="comprimés, mL, pipettes…" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Voie d&apos;administration</label>
+                    <input className={iCls} value={ordo.voie} onChange={e => majOrdo('voie', e.target.value)} placeholder="Orale, cutanée…" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Instructions habituelles</label>
+                    <input className={iCls} value={ordo.instructions} onChange={e => majOrdo('instructions', e.target.value)} placeholder="ex. à donner pendant le repas" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Mentions réglementaires</label>
+                    <input className={iCls} value={ordo.mentions} onChange={e => majOrdo('mentions', e.target.value)} placeholder="temps d'attente, catégorie…" />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

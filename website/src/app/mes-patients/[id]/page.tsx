@@ -36,8 +36,9 @@ import { ouvrirDocument } from '@/lib/document-prive';
 import { ordonnancePdfBlob, compteRenduPdfBlob, ageAnimal, sexeAnimal } from '@/lib/ordonnance-pdf';
 import OrdonnanceEditeur from '@/components/pro/OrdonnanceEditeur';
 import ChirurgieCrModal from '@/components/pro/ChirurgieCrModal';
+import { clientDocument } from '@/lib/client-document';
 import { TITRE_CR_CHIR, texteCrChir, type DocCrChir, type TypeCrChir } from '@/lib/chirurgie-cr';
-import { ligneVide, lignesDe, resumeOrdo, type ContenuOrdo, type LigneOrdo, type OrdonnanceRow } from '@/lib/ordonnance';
+import { articleDe, completerDepuisArticle, COLONNES_ARTICLE_ORDO, ligneVide, lignesDe, quantiteSuggeree, resumeOrdo, type ArticleOrdo, type ContenuOrdo, type LigneOrdo, type OrdonnanceRow } from '@/lib/ordonnance';
 import { imprimerPdf, pdfDepuisUrl, envoyerPdfParEmail } from '@/lib/transmission-document';
 import { phraseChampsARemplir, erreursDatesSante } from '@/lib/controle-dates';
 import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
@@ -1642,7 +1643,16 @@ function PatientDetailPageInner() {
     if (prescrits.length) {
       try {
         const poids = formPoids.trim() || (animal?.poids != null ? String(animal.poids) : '');
-        const brouillon = await creerBrouillonOrdonnance({ lignes: prescrits.map(ligneDepuisTraitement), ...(poids ? { poids } : {}) },
+        // Médicaments de la pharmacie : présentation, voie, instructions… reprises,
+        // quantité à délivrer suggérée (à vérifier) ; la dose reste celle saisie.
+        const arts = await chargerArticlesOrdo();
+        const lignes = prescrits.map(t => {
+          const a = articleDe(t.nom, arts);
+          const l = completerDepuisArticle(ligneDepuisTraitement(t), a);
+          const q = l.quantite.trim() ? '' : quantiteSuggeree(t.phases, a);
+          return q ? { ...l, quantite: q, quantiteCalculee: q } : l;
+        });
+        const brouillon = await creerBrouillonOrdonnance({ lignes, ...(poids ? { poids } : {}) },
           auj.toLocaleDateString('sv-SE'), crRdvId);
         if (peutPrescrire) await ouvrirEditeurOrdo({ ordo: brouillon });
         else alert('Ordonnance préparée : un vétérinaire doit la compléter et la valider (onglet Consultations).');
@@ -1666,8 +1676,9 @@ function PatientDetailPageInner() {
       : { data: null };
     const certs = (cl?.certifications ?? []) as { nom?: string; numero?: string }[];
     const ordre = certs.find(c => (c.nom ?? '').toLowerCase().includes('ordre'))?.numero ?? '';
-    const proprio = clientClinique ? `${clientClinique.prenom ?? ''} ${clientClinique.nom}`.trim()
-      : owner ? `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim() : '';
+    const cli = await clientDocument(animalId, { rdvId: crRdvId ?? dernierRdv?.id ?? null }).catch(() => null);
+    const proprio = cli?.nom || (clientClinique ? `${clientClinique.prenom ?? ''} ${clientClinique.nom}`.trim()
+      : owner ? `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim() : '');
     const jour = (x: string) => new Date(`${x.slice(0, 10)}T12:00:00`);
     return ordonnancePdfBlob({
       cliniqueNom: (cl?.nom as string | undefined)?.trim() || 'Cabinet vétérinaire',
@@ -1681,12 +1692,19 @@ function PatientDetailPageInner() {
       signature: opts.apercu ? null : signature,
       animalIdentification: animal?.identification ?? '',
       animalPoids: c.poids ? `${c.poids.replace('.', ',')} kg` : '',
-      proprietaire: proprio,
+      proprietaire: proprio, proprietaireCoord: cli?.coord ?? [],
       lignes: lignesDe(c).map(l => ({ ...l, notes: l.instructions })),
       remarques: c.remarques,
       date: jour(date), numero: opts.numero, apercu: opts.apercu,
       remplace: opts.remplace ? { numero: opts.remplace.numero, date: opts.remplace.date_emit ? jour(opts.remplace.date_emit) : null } : null,
     });
+  }
+
+  /** Pharmacie de la clinique (informations reprises sur l'ordonnance). */
+  async function chargerArticlesOrdo(): Promise<ArticleOrdo[]> {
+    if (!activeProfileId) return [];
+    const { data } = await supabase.from('inventaire_items').select(COLONNES_ARTICLE_ORDO).eq('eleveur_profile_id', activeProfileId);
+    return (data ?? []) as ArticleOrdo[];
   }
 
   /** Dépose le PDF dans le bucket privé `documents` (ouvert par lien temporaire). */
@@ -1784,7 +1802,7 @@ function PatientDetailPageInner() {
       praticien: nomPrescripteur,
       animalNom: animal?.nom ?? 'Animal', animalEspeceRace: [animal?.espece, animal?.race].filter(Boolean).join(' · '),
       animalSexe: sexeAnimal(animal?.sexe), animalAge: ageAnimal(animal?.date_naissance, (animal as { age_estime?: string | number | null } | null)?.age_estime),
-      animalIdentification: animal?.identification ?? '', proprietaire: i.proprio,
+      animalIdentification: animal?.identification ?? '', proprietaire: i.proprio, proprietaireCoord: i.proprioCoord,
       signature: apercu ? null : signature,
       titre: `${TITRE_CR_CHIR[type].toUpperCase()}${apercu ? ' (APERÇU)' : ''}`,
       contenu: texteCrChir(type, champs, c.date), date: new Date(`${c.date.slice(0, 10)}T12:00:00`),
@@ -1824,8 +1842,10 @@ function PatientDetailPageInner() {
         .eq('id', activeProfileId).maybeSingle()
       : { data: null };
     const v = (x: unknown) => String(x ?? '').trim();
-    const proprio = clientClinique ? `${clientClinique.prenom ?? ''} ${clientClinique.nom}`.trim()
-      : owner ? `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim() : '';
+    // Propriétaire : nom et coordonnées, même cascade que la facture.
+    const cli = await clientDocument(animalId, { rdvId: crRdvId ?? dernierRdv?.id ?? null }).catch(() => null);
+    const proprio = cli?.nom || (clientClinique ? `${clientClinique.prenom ?? ''} ${clientClinique.nom}`.trim()
+      : owner ? `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim() : '');
     return {
       clinique: (cl?.nom as string | undefined)?.trim() || 'Cabinet vétérinaire',
       // Adresse professionnelle, sinon celle du profil.
@@ -1835,7 +1855,7 @@ function PatientDetailPageInner() {
       tel: v(cl?.phone_number) || v(cl?.phone) || v(cl?.telephone),
       cliniqueEmail: v(cl?.email_contact) || v(user?.email),
       praticien: `${v(cl?.firstname) || v(userData?.firstname)} ${v(cl?.lastname) || v(userData?.lastname)}`.trim(),
-      proprio, email: clientClinique?.email ?? null,
+      proprio, proprioCoord: cli?.coord ?? [], email: cli?.email ?? clientClinique?.email ?? null,
     };
   }
 
@@ -1848,7 +1868,7 @@ function PatientDetailPageInner() {
         animalNom: animal?.nom ?? 'Animal', animalEspeceRace: [animal?.espece, animal?.race].filter(Boolean).join(' · '),
         animalSexe: sexeAnimal(animal?.sexe), animalAge: ageAnimal(animal?.date_naissance, (animal as { age_estime?: string | number | null } | null)?.age_estime),
         signature,
-        animalIdentification: animal?.identification ?? '', proprietaire: i.proprio,
+        animalIdentification: animal?.identification ?? '', proprietaire: i.proprio, proprietaireCoord: i.proprioCoord,
         contenu: c.contenu ?? '', date: new Date(c.created_at),
       });
       if (action === 'imprimer') imprimerPdf(blob);
@@ -1951,7 +1971,7 @@ function PatientDetailPageInner() {
         prenomClient: c.prenom, nomClient: c.nom, emailClient: c.email, telClient: c.tel,
         rueClient: c.rue, cpClient: c.cp, villeClient: c.ville, paysClient: c.pays, siretClient: c.siret, tvaClient: c.tva, lignes,
         notes: `Consultation de ${animal.nom}`,
-        sourceRdvId: rdvFacture ?? dernierRdv?.id, sourceAnimalId: animalId,
+        sourceRdvId: rdvFacture ?? dernierRdv?.id, sourceAnimalId: animalId, envoiEnFinDeSeance: true,
         ...((rdvFacture ?? crRdvId) ? { retour: `/mes-rdv?rdv=${encodeURIComponent((rdvFacture ?? crRdvId)!)}` } : {}),
         clientUid: dernierRdv?.client_uid ?? animal.uid_proprietaire ?? undefined,
         clientProfileId: dernierRdv?.client_profile_id ?? undefined,
@@ -2053,7 +2073,7 @@ function PatientDetailPageInner() {
         prenomClient: c.prenom, nomClient: c.nom, emailClient: c.email, telClient: c.tel,
         rueClient: c.rue, cpClient: c.cp, villeClient: c.ville, paysClient: c.pays, siretClient: c.siret, tvaClient: c.tva, lignes,
         notes: `Consultation de ${listeNoms}`,
-        sourceRdvId: rdvId, sourceAnimalId: detail[0].id, retour: `/mes-rdv?rdv=${encodeURIComponent(rdvId)}`,
+        sourceRdvId: rdvId, sourceAnimalId: detail[0].id, envoiEnFinDeSeance: true, retour: `/mes-rdv?rdv=${encodeURIComponent(rdvId)}`,
         clientUid: rr.client_uid ?? undefined, clientProfileId: rr.client_profile_id ?? undefined,
       }));
     } catch { /* ignore */ }
@@ -4575,6 +4595,7 @@ function PatientDetailPageInner() {
             rectifie={remplace ? { numero: remplace.numero, date: remplace.date_emit } : null}
             prescripteur={nomPrescripteur}
             peutValider={peutPrescrire}
+            chargerArticles={chargerArticlesOrdo}
             apercu={(c, d) => ordonnancePdf(c, d, { apercu: true, remplace })}
             enregistrerBrouillon={(c, d) => enregistrerBrouillonOrdo(ordo, c, d, remplace)}
             valider={(c, d) => validerOrdonnance(ordo, c, d, remplace)}

@@ -15,6 +15,7 @@ import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
+import 'package:PetsMatch/utils/client_document.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/utils/ordonnance.dart';
 import 'package:PetsMatch/utils/signature_pro.dart';
@@ -111,6 +112,10 @@ Future<Uint8List> _construirePdf(Map<String, dynamic> base, ContenuOrdo c, DateT
       if (cc != null) proprio = '${cc['prenom'] ?? ''} ${cc['nom'] ?? ''}'.trim();
     } catch (_) {}
   }
+  // Nom et coordonnées du propriétaire : même cascade que la facture.
+  ClientDocument? cli;
+  try { cli = await clientDocument(base['animal_id'].toString(), rdvId: base['rdv_id']?.toString()); } catch (_) {}
+  if ((cli?.nom ?? '').isNotEmpty) proprio = cli!.nom;
   var ordre = '';
   if (clinique?['certifications'] is List) {
     for (final x in clinique!['certifications'] as List) {
@@ -134,6 +139,7 @@ Future<Uint8List> _construirePdf(Map<String, dynamic> base, ContenuOrdo c, DateT
     animalIdentification: (animal?['identification'] ?? '').toString(),
     animalPoids: poids.isEmpty ? '' : '$poids kg',
     proprietaire: proprio,
+    proprietaireCoord: cli?.coord ?? const [],
     lignes: [
       for (final l in c.lignes.where((l) => !l.vide))
         LigneOrdonnance(medicament: l.medicament.trim(), posologie: l.posologie.trim(), notes: l.instructions.trim(),
@@ -188,15 +194,19 @@ class _Ligne {
       presentation = TextEditingController(), posologie = TextEditingController(), voie = TextEditingController(),
       duree = TextEditingController(), quantite = TextEditingController(), renouvellement = TextEditingController(),
       instructions = TextEditingController(), mentions = TextEditingController();
+  String quantiteCalculee = '';
+  bool stupefiant = false;
   _Ligne([LigneOrdo? l]) {
     if (l == null) return;
+    quantiteCalculee = l.quantiteCalculee; stupefiant = l.stupefiant;
     medicament.text = l.medicament; principeActif.text = l.principeActif; presentation.text = l.presentation;
     posologie.text = l.posologie; voie.text = l.voie; duree.text = l.duree; quantite.text = l.quantite;
     renouvellement.text = l.renouvellement; instructions.text = l.instructions; mentions.text = l.mentions;
   }
   LigneOrdo get valeur => LigneOrdo(medicament: medicament.text, principeActif: principeActif.text,
       presentation: presentation.text, posologie: posologie.text, voie: voie.text, duree: duree.text,
-      quantite: quantite.text, renouvellement: renouvellement.text, instructions: instructions.text, mentions: mentions.text);
+      quantite: quantite.text, renouvellement: renouvellement.text, instructions: instructions.text, mentions: mentions.text,
+      quantiteCalculee: quantiteCalculee, stupefiant: stupefiant);
   List<TextEditingController> get tous => [medicament, principeActif, presentation, posologie, voie, duree, quantite,
       renouvellement, instructions, mentions];
   void dispose() { for (final c in tous) { c.dispose(); } }
@@ -229,6 +239,8 @@ class _OrdonnanceEditeurPageState extends State<_OrdonnanceEditeurPage> {
   bool _verifie = false;
   Uint8List? _pdf;
   String? _occupe;
+  /// Pharmacie de la clinique : informations reprises sur la ligne.
+  List<Map<String, dynamic>> _articles = [];
 
   @override
   void initState() {
@@ -242,12 +254,44 @@ class _OrdonnanceEditeurPageState extends State<_OrdonnanceEditeurPage> {
     for (final l in _lignes) { _ecouter(l); }
     _poids.addListener(_change);
     peutPrescrireOrdonnance().then((v) { if (mounted) setState(() => _peutValider = v); });
+    final pro = (widget.ordo?['pro_profile_id'] ?? AgendaContexte.profileId).toString();
+    if (pro.isNotEmpty) {
+      _supa.from('inventaire_items').select(colonnesArticleOrdo).eq('eleveur_profile_id', pro).order('nom').then((r) {
+        if (mounted) setState(() => _articles = List<Map<String, dynamic>>.from(r as List));
+      }).catchError((_) {});
+    }
     _supa.from('animaux').select('espece').eq('id', widget.animalId).maybeSingle().then((a) {
       if (mounted) setState(() => _espece = a?['espece']?.toString());
     }).catchError((_) {});
   }
 
   void _ecouter(_Ligne l) { for (final c in l.tous) { c.addListener(_change); } }
+
+  /// Médicament choisi dans la pharmacie : champs vides complétés (dose jamais).
+  Future<void> _choisirDansPharmacie(_Ligne l) async {
+    final a = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => SafeArea(child: ListView(shrinkWrap: true, children: [
+        const Padding(padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
+            child: Text('Pharmacie de la clinique', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15))),
+        for (final x in _articles)
+          ListTile(
+            title: Text((x['nom'] ?? '').toString(), style: const TextStyle(fontFamily: 'Galey')),
+            subtitle: (x['presentation'] ?? '').toString().isEmpty ? null
+                : Text(x['presentation'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            onTap: () => Navigator.pop(ctx, x),
+          ),
+      ])),
+    );
+    if (a == null) return;
+    final complete = completerDepuisArticle(l.valeur..medicament = (a['nom'] ?? '').toString(), a);
+    setState(() {
+      l.medicament.text = complete.medicament; l.presentation.text = complete.presentation;
+      l.principeActif.text = complete.principeActif; l.voie.text = complete.voie;
+      l.instructions.text = complete.instructions; l.mentions.text = complete.mentions;
+      l.stupefiant = complete.stupefiant;
+    });
+  }
   void _change() { if (mounted) setState(() => _verifie = false); }
 
   @override
@@ -455,6 +499,12 @@ class _OrdonnanceEditeurPageState extends State<_OrdonnanceEditeurPage> {
                           child: const Text('Retirer', style: TextStyle(fontFamily: 'Galey', color: Colors.red)),
                         ),
                     ]),
+                    if (_articles.isNotEmpty)
+                      Align(alignment: Alignment.centerLeft, child: TextButton.icon(
+                        onPressed: () => _choisirDansPharmacie(_lignes[i]),
+                        icon: const Icon(Icons.medication_outlined, size: 18, color: _teal),
+                        label: const Text('Choisir dans la pharmacie', style: TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700)),
+                      )),
                     for (final (c, label, aide, lignes) in [
                       (_lignes[i].medicament, 'Médicament *', null, 1),
                       (_lignes[i].presentation, 'Présentation et concentration', 'ex. comprimé 50 mg', 1),

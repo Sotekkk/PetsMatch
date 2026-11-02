@@ -6,11 +6,16 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_constants.dart' show titreCompteRendu;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart' show ProAgendaPage;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:printing/printing.dart';
+import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart' show compteRenduPdfBytes, ageAnimal, sexeAnimal;
+import 'package:PetsMatch/utils/client_document.dart';
+import 'package:PetsMatch/utils/document_prive.dart';
+import 'package:PetsMatch/utils/signature_pro.dart';
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1F2A2E);
@@ -456,8 +461,58 @@ class _DocumentsSanteProTabState extends State<DocumentsSanteProTab> {
         subtitle: sous.isEmpty ? null : Text(sous, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
         trailing: (url != null || onTap != null) ? const Icon(Icons.chevron_right) : null,
-        onTap: onTap ?? (url == null ? null : () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)),
+        // Document privé (bucket documents) : lien temporaire.
+        onTap: onTap ?? (url == null ? null : () => ouvrirDocument(context, url)),
       );
+
+  /// Compte rendu du vétérinaire connecté (validé par lui, ou rédigé et
+  /// validé sur son propre compte) : PDF produit à la demande, avec sa signature.
+  bool _crAMoi(Map<String, dynamic> c) {
+    final moi = FirebaseAuth.instance.currentUser?.uid;
+    if (moi == null || c['statut'] == 'brouillon') return false;
+    return c['valide_par_uid'] == moi || (c['valide_par_uid'] == null && (c['redige_par_uid'] == moi || c['pro_uid'] == moi));
+  }
+
+  Future<void> _ouvrirCrPdf(Map<String, dynamic> c) async {
+    String v(dynamic x) => x?.toString().trim() ?? '';
+    try {
+      final pro = v(c['pro_profile_id']).isNotEmpty ? v(c['pro_profile_id']) : User_Info.activeProfileId;
+      final cl = pro.isEmpty ? null : await _supa.from('user_profiles_complet')
+          .select('nom, firstname, lastname, rue_pro, code_postal_pro, ville_pro, rue, code_postal, ville, phone_number, phone, telephone, email_contact')
+          .eq('id', pro).maybeSingle();
+      final a = await _supa.from('animaux').select('nom, espece, race, sexe, date_naissance, age_estime, identification')
+          .eq('id', c['animal_id']).maybeSingle();
+      ClientDocument? cli;
+      try { cli = await clientDocument(c['animal_id'].toString(), rdvId: c['rdv_id']?.toString()); } catch (_) {}
+      final adresse = (v(cl?['rue_pro']).isNotEmpty || v(cl?['ville_pro']).isNotEmpty)
+          ? [v(cl?['rue_pro']), '${v(cl?['code_postal_pro'])} ${v(cl?['ville_pro'])}'.trim()]
+          : [v(cl?['rue']), '${v(cl?['code_postal'])} ${v(cl?['ville'])}'.trim()];
+      final bytes = await compteRenduPdfBytes(
+        cliniqueNom: v(cl?['nom']).isNotEmpty ? v(cl?['nom']) : 'Cabinet vétérinaire',
+        cliniqueAdresse: adresse.where((x) => x.isNotEmpty).join(', '),
+        cliniqueTel: [cl?['phone_number'], cl?['phone'], cl?['telephone']].map(v).firstWhere((x) => x.isNotEmpty, orElse: () => ''),
+        cliniqueEmail: v(cl?['email_contact']).isNotEmpty ? v(cl?['email_contact']) : v(FirebaseAuth.instance.currentUser?.email),
+        praticien: '${User_Info.firstname} ${User_Info.lastname}'.replaceAll('none', '').trim(),
+        animalNom: v(a?['nom']).isEmpty ? 'Animal' : v(a?['nom']),
+        animalEspeceRace: [v(a?['espece']), v(a?['race'])].where((x) => x.isNotEmpty).join(' · '),
+        animalSexe: sexeAnimal(a?['sexe']), animalAge: ageAnimal(a?['date_naissance'], a?['age_estime']),
+        animalIdentification: v(a?['identification']),
+        proprietaire: cli?.nom ?? '', proprietaireCoord: cli?.coord ?? const [],
+        contenu: v(c['contenu']),
+        date: DateTime.tryParse(v(c['created_at']))?.toLocal(),
+        signature: octetsSignature(await maSignaturePro()),
+      );
+      if (!mounted) return;
+      await Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => Scaffold(
+        appBar: AppBar(title: Text('Compte rendu — ${_date(c['created_at'])}', style: const TextStyle(fontFamily: 'Galey', fontSize: 16)),
+            backgroundColor: Colors.white, foregroundColor: const Color(0xFF1E2025), elevation: 0.5),
+        body: PdfPreview(build: (_) async => bytes, canChangePageFormat: false, canChangeOrientation: false, canDebug: false,
+            pdfFileName: 'Compte-rendu-${v(a?['nom']).replaceAll(' ', '_')}.pdf'),
+      )));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('PDF indisponible : $e')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -482,7 +537,9 @@ class _DocumentsSanteProTabState extends State<DocumentsSanteProTab> {
               _carte('Comptes rendus', Icons.article_outlined, _crs.isEmpty
                   ? _discret('Aucun compte rendu.')
                   : Column(children: [
-                      for (final c in _crs) _doc('Compte rendu — ${_date(c['created_at'])}', extrait(c['contenu']), url: url(c)),
+                      for (final c in _crs)
+                        _doc('Compte rendu — ${_date(c['created_at'])}', extrait(c['contenu']), url: url(c),
+                            onTap: url(c) == null && _crAMoi(c) ? () => _ouvrirCrPdf(c) : null),
                     ])),
               _carte('Ordonnances', Icons.medication_outlined, _ordos.isEmpty
                   ? _discret('Aucune ordonnance.')

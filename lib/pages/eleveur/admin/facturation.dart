@@ -773,6 +773,9 @@ class CreerFacturePage extends StatefulWidget {
   final String? forfaitSouscritId;
   final String? sourceRdvId;      // RDV « ancre »
   final List<String> sourceRdvIds; // tous les RDV couverts (garde multi-jours)
+  /// Facture d'une consultation / séance : envoyée au client à la fin de la
+  /// séance (avec CR, ordonnance…), pas à l'émission.
+  final bool envoiEnFinDeSeance;
   final String? sourceAnimalId;
   final String? sourcePensionEntreeId; // séjour pension d'origine
   final String? clientUid;
@@ -795,6 +798,7 @@ class CreerFacturePage extends StatefulWidget {
     this.sourceRdvId,
     this.forfaitSouscritId,
     this.sourceRdvIds = const [],
+    this.envoiEnFinDeSeance = false,
     this.sourceAnimalId,
     this.sourcePensionEntreeId,
     this.clientUid,
@@ -1329,6 +1333,9 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     } catch (_) {}
 
     // Envoi au client : email (endpoint site) + notification in-app si compte.
+    // Facture d'un RDV (consultation, séance) : envoyée à la fin de la
+    // consultation avec le compte rendu et l'ordonnance, pas en double ici.
+    if (widget.envoiEnFinDeSeance) return;
     final email = (d['emailClient'] as String?)?.trim() ?? '';
     if (email.isEmpty) return;
     try {
