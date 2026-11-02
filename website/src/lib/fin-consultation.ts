@@ -13,9 +13,13 @@ export interface CrConsultation { id: string; animal_id: string; contenu: string
 export interface OrdoConsultation { id: string; animal_id: string; doc_url: string | null; created_at: string }
 export type FactureConsultation = Record<string, unknown> & { id: string; statut?: string | null; numero_affichage?: string | null };
 
+/** Document validé d'une intervention du jour (CR pré / opératoire, consignes). */
+export interface DocIntervention { chirurgieId: string; animal_id: string; doc: 'preop' | 'operatoire' | 'consignes'; url: string; intitule: string }
+
 export interface DocsConsultation {
   rdvId: string; animalIdPrincipal: string | null; noms: Record<string, string>;
   crs: CrConsultation[]; ordos: OrdoConsultation[]; facture: FactureConsultation | null;
+  interventions?: DocIntervention[];
 }
 
 export async function chargerDocsConsultation(rdvId: string): Promise<DocsConsultation> {
@@ -45,7 +49,18 @@ export async function chargerDocsConsultation(rdvId: string): Promise<DocsConsul
     if (o2) ordosR = (o2.data ?? []) as OrdoConsultation[];
     if (f2) facR = (f2.data ?? []) as FactureConsultation[];
   }
-  const ids = [...new Set([...crsR, ...ordosR].map(x => String((x as { animal_id: unknown }).animal_id)))];
+  // Interventions du jour du RDV : CR pré / opératoire et consignes validés (PDF).
+  const animauxRdv = [...new Set([...(rr?.animal_id != null ? [String(rr.animal_id)] : []), ...crsR.map(c => String(c.animal_id))])];
+  let interventions: DocIntervention[] = [];
+  if (rr?.date_heure && animauxRdv.length) {
+    const jourRdv = new Date(rr.date_heure).toLocaleDateString('sv-SE');
+    const { data: ch } = await supabase.from('chirurgies').select('id, animal_id, intitule, preop, operatoire, consignes, preop_doc_url, operatoire_doc_url, consignes_doc_url')
+      .in('animal_id', animauxRdv).eq('date', jourRdv);
+    interventions = ((ch ?? []) as Record<string, unknown>[]).flatMap(c => (['preop', 'operatoire', 'consignes'] as const)
+      .filter(d => (c[d] as { statut?: string } | null)?.statut === 'valide' && !!c[`${d}_doc_url`])
+      .map(d => ({ chirurgieId: String(c.id), animal_id: String(c.animal_id), doc: d, url: String(c[`${d}_doc_url`]), intitule: String(c.intitule ?? '') })));
+  }
+  const ids = [...new Set([...crsR, ...ordosR, ...interventions].map(x => String((x as { animal_id: unknown }).animal_id)))];
   const { data: an } = ids.length ? await supabase.from('animaux').select('id, nom').in('id', ids) : { data: [] };
   return {
     rdvId,
@@ -54,6 +69,7 @@ export async function chargerDocsConsultation(rdvId: string): Promise<DocsConsul
     crs: crsR.map(c => ({ ...c, animal_id: String(c.animal_id) })),
     ordos: ordosR.map(o => ({ ...o, animal_id: String(o.animal_id) })),
     facture: facR[0] ?? null,
+    interventions,
   };
 }
 

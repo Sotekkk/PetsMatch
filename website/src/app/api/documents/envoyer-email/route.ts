@@ -69,7 +69,8 @@ export async function POST(req: NextRequest) {
   const docs = Array.isArray(pieces) && pieces.length > 0
     ? pieces.slice(0, 5)
     : [{ document_type, fichier_nom, pdf_base64 }];
-  const libelle = (t?: string) => t === 'ordonnance' ? ['une ordonnance', 'Ordonnance'] : t === 'facture' ? ['une facture', 'Facture'] : ['un compte rendu', 'Compte rendu'];
+  const libelle = (t?: string) => t === 'ordonnance' ? ['une ordonnance', 'Ordonnance'] : t === 'facture' ? ['une facture', 'Facture']
+    : t === 'consignes' ? ['les consignes après l’intervention', 'Consignes après l’intervention'] : ['un compte rendu', 'Compte rendu'];
   const jointes: { filename: string; content: Buffer; contentType: string }[] = [];
   for (const d of docs) {
     if (!d?.pdf_base64) return NextResponse.json({ error: 'Document manquant' }, { status: 400 });

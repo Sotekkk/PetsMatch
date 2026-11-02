@@ -170,6 +170,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
     chargerDocsConsultation(rdvId).then(d => {
       setDocs(d);
       setCoches(Object.fromEntries([...d.crs.map(c => [`cr:${c.id}`, true]), ...d.ordos.map(o => [`ordo:${o.id}`, !!o.doc_url]),
+        ...(d.interventions ?? []).map(x => [`chir:${x.chirurgieId}:${x.doc}`, true]),
         ...(d.facture ? [[`fac:${d.facture.id}`, true]] : [])]));
     });
   }, [rdvId, osteo, toilettage, education]);
@@ -210,7 +211,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
       if (envoyer && nbCoches > 0) {
         const signature = await maSignaturePro(user.uid).catch(() => null);
         const praticien = `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim();
-        const pieces: { type: 'ordonnance' | 'compte_rendu' | 'facture'; blob: Blob; nomFichier: string }[] = [];
+        const pieces: { type: 'ordonnance' | 'compte_rendu' | 'facture' | 'consignes'; blob: Blob; nomFichier: string }[] = [];
         if (ficheToil && coches.toil) {
           const nomA = docs.animalIdPrincipal ? nom(docs.animalIdPrincipal) : 'animal';
           pieces.push({ type: 'compte_rendu', nomFichier: `Compte-rendu-toilettage-${nomA}.pdf`,
@@ -231,6 +232,11 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         }
         for (const d of crsPro) if (coches[`pro:${d.id}`]) {
           pieces.push({ type: 'compte_rendu', nomFichier: `${(d.titre ?? 'Compte rendu').replace(/[\\/:*?"<>|]/g, '-')}.pdf`, blob: await pdfDepuisUrl(d.url) });
+        }
+        // Interventions du jour : CR pré / opératoire et consignes au propriétaire.
+        for (const x of docs.interventions ?? []) if (coches[`chir:${x.chirurgieId}:${x.doc}`]) {
+          const n = x.doc === 'consignes' ? 'Consignes' : x.doc === 'preop' ? 'Compte-rendu-preoperatoire' : 'Compte-rendu-operatoire';
+          pieces.push({ type: x.doc === 'consignes' ? 'consignes' : 'compte_rendu', nomFichier: `${n}-${nom(x.animal_id)}.pdf`, blob: await pdfDepuisUrl(x.url) });
         }
         for (const o of docs.ordos) if (coches[`ordo:${o.id}`]) {
           pieces.push({ type: 'ordonnance', nomFichier: `Ordonnance-${nom(o.animal_id)}.pdf`, blob: await pdfOrdonnance(o) });
@@ -310,7 +316,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         {!docs ? <p className="text-sm text-gray-500">Chargement…</p> : (<>
           <div className="space-y-2">
             <p className="text-xs font-semibold text-gray-500">Envoyer au propriétaire par e-mail</p>
-            {docs.crs.length === 0 && docs.ordos.length === 0 && !docs.facture && !(docs.seances?.length) && !ficheToil && crsPro.length === 0 && seancesEdu.length === 0 && (
+            {docs.crs.length === 0 && docs.ordos.length === 0 && !(docs.interventions?.length) && !docs.facture && !(docs.seances?.length) && !ficheToil && crsPro.length === 0 && seancesEdu.length === 0 && (
               <p className="text-sm text-gray-500">{osteo
                 ? <>Aucun document pour ce rendez-vous pour l&apos;instant : finalisez d&apos;abord la séance.</>
                 : <>Aucun document pour ce rendez-vous pour l&apos;instant (compte rendu validé, ordonnance ou facture).</>}</p>
@@ -327,6 +333,9 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
                 onChange={e => { joindreMonCr(e.target.files?.[0]); e.target.value = ''; }} />
             </label>
             {docs.ordos.map(o => ligne(`ordo:${o.id}`, `Ordonnance — ${nom(o.animal_id)}`, o.doc_url ? undefined : 'PDF indisponible', !o.doc_url))}
+            {(docs.interventions ?? []).map(x => ligne(`chir:${x.chirurgieId}:${x.doc}`,
+              `${x.doc === 'consignes' ? 'Consignes après l’intervention' : x.doc === 'preop' ? 'Compte rendu préopératoire' : 'Compte rendu opératoire'} — ${nom(x.animal_id)}`,
+              x.intitule || undefined))}
             {docs.facture && ligne(`fac:${docs.facture.id}`, `Facture ${docs.facture.numero_affichage ?? ''}`,
               `${Number(docs.facture.total_ttc ?? 0).toFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}`)}
             {factureForfait && ligne(`facf:${factureForfait.id}`, `Facture du forfait ${factureForfait.numero_affichage ?? ''}`,

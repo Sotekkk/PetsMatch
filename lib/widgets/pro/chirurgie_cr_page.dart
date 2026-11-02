@@ -15,12 +15,13 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
 import 'package:PetsMatch/utils/chirurgie_cr.dart';
 import 'package:PetsMatch/widgets/pro/consignes_editeur.dart';
+import 'package:PetsMatch/widgets/pro/documents_consultation.dart' show transmettreDocIntervention;
 import 'package:PetsMatch/utils/client_document.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/utils/signature_pro.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
-import 'package:PetsMatch/widgets/pro/ordonnance_editeur_page.dart' show peutPrescrireOrdonnance, peutPreparerOrdonnance;
+import 'package:PetsMatch/widgets/pro/ordonnance_editeur_page.dart' show peutPrescrireOrdonnance, peutPreparerOrdonnance, ouvrirEditeurOrdonnance;
 
 const _teal = Color(0xFF0C5C6C);
 const _muted = Color(0xFF6B7280);
@@ -55,6 +56,7 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
   final Map<String, Map<String, TextEditingController>> _ctrl = {};
   final Map<String, bool> _nouvelleVersion = {'preop': false, 'operatoire': false, 'consignes': false};
   bool _peutValider = false;
+  bool _peutPreparer = false;
   bool _verifie = false;
   Uint8List? _pdf;
   String? _occupe;
@@ -67,6 +69,7 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
       _ctrl[t] = {for (final e in p.entries) e.key: TextEditingController(text: e.value)..addListener(_change)};
     }
     peutPrescrireOrdonnance().then((v) { if (mounted) setState(() => _peutValider = v); });
+    peutPreparerOrdonnance().then((v) { if (mounted) setState(() => _peutPreparer = v); });
     // Poids de la fiche (pré-op), si rien n'est saisi.
     _supa.from('animaux').select('poids').eq('id', widget.chirurgie['animal_id']).maybeSingle().then((a) {
       final c = _ctrl['preop']!['poids']!;
@@ -270,7 +273,13 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
             Expanded(child: Text(statut, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700,
                 color: _valide ? _teal : d != null ? _amber : _muted))),
             if (_valide && _docUrl.isNotEmpty)
-              TextButton(onPressed: () => ouvrirDocument(context, _docUrl), child: const Text('Ouvrir le PDF', style: lien)),
+              TextButton(onPressed: () => ouvrirDocument(context, _docUrl), child: const Text('PDF', style: lien)),
+            if (_valide && _docUrl.isNotEmpty)
+              TextButton(onPressed: () => transmettreDocIntervention(context, animalId: widget.chirurgie['animal_id'].toString(),
+                  doc: _type, url: _docUrl), child: const Text('Envoyer', style: lien)),
+            if (_peutValider || _peutPreparer)
+              TextButton(onPressed: () => ouvrirEditeurOrdonnance(context, animalId: widget.chirurgie['animal_id'].toString()),
+                  child: const Text('Ordonnance', style: lien)),
             if (_verrouille && _peutValider)
               TextButton(onPressed: () => setState(() => _nouvelleVersion[_type] = true), child: const Text('Nouvelle version', style: lien)),
           ]),

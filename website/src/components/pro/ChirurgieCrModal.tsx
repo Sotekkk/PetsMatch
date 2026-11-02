@@ -16,7 +16,7 @@ const TEAL = '#0C5C6C';
 
 type Onglet = TypeCrChir | 'consignes';
 
-export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, peutValider, apercu, enregistrer, consignes, onClose }: {
+export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, peutValider, apercu, enregistrer, consignes, onOrdonnance, onTransmettre, onClose }: {
   chirurgie: ChirurgieCr;
   typeInitial: Onglet;
   poidsFiche?: number | string | null;
@@ -26,6 +26,10 @@ export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, p
   enregistrer: (type: TypeCrChir, champs: Record<string, string>, valider: boolean) => Promise<void>;
   /** Consignes postopératoires pour le propriétaire (3e onglet). */
   consignes?: ActionsConsignes;
+  /** Ordonnance depuis le dossier opératoire (fenêtre au-dessus, saisie conservée). */
+  onOrdonnance?: () => void;
+  /** Document validé : imprimer / envoyer au propriétaire (avec ou sans compte). */
+  onTransmettre?: (doc: Onglet, url: string, action: 'imprimer' | 'email') => void;
   onClose: () => void;
 }) {
   const [onglet, setOnglet] = useState<Onglet>(typeInitial);
@@ -123,6 +127,15 @@ export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, p
           <span className={`font-semibold px-2 py-0.5 rounded ${valide ? 'bg-[#0C5C6C]/10 text-[#0C5C6C]' : doc ? 'bg-[#FFF8EA] text-[#8A5A00]' : 'bg-gray-100 text-gray-500'}`}>{statutTxt}</span>
           {valide && docUrl && (
             <LienDocument href={docUrl} target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline" style={{ color: TEAL }}>Ouvrir le PDF</LienDocument>
+          )}
+          {valide && docUrl && onTransmettre && (
+            <>
+              <button onClick={() => onTransmettre(onglet, docUrl, 'imprimer')} className="font-semibold hover:underline" style={{ color: TEAL }}>Imprimer</button>
+              <button onClick={() => onTransmettre(onglet, docUrl, 'email')} className="font-semibold hover:underline" style={{ color: TEAL }}>Envoyer au propriétaire</button>
+            </>
+          )}
+          {onOrdonnance && (
+            <button onClick={onOrdonnance} className="ml-auto font-semibold hover:underline" style={{ color: TEAL }}>Ordonnance</button>
           )}
           {verrouille && peutValider && (
             <button onClick={() => setNouvelleVersion(v => ({ ...v, [onglet]: true }))} className="font-semibold hover:underline" style={{ color: TEAL }}>

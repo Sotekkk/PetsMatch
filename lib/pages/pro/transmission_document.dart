@@ -79,7 +79,7 @@ Future<void> transmettreDocument(
   BuildContext context, {
   required Future<Uint8List> Function() pdf,
   required String nomFichier,
-  required String type, // 'ordonnance' | 'compte_rendu' | 'facture'
+  required String type, // 'ordonnance' | 'compte_rendu' | 'facture' | 'consignes'
   String animalNom = '',
   String expediteur = '',
   String? emailParDefaut,
@@ -92,7 +92,8 @@ Future<void> transmettreDocument(
     context: context,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      ListTile(title: Text(type == 'ordonnance' ? 'Ordonnance' : type == 'facture' ? 'Facture' : 'Compte rendu',
+      ListTile(title: Text(type == 'ordonnance' ? 'Ordonnance' : type == 'facture' ? 'Facture'
+          : type == 'consignes' ? 'Consignes après l’intervention' : 'Compte rendu',
           style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
       ListTile(leading: const Icon(Icons.print_outlined, color: _teal),
           title: const Text('Imprimer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
@@ -116,7 +117,8 @@ Future<void> transmettreDocument(
       await Printing.sharePdf(bytes: bytes, filename: nomFichier);
     } else {
       if ((emailParDefaut ?? '').isEmpty && (animalId ?? '').isNotEmpty) {
-        final quoi = type == 'ordonnance' ? "l'ordonnance" : type == 'facture' ? 'la facture' : 'le compte rendu';
+        final quoi = type == 'ordonnance' ? "l'ordonnance" : type == 'facture' ? 'la facture'
+            : type == 'consignes' ? 'les consignes après l’intervention' : 'le compte rendu';
         final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
           title: const Text('Envoyer au propriétaire', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
           content: Text('Envoyer $quoi à ${(destinataireNom ?? '').isNotEmpty ? destinataireNom : 'le propriétaire'}, '

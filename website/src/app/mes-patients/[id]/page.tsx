@@ -36,6 +36,7 @@ import { ouvrirDocument } from '@/lib/document-prive';
 import { ordonnancePdfBlob, compteRenduPdfBlob, ageAnimal, sexeAnimal } from '@/lib/ordonnance-pdf';
 import OrdonnanceEditeur from '@/components/pro/OrdonnanceEditeur';
 import ChirurgieCrModal from '@/components/pro/ChirurgieCrModal';
+import DocumentsConsultation from '@/components/pro/DocumentsConsultation';
 import { consignesPdfBlob } from '@/lib/consignes-pdf';
 import { prerempliConsignes, type ModeleConsignes, type SectionConsigne } from '@/lib/consignes-postop';
 import { clientDocument } from '@/lib/client-document';
@@ -1159,7 +1160,7 @@ function PatientDetailPageInner() {
   // rectificative (remplace) ; fin : reprise du flux du CR à la fermeture.
   // Comptes rendus pré / opératoire d'une intervention.
   const [crChir, setCrChir] = useState<{ c: ChirurgieEntry; type: TypeCrChir | 'consignes' } | null>(null);
-  const [editeurOrdo, setEditeurOrdo] = useState<{ ordo: Ordonnance | null; remplace?: Ordonnance | null; fin?: () => void } | null>(null);
+  const [editeurOrdo, setEditeurOrdo] = useState<{ ordo: Ordonnance | null; remplace?: Ordonnance | null; rdvId?: string | null; fin?: () => void } | null>(null);
   const [formTaille, setFormTaille] = useState('');
   const [savingForm, setSavingForm] = useState(false);
   // Contrôle des dates de l'acte (miroir carnet de santé du propriétaire).
@@ -1643,7 +1644,8 @@ function PatientDetailPageInner() {
     // Traitements PRESCRITS (pas ceux administrés en clinique) → ordonnance en
     // brouillon, que le vétérinaire complète, vérifie et valide (jamais d'office).
     const prescrits = traitementsCr.filter(t => !t.administre);
-    if (prescrits.length) {
+    const dejaFaite = ordonnancesConsultation.some(o => o.statut !== 'remplacee');
+    if (prescrits.length && (!dejaFaite || confirm('Une ordonnance a déjà été faite pendant cette consultation. Préparer aussi l’ordonnance des traitements du compte rendu ?'))) {
       try {
         const poids = formPoids.trim() || (animal?.poids != null ? String(animal.poids) : '');
         // Médicaments de la pharmacie : présentation, voie, instructions… reprises,
@@ -1751,8 +1753,8 @@ function PatientDetailPageInner() {
     return data as Ordonnance;
   }
 
-  async function enregistrerBrouillonOrdo(o: Ordonnance | null, contenu: ContenuOrdo, date: string, remplace?: Ordonnance | null) {
-    if (!o) { await creerBrouillonOrdonnance(contenu, date, null, remplace); return; }
+  async function enregistrerBrouillonOrdo(o: Ordonnance | null, contenu: ContenuOrdo, date: string, remplace?: Ordonnance | null, rdvId?: string | null) {
+    if (!o) { await creerBrouillonOrdonnance(contenu, date, rdvId ?? null, remplace); return; }
     const { data, error } = await supabase.from('ordonnances').update({ contenu, date_emit: date, notes: resumeOrdo(contenu) || null })
       .eq('id', o.id).eq('statut', 'brouillon').select('id');
     if (error) throw error;
@@ -1778,8 +1780,8 @@ function PatientDetailPageInner() {
 
   /** Validation par le vétérinaire : statut, numéro et validateur posés par le
    *  serveur (pm_ordonnance_controle), puis PDF signé. */
-  async function validerOrdonnance(o: Ordonnance | null, contenu: ContenuOrdo, date: string, remplace?: Ordonnance | null) {
-    const ordo = o ?? await creerBrouillonOrdonnance(contenu, date, null, remplace);
+  async function validerOrdonnance(o: Ordonnance | null, contenu: ContenuOrdo, date: string, remplace?: Ordonnance | null, rdvId?: string | null) {
+    const ordo = o ?? await creerBrouillonOrdonnance(contenu, date, rdvId ?? null, remplace);
     const moi = (esp.espace ? esp.monProfil : null) ?? (activeProfileId || null);
     const { data, error } = await supabase.from('ordonnances').update({
       contenu, date_emit: date, notes: resumeOrdo(contenu) || null, statut: signature ? 'signee' : 'validee',
@@ -1879,6 +1881,40 @@ function PatientDetailPageInner() {
     }
     const { data: liste } = await supabase.from('chirurgies').select('*').eq('animal_id', animalId).order('date', { ascending: false });
     setChirurgies((liste ?? []) as ChirurgieEntry[]);
+  }
+
+  /** Documents de la consultation en cours : ordonnances de son RDV (ou du
+   *  jour) ; interventions récentes ou à venir de l'animal. */
+  const jourCr = new Date().toLocaleDateString('sv-SE');
+  const ordonnancesConsultation = ordonnances.filter(o => o.statut !== 'remplacee'
+    && (crRdvId ? o.rdv_id === crRdvId : (o.date_emit ?? '').startsWith(jourCr)));
+  const interventionsConsultation = chirurgies.filter(c => {
+    const j = (Date.parse(`${c.date?.slice(0, 10)}T12:00:00`) - Date.now()) / 86400000;
+    return j > -30 || [c.preop, c.operatoire, c.consignes].some(d => d && d.statut !== 'valide');
+  }).slice(0, 6);
+
+  async function nouvelleIntervention(intitule: string) {
+    const { data, error } = await supabase.from('chirurgies').insert({
+      id: crypto.randomUUID(), animal_id: animalId, type: 'chirurgie', intitule, date: jourCr, statut: 'prevu',
+      source: 'veterinaire', vet_id: user?.uid ?? null, pro_uid: proUid, ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}),
+    }).select('*').single();
+    if (error) throw error;
+    const { data: liste } = await supabase.from('chirurgies').select('*').eq('animal_id', animalId).order('date', { ascending: false });
+    setChirurgies((liste ?? []) as ChirurgieEntry[]);
+    return data as ChirurgieEntry;
+  }
+
+  /** Document d'intervention validé : imprimer ou envoyer au propriétaire
+   *  (adresse de son compte, ou saisie pour un client sans compte). */
+  async function transmettreDocIntervention(doc: 'preop' | 'operatoire' | 'consignes', url: string, action: 'imprimer' | 'email') {
+    try {
+      const blob = await pdfDepuisUrl(url);
+      if (action === 'imprimer') { imprimerPdf(blob); return; }
+      const i = await infosDocument();
+      const nom = doc === 'consignes' ? 'Consignes' : doc === 'preop' ? 'Compte-rendu-preoperatoire' : 'Compte-rendu-operatoire';
+      await envoyerPdfParEmail(blob, { type: doc === 'consignes' ? 'consignes' : 'compte_rendu', emailParDefaut: i.email, destinataireNom: i.proprio,
+        expediteur: i.clinique, animalNom: animal?.nom, nomFichier: `${nom}-${animal?.nom ?? 'animal'}.pdf`, animalId });
+    } catch (e) { alert(`Impossible : ${(e as Error).message}`); }
   }
 
   /** En-tête / patient / propriétaire des PDF (CR, ordonnance). */
@@ -4623,10 +4659,12 @@ function PatientDetailPageInner() {
 
       {/* ── Modales d'ajout ── */}
       {crChir && (
-        <ChirurgieCrModal chirurgie={crChir.c} typeInitial={crChir.type} poidsFiche={animal?.poids}
+        <ChirurgieCrModal key={crChir.c.id} chirurgie={chirurgies.find(x => x.id === crChir.c.id) ?? crChir.c} typeInitial={crChir.type} poidsFiche={animal?.poids}
           peutValider={peutPrescrire}
           apercu={(t, champs) => crChirPdf(t, crChir.c, champs, true)}
           enregistrer={(t, champs, valider) => enregistrerCrChir(crChir.c, t, champs, valider)}
+          onOrdonnance={peutPreparerOrdo ? () => setEditeurOrdo({ ordo: null, rdvId: crRdvId }) : undefined}
+          onTransmettre={transmettreDocIntervention}
           consignes={{
             chargerModeles: async () => {
               if (!activeProfileId) return [];
@@ -4654,7 +4692,7 @@ function PatientDetailPageInner() {
           onClose={() => setCrChir(null)} />
       )}
       {editeurOrdo && (() => {
-        const { ordo, remplace } = editeurOrdo;
+        const { ordo, remplace, rdvId } = editeurOrdo;
         const fermer = () => { editeurOrdo.fin?.(); setEditeurOrdo(null); };
         const base = remplace ?? ordo;
         return (
@@ -4668,8 +4706,8 @@ function PatientDetailPageInner() {
             peutValider={peutPrescrire}
             chargerArticles={chargerArticlesOrdo}
             apercu={(c, d) => ordonnancePdf(c, d, { apercu: true, remplace })}
-            enregistrerBrouillon={(c, d) => enregistrerBrouillonOrdo(ordo, c, d, remplace)}
-            valider={(c, d) => validerOrdonnance(ordo, c, d, remplace)}
+            enregistrerBrouillon={(c, d) => enregistrerBrouillonOrdo(ordo, c, d, remplace, rdvId)}
+            valider={(c, d) => validerOrdonnance(ordo, c, d, remplace, rdvId)}
             onClose={fermer} />
         );
       })()}
@@ -4987,6 +5025,15 @@ function PatientDetailPageInner() {
                     })}
                   </div>
                 </div>
+              )}
+              {catPro === 'veterinaire' && (
+                <DocumentsConsultation ordonnances={ordonnancesConsultation} interventions={interventionsConsultation}
+                  peutPreparer={peutPreparerOrdo}
+                  onOrdonnance={() => setEditeurOrdo({ ordo: null, rdvId: crRdvId })}
+                  onOuvrirOrdonnance={o => setEditeurOrdo({ ordo: o as Ordonnance })}
+                  onDocIntervention={(c, d) => setCrChir({ c: c as ChirurgieEntry, type: d })}
+                  onNouvelleIntervention={async (intitule, d) => { const c = await nouvelleIntervention(intitule); setCrChir({ c, type: d }); }}
+                  onTransmettre={transmettreDocIntervention} />
               )}
               {catPro === 'veterinaire' && (
                 <ActesCr vaccins={vaccinsCr} setVaccins={setVaccinsCr} traitements={traitementsCr} setTraitements={setTraitementsCr}

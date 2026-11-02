@@ -35,11 +35,12 @@ async function enBase64(blob: Blob): Promise<string> {
  *  [animalId] et sans adresse connue : propriétaire PetsMatch, envoyé à
  *  l'adresse de son compte, résolue par le serveur (jamais affichée). */
 export async function envoyerPdfParEmail(blob: Blob, opts: {
-  type: 'ordonnance' | 'compte_rendu' | 'facture'; emailParDefaut?: string | null; destinataireNom?: string;
+  type: 'ordonnance' | 'compte_rendu' | 'facture' | 'consignes'; emailParDefaut?: string | null; destinataireNom?: string;
   expediteur?: string; animalNom?: string; nomFichier: string; animalId?: string | null;
 }): Promise<boolean> {
   if (!opts.emailParDefaut && opts.animalId) {
-    const quoi = opts.type === 'ordonnance' ? "l'ordonnance" : opts.type === 'facture' ? 'la facture' : 'le compte rendu';
+    const quoi = opts.type === 'ordonnance' ? "l'ordonnance" : opts.type === 'facture' ? 'la facture'
+      : opts.type === 'consignes' ? 'les consignes après l’intervention' : 'le compte rendu';
     if (!window.confirm(`Envoyer ${quoi} à ${opts.destinataireNom || 'le propriétaire'}, à l’adresse e-mail de son compte PetsMatch ?`)) return false;
     const res = await apiFetch('/api/documents/envoyer-email', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -68,7 +69,7 @@ export async function envoyerPdfParEmail(blob: Blob, opts: {
 /** Fin de consultation : plusieurs PDF (compte rendu, ordonnance, facture)
  *  dans un seul e-mail. Sans adresse connue et avec [animalId] : adresse du
  *  compte PetsMatch du propriétaire (résolue par le serveur), sinon saisie. */
-export async function envoyerPiecesParEmail(pieces: { type: 'ordonnance' | 'compte_rendu' | 'facture'; blob: Blob; nomFichier: string }[], opts: {
+export async function envoyerPiecesParEmail(pieces: { type: 'ordonnance' | 'compte_rendu' | 'facture' | 'consignes'; blob: Blob; nomFichier: string }[], opts: {
   emailParDefaut?: string | null; destinataireNom?: string; expediteur?: string; animalNom?: string; animalId?: string | null;
 }): Promise<boolean> {
   const corps = {

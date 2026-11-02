@@ -14,6 +14,7 @@ import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
 import 'package:PetsMatch/utils/ordonnance.dart';
 import 'package:PetsMatch/utils/client_document.dart';
 import 'package:PetsMatch/widgets/pro/ordonnance_editeur_page.dart';
+import 'package:PetsMatch/widgets/pro/documents_consultation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne, facturePdfDepuisLigne;
 import 'package:PetsMatch/pages/pro/transmission_document.dart';
@@ -115,6 +116,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   bool _peutOrdonnances = false;
   /// Préparer un brouillon d'ordonnance (vétérinaire ou ASV).
   bool _peutPreparerOrdo = false;
+  /// Panneau « Documents de la consultation » (ordonnance, CR d'intervention, consignes).
+  final _docsConsultation = GlobalKey<DocumentsConsultationState>();
 
   /// Profil du compte pro concerné : celui du RDV, sinon le contexte
   /// (profil actif, ou clinique pour un employé) — jamais `is_main`
@@ -987,7 +990,19 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     // Traitements PRESCRITS (pas ceux administrés en clinique) → ordonnance en
     // brouillon, que le vétérinaire complète, vérifie et valide (jamais d'office).
     final prescrits = _traitementsCr.where((t) => !t.administre).toList();
-    if (prescrits.isNotEmpty && _peutPreparerOrdo) {
+    // Ordonnance déjà faite pendant la consultation : pas de doublon sans accord.
+    var faireOrdo = prescrits.isNotEmpty && _peutPreparerOrdo;
+    if (faireOrdo && (_docsConsultation.currentState?.ordonnanceDejaFaite ?? false) && mounted) {
+      faireOrdo = await showDialog<bool>(context: context, builder: (d) => AlertDialog(
+        content: const Text("Une ordonnance a déjà été faite pendant cette consultation. Préparer aussi l'ordonnance des traitements du compte rendu ?",
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Non')),
+          TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Oui')),
+        ],
+      )) == true;
+    }
+    if (faireOrdo) {
       try {
         var poids = _poidsSaisi != null ? _fmtPoids(_poidsSaisi!) : '';
         if (poids.isEmpty) {
@@ -1799,6 +1814,27 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     } catch (e) {
       debugPrint('Fin de consultation : $e');
     }
+    // Interventions du jour : CR pré / opératoire et consignes validés (PDF).
+    final interventions = <({String cle, String animalId, String doc, String url, String intitule})>[];
+    try {
+      final animaux = {
+        if (animalId != null) animalId,
+        for (final a in (widget.rdv == null ? const <Map<String, dynamic>>[] : animauxDetailRdv(widget.rdv!))) a['id'].toString(),
+      };
+      if (animaux.isNotEmpty) {
+        final j = '${debut.year}-${debut.month.toString().padLeft(2, '0')}-${debut.day.toString().padLeft(2, '0')}';
+        final ch = await _supa.from('chirurgies').select('id, animal_id, intitule, preop, operatoire, consignes, preop_doc_url, operatoire_doc_url, consignes_doc_url')
+            .inFilter('animal_id', animaux.toList()).eq('date', j);
+        for (final c in List<Map<String, dynamic>>.from(ch as List)) {
+          for (final d in ['preop', 'operatoire', 'consignes']) {
+            final url = (c['${d}_doc_url'] ?? '').toString();
+            if (c[d] is Map && c[d]['statut'] == 'valide' && url.isNotEmpty) {
+              interventions.add((cle: 'chir:${c['id']}:$d', animalId: c['animal_id'].toString(), doc: d, url: url, intitule: (c['intitule'] ?? '').toString()));
+            }
+          }
+        }
+      }
+    } catch (_) {}
     if (!mounted) return;
     // Noms des animaux concernés.
     final noms = <String, String>{};
@@ -1814,6 +1850,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       for (final c in crs) 'cr:${c['id']}': crsPro.isEmpty,
       for (final d in crsPro) 'pro:${d['id']}': true,
       for (final o in ordos) 'ordo:${o['id']}': (o['doc_url'] ?? '').toString().isNotEmpty,
+      for (final x in interventions) x.cle: true,
       if (facture != null) 'fac:${facture['id']}': true,
     };
     final dejaPayee = facture?['statut'] == 'payee';
@@ -1847,6 +1884,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
               ...lignesCrsPro(ctx, setM, rdvId: rdvIdFin, crsPro: crsPro, coches: coches, ligne: ligne, estGenere: (k) => k.startsWith('cr:')),
             for (final o in ordos) ligne('ordo:${o['id']}', 'Ordonnance — ${nom(o['animal_id'])}',
                 (o['doc_url'] ?? '').toString().isEmpty ? 'PDF indisponible' : null, (o['doc_url'] ?? '').toString().isNotEmpty),
+            for (final x in interventions)
+              ligne(x.cle, '${x.doc == 'consignes' ? 'Consignes après l’intervention' : x.doc == 'preop' ? 'Compte rendu préopératoire' : 'Compte rendu opératoire'} — ${nom(x.animalId)}',
+                  x.intitule.isEmpty ? null : x.intitule),
             if (facture != null) ligne('fac:${facture['id']}', 'Facture ${facture['numero_affichage'] ?? ''}',
                 '${((facture['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}'),
             if (facture != null && !dejaPayee) ...[
@@ -1915,6 +1955,14 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         final res = await http.get(Uri.parse(await lienDocument(o['doc_url'].toString())));
         if (res.statusCode == 200) {
           pieces.add((type: 'ordonnance', nomFichier: 'Ordonnance-${nom(o['animal_id'])}.pdf', bytes: res.bodyBytes));
+        }
+      }
+      for (final x in interventions) {
+        if (coches[x.cle] != true) continue;
+        final res = await http.get(Uri.parse(await lienDocument(x.url)));
+        if (res.statusCode == 200) {
+          final n = x.doc == 'consignes' ? 'Consignes' : x.doc == 'preop' ? 'Compte-rendu-preoperatoire' : 'Compte-rendu-operatoire';
+          pieces.add((type: x.doc == 'consignes' ? 'consignes' : 'compte_rendu', nomFichier: '$n-${nom(x.animalId)}.pdf', bytes: res.bodyBytes));
         }
       }
       await ajouterPiecesCrsPro(pieces, crsPro, coches);
@@ -2910,6 +2958,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             ),
           const SizedBox(height: 12),
 
+          if (_saisieActes && AgendaContexte.catPro == 'veterinaire' && _animalCourant != null)
+            DocumentsConsultation(key: _docsConsultation, animalId: _animalCourant!,
+                rdvId: (widget.rdv?['id'] ?? _rdvSource?['id'])?.toString()),
           if (_saisieActes) _blocConsultation(),
           if (_saisieActes) _blocActes(),
 
