@@ -6597,6 +6597,7 @@ class _SanteCard extends StatelessWidget {
     const _skip = {'id', 'animal_id', 'created_at', 'vet_id', 'visite_ref',
                    'source', 'pro_uid', 'owner_uid', 'rdv_id', 'extra_data',
                    'preop', 'operatoire', 'preop_doc_url', 'operatoire_doc_url', 'pro_profile_id', 'documents_historique',
+                   'consignes', 'consignes_doc_url',
                    'rappel_actif', 'rappel_frequence_jours', 'rappel_duree_jours',
                    'rappel_fin', 'rappel_heures'};
     final entries = data.entries.where((e) =>
@@ -6726,13 +6727,13 @@ class _SanteCard extends StatelessWidget {
             _RdvLinkSection(rdvId: rdvId!),
           // Intervention : comptes rendus pré / opératoire (PDF validés ; saisie côté clinique).
           if (collection == 'chirurgies')
-            for (final t in ['preop', 'operatoire'])
+            for (final t in ['preop', 'operatoire', 'consignes'])
               if ((data['${t}_doc_url'] ?? '').toString().isNotEmpty || onCrChirurgie != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Row(children: [
                     Expanded(child: Text(
-                      '${t == 'preop' ? 'CR préopératoire' : 'CR opératoire'}'
+                      '${t == 'preop' ? 'CR préopératoire' : t == 'operatoire' ? 'CR opératoire' : 'Consignes au propriétaire'}'
                       '${data[t] is Map ? (data[t]['statut'] == 'valide' ? ' · validé' : ' · brouillon') : ''}',
                       style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600))),
                     if ((data['${t}_doc_url'] ?? '').toString().isNotEmpty)

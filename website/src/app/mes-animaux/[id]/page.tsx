@@ -5645,10 +5645,11 @@ function AnimalFichePageInner() {
                   {key:'notes',label:'Notes'},
                 ]}/>
               {/* Comptes rendus pré / opératoire validés par le vétérinaire (PDF). */}
-              {(!!r.preop_doc_url || !!r.operatoire_doc_url) && (
+              {(!!r.preop_doc_url || !!r.operatoire_doc_url || !!r.consignes_doc_url) && (
                 <div className="flex flex-wrap gap-3 px-4 pb-3 -mt-1">
                   {!!r.preop_doc_url && <LienDocument href={String(r.preop_doc_url)} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">Compte rendu préopératoire (PDF)</LienDocument>}
                   {!!r.operatoire_doc_url && <LienDocument href={String(r.operatoire_doc_url)} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">Compte rendu opératoire (PDF)</LienDocument>}
+                  {!!r.consignes_doc_url && <LienDocument href={String(r.consignes_doc_url)} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">Consignes après l&apos;intervention (PDF)</LienDocument>}
                 </div>
               )}
               </div>

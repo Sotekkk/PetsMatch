@@ -36,6 +36,8 @@ import { ouvrirDocument } from '@/lib/document-prive';
 import { ordonnancePdfBlob, compteRenduPdfBlob, ageAnimal, sexeAnimal } from '@/lib/ordonnance-pdf';
 import OrdonnanceEditeur from '@/components/pro/OrdonnanceEditeur';
 import ChirurgieCrModal from '@/components/pro/ChirurgieCrModal';
+import { consignesPdfBlob } from '@/lib/consignes-pdf';
+import { prerempliConsignes, type ModeleConsignes, type SectionConsigne } from '@/lib/consignes-postop';
 import { clientDocument } from '@/lib/client-document';
 import { TITRE_CR_CHIR, texteCrChir, type DocCrChir, type TypeCrChir } from '@/lib/chirurgie-cr';
 import { articleDe, completerDepuisArticle, COLONNES_ARTICLE_ORDO, ligneVide, lignesDe, quantiteSuggeree, resumeOrdo, type ArticleOrdo, type ContenuOrdo, type LigneOrdo, type OrdonnanceRow } from '@/lib/ordonnance';
@@ -133,6 +135,7 @@ interface ChirurgieEntry {
   preop?: DocCrChir | null; operatoire?: DocCrChir | null;
   preop_doc_url?: string | null; operatoire_doc_url?: string | null;
   pro_uid?: string | null; pro_profile_id?: string | null;
+  consignes?: (DocCrChir & { sections?: SectionConsigne[] }) | null; consignes_doc_url?: string | null;
 }
 interface AllergieEntry {
   id: string; date: string | null; type: string | null; description: string;
@@ -1155,7 +1158,7 @@ function PatientDetailPageInner() {
   // Éditeur d'ordonnance : brouillon (ordo), nouvelle (null), ou version
   // rectificative (remplace) ; fin : reprise du flux du CR à la fermeture.
   // Comptes rendus pré / opératoire d'une intervention.
-  const [crChir, setCrChir] = useState<{ c: ChirurgieEntry; type: TypeCrChir } | null>(null);
+  const [crChir, setCrChir] = useState<{ c: ChirurgieEntry; type: TypeCrChir | 'consignes' } | null>(null);
   const [editeurOrdo, setEditeurOrdo] = useState<{ ordo: Ordonnance | null; remplace?: Ordonnance | null; fin?: () => void } | null>(null);
   const [formTaille, setFormTaille] = useState('');
   const [savingForm, setSavingForm] = useState(false);
@@ -1828,6 +1831,50 @@ function PatientDetailPageInner() {
         const { error: eMaj } = await supabase.from('chirurgies').update({ [`${type}_doc_url`]: url }).eq('id', c.id);
         if (eMaj) throw eMaj;
       } catch (e) { alert(`Compte rendu validé, mais PDF non enregistré : ${(e as Error).message}`); }
+      await notifyOwner('chirurgie', nomPrescripteur);
+    }
+    const { data: liste } = await supabase.from('chirurgies').select('*').eq('animal_id', animalId).order('date', { ascending: false });
+    setChirurgies((liste ?? []) as ChirurgieEntry[]);
+  }
+
+  /** Consignes postopératoires : PDF pour le propriétaire. */
+  async function consignesPdf(c: ChirurgieEntry, sections: SectionConsigne[], apercu: boolean) {
+    const i = await infosDocument();
+    return consignesPdfBlob({
+      cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel, cliniqueEmail: i.cliniqueEmail,
+      praticien: nomPrescripteur, animalNom: animal?.nom ?? 'Animal',
+      animalEspeceRace: [animal?.espece, animal?.race].filter(Boolean).join(' · '),
+      proprietaire: i.proprio, proprietaireCoord: i.proprioCoord,
+      dateIntervention: c.date ? new Date(`${c.date.slice(0, 10)}T12:00:00`) : null,
+      sections, signature: apercu ? null : signature, apercu,
+    });
+  }
+
+  /** Coordonnées de la clinique (section « Coordonnées » des consignes). */
+  const [coordClinique, setCoordClinique] = useState<string[]>([]);
+  useEffect(() => {
+    if (!crChir) return;
+    infosDocument().then(i => setCoordClinique([i.clinique, i.adresse, i.tel ? `Tél. ${i.tel}` : '', i.cliniqueEmail].filter(Boolean))).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crChir?.c.id]);
+
+  async function enregistrerConsignes(c: ChirurgieEntry, sections: SectionConsigne[], valider: boolean) {
+    const propres = sections.map(s => ({ titre: s.titre.trim(), texte: s.texte.trim() })).filter(s => s.titre || s.texte);
+    const { data, error } = await supabase.from('chirurgies').update({
+      consignes: { sections: propres, statut: valider ? 'valide' : 'brouillon' },
+      ...(c.pro_uid ? {} : { pro_uid: proUid, ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}) }),
+    }).eq('id', c.id).select('*').single();
+    if (error) throw error;
+    if (valider) {
+      try {
+        const blob = await consignesPdf(data as ChirurgieEntry, propres, false);
+        const path = `chirurgies/${user!.uid}/${Date.now()}.pdf`;
+        const { error: eUp } = await supabase.storage.from('documents').upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+        if (eUp) throw eUp;
+        const url = supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
+        const { error: eMaj } = await supabase.from('chirurgies').update({ consignes_doc_url: url }).eq('id', c.id);
+        if (eMaj) throw eMaj;
+      } catch (e) { alert(`Consignes validées, mais PDF non enregistré : ${(e as Error).message}`); }
       await notifyOwner('chirurgie', nomPrescripteur);
     }
     const { data: liste } = await supabase.from('chirurgies').select('*').eq('animal_id', animalId).order('date', { ascending: false });
@@ -3432,21 +3479,21 @@ function PatientDetailPageInner() {
                       {c.notes && <p className="text-xs text-gray-400 mt-1">{c.notes}</p>}
                       {(peutPreparerOrdo || c.preop_doc_url || c.operatoire_doc_url) && (
                         <div className="flex flex-wrap gap-2 mt-2">
-                          {(['preop', 'operatoire'] as const).map(t => {
+                          {(['preop', 'operatoire', 'consignes'] as const).map(t => {
                             const d = c[t];
-                            const url = t === 'preop' ? c.preop_doc_url : c.operatoire_doc_url;
+                            const url = t === 'preop' ? c.preop_doc_url : t === 'operatoire' ? c.operatoire_doc_url : c.consignes_doc_url;
                             const etat = !d ? '' : d.statut === 'valide' ? ' · validé' : ' · brouillon';
                             return (
                               <span key={t} className="inline-flex items-center gap-1">
                                 {peutPreparerOrdo && (
                                   <button onClick={() => setCrChir({ c, type: t })}
                                     className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${d?.statut === 'brouillon' ? 'border-[#F3E2BD] text-[#8A5A00] bg-[#FFF8EA]' : 'border-[#0C5C6C]/30 text-[#0C5C6C]'}`}>
-                                    {TITRE_CR_CHIR[t]}{etat}
+                                    {t === 'consignes' ? 'Consignes au propriétaire' : TITRE_CR_CHIR[t]}{etat}
                                   </button>
                                 )}
                                 {url && (
                                   <LienDocument href={url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">
-                                    {peutPreparerOrdo ? 'PDF' : `${TITRE_CR_CHIR[t]} (PDF)`}
+                                    {peutPreparerOrdo ? 'PDF' : `${t === 'consignes' ? 'Consignes après l’intervention' : TITRE_CR_CHIR[t]} (PDF)`}
                                   </LienDocument>
                                 )}
                               </span>
@@ -4580,6 +4627,30 @@ function PatientDetailPageInner() {
           peutValider={peutPrescrire}
           apercu={(t, champs) => crChirPdf(t, crChir.c, champs, true)}
           enregistrer={(t, champs, valider) => enregistrerCrChir(crChir.c, t, champs, valider)}
+          consignes={{
+            chargerModeles: async () => {
+              if (!activeProfileId) return [];
+              const { data } = await supabase.from('consignes_modeles').select('id, nom, type_intervention, sections')
+                .eq('pro_profile_id', activeProfileId).order('nom');
+              return (data ?? []) as ModeleConsignes[];
+            },
+            enregistrerModele: async (nom, sections) => {
+              const { error } = await supabase.from('consignes_modeles').insert({
+                pro_uid: proUid, ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}), nom,
+                type_intervention: crChir.c.intitule, sections: sections.map(s => ({ titre: s.titre, texte: s.texte, ...(s.aide ? { aide: s.aide } : {}) })),
+              });
+              if (error) throw error;
+            },
+            prerempli: base => prerempliConsignes(base, {
+              intervention: String(crChir.c.operatoire?.intervention ?? '') || crChir.c.intitule,
+              traitements: String(crChir.c.operatoire?.traitements ?? ''),
+              controles: String(crChir.c.operatoire?.controles ?? ''),
+              prochainRdv: String(crChir.c.operatoire?.prochain_rdv ?? ''),
+              cliniqueCoord: coordClinique,
+            }),
+            apercu: sections => consignesPdf(crChir.c, sections, true),
+            enregistrer: (sections, valider) => enregistrerConsignes(crChir.c, sections, valider),
+          }}
           onClose={() => setCrChir(null)} />
       )}
       {editeurOrdo && (() => {

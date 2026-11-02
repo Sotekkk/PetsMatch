@@ -48,6 +48,9 @@ export interface ChirurgieCr {
   protocole_preop: string | null; protocole_postop: string | null;
   preop?: DocCrChir | null; operatoire?: DocCrChir | null;
   preop_doc_url?: string | null; operatoire_doc_url?: string | null;
+  /** Consignes postopératoires (migration_consignes_postop.sql). */
+  consignes?: (DocCrChir & { sections?: { titre: string; texte: string }[] }) | null;
+  consignes_doc_url?: string | null;
   pro_uid?: string | null; pro_profile_id?: string | null;
 }
 

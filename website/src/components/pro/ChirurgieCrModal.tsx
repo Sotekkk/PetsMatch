@@ -9,35 +9,42 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import LienDocument from '@/components/LienDocument';
+import ConsignesEditeur, { type ActionsConsignes } from '@/components/pro/ConsignesEditeur';
 import { CHAMPS_CR_CHIR, TITRE_CR_CHIR, controlerCrChir, prerempli, type ChirurgieCr, type TypeCrChir } from '@/lib/chirurgie-cr';
 
 const TEAL = '#0C5C6C';
 
-export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, peutValider, apercu, enregistrer, onClose }: {
+type Onglet = TypeCrChir | 'consignes';
+
+export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, peutValider, apercu, enregistrer, consignes, onClose }: {
   chirurgie: ChirurgieCr;
-  typeInitial: TypeCrChir;
+  typeInitial: Onglet;
   poidsFiche?: number | string | null;
   peutValider: boolean;
   apercu: (type: TypeCrChir, champs: Record<string, string>) => Promise<Blob>;
   /** valider : statut « valide » + PDF ; sinon brouillon. */
   enregistrer: (type: TypeCrChir, champs: Record<string, string>, valider: boolean) => Promise<void>;
+  /** Consignes postopératoires pour le propriétaire (3e onglet). */
+  consignes?: ActionsConsignes;
   onClose: () => void;
 }) {
-  const [type, setType] = useState<TypeCrChir>(typeInitial);
+  const [onglet, setOnglet] = useState<Onglet>(typeInitial);
+  const type: TypeCrChir = onglet === 'consignes' ? 'operatoire' : onglet;
+  const setType = (t: Onglet) => setOnglet(t);
   const [champs, setChamps] = useState<Record<TypeCrChir, Record<string, string>>>(() => ({
     preop: prerempli('preop', chirurgie, poidsFiche), operatoire: prerempli('operatoire', chirurgie, poidsFiche),
   }));
-  const [nouvelleVersion, setNouvelleVersion] = useState<Record<TypeCrChir, boolean>>({ preop: false, operatoire: false });
+  const [nouvelleVersion, setNouvelleVersion] = useState<Record<Onglet, boolean>>({ preop: false, operatoire: false, consignes: false });
   const [verifie, setVerifie] = useState(false);
   const [pdf, setPdf] = useState<{ blob: Blob; url: string } | null>(null);
   const [occupe, setOccupe] = useState<null | 'apercu' | 'brouillon' | 'valider'>(null);
 
   useEffect(() => () => { if (pdf) URL.revokeObjectURL(pdf.url); }, [pdf]);
 
-  const doc = chirurgie[type];
+  const doc = chirurgie[onglet];
   const valide = doc?.statut === 'valide';
-  const verrouille = valide && !nouvelleVersion[type];
-  const docUrl = type === 'preop' ? chirurgie.preop_doc_url : chirurgie.operatoire_doc_url;
+  const verrouille = valide && !nouvelleVersion[onglet];
+  const docUrl = onglet === 'preop' ? chirurgie.preop_doc_url : onglet === 'operatoire' ? chirurgie.operatoire_doc_url : chirurgie.consignes_doc_url;
   const c = champs[type];
   const controle = useMemo(() => controlerCrChir(type, c), [type, c]);
   const maj = (k: string, v: string) => { setChamps(x => ({ ...x, [type]: { ...x[type], [k]: v } })); setVerifie(false); };
@@ -104,11 +111,11 @@ export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, p
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-sm">Fermer</button>
         </div>
         <div className="flex gap-2">
-          {(['preop', 'operatoire'] as const).map(t => (
+          {([...(['preop', 'operatoire'] as const), ...(consignes ? ['consignes' as const] : [])]).map(t => (
             <button key={t} onClick={() => { setType(t); setPdf(null); setVerifie(false); }}
-              className={`px-3 py-1.5 rounded-lg text-sm font-semibold border ${type === t ? 'text-white' : ''}`}
-              style={type === t ? { background: TEAL, borderColor: TEAL } : { borderColor: '#E4E7E2', color: TEAL }}>
-              {TITRE_CR_CHIR[t]}
+              className={`px-3 py-1.5 rounded-lg text-sm font-semibold border ${onglet === t ? 'text-white' : ''}`}
+              style={onglet === t ? { background: TEAL, borderColor: TEAL } : { borderColor: '#E4E7E2', color: TEAL }}>
+              {t === 'consignes' ? 'Consignes au propriétaire' : TITRE_CR_CHIR[t]}
             </button>
           ))}
         </div>
@@ -118,18 +125,34 @@ export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, p
             <LienDocument href={docUrl} target="_blank" rel="noopener noreferrer" className="font-semibold hover:underline" style={{ color: TEAL }}>Ouvrir le PDF</LienDocument>
           )}
           {verrouille && peutValider && (
-            <button onClick={() => setNouvelleVersion(v => ({ ...v, [type]: true }))} className="font-semibold hover:underline" style={{ color: TEAL }}>
+            <button onClick={() => setNouvelleVersion(v => ({ ...v, [onglet]: true }))} className="font-semibold hover:underline" style={{ color: TEAL }}>
               Nouvelle version
             </button>
           )}
         </div>
-        {nouvelleVersion[type] && valide && (
+        {nouvelleVersion[onglet] && valide && (
           <p className="text-xs bg-[#F4F7F8] border border-gray-200 rounded-xl px-3 py-2 text-gray-700">
             Nouvelle version : la version validée actuelle (et son PDF) est conservée dans l&apos;historique de l&apos;intervention.
           </p>
         )}
 
-        {pdf ? (
+        {onglet === 'consignes' && consignes ? (
+          <>
+            {pdf && (
+              <div className="space-y-2">
+                <iframe src={pdf.url} title="Aperçu" className="w-full h-[58vh] border border-gray-200 rounded-xl" />
+                <button onClick={() => setPdf(null)} className="px-4 py-2 rounded-xl border text-sm font-semibold" style={{ borderColor: TEAL, color: TEAL }}>Retour à la saisie</button>
+              </div>
+            )}
+            {/* Saisie gardée pendant l'aperçu (masquée, pas démontée). */}
+            <div className={pdf ? 'hidden' : ''}>
+              <ConsignesEditeur key={nouvelleVersion.consignes ? 'v' : 'f'}
+                initiales={chirurgie.consignes?.sections?.length ? chirurgie.consignes.sections.map(s => ({ titre: s.titre, texte: s.texte })) : null}
+                verrouille={verrouille} peutValider={peutValider} actions={consignes} onTermine={onClose}
+                onApercu={blob => setPdf({ blob, url: URL.createObjectURL(blob) })} />
+            </div>
+          </>
+        ) : pdf ? (
           <>
             <iframe src={pdf.url} title="Aperçu" className="w-full h-[58vh] border border-gray-200 rounded-xl" />
             {alertes}

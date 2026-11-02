@@ -14,6 +14,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
 import 'package:PetsMatch/utils/chirurgie_cr.dart';
+import 'package:PetsMatch/widgets/pro/consignes_editeur.dart';
 import 'package:PetsMatch/utils/client_document.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/utils/document_prive.dart';
@@ -52,7 +53,7 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
   final _supa = Supabase.instance.client;
   late String _type = widget.typeInitial;
   final Map<String, Map<String, TextEditingController>> _ctrl = {};
-  final Map<String, bool> _nouvelleVersion = {'preop': false, 'operatoire': false};
+  final Map<String, bool> _nouvelleVersion = {'preop': false, 'operatoire': false, 'consignes': false};
   bool _peutValider = false;
   bool _verifie = false;
   Uint8List? _pdf;
@@ -233,7 +234,8 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
 
   @override
   Widget build(BuildContext context) {
-    final ctrl = controlerCrChir(_type, _champs);
+    final consignes = _type == 'consignes';
+    final ctrl = consignes ? (bloquants: <String>[], avertissements: <String>[]) : controlerCrChir(_type, _champs);
     final pdf = _pdf;
     final d = _doc;
     final version = (d?['version'] as num?)?.toInt() ?? 1;
@@ -252,13 +254,13 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
           child: Row(children: [
-            for (final t in ['preop', 'operatoire']) ...[
+            for (final t in ['preop', 'operatoire', 'consignes']) ...[
               Expanded(child: ChoiceChip(
-                label: Text(titreCrChir[t]!.replaceFirst('Compte rendu ', 'CR '), style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                label: Text(t == 'consignes' ? 'Consignes' : titreCrChir[t]!.replaceFirst('Compte rendu ', 'CR '), style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
                 selected: _type == t, selectedColor: _teal.withValues(alpha: 0.15),
                 onSelected: (_) => setState(() { _type = t; _pdf = null; _verifie = false; }),
               )),
-              if (t == 'preop') const SizedBox(width: 8),
+              if (t != 'consignes') const SizedBox(width: 6),
             ],
           ]),
         ),
@@ -273,7 +275,10 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
               TextButton(onPressed: () => setState(() => _nouvelleVersion[_type] = true), child: const Text('Nouvelle version', style: lien)),
           ]),
         ),
-        Expanded(child: pdf != null
+        Expanded(child: consignes
+            ? ConsignesEditeur(key: ValueKey('consignes-${_nouvelleVersion['consignes']}'), chirurgie: widget.chirurgie,
+                verrouille: _verrouille, peutValider: _peutValider, onTermine: () => Navigator.pop(context, true))
+            : pdf != null
             ? Column(children: [
                 Expanded(child: PdfPreview(
                   build: (_) async => pdf,
