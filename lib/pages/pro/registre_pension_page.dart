@@ -7,7 +7,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:PetsMatch/utils/poids.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:http/http.dart' as http;
@@ -21,6 +20,7 @@ import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFactur
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/utils/client_pension.dart';
+import 'package:PetsMatch/utils/pension_facture_groupee.dart';
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart' show confirmerArriveePension, enregistrerDepartPension;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
@@ -102,6 +102,8 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       final entreesFacturees = <String>{
         ...facturesLegacy.map((f) => f['entree_id'].toString()),
         ...facturesNew.map((f) => f['source_pension_entree_id'].toString()),
+        // Lignes d'une facture groupée (plusieurs animaux du même client).
+        ...sejoursDesFactures(facturesNew),
       };
       final seuil15j = DateTime.now().subtract(const Duration(days: 15));
       final debiteurs = <Map<String, dynamic>>[
@@ -3399,6 +3401,20 @@ class _AccessRequestSheetState extends State<_AccessRequestSheet> {
 
 // ── Facturation pension ───────────────────────────────────────────────────────
 
+/// Séjour d'un autre animal du même client, ajoutable à la facture.
+class _AutreSejour {
+  final Map<String, dynamic> entree;
+  final TextEditingController nuits, tarif, reduction;
+  bool inclus = false;
+  _AutreSejour(this.entree, int n, double prixNuit, double reductionPct)
+      : nuits = TextEditingController(text: '$n'),
+        tarif = TextEditingController(text: prixNuit > 0 ? prixNuit.toStringAsFixed(2) : ''),
+        reduction = TextEditingController(text: reductionPct > 0 ? reductionPct.toString().replaceAll(RegExp(r'\.0$'), '') : '');
+  int get n => int.tryParse(nuits.text) ?? 1;
+  double get prix => double.tryParse(tarif.text.replaceAll(',', '.')) ?? 0;
+  double get red => (double.tryParse(reduction.text.replaceAll(',', '.')) ?? 0).clamp(0, 100).toDouble();
+}
+
 class _FacturationSheet extends StatefulWidget {
   final Map<String, dynamic> entree;
   const _FacturationSheet({required this.entree});
@@ -3415,6 +3431,8 @@ class _FacturationSheetState extends State<_FacturationSheet> {
   late final TextEditingController _suppDescCtrl;
   late final TextEditingController _suppMontantCtrl;
   late final TextEditingController _acomptePctCtrl;
+  final _reductionCtrl = TextEditingController();
+  List<_AutreSejour> _autres = [];
   bool _avecTVA    = false;
   bool _isAcompte  = false;
   bool _continuing = false;
@@ -3452,64 +3470,27 @@ class _FacturationSheetState extends State<_FacturationSheet> {
       final profil = await Supabase.instance.client.from('user_profiles_complet')
           .select('tarifs_pension').eq('id', pid).maybeSingle();
       final config = profil?['tarifs_pension'];
-      if (config is! Map) return;
-      final seul = widget.entree['seul_dans_logement'] != false; // défaut: seul
-
-      double prixNuit = 0;
-      final especesTarifs = config['especes'];
-      if (especesTarifs is List && especesTarifs.isNotEmpty) {
-        // Nouveau modèle : prix fixe par espèce.
-        final key = pensionTarifKeyForEspece(widget.entree['espece']?.toString());
-        if (key == null) return;
-        final match = pensionTarifPourKey(especesTarifs, key);
-        if (match == null) return;
-        // Équidés : box ou pré selon le type du logement occupé.
-        String? typeLogement;
-        final logementId = widget.entree['logement_id']?.toString();
-        if (logementId != null && logementId.isNotEmpty) {
-          try {
-            final lg = await Supabase.instance.client.from('enclos_chenil').select('type').eq('id', logementId).maybeSingle();
-            typeLogement = lg?['type']?.toString();
-          } catch (_) {}
-        }
-        prixNuit = pensionPrixNuit(match, seul: seul, hebergement: typeLogement);
-      } else {
-        // Rétro-compat : ancien modèle tranches de poids.
-        final tranches = (config['tranches_poids'] as List?) ?? [];
-        if (tranches.isEmpty) return;
-        final animalId = widget.entree['animal_id']?.toString();
-        double? poids;
-        if (animalId != null && animalId.isNotEmpty) {
-          final animal = await Supabase.instance.client.from('animaux')
-              .select('poids').eq('id', animalId).maybeSingle();
-          poids = poidsKg(animal?['poids']);
-        }
-        Map? tranche;
-        for (final t in tranches) {
-          final m = t as Map;
-          final poidsMax = (m['poids_max'] as num?)?.toDouble();
-          if (poids == null || poidsMax == null || poids <= poidsMax) { tranche = m; break; }
-        }
-        tranche ??= tranches.last as Map;
-        prixNuit = seul
-            ? (tranche['prix_seul'] as num?)?.toDouble() ?? 0
-            : (tranche['prix_partage'] as num?)?.toDouble() ?? 0;
+      // Plein tarif + réduction long séjour à part (visible sur la facture).
+      final sugg = await tarifPensionSuggere(widget.entree, config, _nbNuits);
+      if (mounted && sugg != null && sugg.prixNuit > 0) {
+        setState(() {
+          if (_tarifCtrl.text.isEmpty) _tarifCtrl.text = sugg.prixNuit.toStringAsFixed(2);
+          if (_reductionCtrl.text.isEmpty && sugg.reductionPct > 0) _reductionCtrl.text = _pctTxt(sugg.reductionPct);
+        });
       }
-
-      double reductionPct = 0;
-      final reductions = (config['reductions_long_sejour'] as List?) ?? [];
-      for (final r in reductions) {
-        final m = r as Map;
-        final minNuits = (m['min_nuits'] as num?)?.toInt() ?? 0;
-        if (_nbNuits >= minNuits) reductionPct = (m['pourcentage'] as num?)?.toDouble() ?? 0;
+      // Autres animaux du même client présents sur la période : facture groupée.
+      final autres = await sejoursMemeClient(widget.entree, pid);
+      final liste = <_AutreSejour>[];
+      for (final x in autres) {
+        final n = nuitsSejour(x);
+        final sx = await tarifPensionSuggere(x, config, n);
+        liste.add(_AutreSejour(x, n, sx?.prixNuit ?? 0, sx?.reductionPct ?? 0));
       }
-
-      final prixFinal = prixNuit * (1 - reductionPct / 100);
-      if (mounted && _tarifCtrl.text.isEmpty && prixFinal > 0) {
-        setState(() => _tarifCtrl.text = prixFinal.toStringAsFixed(2));
-      }
+      if (mounted) setState(() => _autres = liste);
     } catch (_) {}
   }
+
+  String _pctTxt(double p) => p == p.roundToDouble() ? p.toStringAsFixed(0) : p.toString();
 
   @override
   void dispose() {
@@ -3518,13 +3499,20 @@ class _FacturationSheetState extends State<_FacturationSheet> {
     _suppDescCtrl.dispose();
     _suppMontantCtrl.dispose();
     _acomptePctCtrl.dispose();
+    _reductionCtrl.dispose();
+    for (final a in _autres) { a.nuits.dispose(); a.tarif.dispose(); a.reduction.dispose(); }
     super.dispose();
   }
 
   double get _tarif     => double.tryParse(_tarifCtrl.text.replaceAll(',', '.'))       ?? 0;
   int    get _nbNuits   => int.tryParse(_nbNuitsCtrl.text)                             ?? 1;
   double get _supp      => double.tryParse(_suppMontantCtrl.text.replaceAll(',', '.')) ?? 0;
-  double get _sousTotal => (_tarif * _nbNuits) + _supp;
+  double get _reduction => (double.tryParse(_reductionCtrl.text.replaceAll(',', '.')) ?? 0).clamp(0, 100).toDouble();
+  List<_AutreSejour> get _autresInclus => _isAcompte ? const [] : _autres.where((a) => a.inclus).toList();
+  /// Pension d'un animal, réduction long séjour déduite (arrondie au centime).
+  double _pension(double tarifNuit, int nuits, double red) => (tarifNuit * nuits * (1 - red / 100) * 100).roundToDouble() / 100;
+  double get _sousTotal => _pension(_tarif, _nbNuits, _reduction)
+      + _autresInclus.fold<double>(0, (s, a) => s + _pension(a.prix, a.n, a.red)) + _supp;
   double get _tva       => _avecTVA ? _sousTotal * 0.20 : 0;
   double get _total     => _sousTotal + _tva;
   int    get _acomptePct     => (int.tryParse(_acomptePctCtrl.text) ?? 30).clamp(1, 100);
@@ -3612,6 +3600,42 @@ class _FacturationSheetState extends State<_FacturationSheet> {
                       suffix: 'nuits', type: TextInputType.number)),
                 ]),
                 const SizedBox(height: 12),
+                _field(_reductionCtrl, 'Réduction long séjour (%)', '0',
+                    type: const TextInputType.numberWithOptions(decimal: true), suffix: '%'),
+                const SizedBox(height: 12),
+                if (_autres.isNotEmpty && !_isAcompte) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade200)),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Autres animaux de ce client sur la période',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF374151))),
+                      const Text('Cochés : facturés sur la même facture, une section par animal.',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6B7280))),
+                      for (final a in _autres) ...[
+                        CheckboxListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          activeColor: _teal,
+                          value: a.inclus,
+                          onChanged: (v) => setState(() => a.inclus = v ?? false),
+                          title: Text('${a.entree['animal_nom'] ?? 'Animal'} · ${a.n} nuit${a.n > 1 ? 's' : ''}',
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                        ),
+                        if (a.inclus)
+                          Row(children: [
+                            Expanded(child: _field(a.tarif, 'Tarif / nuit (€)', '25', type: const TextInputType.numberWithOptions(decimal: true))),
+                            const SizedBox(width: 8),
+                            Expanded(child: _field(a.nuits, 'Nuits', '1', type: TextInputType.number)),
+                            const SizedBox(width: 8),
+                            Expanded(child: _field(a.reduction, 'Réduction (%)', '0', type: const TextInputType.numberWithOptions(decimal: true))),
+                          ]),
+                      ],
+                    ]),
+                  ),
+                  const SizedBox(height: 12),
+                ],
 
                 // Suppléments
                 _field(_suppDescCtrl, 'Suppléments (optionnel)',
@@ -3697,9 +3721,15 @@ class _FacturationSheetState extends State<_FacturationSheet> {
                   ),
                   child: Column(children: [
                     _totalRow(
-                      'Pension ($_nbNuits nuit${_nbNuits > 1 ? 's' : ''} × ${_fmt(_tarif)})',
-                      _fmt(_tarif * _nbNuits),
+                      'Pension${_autresInclus.isNotEmpty ? ' ${widget.entree['animal_nom'] ?? ''}' : ''} ($_nbNuits nuit${_nbNuits > 1 ? 's' : ''} × ${_fmt(_tarif)})'
+                          '${_reduction > 0 ? ' − ${_pctTxt(_reduction)} %' : ''}',
+                      _fmt(_pension(_tarif, _nbNuits, _reduction)),
                     ),
+                    for (final a in _autresInclus) ...[
+                      const SizedBox(height: 4),
+                      _totalRow('Pension ${a.entree['animal_nom'] ?? ''} (${a.n} nuit${a.n > 1 ? 's' : ''} × ${_fmt(a.prix)})'
+                          '${a.red > 0 ? ' − ${_pctTxt(a.red)} %' : ''}', _fmt(_pension(a.prix, a.n, a.red))),
+                    ],
                     if (_supp > 0) ...[
                       const SizedBox(height: 4),
                       _totalRow('Suppléments', _fmt(_supp)),
@@ -3818,16 +3848,29 @@ class _FacturationSheetState extends State<_FacturationSheet> {
       final desc = 'Pension du ${fmtDate(e['date_entree']?.toString())} au ${fmtDate(dateSortie)} — '
           '${e['animal_nom'] ?? ''}';
       final tauxTVA = _avecTVA ? 20.0 : 0.0;
+      // Une ligne de pension par animal (section du PDF), réduction long
+      // séjour en remise identifiable ; suppléments rattachés au 1er animal.
+      FacturePrefillLigne lignePension(Map<String, dynamic> s, double tarifNuit, int nuits, double red) => FacturePrefillLigne(
+            designation: 'Pension du ${fmtDate(s['date_entree']?.toString())} au '
+                '${fmtDate((s['date_sortie_effective'] ?? s['date_sortie_prevue'])?.toString())}',
+            prixHT: tarifNuit, quantite: nuits.toDouble(), tauxTVA: tauxTVA,
+            animalId: s['animal_id']?.toString(), animalNom: s['animal_nom']?.toString(),
+            pensionEntreeId: s['id']?.toString(),
+            remisePct: red > 0 ? red : null,
+            remiseMotif: red > 0 ? 'Réduction long séjour ($nuits nuit${nuits > 1 ? 's' : ''})' : null,
+          );
       final lignes = <FacturePrefillLigne>[
-        _isAcompte
-            ? FacturePrefillLigne(designation: 'Acompte $_acomptePct% — $desc',
-                prixHT: _montantFacture, tauxTVA: tauxTVA)
-            : FacturePrefillLigne(designation: desc,
-                prixHT: _tarif, quantite: _nbNuits.toDouble(), tauxTVA: tauxTVA),
-        if (_supp > 0)
-          FacturePrefillLigne(
-              designation: _suppDescCtrl.text.trim().isNotEmpty ? _suppDescCtrl.text.trim() : 'Suppléments',
-              prixHT: _supp, tauxTVA: tauxTVA),
+        if (_isAcompte)
+          FacturePrefillLigne(designation: 'Acompte $_acomptePct% — $desc',
+              prixHT: _montantFacture, tauxTVA: tauxTVA, animalId: animalId, animalNom: e['animal_nom']?.toString())
+        else ...[
+          lignePension(e, _tarif, _nbNuits, _reduction),
+          if (_supp > 0)
+            FacturePrefillLigne(
+                designation: _suppDescCtrl.text.trim().isNotEmpty ? _suppDescCtrl.text.trim() : 'Suppléments',
+                prixHT: _supp, tauxTVA: tauxTVA, animalId: animalId, animalNom: e['animal_nom']?.toString()),
+          for (final a in _autresInclus) lignePension(a.entree, a.prix, a.n, a.red),
+        ],
       ];
 
       if (!mounted) return;

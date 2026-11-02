@@ -42,6 +42,8 @@ Future<GardeChiffrage> chiffrerGarde(List<Map<String, dynamic>> rdvs) async {
   final n = rdvs.length;
   final animaux = _nbAnimaux(first);
   final noms = (first['_animal_nom'] ?? first['animal_nom_manuel'] ?? '').toString();
+  // Plusieurs animaux : visites et forfait communs au foyer (section « Prestations communes »).
+  final commune = animaux > 1;
   final forfaitId = first['forfait_id']?.toString();
   if (forfaitId != null && forfaitId.isNotEmpty) {
     try {
@@ -51,7 +53,7 @@ Future<GardeChiffrage> chiffrerGarde(List<Map<String, dynamic>> rdvs) async {
       if (f != null && prix > 0) {
         return GardeChiffrage([
           FacturePrefillLigne(designation: 'Forfait ${f['nom']}${noms.isNotEmpty ? ' — $noms' : ''}',
-              description: _periode(rdvs), prixHT: prix, quantite: 1, tauxTVA: 20),
+              description: _periode(rdvs), prixHT: prix, quantite: 1, tauxTVA: 20, commune: commune),
         ], prix);
       }
     } catch (_) {}
@@ -60,14 +62,14 @@ Future<GardeChiffrage> chiffrerGarde(List<Map<String, dynamic>> rdvs) async {
   final lignes = <FacturePrefillLigne>[
     FacturePrefillLigne(
       designation: '${(first['motif'] ?? 'Prestation').toString()}${noms.isNotEmpty ? ' — $noms' : ''}',
-      description: _periode(rdvs), prixHT: prix, quantite: n.toDouble(), tauxTVA: 20),
+      description: _periode(rdvs), prixHT: prix, quantite: n.toDouble(), tauxTVA: 20, commune: commune),
   ];
   var total = prix * n;
   if (animaux > 1) {
     final supp = await _tarifAnimalSupp();
     if (supp > 0) {
       lignes.add(FacturePrefillLigne(designation: 'Animal supplémentaire', prixHT: supp,
-          quantite: ((animaux - 1) * n).toDouble(), tauxTVA: 20));
+          quantite: ((animaux - 1) * n).toDouble(), tauxTVA: 20, commune: true));
       total += supp * (animaux - 1) * n;
     }
   }

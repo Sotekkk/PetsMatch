@@ -9,6 +9,7 @@ import { PensionEntreeModal, type PensionEntree } from '@/components/PensionEntr
 import { PensionJournal } from '@/components/PensionJournal';
 import ArriveeDepartModal from '@/components/pension/ArriveeDepartModal';
 import { PensionFacturationModal } from '@/components/PensionFacturationModal';
+import { sejoursFactures } from '@/lib/pension-facture-groupee';
 import { thumbUrl } from '@/lib/upload-media';
 import { apiFetch } from '@/lib/api-fetch';
 
@@ -77,6 +78,8 @@ export default function RegistrePensionPage() {
   const [suiteArrivee, setSuiteArrivee] = useState<PensionEntree | null>(null);
   const [facturationFor, setFacturationFor] = useState<PensionEntree | null>(null);
   const [showNonFacturees, setShowNonFacturees] = useState(false);
+  // Séjours facturés par le moteur commun (factures), groupées comprises.
+  const [facturesSejours, setFacturesSejours] = useState<Set<string>>(new Set());
   // Mouvements d'un jour (cartes « Arrivées / Départs aujourd'hui » de
   // l'accueil, ?mouvement=arrivees|departs) : '' = tous les séjours.
   const [mouvement, setMouvement] = useState<'' | 'presents' | 'arrivees' | 'departs'>('');
@@ -123,6 +126,7 @@ export default function RegistrePensionPage() {
     ]);
     setEntrees((ent ?? []) as PensionEntree[]);
     setFactures((fact ?? []) as PensionFacture[]);
+    if (proProfileId) sejoursFactures(supabase, proProfileId).then(setFacturesSejours).catch(() => {});
     setLogementNoms(Object.fromEntries(
       ((enclos ?? []) as { id: string; nom: string | null }[]).map(l => [l.id, l.nom ?? ''])));
 
@@ -198,7 +202,7 @@ export default function RegistrePensionPage() {
     a.click(); URL.revokeObjectURL(url);
   }
 
-  const entreesFacturees = new Set(factures.map(f => f.entree_id));
+  const entreesFacturees = new Set([...factures.map(f => f.entree_id), ...facturesSejours]);
 
   // Séjours terminés (sortie effective enregistrée) sans aucune facture liée.
   const sejoursNonFactures = entrees.filter(e =>

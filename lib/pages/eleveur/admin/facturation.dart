@@ -737,6 +737,8 @@ class FacturePrefillLigne {
   /// Remise en % (une par ligne) et son motif.
   final double? remisePct;
   final String? remiseMotif;
+  /// Séjour de pension facturé par cette ligne (facture groupée).
+  final String? pensionEntreeId;
   const FacturePrefillLigne({
     required this.designation,
     this.description = '',
@@ -749,6 +751,7 @@ class FacturePrefillLigne {
     this.commune = false,
     this.remisePct,
     this.remiseMotif,
+    this.pensionEntreeId,
   });
 }
 
@@ -902,7 +905,8 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
         ..animalId = l.animalId
         ..animalNom = l.animalNom
         ..commune = l.commune
-        ..poserRemise(l.remisePct, l.remiseMotif);
+        ..poserRemise(l.remisePct, l.remiseMotif)
+        ..pensionEntreeId = l.pensionEntreeId;
       _lignes.add(ligne);
     }
     _appliquerPrixTTC();
@@ -1636,6 +1640,8 @@ class _Ligne {
   double? remise;
   String? remiseMotif;
   final remiseCtrl = TextEditingController();
+  /// Séjour de pension facturé par cette ligne (facture groupée).
+  String? pensionEntreeId;
   /// Remise posée hors du champ (prérempli, remise globale / animal / dégressif).
   void poserRemise(double? p, String? motif) {
     remise = (p ?? 0) > 0 ? p : null;
@@ -1662,6 +1668,7 @@ class _Ligne {
     if ((remise ?? 0) > 0) ...{
       'remisePct': remise, 'remiseMotif': (remiseMotif ?? '').isEmpty ? 'Remise' : remiseMotif, 'montantRemiseHT': montantRemiseHT,
     },
+    if ((pensionEntreeId ?? '').isNotEmpty) 'pensionEntreeId': pensionEntreeId,
     if (commune) 'commune': true
     else if (animalId != null || animalNom != null) ...{
       'animalId': animalId, 'animalNom': animalNom,

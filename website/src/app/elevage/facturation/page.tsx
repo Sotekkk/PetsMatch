@@ -37,6 +37,8 @@ interface Ligne {
   /** Remise en % (une seule par ligne, pas de cumul) et son motif. */
   remise?: number | null;
   remiseMotif?: string | null;
+  /** Séjour de pension facturé par cette ligne (facture groupée). */
+  pensionEntreeId?: string | null;
 }
 
 /** Lignes à prix TTC : HT recalculé selon la franchise et le taux de la ligne. */
@@ -800,6 +802,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       totalTTC: Math.round(htL(l) * (franchise ? 1 : 1 + l.tva / 100) * 100) / 100,
       ...(Number(l.remise ?? 0) > 0 ? { remisePct: Number(l.remise), remiseMotif: l.remiseMotif || 'Remise',
         montantRemiseHT: montantRemise(l.quantite, l.prixUnitaire, l.remise) } : {}),
+      ...(l.pensionEntreeId ? { pensionEntreeId: l.pensionEntreeId } : {}),
       // Rattachement (sections du PDF) : animal ou prestation commune.
       ...(l.commune ? { commune: true } : l.animalId || l.animalNom
         ? { animalId: l.animalId ?? null, animalNom: l.animalNom ?? null, animalIdentification: l.animalIdentification ?? null } : {}),

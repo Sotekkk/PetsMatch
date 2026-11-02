@@ -20,7 +20,8 @@ export interface RdvAccepte {
   notes_client?: string | null; acces_logement?: string | null; forfait_id?: string | null;
   animaux_ids?: unknown[] | null; clientName?: string; animalNom?: string;
 }
-type Ligne = { description: string; quantite: number; prixUnitaire: number; tva: number };
+// commune : prestation pour tous les animaux du foyer (comptée une fois).
+type Ligne = { description: string; quantite: number; prixUnitaire: number; tva: number; commune?: boolean };
 
 const eur = (v: number) => `${v.toFixed(2).replace('.', ',')} €`;
 function periode(rdvs: RdvAccepte[]) {
@@ -48,25 +49,27 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
     (async () => {
       const n = rdvs.length;
       const noms = first.animalNom ? ` — ${first.animalNom}` : '';
+      // Plusieurs animaux : visites et forfait communs au foyer (section « Prestations communes »).
+      const commune = Array.isArray(first.animaux_ids) && first.animaux_ids.length > 1;
       if (first.forfait_id) {
         const { data: f } = await supabase.from('forfaits_garde').select('nom, prix').eq('id', first.forfait_id).maybeSingle();
         const prix = Number(f?.prix) || 0;
         if (f && prix > 0) {
           if (!alive) return;
-          setLignes([{ description: `Forfait ${f.nom}${noms} (${periode(rdvs)})`, quantite: 1, prixUnitaire: prix, tva: 20 }]);
+          setLignes([{ description: `Forfait ${f.nom}${noms} (${periode(rdvs)})`, quantite: 1, prixUnitaire: prix, tva: 20, ...(commune ? { commune } : {}) }]);
           setTotal(prix);
           return;
         }
       }
       const prix = await gardeTarif(first.pro_uid, proProfileId, { ...first, animal_id: first.animal_id ?? null });
-      const l: Ligne[] = [{ description: `${first.motif ?? 'Prestation'}${noms} (${periode(rdvs)})`, quantite: n, prixUnitaire: prix, tva: 20 }];
+      const l: Ligne[] = [{ description: `${first.motif ?? 'Prestation'}${noms} (${periode(rdvs)})`, quantite: n, prixUnitaire: prix, tva: 20, ...(commune ? { commune } : {}) }];
       let t = prix * n;
       const animaux = Array.isArray(first.animaux_ids) && first.animaux_ids.length > 0 ? first.animaux_ids.length : 1;
       if (animaux > 1 && proProfileId) {
         const { data: p } = await supabase.from('user_profiles_complet').select('tarifs_garde').eq('id', proProfileId).maybeSingle();
         const supp = Number((p?.tarifs_garde as Record<string, number> | null)?.animal_supplementaire) || 0;
         if (supp > 0) {
-          l.push({ description: 'Animal supplémentaire', quantite: (animaux - 1) * n, prixUnitaire: supp, tva: 20 });
+          l.push({ description: 'Animal supplémentaire', quantite: (animaux - 1) * n, prixUnitaire: supp, tva: 20, commune: true });
           t += supp * (animaux - 1) * n;
         }
       }

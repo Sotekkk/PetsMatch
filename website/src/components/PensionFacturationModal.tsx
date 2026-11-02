@@ -5,12 +5,17 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { clientDuSejour } from '@/lib/client-pension';
 import type { PensionEntree } from '@/components/PensionEntreeModal';
-import { pensionPrixNuit, pensionTarifKeyForEspece, pensionTarifPourKey, type TarifsPension } from '@/lib/pension-especes';
+import { type TarifsPension } from '@/lib/pension-especes';
+import { nuitsSejour, sejoursMemeClient, tarifPensionSuggere } from '@/lib/pension-facture-groupee';
 import { type PensionFactureEmetteur } from '@/lib/pension-facture-html';
 
 const TEAL = '#0C5C6C';
 
 function fmt(v: number) { return `${v.toFixed(2).replace('.', ',')} €`; }
+const num = (v: string) => parseFloat(v.replace(',', '.')) || 0;
+
+/** Séjour d'un autre animal du même client, ajoutable à la facture. */
+interface AutreSejour { entree: Record<string, unknown>; nuits: string; tarif: string; reduction: string; inclus: boolean }
 
 export function PensionFacturationModal({ entree, proProfileId, pensionNom, onClose }: {
   entree: PensionEntree;
@@ -36,6 +41,8 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
   const [acomptePct, setAcomptePct] = useState('30');
   const [error, setError] = useState('');
   const [emetteur, setEmetteur] = useState<PensionFactureEmetteur | null>(null);
+  const [reduction, setReduction] = useState('');
+  const [autres, setAutres] = useState<AutreSejour[]>([]);
 
   // Tarification automatisée — pré-remplit le tarif/nuit suggéré à partir de
   // la config du pro (prix par espèce + réduction séjour long), reste
@@ -58,45 +65,22 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
         });
       }
       const config = profil?.tarifs_pension as TarifsPension | null;
-      if (!config || typeof config !== 'object') return;
-      const seul = entree.seul_dans_logement !== false;
-
-      let prixNuit = 0;
-      if (Array.isArray(config.especes) && config.especes.length > 0) {
-        // Nouveau modèle : prix fixe par espèce.
-        const key = pensionTarifKeyForEspece(entree.espece);
-        if (!key) return;
-        const match = pensionTarifPourKey(config.especes, key);
-        if (!match) return;
-        // Équidés : box ou pré selon le type du logement occupé.
-        let typeLogement: string | null = null;
-        const logementId = (entree as { logement_id?: string | null }).logement_id;
-        if (logementId) {
-          const { data: lg } = await supabase.from('enclos_chenil').select('type').eq('id', logementId).maybeSingle();
-          typeLogement = (lg as { type?: string | null } | null)?.type ?? null;
-        }
-        prixNuit = pensionPrixNuit(match, { seul, hebergement: typeLogement });
-      } else if (Array.isArray(config.tranches_poids) && config.tranches_poids.length > 0) {
-        // Rétro-compat : ancien modèle tranches de poids.
-        const tranches = config.tranches_poids;
-        let poids: number | undefined;
-        if (entree.animal_id) {
-          const { data: animal } = await supabase.from('animaux').select('poids').eq('id', entree.animal_id).maybeSingle();
-          poids = animal?.poids ?? undefined;
-        }
-        let tranche = tranches.find(t => poids == null || t.poids_max == null || poids <= t.poids_max);
-        if (!tranche) tranche = tranches[tranches.length - 1];
-        prixNuit = (seul ? tranche.prix_seul : tranche.prix_partage) ?? 0;
-      } else {
-        return;
+      // Plein tarif + réduction long séjour à part (visible sur la facture).
+      const sugg = await tarifPensionSuggere(supabase, entree as unknown as Record<string, unknown>, config, nuitsInitiales);
+      if (sugg && sugg.prixNuit > 0) {
+        setTarif(prev => prev === '' ? sugg.prixNuit.toFixed(2) : prev);
+        setReduction(prev => prev === '' ? String(sugg.reductionPct || '') : prev);
       }
-
-      let reductionPct = 0;
-      for (const r of (config.reductions_long_sejour ?? [])) {
-        if (nuitsInitiales >= (r.min_nuits ?? 0)) reductionPct = r.pourcentage ?? 0;
+      // Autres animaux du même client présents sur la période : facture groupée.
+      const autresSejours = await sejoursMemeClient(supabase, entree as unknown as Record<string, unknown>, proProfileId);
+      const liste: AutreSejour[] = [];
+      for (const x of autresSejours) {
+        const n = nuitsSejour(x);
+        const sx = await tarifPensionSuggere(supabase, x, config, n);
+        liste.push({ entree: x, nuits: String(n), tarif: sx && sx.prixNuit > 0 ? sx.prixNuit.toFixed(2) : '',
+          reduction: sx?.reductionPct ? String(sx.reductionPct) : '', inclus: false });
       }
-      const prixFinal = prixNuit * (1 - reductionPct / 100);
-      setTarif(prev => prev === '' && prixFinal > 0 ? prixFinal.toFixed(2) : prev);
+      setAutres(liste);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proProfileId, entree.id]);
@@ -104,7 +88,13 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
   const tarifNum = parseFloat(tarif.replace(',', '.')) || 0;
   const nuitsNum = parseInt(nbNuits, 10) || 1;
   const suppNum = parseFloat(suppMontant.replace(',', '.')) || 0;
-  const sousTotal = tarifNum * nuitsNum + suppNum;
+  const reductionNum = Math.min(100, Math.max(0, num(reduction)));
+  // Pension d'un animal, réduction long séjour déduite (arrondie au centime).
+  const pension = (tarifNuit: number, nuits: number, red: number) =>
+    Math.round(tarifNuit * nuits * (1 - Math.min(100, Math.max(0, red)) / 100) * 100) / 100;
+  const autresInclus = autres.filter(a => a.inclus);
+  const sousTotal = pension(tarifNum, nuitsNum, reductionNum)
+    + autresInclus.reduce((s, a) => s + pension(num(a.tarif), parseInt(a.nuits, 10) || 1, num(a.reduction)), 0) + suppNum;
   const tvaAmt = avecTVA ? sousTotal * 0.2 : 0;
   const total = sousTotal + tvaAmt;
   const pctNum = Math.min(100, Math.max(1, Math.round(parseFloat(acomptePct.replace(',', '.')) || 30)));
@@ -124,14 +114,31 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
   async function continuer() {
     if (tarifNum <= 0) { setError('Renseignez un tarif par nuit.'); return; }
     const dateSortie = entree.date_sortie_effective ?? entree.date_sortie_prevue;
-    const desc = `Pension du ${fmtIso(entree.date_entree)} au ${fmtIso(dateSortie)} — ${entree.animal_nom ?? ''}`;
     const tva = avecTVA ? 20 : 0;
-    const lignes = [
-      isAcompte
-        ? { description: `Acompte ${pctNum}% — ${desc}`, quantite: 1, prixUnitaire: montantFacture, tva }
-        : { description: desc, quantite: nuitsNum, prixUnitaire: tarifNum, tva },
-      ...(suppNum > 0 ? [{ description: suppDesc.trim() || 'Suppléments', quantite: 1, prixUnitaire: suppNum, tva }] : []),
-    ];
+    const groupe = autresInclus.length > 0;
+    const noms = [entree.animal_nom ?? '', ...autresInclus.map(a => String(a.entree.animal_nom ?? ''))].filter(Boolean).join(', ');
+    const desc = `Pension du ${fmtIso(entree.date_entree)} au ${fmtIso(dateSortie)}${groupe ? '' : ` — ${entree.animal_nom ?? ''}`}`;
+    // Une ligne de pension par animal (section du PDF), réduction long séjour
+    // en remise identifiable ; suppléments rattachés au 1er animal.
+    const lignePension = (e: Record<string, unknown>, tarifNuit: number, nuits: number, red: number) => {
+      const sortie = (e.date_sortie_effective ?? e.date_sortie_prevue) as string | null;
+      return {
+        description: `Pension du ${fmtIso(e.date_entree as string | null)} au ${fmtIso(sortie)}`,
+        quantite: nuits, prixUnitaire: tarifNuit, tva,
+        animalId: (e.animal_id as string | null) ?? null, animalNom: (e.animal_nom as string | null) ?? null,
+        pensionEntreeId: String(e.id),
+        ...(red > 0 ? { remise: red, remiseMotif: `Réduction long séjour (${nuits} nuit${nuits > 1 ? 's' : ''})` } : {}),
+      };
+    };
+    const lignes = isAcompte
+      ? [{ description: `Acompte ${pctNum}% — ${desc}${groupe ? ` — ${noms}` : ''}`, quantite: 1, prixUnitaire: montantFacture, tva,
+          ...(groupe ? {} : { animalId: entree.animal_id ?? null, animalNom: entree.animal_nom ?? null }) }]
+      : [
+          lignePension(entree as unknown as Record<string, unknown>, tarifNum, nuitsNum, reductionNum),
+          ...(suppNum > 0 ? [{ description: suppDesc.trim() || 'Suppléments', quantite: 1, prixUnitaire: suppNum, tva,
+            animalId: entree.animal_id ?? null, animalNom: entree.animal_nom ?? null }] : []),
+          ...autresInclus.map(a => lignePension(a.entree, num(a.tarif), parseInt(a.nuits, 10) || 1, num(a.reduction))),
+        ];
     // Client du séjour (demande, sinon propriétaire de la fiche — profil exact).
     const c = await clientDuSejour(supabase, entree as unknown as Record<string, unknown>);
     const prefill = {
@@ -182,7 +189,41 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
             <label style={lbl}>Nombre de nuits</label>
             <input style={inp} type="number" value={nbNuits} onChange={e => setNbNuits(e.target.value)} />
           </div>
+          <div>
+            <label style={lbl}>Réduction long séjour (%)</label>
+            <input style={inp} type="number" min={0} max={100} step="0.5" placeholder="0" value={reduction} onChange={e => setReduction(e.target.value)} />
+          </div>
         </div>
+
+        {autres.length > 0 && !isAcompte && (
+          <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+            <p style={{ margin: '0 0 6px', fontFamily: 'Galey, sans-serif', fontSize: 13, fontWeight: 700, color: '#374151' }}>
+              Autres animaux de ce client sur la période
+            </p>
+            <p style={{ margin: '0 0 8px', fontFamily: 'Galey, sans-serif', fontSize: 11, color: '#6b7280' }}>
+              Cochés : facturés sur la même facture, une section par animal.
+            </p>
+            {autres.map((a, i) => (
+              <div key={String(a.entree.id)} style={{ marginBottom: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontFamily: 'Galey, sans-serif', fontSize: 13 }}>
+                  <input type="checkbox" checked={a.inclus} onChange={e => setAutres(prev => prev.map((x, j) => j === i ? { ...x, inclus: e.target.checked } : x))} />
+                  <span style={{ flex: 1 }}>{String(a.entree.animal_nom ?? 'Animal')} · du {fmtIso(a.entree.date_entree as string | null)} au {fmtIso((a.entree.date_sortie_effective ?? a.entree.date_sortie_prevue) as string | null)}</span>
+                </label>
+                {a.inclus && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 6 }}>
+                    {([['tarif', 'Tarif / nuit (€)'], ['nuits', 'Nuits'], ['reduction', 'Réduction (%)']] as const).map(([k, l]) => (
+                      <div key={k}>
+                        <label style={lbl}>{l}</label>
+                        <input style={inp} type="number" step="0.01" value={a[k]}
+                          onChange={e => setAutres(prev => prev.map((x, j) => j === i ? { ...x, [k]: e.target.value } : x))} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         <div style={{ marginBottom: 8 }}>
           <label style={lbl}>Suppléments (optionnel)</label>
           <input style={inp} placeholder="Ex : Frais vétérinaires, médicaments…" value={suppDesc} onChange={e => setSuppDesc(e.target.value)} />
@@ -215,8 +256,17 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
 
         <div style={{ background: TEAL + '0a', border: `1px solid ${TEAL}26`, borderRadius: 12, padding: 14, marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#6b7280', marginBottom: 4 }}>
-            <span>Pension ({nuitsNum} nuit{nuitsNum > 1 ? 's' : ''} × {fmt(tarifNum)})</span><span>{fmt(tarifNum * nuitsNum)}</span>
+            <span>Pension{autresInclus.length ? ` ${entree.animal_nom ?? ''}` : ''} ({nuitsNum} nuit{nuitsNum > 1 ? 's' : ''} × {fmt(tarifNum)}){reductionNum > 0 ? ` − ${reductionNum} %` : ''}</span><span>{fmt(pension(tarifNum, nuitsNum, reductionNum))}</span>
           </div>
+          {autresInclus.map(a => {
+            const n = parseInt(a.nuits, 10) || 1;
+            return (
+              <div key={String(a.entree.id)} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#6b7280', marginBottom: 4 }}>
+                <span>Pension {String(a.entree.animal_nom ?? '')} ({n} nuit{n > 1 ? 's' : ''} × {fmt(num(a.tarif))}){num(a.reduction) > 0 ? ` − ${num(a.reduction)} %` : ''}</span>
+                <span>{fmt(pension(num(a.tarif), n, num(a.reduction)))}</span>
+              </div>
+            );
+          })}
           {suppNum > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#6b7280', marginBottom: 4 }}>
               <span>Suppléments</span><span>{fmt(suppNum)}</span>
