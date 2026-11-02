@@ -21,7 +21,7 @@ export async function chargerDocsConsultation(rdvId: string): Promise<DocsConsul
   const [{ data: r }, { data: crs }, { data: ordos }, { data: fac }] = await Promise.all([
     supabase.from('rdv').select('animal_id, date_heure, pro_profile_id').eq('id', rdvId).maybeSingle(),
     supabase.from('comptes_rendus').select('id, animal_id, contenu, created_at, statut').eq('rdv_id', rdvId).eq('statut', 'valide').order('created_at'),
-    supabase.from('ordonnances').select('id, animal_id, doc_url, created_at').eq('rdv_id', rdvId).order('created_at'),
+    supabase.from('ordonnances').select('id, animal_id, doc_url, created_at').eq('rdv_id', rdvId).in('statut', ['validee', 'signee']).order('created_at'),
     supabase.from('factures').select('*').eq('source_rdv_id', rdvId).neq('statut', 'annulee').order('created_at', { ascending: false }).limit(1),
   ]);
   // CR / ordonnance faits depuis la fiche (sans lien au RDV) : ceux de l'animal
@@ -35,7 +35,7 @@ export async function chargerDocsConsultation(rdvId: string): Promise<DocsConsul
     const [c2, o2, f2] = await Promise.all([
       crsR.length ? null : supabase.from('comptes_rendus').select('id, animal_id, contenu, created_at, statut').eq('animal_id', aid)
         .eq('pro_profile_id', rr.pro_profile_id).eq('statut', 'valide').gte('created_at', debut.toISOString()).lt('created_at', fin.toISOString()).order('created_at'),
-      ordosR.length ? null : supabase.from('ordonnances').select('id, animal_id, doc_url, created_at').eq('animal_id', aid)
+      ordosR.length ? null : supabase.from('ordonnances').select('id, animal_id, doc_url, created_at').eq('animal_id', aid).in('statut', ['validee', 'signee'])
         .eq('pro_profile_id', rr.pro_profile_id).gte('created_at', debut.toISOString()).lt('created_at', fin.toISOString()).order('created_at'),
       facR.length ? null : supabase.from('factures').select('*').eq('source_animal_id', aid).eq('profile_id', rr.pro_profile_id)
         .neq('statut', 'annulee').gte('created_at', debut.toISOString()).order('created_at', { ascending: false }).limit(1),

@@ -3015,7 +3015,7 @@ function AnimalFichePageInner() {
     const [ord, rad, cr, grants, mo] = await Promise.all([
       // Pas de colonne « date » sur ordonnances / comptes_rendus (le tri dessus
       // échouait : rien ne s'affichait) — date_emit / created_at.
-      supabase.from('ordonnances').select('*').eq('animal_id', id).order('created_at', { ascending: false }),
+      supabase.from('ordonnances').select('*').eq('animal_id', id).neq('statut', 'brouillon').order('created_at', { ascending: false }),
       supabase.from('radios').select('*').eq('animal_id', id).order('date', { ascending: false }),
       supabase.from('comptes_rendus').select('*').eq('animal_id', id).order('created_at', { ascending: false }),
       supabase.from('animal_access').select('id, pro_profile_id, statut, granted_at').eq('animal_id', id).neq('statut', 'revoked'),

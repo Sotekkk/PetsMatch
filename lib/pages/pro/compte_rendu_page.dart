@@ -11,6 +11,8 @@ import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
+import 'package:PetsMatch/utils/ordonnance.dart';
+import 'package:PetsMatch/widgets/pro/ordonnance_editeur_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne, facturePdfDepuisLigne;
 import 'package:PetsMatch/pages/pro/transmission_document.dart';
@@ -108,7 +110,10 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   // Équipe vétérinaire : un ASV rédige des brouillons, un vétérinaire valide
   // (contrôlé aussi en base). Titulaire : tous les droits.
   bool _peutValider = true;
-  bool _peutOrdonnances = true;
+  /// Vétérinaire : valide et signe les ordonnances (jamais l'ASV).
+  bool _peutOrdonnances = false;
+  /// Préparer un brouillon d'ordonnance (vétérinaire ou ASV).
+  bool _peutPreparerOrdo = false;
 
   /// Profil du compte pro concerné : celui du RDV, sinon le contexte
   /// (profil actif, ou clinique pour un employé) — jamais `is_main`
@@ -372,8 +377,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
 
   Future<void> _chargerDroits() async {
     final v = await AgendaContexte.peut('vet_cr_valider');
-    final o = await AgendaContexte.peut('vet_ordonnances');
-    if (mounted) setState(() { _peutValider = v; _peutOrdonnances = o; });
+    final o = await peutPrescrireOrdonnance();
+    final pr = await peutPreparerOrdonnance();
+    if (mounted) setState(() { _peutValider = v; _peutOrdonnances = o; _peutPreparerOrdo = pr; });
   }
 
   @override
@@ -382,6 +388,17 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     _crContenuCtrl.dispose();
     _ordoNotesCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _editerOrdo({Map<String, dynamic>? ordo, Map<String, dynamic>? remplace}) async {
+    final animalId = _animalCourant;
+    if (animalId == null) return;
+    final owner = await _resolveOwner();
+    if (!mounted) return;
+    final rdvId = (widget.rdv?['id'] ?? _rdvSource?['id'])?.toString();
+    final ok = await ouvrirEditeurOrdonnance(context, ordo: ordo, remplace: remplace, animalId: animalId,
+        ownerUid: owner.uid, rdvId: rdvId);
+    if (ok) await _loadExisting();
   }
 
   Future<void> _deleteDoc(String table, String id) async {
@@ -720,7 +737,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       ...duCarnet('vaccin'),
     ];
     final traitementsTxt = [
-      if (actes) for (final t in _traitementsCr) '${t.nom} — ${t.posologieComplete}',
+      if (actes) for (final t in _traitementsCr) '${t.nom} — ${t.posologieComplete}${t.administre ? ' (administré en clinique)' : ''}',
       ...duCarnet('traitement'),
     ];
     final prescription = traitementsTxt.join(' ; ');
@@ -966,64 +983,28 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       }
     }
 
-    if (_traitementsCr.isNotEmpty && _peutOrdonnances) {
+    // Traitements PRESCRITS (pas ceux administrés en clinique) → ordonnance en
+    // brouillon, que le vétérinaire complète, vérifie et valide (jamais d'office).
+    final prescrits = _traitementsCr.where((t) => !t.administre).toList();
+    if (prescrits.isNotEmpty && _peutPreparerOrdo) {
       try {
-        final pro = _profilPro;
-        final clinique = pro == null ? null : await _supa.from('user_profiles_complet')
-            .select('nom, rue_pro, code_postal_pro, ville_pro, phone_number, certifications').eq('id', pro).maybeSingle();
-        final animal = await _supa.from('animaux')
-            .select('nom, espece, race, sexe, date_naissance, age_estime, identification, poids').eq('id', animalId).maybeSingle();
-        String proprio = widget.clientName;
-        if (owner.profileId != null) {
-          final o = await _supa.from('user_profiles_complet')
-              .select('firstname, lastname, nom').eq('id', owner.profileId!).maybeSingle();
-          final n = '${o?['firstname'] ?? ''} ${o?['lastname'] ?? ''}'.trim();
-          if (n.isNotEmpty) proprio = n;
+        var poids = _poidsSaisi != null ? _fmtPoids(_poidsSaisi!) : '';
+        if (poids.isEmpty) {
+          final a = await _supa.from('animaux').select('poids').eq('id', animalId).maybeSingle();
+          poids = (a?['poids'] ?? '').toString();
         }
-        var ordre = '';
-        if (clinique?['certifications'] is List) {
-          for (final c in clinique!['certifications'] as List) {
-            if (c is Map && (c['nom'] ?? '').toString().toLowerCase().contains('ordre')) { ordre = (c['numero'] ?? '').toString(); break; }
-          }
-        }
-        final adresse = [clinique?['rue_pro'], '${clinique?['code_postal_pro'] ?? ''} ${clinique?['ville_pro'] ?? ''}'.trim()]
-            .where((x) => (x?.toString() ?? '').trim().isNotEmpty).join(', ');
-        final bytes = await ordonnancePdfBytes(
-          cliniqueNom: (clinique?['nom'] as String?)?.trim().isNotEmpty == true ? clinique!['nom'] as String : 'Cabinet vétérinaire',
-          cliniqueAdresse: adresse,
-          cliniqueTel: (clinique?['phone_number'] ?? '').toString(),
-          numeroOrdre: ordre,
-          prescripteur: praticien.isEmpty ? 'Vétérinaire' : praticien,
-          animalNom: (animal?['nom'] ?? widget.rdv?['_animal_nom'] ?? 'Animal').toString(),
-          animalEspeceRace: [animal?['espece'], animal?['race']].where((x) => (x?.toString() ?? '').isNotEmpty).join(' · '),
-          animalSexe: sexeAnimal(animal?['sexe']),
-          animalAge: ageAnimal(animal?['date_naissance'], animal?['age_estime']),
-          signature: octetsSignature(_signature),
-          animalIdentification: (animal?['identification'] ?? '').toString(),
-          animalPoids: _poidsSaisi != null ? '${_fmtPoids(_poidsSaisi!)} kg'
-              : animal?['poids'] != null ? '${animal!['poids']} kg' : '',
-          proprietaire: proprio,
-          lignes: [for (final t in _traitementsCr)
-            LigneOrdonnance(medicament: t.nom, posologie: t.posologieComplete, notes: t.notes)],
+        final brouillon = await creerBrouillonOrdonnance(
+          animalId: animalId,
+          contenu: ContenuOrdo(lignes: [for (final t in prescrits) t.versLigneOrdo()], poids: poids),
+          date: today, rdvId: rdvId, ownerUid: owner.uid, ownerProfileId: owner.profileId,
         );
-        final moi = AgendaContexte.moi ?? AgendaContexte.uid;
-        final docUrl = await uploadDocumentBytes(bytes, 'ordonnances/$moi/${DateTime.now().millisecondsSinceEpoch}.pdf');
-        final monProfil = await AgendaContexte.monProfil();
-        await _insertRecord('ordonnances', {
-          'pro_uid': AgendaContexte.uid,
-          'animal_id': animalId,
-          if (owner.uid != null) 'owner_uid': owner.uid,
-          if (rdvId != null) 'rdv_id': rdvId,
-          'doc_url': docUrl,
-          'date_emit': ymd(today),
-          'notes': _traitementsCr.map((t) => t.nom).join(', '),
-        }, {
-          if (pro != null && pro.isNotEmpty) 'pro_profile_id': pro,
-          if (owner.profileId != null) 'owner_profile_id': owner.profileId,
-          if (AgendaContexte.moi != null) 'praticien_uid': AgendaContexte.moi,
-          if (monProfil != null) 'praticien_profile_id': monProfil,
-        });
-        await _notifyOwner(isOrdo: true);
+        if (_peutOrdonnances && mounted) {
+          await ouvrirEditeurOrdonnance(context, ordo: brouillon, animalId: animalId);
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Ordonnance préparée : un vétérinaire doit la compléter et la valider.', style: TextStyle(fontFamily: 'Galey')),
+            behavior: SnackBarBehavior.floating));
+        }
       } catch (e) { erreurs.add('ordonnance'); }
     }
     if (erreurs.isNotEmpty && mounted) {
@@ -1215,6 +1196,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     final nomFocus = FocusNode();
     var type = existant?.type ?? 'medicament';
     var rappels = existant?.rappels ?? true;
+    var administre = existant?.administre ?? false;
     final phases = <_PhaseEdit>[
       for (final p in existant?.phases ?? [const _PhaseCr(dose: '1 cp', prises: {'matin', 'soir'}, frequenceJours: 1, dureeJours: 7)])
         _PhaseEdit.de(p),
@@ -1367,18 +1349,25 @@ class _CompteRenduPageState extends State<CompteRenduPage>
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             ),
             SwitchListTile(
-              contentPadding: EdgeInsets.zero, value: rappels, activeThumbColor: widget.categoryColor,
-              onChanged: (v) => setM(() => rappels = v),
-              title: const Text('Rappeler chaque prise au propriétaire', style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('À l\'heure de chaque prise choisie, jusqu\'à la fin du traitement.', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5)),
+              contentPadding: EdgeInsets.zero, value: administre, activeThumbColor: widget.categoryColor,
+              onChanged: (v) => setM(() { administre = v; if (v) rappels = false; }),
+              title: const Text('Administré en clinique', style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text("Inscrit au carnet, pas sur l'ordonnance.", style: TextStyle(fontFamily: 'Galey', fontSize: 11.5)),
             ),
+            if (!administre)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero, value: rappels, activeThumbColor: widget.categoryColor,
+                onChanged: (v) => setM(() => rappels = v),
+                title: const Text('Rappeler chaque prise au propriétaire', style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600)),
+                subtitle: const Text('À l\'heure de chaque prise choisie, jusqu\'à la fin du traitement.', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5)),
+              ),
             TextField(controller: notesCtrl, decoration: _inputDeco('Précautions, à jeun, pendant le repas…').copyWith(labelText: 'Remarque (facultatif)')),
             const SizedBox(height: 18),
             SizedBox(width: double.infinity, child: ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: widget.categoryColor, foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               onPressed: nomCtrl.text.trim().isEmpty || phases.any((p) => p.prises.isEmpty || _rythmeImpossible(p)) ? null : () => Navigator.pop(ctx, _TraitementCr(
-                nom: nomCtrl.text.trim(), type: type, rappels: rappels, notes: notesCtrl.text.trim(),
+                nom: nomCtrl.text.trim(), type: type, rappels: administre ? false : rappels, notes: notesCtrl.text.trim(), administre: administre,
                 phases: [for (final p in phases) p.vers()])),
               child: Text(existant == null ? 'Ajouter' : 'Enregistrer', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
             )),
@@ -1761,7 +1750,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     try {
       if (rdvId != null) {
         crs = List<Map<String, dynamic>>.from(await _supa.from('comptes_rendus').select().eq('rdv_id', rdvId).eq('statut', 'valide').order('created_at'));
-        ordos = List<Map<String, dynamic>>.from(await _supa.from('ordonnances').select().eq('rdv_id', rdvId).order('created_at'));
+        ordos = List<Map<String, dynamic>>.from(await _supa.from('ordonnances').select().eq('rdv_id', rdvId)
+            .inFilter('statut', ['validee', 'signee']).order('created_at'));
         final f = await _supa.from('factures').select().eq('source_rdv_id', rdvId).neq('statut', 'annulee')
             .order('created_at', ascending: false).limit(1);
         if ((f as List).isNotEmpty) facture = Map<String, dynamic>.from(f.first as Map);
@@ -1773,7 +1763,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         }
         if (ordos.isEmpty) {
           ordos = List<Map<String, dynamic>>.from(await _supa.from('ordonnances').select().eq('animal_id', animalId)
-              .eq('pro_profile_id', _profilPro!).gte('created_at', jour).order('created_at'));
+              .eq('pro_profile_id', _profilPro!).inFilter('statut', ['validee', 'signee']).gte('created_at', jour).order('created_at'));
         }
         if (facture == null) {
           final f = await _supa.from('factures').select().eq('source_animal_id', animalId).eq('profile_id', _profilPro!)
@@ -2030,7 +2020,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       _inputLabel('Traitements prescrits'),
       const SizedBox(height: 6),
       for (final t in List.of(_traitementsCr)) ligne(Icons.medication_outlined, t.nom,
-          [t.posologieComplete, if (t.rappels) 'rappels au propriétaire'].join(' · '),
+          [t.posologieComplete, if (t.administre) 'administré en clinique', if (t.rappels) 'rappels au propriétaire'].join(' · '),
           () => _ajouterTraitement(t), () => setState(() => _traitementsCr.remove(t))),
       ...carnetDe((t) => t == 'traitement'),
       OutlinedButton.icon(
@@ -2041,9 +2031,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       ),
       if (_traitementsCr.isNotEmpty) ...[
         const SizedBox(height: 6),
-        Text(_peutOrdonnances
-                ? "📄 L'ordonnance sera générée en PDF et ajoutée aux documents de l'animal."
-                : 'Ordonnance : réservée aux vétérinaires — le traitement sera inscrit au carnet.',
+        Text(_peutPreparerOrdo
+                ? 'Les traitements prescrits (non administrés en clinique) sont repris dans une ordonnance à compléter et à faire valider par le vétérinaire.'
+                : 'Ordonnance : réservée à la clinique vétérinaire — le traitement sera inscrit au carnet.',
             style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
       ],
       const SizedBox(height: 4),
@@ -2981,17 +2971,37 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             const SizedBox(height: 8),
             ..._ordos.map((o) => _OrdoCard(ordo: o, color: widget.categoryColor,
                 onTransmettre: () => _transmettreOrdo(o),
-                onDelete: () => _deleteDoc('ordonnances', o['id'].toString()))),
+                onEditer: o['statut'] == 'brouillon' && _peutPreparerOrdo ? () => _editerOrdo(ordo: o) : null,
+                onRectifier: (o['statut'] == 'validee' || o['statut'] == 'signee') && o['contenu'] != null && _peutPreparerOrdo
+                    ? () => _editerOrdo(remplace: o) : null,
+                // Seul un brouillon se supprime (une ordonnance validée se corrige).
+                onDelete: o['statut'] == 'brouillon' ? () => _deleteDoc('ordonnances', o['id'].toString()) : null)),
             const SizedBox(height: 20),
             const Divider(),
             const SizedBox(height: 8),
           ],
 
+          if (_peutPreparerOrdo) ...[
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _editerOrdo(),
+                icon: const Icon(Icons.edit_document),
+                label: const Text('Rédiger une ordonnance', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: widget.categoryColor, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
           if (!_peutOrdonnances)
-            Text("La prescription est réservée aux vétérinaires de la clinique.",
+            Text("La validation et la signature d'une ordonnance sont réservées aux vétérinaires de la clinique.",
                 style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600))
           else ...[
-          _sectionTitle('Nouvelle ordonnance'),
+          _sectionTitle('Ou charger une ordonnance faite ailleurs (PDF)'),
           const SizedBox(height: 12),
 
           // Fichier ordonnance
@@ -3227,10 +3237,13 @@ class _TraitementCr {
   final String nom, type, notes;
   final List<_PhaseCr> phases;
   final bool rappels;
-  _TraitementCr({required this.nom, required this.type, required this.phases, required this.rappels, this.notes = ''});
+  /// Fait en clinique : inscrit au carnet, jamais sur l'ordonnance.
+  final bool administre;
+  _TraitementCr({required this.nom, required this.type, required this.phases, required this.rappels, this.notes = '',
+      this.administre = false});
 
   Map<String, dynamic> toJson() => {
-        'nom': nom, 'type': type, 'rappels': rappels, 'notes': notes,
+        'nom': nom, 'type': type, 'rappels': rappels, 'notes': notes, if (administre) 'administre': true,
         'phases': [for (final p in phases) {
           'dose': p.dose, 'prises': p.prises.toList(), 'frequenceJours': p.frequenceJours, 'dureeJours': p.dureeJours,
           if (p.doses.isNotEmpty) 'doses': p.doses,
@@ -3238,7 +3251,7 @@ class _TraitementCr {
       };
   factory _TraitementCr.fromJson(Map<String, dynamic> j) => _TraitementCr(
         nom: (j['nom'] ?? '').toString(), type: (j['type'] ?? 'medicament').toString(),
-        rappels: j['rappels'] != false, notes: (j['notes'] ?? '').toString(),
+        rappels: j['rappels'] != false, notes: (j['notes'] ?? '').toString(), administre: j['administre'] == true,
         phases: [
           for (final p in (j['phases'] as List? ?? const []))
             _PhaseCr(
@@ -3253,6 +3266,16 @@ class _TraitementCr {
 
   /// Posologie de toutes les phases : « …, puis … ».
   String get posologieComplete => phases.map((p) => p.libelle).join(', puis ');
+
+  /// Ligne d'ordonnance : seulement ce qui a été saisi (durée = somme des
+  /// phases, « Au long cours » si choisi). Miroir site : ligneDepuisTraitement.
+  LigneOrdo versLigneOrdo() {
+    final total = phases.isNotEmpty && phases.every((p) => p.dureeJours != null && p.dureeJours! > 0)
+        ? phases.fold<int>(0, (n, p) => n + p.dureeJours!) : 0;
+    return LigneOrdo(medicament: nom, posologie: posologieComplete, instructions: notes,
+        duree: total > 0 ? '$total jour${total > 1 ? 's' : ''}'
+            : phases.isNotEmpty && phases.last.dureeJours == null ? 'Au long cours' : '');
+  }
 }
 
 // ── Cards existants ──────────────────────────────────────────────────────────
@@ -3376,7 +3399,11 @@ class _OrdoCard extends StatelessWidget {
   final Color color;
   final VoidCallback? onDelete;
   final VoidCallback? onTransmettre;
-  const _OrdoCard({required this.ordo, required this.color, this.onDelete, this.onTransmettre});
+  /// Brouillon : compléter (et valider si vétérinaire).
+  final VoidCallback? onEditer;
+  /// Ordonnance validée : version rectificative.
+  final VoidCallback? onRectifier;
+  const _OrdoCard({required this.ordo, required this.color, this.onDelete, this.onTransmettre, this.onEditer, this.onRectifier});
 
   @override
   Widget build(BuildContext context) {
@@ -3396,7 +3423,11 @@ class _OrdoCard extends StatelessWidget {
         Row(children: [
           Icon(Icons.description_outlined, size: 16, color: color),
           const SizedBox(width: 6),
-          Expanded(child: Text('Ordonnance du $dateEmit',
+          Expanded(child: Text([
+            'Ordonnance du $dateEmit',
+            if ((ordo['numero'] ?? '').toString().isNotEmpty) 'N° ${ordo['numero']}',
+            libelleStatutOrdo[(ordo['statut'] ?? 'signee').toString()] ?? '',
+          ].where((x) => x.isNotEmpty).join(' · '),
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: color))),
           if (onTransmettre != null && docUrl.isNotEmpty)
             IconButton(visualDensity: VisualDensity.compact, tooltip: 'Imprimer / envoyer',
@@ -3425,6 +3456,12 @@ class _OrdoCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(notes, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
         ],
+        if (onEditer != null || onRectifier != null)
+          Align(alignment: Alignment.centerRight, child: TextButton(
+            onPressed: onEditer ?? onRectifier,
+            child: Text(onEditer != null ? 'Compléter' : 'Corriger',
+                style: TextStyle(fontFamily: 'Galey', color: color, fontWeight: FontWeight.w700)),
+          )),
       ]),
     );
   }

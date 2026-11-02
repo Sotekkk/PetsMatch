@@ -444,7 +444,7 @@ class _DocumentsSanteProTabState extends State<DocumentsSanteProTab> {
       } catch (_) {}
     } else {
       try { _crs = _l(await _supa.from('comptes_rendus').select().eq('animal_id', id).order('created_at', ascending: false)); } catch (_) {}
-      try { _ordos = _l(await _supa.from('ordonnances').select().eq('animal_id', id).order('created_at', ascending: false)); } catch (_) {}
+      try { _ordos = _l(await _supa.from('ordonnances').select().eq('animal_id', id).neq('statut', 'brouillon').order('created_at', ascending: false)); } catch (_) {}
     }
     if (mounted) setState(() => _loading = false);
   }

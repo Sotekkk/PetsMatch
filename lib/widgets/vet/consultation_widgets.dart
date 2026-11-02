@@ -8,6 +8,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/document_prive.dart';
+import 'package:PetsMatch/utils/ordonnance.dart' show libelleStatutOrdo;
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1E2025);
@@ -192,6 +193,11 @@ class ConsultationCard extends StatelessWidget {
                   Text('Ordonnances (${c.ordos.length})', style: const TextStyle(fontFamily: 'Galey',
                       fontSize: 12, color: _muted, fontWeight: FontWeight.w600)),
                 ],
+                if (c.ordos.any((o) => o['statut'] == 'brouillon')) ...[
+                  const SizedBox(width: 10),
+                  const Flexible(child: Text('Ordonnance à valider', overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _amber, fontWeight: FontWeight.w700))),
+                ],
               ]),
             ),
           ]),
@@ -201,14 +207,28 @@ class ConsultationCard extends StatelessWidget {
   }
 }
 
+/// Actions sur les ordonnances (selon les droits de l'écran). Chaque action
+/// ferme d'abord le détail.
+class ActionsOrdo {
+  /// Vétérinaire : valide / signe ; sinon l'ASV prépare seulement.
+  final bool peutPrescrire;
+  /// Brouillon : compléter (et valider si vétérinaire).
+  final void Function(Map<String, dynamic> o)? ouvrir;
+  /// Ordonnance validée : version rectificative.
+  final void Function(Map<String, dynamic> o)? rectifier;
+  /// Ordonnance validée sans PDF : le produire depuis son contenu.
+  final void Function(Map<String, dynamic> o)? genererPdf;
+  final Future<void> Function(Map<String, dynamic> o)? supprimerBrouillon;
+  const ActionsOrdo({required this.peutPrescrire, this.ouvrir, this.rectifier, this.genererPdf, this.supprimerBrouillon});
+}
+
 /// Détail d'une consultation : CR complet, ordonnances, traçabilité.
 Future<void> showConsultationDetail(BuildContext context, {
   required ConsultationVet c,
   required Map<String, String> noms,
   VoidCallback? onGererCr,
   Future<void> Function(Map<String, dynamic> cr)? onSupprimerCr,
-  /// Ordonnance ajoutée à la main sans document : produire son PDF (vétérinaire seulement).
-  void Function(Map<String, dynamic> ordo)? onGenererPdfOrdo,
+  ActionsOrdo? actionsOrdo,
 }) => showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -217,7 +237,7 @@ Future<void> showConsultationDetail(BuildContext context, {
       builder: (_) => DraggableScrollableSheet(
         expand: false, initialChildSize: 0.75, maxChildSize: 0.95, minChildSize: 0.4,
         builder: (ctx, sc) => _ConsultationDetail(c: c, noms: noms, controller: sc, onGererCr: onGererCr, onSupprimerCr: onSupprimerCr,
-            onGenererPdfOrdo: onGenererPdfOrdo),
+            actionsOrdo: actionsOrdo),
       ),
     );
 
@@ -228,15 +248,78 @@ class _ConsultationDetail extends StatefulWidget {
   final VoidCallback? onGererCr;
   /// Supprimer le compte rendu (erreur de saisie) — après confirmation.
   final Future<void> Function(Map<String, dynamic> cr)? onSupprimerCr;
-  final void Function(Map<String, dynamic> ordo)? onGenererPdfOrdo;
+  final ActionsOrdo? actionsOrdo;
   const _ConsultationDetail({required this.c, required this.noms, required this.controller, this.onGererCr, this.onSupprimerCr,
-      this.onGenererPdfOrdo});
+      this.actionsOrdo});
 
   @override
   State<_ConsultationDetail> createState() => _ConsultationDetailState();
 }
 
 class _ConsultationDetailState extends State<_ConsultationDetail> {
+  Widget _ordo(BuildContext context, Map<String, dynamic> o) {
+    final a = widget.actionsOrdo;
+    final statut = (o['statut'] ?? 'signee').toString();
+    final brouillon = statut == 'brouillon';
+    final doc = (o['doc_url'] ?? '').toString();
+    final aContenu = o['contenu'] != null;
+    final version = (o['version'] as num?)?.toInt() ?? 1;
+    final couleur = brouillon ? _amber : statut == 'remplacee' ? _muted : _teal;
+    final prescripteur = brouillon ? null : _nomDe(_noms, o['praticien_profile_id'], o['praticien_uid']);
+    const lien = TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700);
+    void fermerPuis(void Function() f) { Navigator.pop(context); f(); }
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 6, 4),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: _border)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.description_outlined, size: 18, color: _teal),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${brouillon ? 'Préparée' : 'Émise'} le ${fmtJour(_date(o['date_emit'] ?? o['created_at']))}'
+                '${(o['numero'] ?? '').toString().isNotEmpty ? ' · N° ${o['numero']}' : ''}',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600, color: _ink)),
+            Text('${libelleStatutOrdo[statut] ?? statut}${version > 1 ? ' · version $version' : ''}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: couleur)),
+            if ([prescripteur, o['notes']].any((x) => (x?.toString() ?? '').isNotEmpty))
+              Text([prescripteur, o['notes']].where((x) => (x?.toString() ?? '').isNotEmpty).join(' · '),
+                  maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _muted)),
+          ])),
+        ]),
+        Wrap(alignment: WrapAlignment.end, children: [
+          if (brouillon && a?.ouvrir != null)
+            TextButton(onPressed: () => fermerPuis(() => a.ouvrir!(o)),
+                child: Text(a!.peutPrescrire ? 'Compléter et valider' : 'Modifier le brouillon', style: lien)),
+          if (brouillon && a?.supprimerBrouillon != null)
+            TextButton(
+              onPressed: () async {
+                final ok = await showDialog<bool>(context: context, builder: (d) => AlertDialog(
+                  content: const Text('Supprimer ce brouillon d’ordonnance ?', style: TextStyle(fontFamily: 'Galey')),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Annuler')),
+                    TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+                  ],
+                ));
+                if (ok == true && context.mounted) { Navigator.pop(context); await a!.supprimerBrouillon!(o); }
+              },
+              child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red, fontWeight: FontWeight.w700)),
+            ),
+          if (!brouillon && doc.isEmpty)
+            a?.genererPdf != null && a!.peutPrescrire && aContenu
+                ? TextButton(onPressed: () => fermerPuis(() => a.genererPdf!(o)), child: const Text('Générer le PDF', style: lien))
+                : const Padding(padding: EdgeInsets.fromLTRB(0, 12, 6, 12),
+                    child: Text('PDF non généré', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _muted))),
+          if ((statut == 'validee' || statut == 'signee') && aContenu && a?.rectifier != null)
+            TextButton(onPressed: () => fermerPuis(() => a!.rectifier!(o)), child: const Text('Corriger', style: lien)),
+          if (doc.isNotEmpty)
+            TextButton(onPressed: () => ouvrirDocument(context, doc), child: const Text('Ouvrir', style: lien)),
+        ]),
+      ]),
+    );
+  }
+
   List<Map<String, dynamic>> _journal = [];
   Map<String, String> _noms = {};
 
@@ -334,39 +417,7 @@ class _ConsultationDetailState extends State<_ConsultationDetail> {
 
       if (c.ordos.isNotEmpty) ...[
         _titre('Ordonnances (${c.ordos.length})'),
-        for (final o in c.ordos)
-          Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: _border)),
-            child: Row(children: [
-              const Icon(Icons.description_outlined, size: 18, color: _teal),
-              const SizedBox(width: 10),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Émise le ${fmtJour(_date(o['date_emit'] ?? o['created_at']))}',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600, color: _ink)),
-                if ([_nomDe(_noms, o['praticien_profile_id'], o['praticien_uid']), o['notes']]
-                    .any((x) => (x?.toString() ?? '').isNotEmpty))
-                  Text([_nomDe(_noms, o['praticien_profile_id'], o['praticien_uid']), o['notes']]
-                      .where((x) => (x?.toString() ?? '').isNotEmpty).join(' · '),
-                      maxLines: 2, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _muted)),
-              ])),
-              if ((o['doc_url'] ?? '').toString().isNotEmpty)
-                TextButton(
-                  onPressed: () => ouvrirDocument(context, o['doc_url'].toString()),
-                  child: const Text('Ouvrir', style: TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700)),
-                )
-              else if (widget.onGenererPdfOrdo != null)
-                TextButton(
-                  onPressed: () { Navigator.pop(context); widget.onGenererPdfOrdo!(o); },
-                  child: const Text('Générer le PDF', style: TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700)),
-                )
-              else
-                const Padding(padding: EdgeInsets.only(right: 6),
-                  child: Text('PDF non généré', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _muted))),
-            ]),
-          ),
+        for (final o in c.ordos) _ordo(context, o),
       ],
 
       _titre('Traçabilité'),

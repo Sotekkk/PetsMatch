@@ -1,6 +1,7 @@
-// Ordonnance vétérinaire générée depuis le compte rendu (compte_rendu_page.dart) :
-// en-tête de la clinique (n° d'Ordre), patient, propriétaire, médicaments
-// (posologie, durée), prescripteur. Même police que les contrats
+// Ordonnance vétérinaire (contenu structuré, migration_ordonnances_v2.sql) :
+// en-tête de la clinique (n° d'Ordre), numéro d'ordonnance, patient,
+// propriétaire, médicaments (présentation, posologie, voie, durée, quantité,
+// renouvellement, instructions, mentions), prescripteur, pages numérotées. Même police que les contrats
 // (contrat_pdf.dart, NotoSans : accents).
 
 import 'dart:typed_data';
@@ -19,8 +20,11 @@ class LigneOrdonnance {
   final String medicament;
   final String posologie;
   final int? dureeJours;
+  /// Instructions particulières.
   final String? notes;
-  const LigneOrdonnance({required this.medicament, required this.posologie, this.dureeJours, this.notes});
+  final String? principeActif, presentation, voie, duree, quantite, renouvellement, mentions;
+  const LigneOrdonnance({required this.medicament, required this.posologie, this.dureeJours, this.notes,
+      this.principeActif, this.presentation, this.voie, this.duree, this.quantite, this.renouvellement, this.mentions});
 }
 
 pw.ThemeData? _theme;
@@ -100,11 +104,21 @@ Future<Uint8List> ordonnancePdfBytes({
   required List<LigneOrdonnance> lignes,
   String? remarques,
   DateTime? date,
+  /// Numéro attribué à la validation (absent : aperçu).
+  String? numero,
+  /// Version rectificative : numéro et date de l'ordonnance remplacée.
+  bool rectificative = false,
+  String? remplaceNumero,
+  DateTime? remplaceDate,
+  /// Aperçu avant validation : bandeau « Aperçu — non validée », sans signature.
+  bool apercu = false,
   /// Signature manuscrite du prescripteur (PNG), apposée au-dessus du trait.
   Uint8List? signature,
 }) async {
   final doc = pw.Document(theme: await _chargerTheme());
   final jour = date ?? DateTime.now();
+  final titre = rectificative ? 'ORDONNANCE RECTIFICATIVE' : 'ORDONNANCE';
+  final numeroTxt = (numero ?? '').isNotEmpty ? 'N° $numero' : (apercu ? 'N° attribué à la validation' : '');
   pw.Widget info(String label, String valeur) => valeur.trim().isEmpty
       ? pw.SizedBox()
       : pw.Padding(
@@ -115,28 +129,102 @@ Future<Uint8List> ordonnancePdfBytes({
           ])),
         );
 
-  doc.addPage(pw.Page(
+  pw.Widget enTete(pw.Context ctx) => ctx.pageNumber == 1
+      ? pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+          pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+            pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Text(cliniqueNom, style: pw.TextStyle(fontSize: 15, color: _teal, fontWeight: pw.FontWeight.bold)),
+              if (cliniqueAdresse.isNotEmpty) pw.Text(cliniqueAdresse, style: const pw.TextStyle(fontSize: 9, color: _dark)),
+              if (cliniqueTel.isNotEmpty) pw.Text('Tél. $cliniqueTel', style: const pw.TextStyle(fontSize: 9, color: _dark)),
+              if (numeroOrdre.isNotEmpty) pw.Text("N° d'inscription à l'Ordre : $numeroOrdre", style: const pw.TextStyle(fontSize: 9, color: _dark)),
+            ])),
+            pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
+              pw.Text(titre, style: pw.TextStyle(fontSize: 13, color: _teal, fontWeight: pw.FontWeight.bold, letterSpacing: 1)),
+              pw.SizedBox(height: 2),
+              pw.Text([numeroTxt, 'Le ${_date(jour)}'].where((x) => x.isNotEmpty).join(' · '),
+                  style: const pw.TextStyle(fontSize: 9, color: _dark)),
+            ]),
+          ]),
+          pw.SizedBox(height: 14),
+          pw.Divider(color: _line, thickness: 1),
+          pw.SizedBox(height: 10),
+        ])
+      : pw.Column(children: [
+          pw.Row(children: [
+            pw.Expanded(child: pw.Text(cliniqueNom, style: pw.TextStyle(fontSize: 11, color: _teal, fontWeight: pw.FontWeight.bold))),
+            pw.Text('$titre${numeroTxt.isNotEmpty ? ' · $numeroTxt' : ''} · Le ${_date(jour)}',
+                style: const pw.TextStyle(fontSize: 9, color: _dark)),
+          ]),
+          pw.Divider(color: _line, thickness: 1),
+          pw.SizedBox(height: 8),
+        ]);
+
+  pw.Widget ligne(int i, LigneOrdonnance l) {
+    final structuree = l.duree != null || l.voie != null || l.quantite != null;
+    final carac = [
+      if ((l.voie ?? '').trim().isNotEmpty) 'Voie : ${l.voie!.trim()}',
+      if ((l.duree ?? '').trim().isNotEmpty) 'Durée : ${l.duree!.trim()}'
+      else if (l.dureeJours != null) 'Pendant ${l.dureeJours} jour${l.dureeJours! > 1 ? 's' : ''}',
+      if ((l.quantite ?? '').trim().isNotEmpty) 'Quantité à délivrer : ${l.quantite!.trim()}',
+      if (structuree) 'Renouvellement : ${(l.renouvellement ?? '').trim().isEmpty ? 'non' : l.renouvellement!.trim()}',
+    ].join(' · ');
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 12),
+      child: pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+        pw.Container(
+          width: 18, height: 18, alignment: pw.Alignment.center,
+          decoration: const pw.BoxDecoration(color: _teal, shape: pw.BoxShape.circle),
+          child: pw.Text('${i + 1}', style: pw.TextStyle(fontSize: 9, color: PdfColors.white, fontWeight: pw.FontWeight.bold)),
+        ),
+        pw.SizedBox(width: 10),
+        pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+          pw.Text([l.medicament, l.presentation ?? ''].where((x) => x.trim().isNotEmpty).join(' — '),
+              style: pw.TextStyle(fontSize: 11, color: _dark, fontWeight: pw.FontWeight.bold)),
+          if ((l.principeActif ?? '').trim().isNotEmpty)
+            pw.Text('Principe actif : ${l.principeActif!.trim()}', style: const pw.TextStyle(fontSize: 9.5, color: _grey)),
+          if (l.posologie.trim().isNotEmpty)
+            pw.Text(l.posologie, style: const pw.TextStyle(fontSize: 10, color: _dark)),
+          if (carac.isNotEmpty) pw.Text(carac, style: const pw.TextStyle(fontSize: 9.5, color: _grey)),
+          if ((l.notes ?? '').trim().isNotEmpty)
+            pw.Text(l.notes!, style: pw.TextStyle(fontSize: 9, color: _grey, fontStyle: pw.FontStyle.italic)),
+          if ((l.mentions ?? '').trim().isNotEmpty)
+            pw.Text('Mentions : ${l.mentions!.trim()}', style: const pw.TextStyle(fontSize: 9.5, color: _dark)),
+        ])),
+      ]),
+    );
+  }
+
+  doc.addPage(pw.MultiPage(
     pageFormat: PdfPageFormat.a4,
     margin: const pw.EdgeInsets.fromLTRB(40, 36, 40, 36),
-    build: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-      // En-tête clinique
-      pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-        pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-          pw.Text(cliniqueNom, style: pw.TextStyle(fontSize: 15, color: _teal, fontWeight: pw.FontWeight.bold)),
-          if (cliniqueAdresse.isNotEmpty) pw.Text(cliniqueAdresse, style: const pw.TextStyle(fontSize: 9, color: _dark)),
-          if (cliniqueTel.isNotEmpty) pw.Text('Tél. $cliniqueTel', style: const pw.TextStyle(fontSize: 9, color: _dark)),
-          if (numeroOrdre.isNotEmpty) pw.Text("N° d'inscription à l'Ordre : $numeroOrdre", style: const pw.TextStyle(fontSize: 9, color: _dark)),
-        ])),
-        pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-          pw.Text('ORDONNANCE', style: pw.TextStyle(fontSize: 13, color: _teal, fontWeight: pw.FontWeight.bold, letterSpacing: 1)),
-          pw.SizedBox(height: 2),
-          pw.Text('Le ${_date(jour)}', style: const pw.TextStyle(fontSize: 9, color: _dark)),
-        ]),
+    header: enTete,
+    footer: (ctx) => pw.Padding(
+      padding: const pw.EdgeInsets.only(top: 10),
+      child: pw.Row(children: [
+        pw.Expanded(child: pw.Text('Ordonnance établie via PetsMatch — à présenter en pharmacie / à conserver dans le carnet de santé.',
+            style: pw.TextStyle(fontSize: 7.5, color: _grey, fontStyle: pw.FontStyle.italic))),
+        pw.Text([if ((numero ?? '').isNotEmpty) 'N° $numero', 'Page ${ctx.pageNumber} / ${ctx.pagesCount}'].join(' · '),
+            style: const pw.TextStyle(fontSize: 7.5, color: _grey)),
       ]),
-      pw.SizedBox(height: 14),
-      pw.Divider(color: _line, thickness: 1),
-      pw.SizedBox(height: 10),
-
+    ),
+    build: (_) => [
+      if (apercu)
+        pw.Container(
+          margin: const pw.EdgeInsets.only(bottom: 10),
+          padding: const pw.EdgeInsets.symmetric(vertical: 5),
+          alignment: pw.Alignment.center,
+          decoration: pw.BoxDecoration(color: const PdfColor.fromInt(0xFFFFF8EA), borderRadius: pw.BorderRadius.circular(4)),
+          child: pw.Text('APERÇU — ordonnance non validée, sans valeur de prescription',
+              style: pw.TextStyle(fontSize: 9, color: const PdfColor.fromInt(0xFF8A5A00), fontWeight: pw.FontWeight.bold)),
+        ),
+      if (rectificative)
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 8),
+          child: pw.Text([
+            "Annule et remplace l'ordonnance${(remplaceNumero ?? '').isNotEmpty ? ' n° $remplaceNumero' : ''}",
+            if (remplaceDate != null) 'du ${_date(remplaceDate)}',
+          ].join(' ') + '.', style: pw.TextStyle(fontSize: 9, color: _dark, fontStyle: pw.FontStyle.italic)),
+        ),
       // Patient / propriétaire
       pw.Container(
         padding: const pw.EdgeInsets.all(10),
@@ -163,33 +251,13 @@ Future<Uint8List> ordonnancePdfBytes({
       pw.SizedBox(height: 18),
 
       // Prescription
-      for (var i = 0; i < lignes.length; i++) pw.Container(
-        margin: const pw.EdgeInsets.only(bottom: 12),
-        child: pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-          pw.Container(
-            width: 18, height: 18, alignment: pw.Alignment.center,
-            decoration: const pw.BoxDecoration(color: _teal, shape: pw.BoxShape.circle),
-            child: pw.Text('${i + 1}', style: pw.TextStyle(fontSize: 9, color: PdfColors.white, fontWeight: pw.FontWeight.bold)),
-          ),
-          pw.SizedBox(width: 10),
-          pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-            pw.Text(lignes[i].medicament, style: pw.TextStyle(fontSize: 11, color: _dark, fontWeight: pw.FontWeight.bold)),
-            if (lignes[i].posologie.trim().isNotEmpty)
-              pw.Text(lignes[i].posologie, style: const pw.TextStyle(fontSize: 10, color: _dark)),
-            if (lignes[i].dureeJours != null)
-              pw.Text('Pendant ${lignes[i].dureeJours} jour${lignes[i].dureeJours! > 1 ? 's' : ''}',
-                  style: const pw.TextStyle(fontSize: 9.5, color: _grey)),
-            if ((lignes[i].notes ?? '').trim().isNotEmpty)
-              pw.Text(lignes[i].notes!, style: pw.TextStyle(fontSize: 9, color: _grey, fontStyle: pw.FontStyle.italic)),
-          ])),
-        ]),
-      ),
+      for (var i = 0; i < lignes.length; i++) ligne(i, lignes[i]),
       if ((remarques ?? '').trim().isNotEmpty) ...[
         pw.SizedBox(height: 6),
         pw.Text('Remarques', style: pw.TextStyle(fontSize: 9, color: _teal, fontWeight: pw.FontWeight.bold)),
         pw.Text(remarques!, style: const pw.TextStyle(fontSize: 9.5, color: _dark)),
       ],
-      pw.Spacer(),
+      pw.SizedBox(height: 30),
 
       // Prescripteur
       pw.Row(mainAxisAlignment: pw.MainAxisAlignment.end, children: [
@@ -197,7 +265,7 @@ Future<Uint8List> ordonnancePdfBytes({
           if (prescripteur.trim().isNotEmpty && prescripteur.trim().toLowerCase() != 'vétérinaire')
             pw.Text('Dr $prescripteur', style: pw.TextStyle(fontSize: 10, color: _dark, fontWeight: pw.FontWeight.bold)),
           pw.Text('Vétérinaire', style: const pw.TextStyle(fontSize: 9, color: _grey)),
-          signature != null
+          signature != null && !apercu
               ? pw.Container(width: 160, height: 56, alignment: pw.Alignment.bottomLeft,
                   child: pw.Image(pw.MemoryImage(signature), fit: pw.BoxFit.contain))
               : pw.SizedBox(height: 30),
@@ -205,10 +273,7 @@ Future<Uint8List> ordonnancePdfBytes({
           pw.Text('Signature', style: const pw.TextStyle(fontSize: 8, color: _grey)),
         ]),
       ]),
-      pw.SizedBox(height: 14),
-      pw.Text('Ordonnance établie via PetsMatch — à présenter en pharmacie / à conserver dans le carnet de santé.',
-          style: pw.TextStyle(fontSize: 7.5, color: _grey, fontStyle: pw.FontStyle.italic)),
-    ]),
+    ],
   ));
   return doc.save();
 }

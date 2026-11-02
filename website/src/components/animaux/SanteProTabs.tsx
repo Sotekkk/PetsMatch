@@ -271,7 +271,7 @@ export function DocumentsSantePro({ animalId, pid, osteo = false }: { animalId: 
       } else {
         const [cr, o] = await Promise.all([
           supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false }),
-          supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('created_at', { ascending: false }),
+          supabase.from('ordonnances').select('*').eq('animal_id', animalId).neq('statut', 'brouillon').order('created_at', { ascending: false }),
         ]);
         if (!annule) setD({ crs: (cr.data ?? []) as Row[], ordos: (o.data ?? []) as Row[], seances: [] });
       }

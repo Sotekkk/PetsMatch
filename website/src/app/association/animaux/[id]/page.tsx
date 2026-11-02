@@ -345,7 +345,7 @@ function ConsultationsTab({ animalId }: { animalId: string }) {
   useEffect(() => {
     Promise.all([
       supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false }),
-      supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date_emit', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }),
+      supabase.from('ordonnances').select('*').eq('animal_id', animalId).neq('statut', 'brouillon').order('date_emit', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }),
     ]).then(([c, o]) => {
       setCrs((c.data ?? []) as HealthRecord[]);
       setOrdonnances((o.data ?? []) as HealthRecord[]);

@@ -1,10 +1,16 @@
-// Ordonnance vétérinaire générée depuis le compte rendu (mes-patients/[id]) :
-// en-tête de la clinique (n° d'Ordre), patient, propriétaire, médicaments
-// (posologie, durée), prescripteur. Miroir app : lib/pages/pro/ordonnance_pdf.dart.
+// Ordonnance vétérinaire (contenu structuré, migration_ordonnances_v2.sql) :
+// en-tête de la clinique (n° d'Ordre), numéro d'ordonnance, patient,
+// propriétaire, médicaments (présentation, posologie, voie, durée, quantité,
+// renouvellement, instructions, mentions réglementaires), prescripteur,
+// pages numérotées. Miroir app : lib/pages/pro/ordonnance_pdf.dart.
 
 import { majuscule } from './majuscule';
 
-export interface LigneOrdonnance { medicament: string; posologie: string; dureeJours?: number | null; notes?: string }
+export interface LigneOrdonnance {
+  medicament: string; posologie: string; dureeJours?: number | null; notes?: string;
+  principeActif?: string; presentation?: string; voie?: string; duree?: string; quantite?: string;
+  renouvellement?: string; mentions?: string;
+}
 
 export interface OrdonnanceData {
   cliniqueNom: string;
@@ -20,7 +26,14 @@ export interface OrdonnanceData {
   animalPoids?: string;
   proprietaire?: string;
   lignes: LigneOrdonnance[];
+  remarques?: string;
   date?: Date;
+  /** Numéro attribué à la validation (absent : aperçu). */
+  numero?: string | null;
+  /** Version rectificative : ordonnance remplacée (numéro, date). */
+  remplace?: { numero?: string | null; date?: Date | null } | null;
+  /** Aperçu avant validation : bandeau « Aperçu — non validée ». */
+  apercu?: boolean;
   /** Signature manuscrite du prescripteur (data-URL PNG). */
   signature?: string | null;
 }
@@ -34,22 +47,47 @@ export async function ordonnancePdfBlob(d: OrdonnanceData): Promise<Blob> {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
   const M = 40;
+  const BAS = H - 60; // limite du contenu (pied de page en dessous)
   const jour = (d.date ?? new Date()).toLocaleDateString('fr-FR');
+  const largeur = W - 2 * M - 28;
   let y = 50;
 
-  // En-tête clinique
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...TEAL);
-  doc.text(d.cliniqueNom, M, y);
-  doc.setFontSize(13); doc.text('ORDONNANCE', W - M, y, { align: 'right' });
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...DARK);
-  doc.text(`Le ${jour}`, W - M, y + 14, { align: 'right' });
-  for (const l of [d.cliniqueAdresse, d.cliniqueTel ? `Tél. ${d.cliniqueTel}` : '', d.numeroOrdre ? `N° d'inscription à l'Ordre : ${d.numeroOrdre}` : '']) {
-    if (!l) continue;
-    y += 13; doc.text(l, M, y);
+  const entete = (suite: boolean) => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(suite ? 11 : 15); doc.setTextColor(...TEAL);
+    doc.text(d.cliniqueNom, M, y);
+    doc.setFontSize(suite ? 10 : 13);
+    doc.text(d.remplace ? 'ORDONNANCE RECTIFICATIVE' : 'ORDONNANCE', W - M, y, { align: 'right' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...DARK);
+    doc.text([d.numero ? `N° ${d.numero}` : (d.apercu ? 'N° attribué à la validation' : ''), `Le ${jour}`].filter(Boolean).join(' · '),
+      W - M, y + 14, { align: 'right' });
+    if (suite) { y += 26; doc.setDrawColor(221, 226, 220); doc.line(M, y, W - M, y); y += 18; return; }
+    for (const l of [d.cliniqueAdresse, d.cliniqueTel ? `Tél. ${d.cliniqueTel}` : '', d.numeroOrdre ? `N° d'inscription à l'Ordre : ${d.numeroOrdre}` : '']) {
+      if (!l) continue;
+      y += 13; doc.text(l, M, y);
+    }
+    y = Math.max(y + 16, 82);
+    doc.setDrawColor(221, 226, 220); doc.line(M, y, W - M, y);
+    y += 14;
+  };
+  const sautSiBesoin = (h: number) => {
+    if (y + h <= BAS) return;
+    doc.addPage(); y = 50; entete(true);
+  };
+
+  entete(false);
+
+  if (d.apercu) {
+    doc.setFillColor(255, 248, 234); doc.roundedRect(M, y - 4, W - 2 * M, 22, 4, 4, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(138, 90, 0);
+    doc.text('APERÇU — ordonnance non validée, sans valeur de prescription', W / 2, y + 10, { align: 'center' });
+    y += 30;
   }
-  y += 16;
-  doc.setDrawColor(221, 226, 220); doc.line(M, y, W - M, y);
-  y += 14;
+  if (d.remplace) {
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(...DARK);
+    const r = [`Annule et remplace l'ordonnance${d.remplace.numero ? ` n° ${d.remplace.numero}` : ''}`,
+      d.remplace.date ? `du ${d.remplace.date.toLocaleDateString('fr-FR')}` : ''].filter(Boolean).join(' ');
+    doc.text(`${r}.`, M, y + 4); y += 18;
+  }
 
   // Patient / propriétaire
   const boxTop = y;
@@ -63,7 +101,7 @@ export async function ordonnancePdfBlob(d: OrdonnanceData): Promise<Blob> {
   doc.setFontSize(11); doc.setTextColor(...DARK);
   doc.text(d.animalNom, M + 10, boxTop + 31);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-  doc.text(d.proprietaire || '—', col2, boxTop + 31);
+  doc.text(doc.splitTextToSize(d.proprietaire || '—', W - M - col2 - 10), col2, boxTop + 31);
   doc.setFontSize(9);
   let yy = boxTop + 44;
   for (const [l, v] of infosOrdo) {
@@ -71,34 +109,72 @@ export async function ordonnancePdfBlob(d: OrdonnanceData): Promise<Blob> {
     doc.setTextColor(...DARK); doc.text(majuscule(v), M + 10 + doc.getTextWidth(`${l} : `), yy);
     yy += 11;
   }
-  y = boxTop + hOrdo + 20;
+  y = boxTop + hOrdo + 24;
 
-  // Prescription
+  // Prescription : une ligne = bloc insécable (sauf s'il dépasse une page).
   d.lignes.forEach((l, i) => {
+    const titre = [l.medicament, l.presentation].filter(x => x?.trim()).join(' — ');
+    const details: { texte: string; style: 'normal' | 'gris' | 'italique' }[] = [];
+    if (l.principeActif?.trim()) details.push({ texte: `Principe actif : ${l.principeActif.trim()}`, style: 'gris' });
+    if (l.posologie?.trim()) details.push({ texte: l.posologie.trim(), style: 'normal' });
+    const carac = [l.voie?.trim() && `Voie : ${l.voie.trim()}`,
+      l.duree?.trim() ? `Durée : ${l.duree.trim()}` : l.dureeJours ? `Pendant ${l.dureeJours} jour${l.dureeJours > 1 ? 's' : ''}` : '',
+      l.quantite?.trim() && `Quantité à délivrer : ${l.quantite.trim()}`,
+      `Renouvellement : ${l.renouvellement?.trim() || 'non'}`].filter(Boolean).join(' · ');
+    if (l.duree !== undefined || l.voie || l.quantite) details.push({ texte: carac, style: 'gris' });
+    else if (l.dureeJours) details.push({ texte: `Pendant ${l.dureeJours} jour${l.dureeJours > 1 ? 's' : ''}`, style: 'gris' });
+    if (l.notes?.trim()) details.push({ texte: l.notes.trim(), style: 'italique' });
+    if (l.mentions?.trim()) details.push({ texte: `Mentions : ${l.mentions.trim()}`, style: 'normal' });
+    doc.setFontSize(10);
+    const blocs = details.map(x => ({ ...x, lignes: doc.splitTextToSize(x.texte, largeur) as string[] }));
+    const titreL = doc.splitTextToSize(titre || '—', largeur) as string[];
+    const h = titreL.length * 13 + blocs.reduce((s, b) => s + b.lignes.length * 12, 0) + 18;
+    sautSiBesoin(Math.min(h, BAS - 120));
+
     doc.setFillColor(...TEAL); doc.circle(M + 9, y - 3, 9, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
     doc.text(String(i + 1), M + 9, y, { align: 'center' });
     doc.setFontSize(11); doc.setTextColor(...DARK);
-    doc.text(l.medicament, M + 28, y);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-    let ly = y;
-    if (l.posologie) { const t = doc.splitTextToSize(l.posologie, W - 2 * M - 28); ly += 13; doc.text(t, M + 28, ly); ly += (t.length - 1) * 12; }
-    if (l.dureeJours) { ly += 12; doc.setTextColor(...GREY); doc.setFontSize(9.5); doc.text(`Pendant ${l.dureeJours} jour${l.dureeJours > 1 ? 's' : ''}`, M + 28, ly); }
-    if (l.notes) { ly += 12; doc.setTextColor(...GREY); doc.setFontSize(9); doc.setFont('helvetica', 'italic'); doc.text(doc.splitTextToSize(l.notes, W - 2 * M - 28), M + 28, ly); doc.setFont('helvetica', 'normal'); }
-    y = ly + 22;
+    doc.text(titreL, M + 28, y);
+    y += (titreL.length - 1) * 13;
+    for (const b of blocs) {
+      doc.setFont('helvetica', b.style === 'italique' ? 'italic' : 'normal');
+      doc.setFontSize(b.style === 'normal' ? 10 : 9.5);
+      doc.setTextColor(...(b.style === 'normal' ? DARK : GREY));
+      for (const t of b.lignes) { y += 12; if (y > BAS) { doc.addPage(); y = 50; entete(true); } doc.text(t, M + 28, y); }
+    }
+    doc.setFont('helvetica', 'normal');
+    y += 22;
   });
 
-  // Prescripteur
+  if (d.remarques?.trim()) {
+    const t = doc.splitTextToSize(d.remarques.trim(), W - 2 * M) as string[];
+    sautSiBesoin(20 + t.length * 12);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...TEAL); doc.text('Remarques', M, y);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...DARK);
+    doc.text(t, M, y + 13); y += 13 + t.length * 12 + 10;
+  }
+
+  // Prescripteur (sur la dernière page, en bas, ou page suivante si plus de place).
+  if (y > H - 170) { doc.addPage(); y = 50; entete(true); }
   const sy = H - 150;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...DARK);
   if (d.prescripteur.trim() && d.prescripteur.trim().toLowerCase() !== 'vétérinaire') doc.text(`Dr ${d.prescripteur}`, W - M - 180, sy);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...GREY);
   doc.text('Vétérinaire', W - M - 180, sy + 12);
-  if (d.signature) { try { doc.addImage(d.signature, 'PNG', W - M - 180, sy + 14, 130, 52); } catch { /* signature illisible */ } }
+  if (d.signature && !d.apercu) { try { doc.addImage(d.signature, 'PNG', W - M - 180, sy + 14, 130, 52); } catch { /* signature illisible */ } }
   doc.setDrawColor(...GREY); doc.line(W - M - 180, sy + 68, W - M - 20, sy + 68);
   doc.setFontSize(8); doc.text('Signature', W - M - 180, sy + 79);
-  doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5);
-  doc.text('Ordonnance établie via PetsMatch — à présenter en pharmacie / à conserver dans le carnet de santé.', M, H - 40);
+
+  // Pied de page : mention + numérotation.
+  const n = doc.getNumberOfPages();
+  for (let p = 1; p <= n; p++) {
+    doc.setPage(p);
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(...GREY);
+    doc.text('Ordonnance établie via PetsMatch — à présenter en pharmacie / à conserver dans le carnet de santé.', M, H - 40);
+    doc.setFont('helvetica', 'normal');
+    doc.text([d.numero ? `N° ${d.numero}` : '', `Page ${p} / ${n}`].filter(Boolean).join(' · '), W - M, H - 40, { align: 'right' });
+  }
 
   return doc.output('blob');
 }

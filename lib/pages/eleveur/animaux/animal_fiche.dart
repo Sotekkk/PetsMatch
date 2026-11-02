@@ -66,7 +66,7 @@ import 'package:PetsMatch/utils/user_lookup.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/edit_cession_sheet.dart';
 import 'package:PetsMatch/utils/sante_couleurs.dart';
 import 'package:PetsMatch/utils/reproducteurs.dart';
-import 'package:PetsMatch/widgets/pro/ordonnance_manuelle_sheet.dart';
+import 'package:PetsMatch/widgets/pro/ordonnance_editeur_page.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
 
@@ -10881,8 +10881,10 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
   bool _peutCr = false;
   bool _peutCarnet = false;
   bool _peutOrdonnance = false;
-  /// Vétérinaire (pas ASV) : peut produire le PDF d'une ordonnance sans document.
+  /// Vétérinaire (pas ASV) : valide et signe les ordonnances.
   bool _peutPrescrire = false;
+  /// Préparer un brouillon d'ordonnance (vétérinaire ou ASV).
+  bool _peutPreparerOrdo = false;
   String? _vetProfileId;
   // ID de session — lie toutes les entrées ajoutées pendant cette visite
   late final String _sessionVisiteRef;
@@ -10919,7 +10921,8 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
     final carnet = await AgendaContexte.peut('vet_patients') || cr;
     final ordo = await AgendaContexte.peut('vet_ordonnances');
     final prescrire = await peutPrescrireOrdonnance();
-    if (mounted) setState(() { _peutCr = cr; _peutCarnet = carnet; _peutOrdonnance = ordo; _peutPrescrire = prescrire; });
+    final preparer = await peutPreparerOrdonnance();
+    if (mounted) setState(() { _peutCr = cr; _peutCarnet = carnet; _peutOrdonnance = ordo; _peutPrescrire = prescrire; _peutPreparerOrdo = preparer; });
   }
 
   Future<void> _load() async {
@@ -11003,8 +11006,10 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
             (Icons.vaccines_outlined,         const Color(0xFF0C5C6C),  '💉 Vaccin',              'vaccin'),
             (Icons.medication_outlined,        const Color(0xFF8D6E63),  '💊 Traitement',           'traitement'),
             (Icons.medical_services_outlined,  const Color(0xFF26A69A),  '🩺 Visite vétérinaire',   'visite'),
-            if (_peutOrdonnance)
-              (Icons.description_outlined,     const Color(0xFF6D28D9),  '📄 Ordonnance PDF',       'ordo'),
+            if (_peutPreparerOrdo)
+              (Icons.edit_document,            const Color(0xFF0C5C6C),  'Ordonnance',             'ordo_editeur'),
+            if (_peutPrescrire)
+              (Icons.description_outlined,     const Color(0xFF6D28D9),  'Ordonnance PDF (fichier)', 'ordo'),
             (Icons.image_search_outlined,      const Color(0xFF0284C7),  '🩻 Radio / Examen',       'radio'),
           ]) ...[
             ListTile(
@@ -11031,8 +11036,43 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
     );
   }
 
+  /// Brouillon, nouvelle ordonnance ou version rectificative.
+  Future<void> _editerOrdo({Map<String, dynamic>? ordo, Map<String, dynamic>? remplace}) async {
+    if (widget.animalId == null) return;
+    final ok = await ouvrirEditeurOrdonnance(context, ordo: ordo, remplace: remplace,
+        animalId: widget.animalId!, ownerUid: widget.ownerUid, rdvId: widget.rdvId);
+    if (ok) await _load();
+  }
+
+  Future<void> _supprimerBrouillonOrdo(Map<String, dynamic> o) async {
+    try {
+      final r = await _supa.from('ordonnances').delete().eq('id', o['id']).eq('statut', 'brouillon').select('id');
+      if ((r as List).isEmpty) throw 'seul un brouillon se supprime';
+      await _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Suppression impossible : $e')));
+    }
+  }
+
+  /// PDF manquant d'une ordonnance validée : son validateur le produit (son nom et sa signature).
+  Future<void> _genererPdfOrdo(Map<String, dynamic> o) async {
+    final moi = FirebaseAuth.instance.currentUser?.uid;
+    if (o['valide_par_uid'] != null && o['valide_par_uid'] != moi) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Seul le vétérinaire qui a validé cette ordonnance peut en produire le PDF.')));
+      return;
+    }
+    try {
+      await deposerPdfOrdonnance(o);
+      await _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('PDF non enregistré : $e')));
+    }
+  }
+
   Future<void> _openVetEntryDialog(String type) async {
     if (widget.animalId == null) return;
+    if (type == 'ordo_editeur') { await _editerOrdo(); return; }
     final vetUid  = FirebaseAuth.instance.currentUser?.uid ?? '';
     final vetName = 'Dr. ${User_Info.firstname} ${User_Info.lastname}'.trim();
     Widget dialog;
@@ -11159,9 +11199,13 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
                 onOuvrir: () => showConsultationDetail(context, c: c, noms: _noms,
                     onGererCr: _peutCr || _peutOrdonnance ? _openCrPage : null,
                     onSupprimerCr: _peutCr ? _supprimerCr : null,
-                    onGenererPdfOrdo: _peutPrescrire ? (o) async {
-                      if (await genererPdfOrdonnance(context, o)) await _load();
-                    } : null),
+                    actionsOrdo: ActionsOrdo(
+                      peutPrescrire: _peutPrescrire,
+                      ouvrir: _peutPreparerOrdo ? (o) => _editerOrdo(ordo: o) : null,
+                      rectifier: _peutPreparerOrdo ? (o) => _editerOrdo(remplace: o) : null,
+                      supprimerBrouillon: _peutPreparerOrdo ? _supprimerBrouillonOrdo : null,
+                      genererPdf: _peutPrescrire ? _genererPdfOrdo : null,
+                    )),
               ),
               const SizedBox(height: 8),
             ],
@@ -11483,7 +11527,7 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
       final crs   = await _supa.from('comptes_rendus').select()
           .eq('animal_id', widget.animalId!).order('created_at', ascending: false);
       final ordos = await _supa.from('ordonnances').select()
-          .eq('animal_id', widget.animalId!).order('created_at', ascending: false);
+          .eq('animal_id', widget.animalId!).neq('statut', 'brouillon').order('created_at', ascending: false);
       var radios = <Map<String, dynamic>>[];
       try {
         radios = List<Map<String, dynamic>>.from(await _supa.from('radios').select()

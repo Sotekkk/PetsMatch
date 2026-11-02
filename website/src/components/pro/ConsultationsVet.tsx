@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import LienDocument from '@/components/LienDocument';
+import { LIBELLE_STATUT, type OrdonnanceRow } from '@/lib/ordonnance';
 
 const TEAL = '#0C5C6C';
 
@@ -22,9 +23,19 @@ export interface CrVet {
   redige_par_uid?: string | null; redige_par_profile_id?: string | null;
   valide_par_uid?: string | null; valide_par_profile_id?: string | null; valide_le?: string | null;
 }
-export interface OrdoVet {
-  id: string; date_emit: string; doc_url: string | null; notes: string | null; created_at?: string | null;
-  rdv_id?: string | null; praticien_uid?: string | null; praticien_profile_id?: string | null;
+export type OrdoVet = OrdonnanceRow & { valide_par_uid?: string | null };
+
+/** Actions sur les ordonnances (selon les droits de la page). */
+export interface ActionsOrdo {
+  /** Vétérinaire : valide / signe ; sinon l'ASV prépare seulement. */
+  peutPrescrire: boolean;
+  /** Brouillon : compléter (et valider si vétérinaire). */
+  ouvrir?: (o: OrdoVet) => void;
+  /** Ordonnance validée : version rectificative. */
+  rectifier?: (o: OrdoVet) => void;
+  /** Ordonnance validée sans PDF : le produire depuis son contenu. */
+  genererPdf?: (o: OrdoVet) => void | Promise<void>;
+  supprimerBrouillon?: (o: OrdoVet) => Promise<void>;
 }
 interface Consultation { cle: string; date: Date; cr: CrVet | null; ordos: OrdoVet[] }
 interface Journal { table_source: string; ligne_id: string; action: string; auteur_uid: string | null; auteur_profile_id: string | null; cree_le: string }
@@ -49,7 +60,7 @@ export function regrouperConsultations(crs: CrVet[], ordos: OrdoVet[]): Consulta
   const groupes: Record<string, OrdoVet[]> = {};
   for (const o of restantes) (groupes[o.rdv_id ?? `jour:${o.date_emit}`] ??= []).push(o);
   for (const [k, liste] of Object.entries(groupes)) {
-    out.push({ cle: `ordo:${k}`, date: new Date(liste[0].created_at ?? liste[0].date_emit), cr: null, ordos: liste });
+    out.push({ cle: `ordo:${k}`, date: new Date(liste[0].created_at ?? liste[0].date_emit ?? ''), cr: null, ordos: liste });
   }
   return out.sort((a, b) => b.date.getTime() - a.date.getTime());
 }
@@ -79,7 +90,7 @@ function intervenant(c: Consultation, noms: Record<string, string>) {
 }
 const motifDe = (c: Consultation) => c.cr?.motif?.trim() || (c.cr ? 'Consultation' : 'Ordonnance');
 
-export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutValider, menuCarnet, onNouveauCr, onHistorique, onValider, onReprendre, onSupprimer, onFacturer, onModifier, onTransmettreCr, onTransmettreOrdo, onGenererPdfOrdo, crOuvert }: {
+export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutValider, menuCarnet, onNouveauCr, onHistorique, onValider, onReprendre, onSupprimer, onFacturer, onModifier, onTransmettreCr, onTransmettreOrdo, actionsOrdo, crOuvert }: {
   crs: CrVet[]; ordos: OrdoVet[];
   /** Compte rendu à ouvrir d'emblée (« Compte rendu fait » depuis un RDV). */
   crOuvert?: string | null;
@@ -98,8 +109,7 @@ export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutV
   onModifier?: (cr: CrVet) => void;
   onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email') => void;
   onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email') => void;
-  /** Ordonnance ajoutée à la main sans document : produire son PDF (vétérinaire seulement). */
-  onGenererPdfOrdo?: (o: OrdoVet) => void;
+  actionsOrdo?: ActionsOrdo;
 }) {
   const consultations = useMemo(() => regrouperConsultations(crs, ordos), [crs, ordos]);
   const [noms, setNoms] = useState<Record<string, string>>({});
@@ -175,6 +185,7 @@ export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutV
                     {!c.cr ? 'Sans compte rendu' : brouillon ? 'CR à valider' : 'CR validé'}
                   </span>
                   {c.ordos.length > 0 && <span className="block text-gray-500">Ordonnances ({c.ordos.length})</span>}
+                  {c.ordos.some(o => o.statut === 'brouillon') && <span className="block font-semibold text-[#8A5A00]">Ordonnance à valider</span>}
                 </span>
               </button>
             );
@@ -191,13 +202,13 @@ export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutV
           onFacturer={onFacturer && peutCr ? async cr => { setOuverte(null); await onFacturer(cr); } : undefined}
           onModifier={onModifier && peutValider ? cr => { setOuverte(null); onModifier(cr); } : undefined}
           onTransmettreCr={onTransmettreCr} onTransmettreOrdo={onTransmettreOrdo}
-          onGenererPdfOrdo={onGenererPdfOrdo ? o => { setOuverte(null); onGenererPdfOrdo(o); } : undefined} />
+          actionsOrdo={actionsOrdo} onFermer={() => setOuverte(null)} />
       )}
     </div>
   );
 }
 
-function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValider, onReprendre, onSupprimer, onFacturer, onModifier, onTransmettreCr, onTransmettreOrdo, onGenererPdfOrdo }: {
+function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValider, onReprendre, onSupprimer, onFacturer, onModifier, onTransmettreCr, onTransmettreOrdo, actionsOrdo, onFermer }: {
   c: Consultation; noms: Record<string, string>; onClose: () => void; peutValider: boolean;
   onValider: (cr: CrVet) => Promise<void>;
   onReprendre?: (cr: CrVet) => void;
@@ -206,7 +217,8 @@ function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValide
   onModifier?: (cr: CrVet) => void;
   onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email') => void;
   onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email') => void;
-  onGenererPdfOrdo?: (o: OrdoVet) => void;
+  actionsOrdo?: ActionsOrdo;
+  onFermer: () => void;
 }) {
   const [journal, setJournal] = useState<Journal[]>([]);
   const [nomsJournal, setNomsJournal] = useState<Record<string, string>>({});
@@ -322,15 +334,37 @@ function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValide
             <div className="space-y-2">
               {c.ordos.map(o => {
                 const prescripteur = nomDe(noms, o.praticien_profile_id, o.praticien_uid);
+                const statut = o.statut ?? 'signee';
+                const brouillonOrdo = statut === 'brouillon';
+                const a = actionsOrdo;
+                const couleur = brouillonOrdo ? 'text-[#8A5A00] bg-[#FFF8EA]' : statut === 'remplacee' ? 'text-gray-500 bg-gray-100' : 'text-[#0C5C6C] bg-[#0C5C6C]/10';
                 return (
-                  <div key={o.id} className="border border-[#E4E7E2] rounded-lg px-3 py-2 flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-[#1E2025]">Émise le {jour(new Date(o.date_emit ?? o.created_at ?? ''))}</p>
-                      {(prescripteur || o.notes) && <p className="text-xs text-gray-500 truncate">{[prescripteur, o.notes].filter(Boolean).join(' · ')}</p>}
+                  <div key={o.id} className="border border-[#E4E7E2] rounded-lg px-3 py-2 flex flex-wrap items-center gap-2">
+                    <div className="flex-1 min-w-[180px]">
+                      <p className="text-sm font-semibold text-[#1E2025]">
+                        {brouillonOrdo ? 'Préparée' : 'Émise'} le {jour(new Date(o.date_emit ?? o.created_at ?? ''))}
+                        {o.numero ? ` · N° ${o.numero}` : ''}
+                        <span className={`ml-2 text-[11px] font-semibold px-1.5 py-0.5 rounded ${couleur}`}>
+                          {LIBELLE_STATUT[statut]}{(o.version ?? 1) > 1 ? ` · version ${o.version}` : ''}
+                        </span>
+                      </p>
+                      {(prescripteur || o.notes) && <p className="text-xs text-gray-500 truncate">{[brouillonOrdo ? null : prescripteur, o.notes].filter(Boolean).join(' · ')}</p>}
                     </div>
-                    {!o.doc_url && (onGenererPdfOrdo
-                      ? <button onClick={() => onGenererPdfOrdo(o)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: TEAL }}>Générer le PDF</button>
+                    {brouillonOrdo && a?.ouvrir && (
+                      <button onClick={() => { onFermer(); a.ouvrir!(o); }} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: TEAL }}>
+                        {a.peutPrescrire ? 'Compléter et valider' : 'Modifier le brouillon'}
+                      </button>
+                    )}
+                    {brouillonOrdo && a?.supprimerBrouillon && (
+                      <button onClick={async () => { if (confirm('Supprimer ce brouillon d’ordonnance ?')) { onFermer(); await a.supprimerBrouillon!(o); } }}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-200 text-red-600">Supprimer</button>
+                    )}
+                    {!brouillonOrdo && !o.doc_url && (a?.genererPdf && a.peutPrescrire && o.contenu
+                      ? <button onClick={() => { onFermer(); void a.genererPdf!(o); }} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: TEAL }}>Générer le PDF</button>
                       : <span className="text-xs text-gray-400">PDF non généré</span>)}
+                    {(statut === 'validee' || statut === 'signee') && a?.rectifier && o.contenu && (
+                      <button onClick={() => { onFermer(); a.rectifier!(o); }} className={bouton} style={{ borderColor: TEAL, color: TEAL }}>Corriger</button>
+                    )}
                     {o.doc_url && (
                       <>
                         <button onClick={() => onTransmettreOrdo(o, 'imprimer')} className={bouton} style={{ borderColor: TEAL, color: TEAL }}>Imprimer</button>

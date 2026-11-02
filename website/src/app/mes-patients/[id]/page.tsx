@@ -33,8 +33,9 @@ import LienDocument from '@/components/LienDocument';
 import ConsultationsVet, { type CrVet, type OrdoVet } from '@/components/pro/ConsultationsVet';
 import HistoriquePatient from '@/components/pro/HistoriquePatient';
 import { ouvrirDocument } from '@/lib/document-prive';
-import { ordonnancePdfBlob, compteRenduPdfBlob, ageAnimal, sexeAnimal, type LigneOrdonnance } from '@/lib/ordonnance-pdf';
-import OrdonnanceManuelleModal, { type SaisieOrdonnance } from '@/components/pro/OrdonnanceManuelleModal';
+import { ordonnancePdfBlob, compteRenduPdfBlob, ageAnimal, sexeAnimal } from '@/lib/ordonnance-pdf';
+import OrdonnanceEditeur from '@/components/pro/OrdonnanceEditeur';
+import { ligneVide, lignesDe, resumeOrdo, type ContenuOrdo, type LigneOrdo, type OrdonnanceRow } from '@/lib/ordonnance';
 import { imprimerPdf, pdfDepuisUrl, envoyerPdfParEmail } from '@/lib/transmission-document';
 import { phraseChampsARemplir, erreursDatesSante } from '@/lib/controle-dates';
 import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
@@ -104,10 +105,7 @@ interface CompteRendu {
   motif?: string | null; poids?: number | null; actes?: string[] | null; prescription?: string | null;
   produits?: ProduitCr[] | null;
 }
-interface Ordonnance {
-  id: string; date_emit: string; doc_url: string | null; notes: string | null; pro_uid: string | null;
-  praticien_uid?: string | null;
-}
+type Ordonnance = OrdonnanceRow & { valide_par_uid?: string | null };
 interface RadioEntry {
   id: string; date: string; titre: string | null; notes: string | null; veterinaire: string | null; image_url?: string | null;
 }
@@ -323,7 +321,8 @@ interface VaccinCr { nom: string; lot: string; date: string; rappel: string | nu
 interface PhaseCr { dose: string; prises: string[]; frequenceJours: number; dureeJours: number | null; doses?: Record<string, string> }
 const doseDe = (p: PhaseCr, k: string) => p.doses?.[k]?.trim() || p.dose.trim();
 const dosesParPrise = (p: PhaseCr) => !!p.doses && p.prises.length > 1;
-interface TraitementCr { nom: string; type: string; phases: PhaseCr[]; rappels: boolean; notes: string }
+/** administre : fait en clinique → carnet, jamais sur l'ordonnance. */
+interface TraitementCr { nom: string; type: string; phases: PhaseCr[]; rappels: boolean; notes: string; administre?: boolean }
 interface ArticlePharmacie { id: string; nom: string; categorie: string; lot: string | null; quantite: number | null; unite: string | null; prix_vente?: number | null }
 /** Produit vendu pendant la consultation (non administré : pas au carnet) —
  *  facturé et décompté du stock. Miroir de _ProduitCr (appli). */
@@ -476,6 +475,16 @@ function libellePhase(p: PhaseCr): string {
   ].filter(Boolean).join(', ');
 }
 const posologieComplete = (t: TraitementCr) => t.phases.map(libellePhase).join(', puis ');
+/** Ligne d'ordonnance reprise d'un traitement prescrit dans le CR : seulement
+ *  ce qui a été saisi (durée = somme des phases, « Au long cours » si choisi). */
+function ligneDepuisTraitement(t: TraitementCr): LigneOrdo {
+  const derniere = t.phases[t.phases.length - 1];
+  const total = t.phases.length && t.phases.every(p => p.dureeJours) ? t.phases.reduce((n, p) => n + (p.dureeJours ?? 0), 0) : 0;
+  return {
+    ...ligneVide(), medicament: t.nom, posologie: posologieComplete(t), instructions: t.notes ?? '',
+    duree: total ? `${total} jour${total > 1 ? 's' : ''}` : derniere && derniere.dureeJours == null ? 'Au long cours' : '',
+  };
+}
 
 /** Champ texte + suggestions de la pharmacie dès la 1re lettre (saisie libre possible). */
 function ChampPharmacie({ value, onChange, onChoix, articles, placeholder, courants = [] }: {
@@ -803,9 +812,15 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, s
                   { dose: '', prises: [...der.prises], frequenceJours: der.frequenceJours, dureeJours: der.dureeJours ?? 3 }] });
               }}>📉 Ajouter une phase (dose dégressive)</button>
             <label className="flex items-center gap-2 text-sm text-[#1E2025]">
-              <input type="checkbox" checked={trt.rappels} onChange={e => setTrt({ ...trt, rappels: e.target.checked })} className="w-4 h-4 accent-[#0C5C6C]" />
-              Rappeler chaque prise au propriétaire (matin 8 h · midi 12 h · soir 19 h)
+              <input type="checkbox" checked={!!trt.administre} onChange={e => setTrt({ ...trt, administre: e.target.checked, ...(e.target.checked ? { rappels: false } : {}) })} className="w-4 h-4 accent-[#0C5C6C]" />
+              Administré en clinique (inscrit au carnet, pas sur l&apos;ordonnance)
             </label>
+            {!trt.administre && (
+              <label className="flex items-center gap-2 text-sm text-[#1E2025]">
+                <input type="checkbox" checked={trt.rappels} onChange={e => setTrt({ ...trt, rappels: e.target.checked })} className="w-4 h-4 accent-[#0C5C6C]" />
+                Rappeler chaque prise au propriétaire (matin 8 h · midi 12 h · soir 19 h)
+              </label>
+            )}
             <input value={trt.notes} onChange={e => setTrt({ ...trt, notes: e.target.value })} placeholder="Remarque (facultatif) — précautions, à jeun…" className={champ} />
             <div className="flex gap-2">
               <button type="button" onClick={() => setTrt(null)} className="flex-1 py-2 rounded-xl text-sm border border-gray-200 text-gray-600">Annuler</button>
@@ -823,7 +838,7 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, s
             className="text-sm font-semibold text-[#0C5C6C]">＋ Ajouter un traitement</button>
         )}
         {traitements.length > 0 && (
-          <p className="text-[11px] text-gray-500">📄 L&apos;ordonnance sera générée en PDF et ajoutée aux documents de l&apos;animal.</p>
+          <p className="text-[11px] text-gray-500">Les traitements prescrits (non administrés en clinique) sont repris dans une ordonnance à compléter et à faire valider par le vétérinaire.</p>
         )}
       </div>
       <p className="text-[11px] text-gray-500">Cliquez une ligne pour la modifier. Inscrits au carnet de santé ; le propriétaire reçoit les rappels.</p>
@@ -1130,8 +1145,9 @@ function PatientDetailPageInner() {
   const [formSeverite, setFormSeverite] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formPoids, setFormPoids] = useState('');
-  // Ordonnance hors CR : création (ordo null) ou PDF d'une ordonnance sans document.
-  const [ordoManuelle, setOrdoManuelle] = useState<{ ordo: Ordonnance | null } | null>(null);
+  // Éditeur d'ordonnance : brouillon (ordo), nouvelle (null), ou version
+  // rectificative (remplace) ; fin : reprise du flux du CR à la fermeture.
+  const [editeurOrdo, setEditeurOrdo] = useState<{ ordo: Ordonnance | null; remplace?: Ordonnance | null; fin?: () => void } | null>(null);
   const [formTaille, setFormTaille] = useState('');
   const [savingForm, setSavingForm] = useState(false);
   // Contrôle des dates de l'acte (miroir carnet de santé du propriétaire).
@@ -1378,6 +1394,9 @@ function PatientDetailPageInner() {
   // Ordonnance hors CR : porte le nom et la signature de qui la produit → un
   // vétérinaire (titulaire, ou praticien de l'espace clinique), jamais une ASV.
   const peutPrescrire = catPro === 'veterinaire' && (!esp.espace || esp.praticien) && (hasWriteAccess || identiteSeule);
+  // Préparer un brouillon : aussi l'ASV (rédaction de CR ou droit ordonnances) — contrôlé en base.
+  const peutPreparerOrdo = catPro === 'veterinaire' && (hasWriteAccess || identiteSeule)
+    && (esp.peut('vet_ordonnances') || esp.peut('vet_cr_rediger') || esp.peut('vet_cr_valider'));
   const nomPrescripteur = `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Vétérinaire';
   // Les rapports de séance sont le contenu propre de l'éducateur (ses notes de
   // séance), pas une modification de la fiche du propriétaire — n'importe quel
@@ -1609,26 +1628,16 @@ function PatientDetailPageInner() {
     if (traitementsCr.some(t => t.type !== 'antiparasitaire')) await notifyOwner('traitement', vetName);
     if (traitementsCr.some(t => t.type === 'antiparasitaire')) await notifyOwner('antiparasitaire', vetName);
 
-    if (traitementsCr.length) {
+    // Traitements PRESCRITS (pas ceux administrés en clinique) → ordonnance en
+    // brouillon, que le vétérinaire complète, vérifie et valide (jamais d'office).
+    const prescrits = traitementsCr.filter(t => !t.administre);
+    if (prescrits.length) {
       try {
-        const pid = activeProfileId || null;
-        const blob = await ordonnancePdf(
-          traitementsCr.map(t => ({ medicament: t.nom, posologie: posologieComplete(t), notes: t.notes })),
-          new Date(),
-          formPoids.trim() ? `${formPoids.trim().replace('.', ',')} kg` : animal?.poids != null ? `${animal.poids} kg` : '');
-        const docUrl = await stockerOrdonnancePdf(blob);
-        const ownerProfileId = await profilProprietaire(ownerUid);
-        const { error: ordErr } = await supabase.from('ordonnances').insert({
-          animal_id: animalId, pro_uid: proUid, ...(pid ? { pro_profile_id: pid, praticien_profile_id: (esp.espace ? esp.monProfil : null) ?? pid } : {}),
-          owner_uid: ownerUid, ...(ownerProfileId ? { owner_profile_id: ownerProfileId } : {}),
-          praticien_uid: user.uid, doc_url: docUrl, date_emit: ymd(auj),
-          ...(crRdvId ? { rdv_id: crRdvId } : {}),
-          notes: traitementsCr.map(t => t.nom).join(', '),
-        });
-        if (ordErr) throw ordErr;
-        const { data } = await supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date_emit', { ascending: false });
-        setOrdonnances((data ?? []) as Ordonnance[]);
-        await notifyOwner('ordonnance', vetName);
+        const poids = formPoids.trim() || (animal?.poids != null ? String(animal.poids) : '');
+        const brouillon = await creerBrouillonOrdonnance({ lignes: prescrits.map(ligneDepuisTraitement), ...(poids ? { poids } : {}) },
+          auj.toLocaleDateString('sv-SE'), crRdvId);
+        if (peutPrescrire) await ouvrirEditeurOrdo({ ordo: brouillon });
+        else alert('Ordonnance préparée : un vétérinaire doit la compléter et la valider (onglet Consultations).');
       } catch { erreurs.push('ordonnance'); }
     }
     const [v, t] = await Promise.all([
@@ -1640,15 +1649,18 @@ function PatientDetailPageInner() {
     if (erreurs.length) alert(`Non enregistré : ${erreurs.join(', ')} — vérifiez l'accès au carnet de l'animal.`);
   }
 
-  /** PDF d'ordonnance : en-tête de la clinique, patient, prescripteur = vétérinaire connecté. */
-  async function ordonnancePdf(lignes: LigneOrdonnance[], date: Date, poids: string) {
+  /** PDF d'ordonnance depuis son contenu : en-tête de la clinique, patient,
+   *  prescripteur = vétérinaire connecté (signature sauf aperçu). */
+  async function ordonnancePdf(c: ContenuOrdo, date: string, opts: { numero?: string | null; apercu?: boolean; remplace?: Ordonnance | null } = {}) {
     const pid = activeProfileId || null;
     const { data: cl } = pid
       ? await supabase.from('user_profiles_complet').select('nom, rue_pro, code_postal_pro, ville_pro, phone_number, certifications').eq('id', pid).maybeSingle()
       : { data: null };
     const certs = (cl?.certifications ?? []) as { nom?: string; numero?: string }[];
     const ordre = certs.find(c => (c.nom ?? '').toLowerCase().includes('ordre'))?.numero ?? '';
-    const proprio = owner ? `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim() : '';
+    const proprio = clientClinique ? `${clientClinique.prenom ?? ''} ${clientClinique.nom}`.trim()
+      : owner ? `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim() : '';
+    const jour = (x: string) => new Date(`${x.slice(0, 10)}T12:00:00`);
     return ordonnancePdfBlob({
       cliniqueNom: (cl?.nom as string | undefined)?.trim() || 'Cabinet vétérinaire',
       cliniqueAdresse: [cl?.rue_pro, `${cl?.code_postal_pro ?? ''} ${cl?.ville_pro ?? ''}`.trim()].filter(x => (x ?? '').toString().trim()).join(', '),
@@ -1658,11 +1670,14 @@ function PatientDetailPageInner() {
       animalNom: animal?.nom ?? 'Animal',
       animalEspeceRace: [animal?.espece, animal?.race].filter(Boolean).join(' · '),
       animalSexe: sexeAnimal(animal?.sexe), animalAge: ageAnimal(animal?.date_naissance, (animal as { age_estime?: string | number | null } | null)?.age_estime),
-      signature,
+      signature: opts.apercu ? null : signature,
       animalIdentification: animal?.identification ?? '',
-      animalPoids: poids,
+      animalPoids: c.poids ? `${c.poids.replace('.', ',')} kg` : '',
       proprietaire: proprio,
-      lignes, date,
+      lignes: lignesDe(c).map(l => ({ ...l, notes: l.instructions })),
+      remarques: c.remarques,
+      date: jour(date), numero: opts.numero, apercu: opts.apercu,
+      remplace: opts.remplace ? { numero: opts.remplace.numero, date: opts.remplace.date_emit ? jour(opts.remplace.date_emit) : null } : null,
     });
   }
 
@@ -1682,45 +1697,76 @@ function PatientDetailPageInner() {
     return (op?.id as string | undefined) ?? null;
   }
 
-  const saisieVersPdf = (s: SaisieOrdonnance) =>
-    ordonnancePdf(s.lignes, new Date(`${s.date}T12:00:00`), s.poids ? `${s.poids.replace('.', ',')} kg` : '');
-
   async function rechargerOrdonnances() {
     const { data } = await supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date_emit', { ascending: false });
     setOrdonnances((data ?? []) as Ordonnance[]);
   }
 
-  /** Ordonnance saisie hors compte rendu : créée avec son PDF. */
-  async function creerOrdonnanceManuelle(s: SaisieOrdonnance, blob: Blob) {
-    if (!user?.uid || !animalId) return;
-    const docUrl = await stockerOrdonnancePdf(blob);
-    const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
-    const ownerProfileId = await profilProprietaire(ownerUid);
+  /** Nouvelle ordonnance en brouillon (préparée par le véto ou l'ASV).
+   *  Version rectificative : rattachée à l'ordonnance corrigée (même RDV,
+   *  même propriétaire). */
+  async function creerBrouillonOrdonnance(contenu: ContenuOrdo, date: string, rdvId?: string | null, remplace?: Ordonnance | null): Promise<Ordonnance> {
+    const ownerUid = remplace ? remplace.owner_uid ?? null : animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+    const ownerProfileId = remplace ? remplace.owner_profile_id ?? null : await profilProprietaire(ownerUid);
     const pid = activeProfileId || null;
-    const { error } = await supabase.from('ordonnances').insert({
-      animal_id: animalId, pro_uid: proUid, ...(pid ? { pro_profile_id: pid, praticien_profile_id: (esp.espace ? esp.monProfil : null) ?? pid } : {}),
+    const rdv = remplace ? remplace.rdv_id ?? null : rdvId ?? null;
+    const { data, error } = await supabase.from('ordonnances').insert({
+      animal_id: animalId, pro_uid: proUid,
+      ...(pid ? { pro_profile_id: pid, redige_par_profile_id: (esp.espace ? esp.monProfil : null) ?? pid } : {}),
       owner_uid: ownerUid, ...(ownerProfileId ? { owner_profile_id: ownerProfileId } : {}),
-      praticien_uid: user.uid, doc_url: docUrl, date_emit: s.date,
-      notes: s.lignes.map(l => l.medicament).join(', '),
-    });
+      ...(rdv ? { rdv_id: rdv } : {}), ...(remplace ? { remplace_id: remplace.id } : {}),
+      statut: 'brouillon', contenu, date_emit: date, notes: resumeOrdo(contenu) || null, source: 'veterinaire',
+    }).select('*').single();
     if (error) throw error;
+    await rechargerOrdonnances();
+    return data as Ordonnance;
+  }
+
+  async function enregistrerBrouillonOrdo(o: Ordonnance | null, contenu: ContenuOrdo, date: string, remplace?: Ordonnance | null) {
+    if (!o) { await creerBrouillonOrdonnance(contenu, date, null, remplace); return; }
+    const { data, error } = await supabase.from('ordonnances').update({ contenu, date_emit: date, notes: resumeOrdo(contenu) || null })
+      .eq('id', o.id).eq('statut', 'brouillon').select('id');
+    if (error) throw error;
+    if (!data?.length) throw new Error('brouillon introuvable ou déjà validé');
+    await rechargerOrdonnances();
+  }
+
+  /** PDF de l'ordonnance validée (numéro posé par le serveur), déposé une seule fois. */
+  async function deposerPdfOrdonnance(o: Ordonnance) {
+    let remplace: Ordonnance | null = null;
+    if (o.remplace_id) {
+      const { data } = await supabase.from('ordonnances').select('*').eq('id', o.remplace_id).maybeSingle();
+      remplace = (data as Ordonnance | null) ?? null;
+    }
+    const blob = await ordonnancePdf(o.contenu ?? { lignes: [] }, o.date_emit ?? new Date().toLocaleDateString('sv-SE'),
+      { numero: o.numero, remplace });
+    const docUrl = await stockerOrdonnancePdf(blob);
+    const { data, error } = await supabase.from('ordonnances').update({ doc_url: docUrl })
+      .eq('id', o.id).or('doc_url.is.null,doc_url.eq.').select('id');
+    if (error) throw error;
+    if (!data?.length) throw new Error('PDF déjà déposé ou ordonnance non modifiable avec vos droits');
+  }
+
+  /** Validation par le vétérinaire : statut, numéro et validateur posés par le
+   *  serveur (pm_ordonnance_controle), puis PDF signé. */
+  async function validerOrdonnance(o: Ordonnance | null, contenu: ContenuOrdo, date: string, remplace?: Ordonnance | null) {
+    const ordo = o ?? await creerBrouillonOrdonnance(contenu, date, null, remplace);
+    const moi = (esp.espace ? esp.monProfil : null) ?? (activeProfileId || null);
+    const { data, error } = await supabase.from('ordonnances').update({
+      contenu, date_emit: date, notes: resumeOrdo(contenu) || null, statut: signature ? 'signee' : 'validee',
+      ...(moi ? { praticien_profile_id: moi, valide_par_profile_id: moi } : {}),
+    }).eq('id', ordo.id).eq('statut', 'brouillon').select('*').single();
+    if (error) throw error;
+    try { await deposerPdfOrdonnance(data as Ordonnance); }
+    catch (e) { alert(`Ordonnance validée, mais PDF non enregistré (${(e as Error).message}) : utilisez « Générer le PDF ».`); }
     await rechargerOrdonnances();
     await notifyOwner('ordonnance', nomPrescripteur);
   }
 
-  /** Ordonnance ajoutée à la main sans document : PDF produit après coup. */
-  async function genererPdfOrdonnance(o: Ordonnance, s: SaisieOrdonnance, blob: Blob) {
-    if (!user?.uid) return;
-    const docUrl = await stockerOrdonnancePdf(blob);
-    const pid = activeProfileId || null;
-    const { data, error } = await supabase.from('ordonnances').update({
-      doc_url: docUrl, date_emit: s.date, praticien_uid: user.uid,
-      ...(pid ? { praticien_profile_id: (esp.espace ? esp.monProfil : null) ?? pid } : {}),
-    }).eq('id', o.id).or('doc_url.is.null,doc_url.eq.').select('id');
-    if (error) throw error;
-    if (!data?.length) throw new Error('ordonnance introuvable, déjà pourvue d’un PDF ou non modifiable avec vos droits');
-    await rechargerOrdonnances();
-  }
+  /** Éditeur d'ordonnance ouvert depuis la fin du CR : la suite (facture,
+   *  retour au RDV) attend sa fermeture. */
+  const ouvrirEditeurOrdo = (e: { ordo: Ordonnance | null; remplace?: Ordonnance | null }) =>
+    new Promise<void>(fin => setEditeurOrdo({ ...e, fin }));
 
   /** En-tête / patient / propriétaire des PDF (CR, ordonnance). */
   async function infosDocument() {
@@ -2228,7 +2274,7 @@ function PatientDetailPageInner() {
         // Actes du CR + actes déjà inscrits au carnet aujourd'hui (Synthèse, Santé).
         const duCarnet = (t: ActeCarnet['type']) => carnetJour.filter(a => a.type === t).map(a => a.libelle);
         const vaccinsTxt = [...vaccinsCr.map(v => v.nom + (v.lot ? ` (lot ${v.lot})` : '')), ...duCarnet('vaccin')];
-        const traitementsTxt = [...traitementsCr.map(t => `${t.nom} — ${posologieComplete(t)}`), ...duCarnet('traitement')];
+        const traitementsTxt = [...traitementsCr.map(t => `${t.nom} — ${posologieComplete(t)}${t.administre ? ' (administré en clinique)' : ''}`), ...duCarnet('traitement')];
         const prescription = traitementsTxt.join(' ; ');
         let contenu = [
           formMotif.trim() && `Motif : ${formMotif.trim()}`,
@@ -4370,7 +4416,7 @@ function PatientDetailPageInner() {
                 { label: 'Vaccin', onClick: () => setAddingType('vaccin') },
                 { label: 'Traitement', onClick: () => setAddingType('traitement') },
                 ...(carnetCommun ? [] : [
-                  ...(peutPrescrire ? [{ label: 'Ordonnance (PDF)', onClick: () => setOrdoManuelle({ ordo: null }) }] : []),
+                  ...(peutPreparerOrdo ? [{ label: 'Ordonnance', onClick: () => setEditeurOrdo({ ordo: null }) }] : []),
                   { label: 'Radio / Examen', onClick: () => setAddingType('radio') },
                 ]),
                 { label: 'Nouvelle mesure', onClick: () => setAddingType('mesure') },
@@ -4398,18 +4444,25 @@ function PatientDetailPageInner() {
               }}
               onTransmettreCr={(cr, action) => transmettreCr(cr as CompteRendu, action)}
               onTransmettreOrdo={(o, action) => transmettreOrdo(o as Ordonnance, action)}
-              onGenererPdfOrdo={peutPrescrire ? o => setOrdoManuelle({ ordo: o as Ordonnance }) : undefined}
+              actionsOrdo={{
+                peutPrescrire,
+                ...(peutPreparerOrdo ? {
+                  ouvrir: o => setEditeurOrdo({ ordo: o as Ordonnance }),
+                  rectifier: o => setEditeurOrdo({ ordo: null, remplace: o as Ordonnance }),
+                  supprimerBrouillon: async o => {
+                    const { data, error } = await supabase.from('ordonnances').delete().eq('id', o.id).eq('statut', 'brouillon').select('id');
+                    if (error || !data?.length) { alert(`Suppression impossible : ${error?.message ?? 'seul un brouillon se supprime'}`); return; }
+                    await rechargerOrdonnances();
+                  },
+                } : {}),
+                // PDF manquant d'une ordonnance validée : son validateur le produit (son nom et sa signature).
+                ...(peutPrescrire ? { genererPdf: async o => {
+                  if (o.valide_par_uid && o.valide_par_uid !== user?.uid) { alert('Seul le vétérinaire qui a validé cette ordonnance peut en produire le PDF.'); return; }
+                  try { await deposerPdfOrdonnance(o as Ordonnance); await rechargerOrdonnances(); }
+                  catch (e) { alert(`PDF non enregistré : ${(e as Error).message}`); }
+                } } : {}),
+              }}
             />
-            {ordoManuelle && (
-              <OrdonnanceManuelleModal
-                titre={ordoManuelle.ordo ? 'Générer le PDF de l’ordonnance' : 'Nouvelle ordonnance'}
-                dateInitiale={ordoManuelle.ordo?.date_emit?.slice(0, 10) ?? new Date().toLocaleDateString('sv-SE')}
-                saisieOrigine={ordoManuelle.ordo?.notes}
-                prescripteur={nomPrescripteur}
-                apercu={saisieVersPdf}
-                enregistrer={(s, blob) => ordoManuelle.ordo ? genererPdfOrdonnance(ordoManuelle.ordo, s, blob) : creerOrdonnanceManuelle(s, blob)}
-                onClose={() => setOrdoManuelle(null)} />
-            )}
             {historiqueOuvert && animal && (
               <HistoriquePatient animalId={String(animal.id)} animalNom={animal.nom ?? 'Patient'}
                 profileId={activeProfileId} onClose={() => setHistoriqueOuvert(false)} />
@@ -4430,6 +4483,25 @@ function PatientDetailPageInner() {
       </div>
 
       {/* ── Modales d'ajout ── */}
+      {editeurOrdo && (() => {
+        const { ordo, remplace } = editeurOrdo;
+        const fermer = () => { editeurOrdo.fin?.(); setEditeurOrdo(null); };
+        const base = remplace ?? ordo;
+        return (
+          <OrdonnanceEditeur
+            titre={remplace ? 'Version rectificative' : ordo ? (peutPrescrire ? 'Compléter et valider l’ordonnance' : 'Brouillon d’ordonnance') : 'Nouvelle ordonnance'}
+            contenuInitial={{ lignes: lignesDe(base?.contenu), poids: base?.contenu?.poids, remarques: base?.contenu?.remarques }}
+            dateInitiale={ordo?.date_emit?.slice(0, 10) ?? new Date().toLocaleDateString('sv-SE')}
+            espece={animal?.espece}
+            rectifie={remplace ? { numero: remplace.numero, date: remplace.date_emit } : null}
+            prescripteur={nomPrescripteur}
+            peutValider={peutPrescrire}
+            apercu={(c, d) => ordonnancePdf(c, d, { apercu: true, remplace })}
+            enregistrerBrouillon={(c, d) => enregistrerBrouillonOrdo(ordo, c, d, remplace)}
+            valider={(c, d) => validerOrdonnance(ordo, c, d, remplace)}
+            onClose={fermer} />
+        );
+      })()}
       {addingType && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4"
           onClick={() => { if (retourCr) revenirAuCr(retourCr); else setAddingType(null); }}>
