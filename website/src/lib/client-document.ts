@@ -36,9 +36,10 @@ export async function clientDocument(animalId: string, opts: { rdvId?: string | 
 
   // 1. Client PetsMatch : coordonnées de facturation (particulier, élevage, association).
   const { data: cf } = await supabase.rpc('pm_client_facturation', { p_animal_id: animalId, ...(profil ? { p_client_profile_id: profil } : {}) });
-  const j = (cf ?? null) as Record<string, string> | null;
-  if (j && (v(j.nom) || v(j.prenom) || v(j.societe))) {
-    const nom = v(j.societe) || `${v(j.prenom)} ${v(j.nom)}`.trim();
+  const j = (cf ?? null) as Record<string, unknown> | null;
+  // « societe » est un indicateur (vrai / faux) : le nom de la structure est dans « nom ».
+  if (j && (v(j.nom) || v(j.prenom))) {
+    const nom = j.societe === true ? v(j.nom) : `${v(j.prenom)} ${v(j.nom)}`.trim();
     return { nom, coord: lignes(j.rue, j.code_postal, j.ville, j.telephone, j.email), email: v(j.email) || null };
   }
   // 2. Client du fichier de la clinique (sans compte PetsMatch).

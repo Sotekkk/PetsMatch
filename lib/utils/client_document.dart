@@ -36,8 +36,9 @@ Future<ClientDocument> clientDocument(String animalId, {String? rdvId, String? c
     final j = await supa.rpc('pm_client_facturation', params: {
       'p_animal_id': animalId, if (profil != null) 'p_client_profile_id': profil,
     });
-    if (j is Map && (_v(j['nom']).isNotEmpty || _v(j['prenom']).isNotEmpty || _v(j['societe']).isNotEmpty)) {
-      final nom = _v(j['societe']).isNotEmpty ? _v(j['societe']) : '${_v(j['prenom'])} ${_v(j['nom'])}'.trim();
+    // « societe » est un indicateur (vrai / faux) : le nom de la structure est dans « nom ».
+    if (j is Map && (_v(j['nom']).isNotEmpty || _v(j['prenom']).isNotEmpty)) {
+      final nom = j['societe'] == true ? _v(j['nom']) : '${_v(j['prenom'])} ${_v(j['nom'])}'.trim();
       return (nom: nom, coord: _lignes(j['rue'], j['code_postal'], j['ville'], j['telephone'], j['email']),
           email: _v(j['email']).isEmpty ? null : _v(j['email']));
     }
