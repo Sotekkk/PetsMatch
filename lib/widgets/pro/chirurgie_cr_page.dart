@@ -5,6 +5,7 @@
 // archivée par le serveur (migration_chirurgies_cr.sql).
 // Miroir site : website/src/components/pro/ChirurgieCrModal.tsx.
 
+import 'package:PetsMatch/utils/trame_dentaire.dart';
 import 'dart:typed_data';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -331,6 +332,17 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
                     },
                     icon: const Icon(Icons.event_available, size: 18, color: _teal),
                     label: const Text('Planifier le RDV de l’intervention (la famille le voit dans son agenda)',
+                        style: TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700, fontSize: 12.5)),
+                  )),
+                if (_type == 'operatoire' && !_verrouille)
+                  Padding(padding: const EdgeInsets.only(bottom: 10), child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final c = _ctrl['operatoire']!['gestes']!;
+                      final ligne = await ouvrirTrameDentaire(context, gestes: c.text, animalId: widget.chirurgie['animal_id']?.toString());
+                      if (ligne != null && mounted) setState(() => c.text = avecLigneDentaire(c.text, ligne));
+                    },
+                    icon: const Icon(Icons.grid_view_outlined, size: 18, color: _teal),
+                    label: const Text('Schéma dentaire (détartrage, extractions)',
                         style: TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700, fontSize: 12.5)),
                   )),
                 for (final f in champsCrChir[_type]!) ...[

@@ -4709,7 +4709,7 @@ function PatientDetailPageInner() {
       {partage && <LienSecuriseModal doc={partage} onClose={() => setPartage(null)} />}
       {panneauRdv && <PanneauPage url={panneauRdv} titre="RDV de l’intervention" onClose={() => setPanneauRdv(null)} />}
       {crChir && (
-        <ChirurgieCrModal key={crChir.c.id} chirurgie={chirurgies.find(x => x.id === crChir.c.id) ?? crChir.c} typeInitial={crChir.type} poidsFiche={animal?.poids}
+        <ChirurgieCrModal key={crChir.c.id} chirurgie={chirurgies.find(x => x.id === crChir.c.id) ?? crChir.c} typeInitial={crChir.type} poidsFiche={animal?.poids} espece={animal?.espece}
           peutValider={peutPrescrire}
           apercu={(t, champs) => crChirPdf(t, crChir.c, champs, true)}
           enregistrer={(t, champs, valider) => enregistrerCrChir(crChir.c, t, champs, valider)}

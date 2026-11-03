@@ -2947,6 +2947,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     final consignesCtrl = TextEditingController();
     bool consignesModifiees = false;
     final consignesDefaut = estVeto ? await consignesPreopDefaut(AgendaContexte.profileId) : kConsignesPreopDefaut;
+    // Salle de bloc (salles de type « chirurgie ») : réservée pendant le temps d'intervention.
+    var sallesBloc = <Map<String, dynamic>>[];
+    if (estVeto && AgendaContexte.profileId.isNotEmpty) {
+      try {
+        sallesBloc = List<Map<String, dynamic>>.from(await Supabase.instance.client.from('salles_clinique').select('id, nom')
+            .eq('clinique_profile_id', AgendaContexte.profileId).eq('actif', true).eq('type_salle', 'chirurgie').order('ordre'));
+      } catch (_) {}
+    }
+    String? salleBloc = sallesBloc.isNotEmpty ? sallesBloc.first['id'].toString() : null;
     void choisirIntervention(String k) {
       final ancien = libelleIntervention(intervention);
       intervention = k;
@@ -3573,6 +3582,25 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                         style: OutlinedButton.styleFrom(foregroundColor: _teal),
                       ),
                     ]),
+                    if (bloc != null) ...[
+                      const SizedBox(height: 8),
+                      if (sallesBloc.isNotEmpty)
+                        DropdownButtonFormField<String?>(
+                          initialValue: salleBloc,
+                          decoration: InputDecoration(labelText: 'Salle de bloc', labelStyle: const TextStyle(fontFamily: 'Galey'),
+                              filled: true, fillColor: Colors.white, isDense: true,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
+                          items: [
+                            for (final x in sallesBloc)
+                              DropdownMenuItem<String?>(value: x['id'].toString(), child: Text(x['nom']?.toString() ?? 'Bloc', style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                            const DropdownMenuItem<String?>(value: null, child: Text('Sans salle (vétérinaire indisponible)', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                          ],
+                          onChanged: (v) => setModal(() => salleBloc = v),
+                        )
+                      else
+                        Text('Pendant l\u2019intervention, le vétérinaire est indiqué indisponible (pas de réservation en ligne sur ce créneau).',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+                    ],
                     const SizedBox(height: 10),
                     TextField(
                       controller: consignesCtrl, maxLines: 4, minLines: 3,
@@ -3624,12 +3652,51 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       setModal(() => error = 'Une intervention se rattache à la fiche de l\u2019animal : choisissez le patient.');
                       return;
                     }
-                    setModal(() { saving = true; error = null; });
                     DateTime? at(TimeOfDay? t) => t == null ? null : DateTime(date.year, date.month, date.day, t.hour, t.minute);
+                    // Temps d'intervention : salle de bloc libre, et vétérinaire sans autre RDV.
+                    if (intervention.isNotEmpty && bloc != null) {
+                      final bd = at(bloc)!, bf = at(bloc)!.add(Duration(minutes: blocDuree));
+                      final supa = Supabase.instance.client;
+                      if (salleBloc != null) {
+                        try {
+                          final occ = await supa.rpc('pm_salle_occupee', params: {
+                            'p_salle': salleBloc, 'p_debut': bd.toUtc().toIso8601String(), 'p_fin': bf.toUtc().toIso8601String()});
+                          if (occ == true) {
+                            setModal(() => error = 'La salle de bloc est déjà occupée sur ce créneau : changez l\u2019heure ou la salle.');
+                            return;
+                          }
+                        } catch (_) {}
+                      }
+                      try {
+                        var q = supa.from('rdv').select('date_heure, duree_minutes, motif').eq('pro_profile_id', AgendaContexte.profileId)
+                            .inFilter('statut', ['confirme', 'demande']).lt('date_heure', bf.toUtc().toIso8601String())
+                            .gte('date_heure', bd.subtract(const Duration(hours: 4)).toUtc().toIso8601String());
+                        q = (praticienInit ?? '').isNotEmpty ? q.eq('instructeur_profile_id', praticienInit!) : q.isFilter('instructeur_profile_id', null);
+                        final autres = List<Map<String, dynamic>>.from(await q);
+                        final conflit = autres.where((x) {
+                          final d0 = DateTime.tryParse(x['date_heure']?.toString() ?? '');
+                          return d0 != null && d0.add(Duration(minutes: (x['duree_minutes'] as num?)?.toInt() ?? 30)).isAfter(bd);
+                        }).firstOrNull;
+                        if (conflit != null && ctx.mounted) {
+                          final d0 = DateTime.parse(conflit['date_heure'].toString()).toLocal();
+                          final ok = await showDialog<bool>(context: ctx, builder: (c) => AlertDialog(
+                            content: Text('Le vétérinaire a déjà un RDV pendant l\u2019intervention (${hm(TimeOfDay.fromDateTime(d0))}'
+                                '${(conflit['motif'] ?? '').toString().isNotEmpty ? ' — ${conflit['motif']}' : ''}). Créer quand même ?',
+                                style: const TextStyle(fontFamily: 'Galey')),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Non')),
+                              TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Créer quand même')),
+                            ],
+                          ));
+                          if (ok != true) return;
+                        }
+                      } catch (_) {}
+                    }
+                    setModal(() { saving = true; error = null; });
                     final ok = await _creerRdvManuel(
                       intervention: intervention.isEmpty ? null : (
                         type: intervention, recuperation: at(recup), blocDebut: at(bloc),
-                        blocFin: at(bloc)?.add(Duration(minutes: blocDuree)), consignes: consignesCtrl.text.trim()),
+                        blocFin: at(bloc)?.add(Duration(minutes: blocDuree)), consignes: consignesCtrl.text.trim(), salleBloc: salleBloc),
                       clientNom: clientNomCtrl.text.trim(),
                       clientTel: clientTelCtrl.text.trim(),
                       clientEmail: clientEmailCtrl.text.trim(),
@@ -3762,7 +3829,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     String? patientAnimalId,
     String? praticienInit,
     String? salleInit,
-    ({String type, DateTime? recuperation, DateTime? blocDebut, DateTime? blocFin, String consignes})? intervention,
+    ({String type, DateTime? recuperation, DateTime? blocDebut, DateTime? blocFin, String consignes, String? salleBloc})? intervention,
   }) async {
     final uid = AgendaContexte.uid;
     if (uid == null) return false;
@@ -3849,6 +3916,28 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       // est alors réécrit en « Intervention … » par la base), puis envoi.
       if (intervention != null) {
         final rdvId = inserted['id'].toString();
+        // Temps d'intervention bloqué : salle de bloc, sinon vétérinaire indisponible.
+        if (intervention.blocDebut != null && intervention.blocFin != null) {
+          final motifBloc = 'Intervention — ${motif.isNotEmpty ? motif : libelleIntervention(intervention.type)}${animalNom.isNotEmpty ? ' — $animalNom' : ''}';
+          try {
+            if (intervention.salleBloc != null) {
+              await Supabase.instance.client.from('occupations_salle').insert({
+                'clinique_profile_id': pid, 'salle_id': intervention.salleBloc,
+                'debut': intervention.blocDebut!.toUtc().toIso8601String(), 'fin': intervention.blocFin!.toUtc().toIso8601String(),
+                'motif': motifBloc, 'rdv_id': rdvId, 'cree_par_uid': uid,
+                if ((praticienInit ?? '').isNotEmpty) 'praticien_profile_id': praticienInit,
+              });
+            } else {
+              await Supabase.instance.client.from('agenda_events').insert({
+                'uid': uid, 'titre': motifBloc, 'type': 'indisponible',
+                'date_debut': intervention.blocDebut!.toUtc().toIso8601String(), 'date_fin': intervention.blocFin!.toUtc().toIso8601String(),
+                'pro_profile_id': pid, if ((praticienInit ?? '').isNotEmpty) 'praticien_profile_id': praticienInit, 'couleur': 'bloc:$rdvId',
+              });
+            }
+          } catch (e) {
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('RDV créé, mais le temps d\u2019intervention n\u2019a pas pu être bloqué : $e')));
+          }
+        }
         await lierChirurgieRdv(rdvId: rdvId, animalId: patientAnimalId, dateHeure: dh,
             motif: motif.isNotEmpty ? motif : libelleIntervention(intervention.type), proUid: uid, proProfileId: pid);
         try {

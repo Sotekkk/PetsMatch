@@ -651,6 +651,14 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
   const [consignes, setConsignes] = useState('');
   const [consignesModifiees, setConsignesModifiees] = useState(false);
   const [consignesDefaut, setConsignesDefaut] = useState<Record<string, string>>(CONSIGNES_PREOP_DEFAUT);
+  // Salle de bloc (salles de type « chirurgie ») : réservée pendant le temps d'intervention.
+  const [sallesBloc, setSallesBloc] = useState<{ id: string; nom: string }[]>([]);
+  const [salleBloc, setSalleBloc] = useState('');
+  useEffect(() => {
+    if (catPro !== 'veterinaire' || !profileId) return;
+    supabase.from('salles_clinique').select('id, nom').eq('clinique_profile_id', profileId).eq('actif', true).eq('type_salle', 'chirurgie').order('ordre')
+      .then(({ data }) => { const l = (data ?? []) as { id: string; nom: string }[]; setSallesBloc(l); if (l.length) setSalleBloc(l[0].id); });
+  }, [catPro, profileId]);
   useEffect(() => { if (catPro === 'veterinaire') consignesPreopDefaut(profileId).then(setConsignesDefaut).catch(() => {}); }, [catPro, profileId]);
   useEffect(() => {
     if (!intervention) return;
@@ -876,6 +884,21 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
       if (manque.length) { setError(`Champs requis : ${manque.join(', ')}.`); return; }
     }
     if (intervention && !patientId) { setError('Une intervention se rattache à la fiche de l’animal : choisissez le patient.'); return; }
+    // Temps d'intervention : salle de bloc libre, et vétérinaire sans autre RDV.
+    if (intervention && blocHeure) {
+      const bd = new Date(`${date}T${blocHeure}:00`), bf = new Date(bd.getTime() + blocDuree * 60000);
+      if (salleBloc) {
+        const { data: occ } = await supabase.rpc('pm_salle_occupee', { p_salle: salleBloc, p_debut: bd.toISOString(), p_fin: bf.toISOString() });
+        if (occ) { setError('La salle de bloc est déjà occupée sur ce créneau : changez l’heure d’intervention ou la salle.'); return; }
+      }
+      let q = supabase.from('rdv').select('date_heure, duree_minutes, motif').eq('pro_profile_id', profileId).in('statut', ['confirme', 'demande'])
+        .lt('date_heure', bf.toISOString()).gte('date_heure', new Date(bd.getTime() - 4 * 3600000).toISOString());
+      q = praticien ? q.eq('instructeur_profile_id', praticien) : q.is('instructeur_profile_id', null);
+      const { data: autres } = await q;
+      const conflit = ((autres ?? []) as { date_heure: string; duree_minutes: number | null; motif: string | null }[])
+        .find(x => Date.parse(x.date_heure) + (x.duree_minutes ?? 30) * 60000 > bd.getTime());
+      if (conflit && !window.confirm(`Le vétérinaire a déjà un RDV pendant l’intervention (${new Date(conflit.date_heure).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}${conflit.motif ? ` — ${conflit.motif}` : ''}). Créer quand même ?`)) return;
+    }
     setSaving(true); setError(null);
     try {
       const dh = new Date(`${date}T${heure}:00`);
@@ -908,6 +931,17 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
       if (e || !ins) throw e ?? new Error('insert');
       const rdvId = ins.id as string;
       const nomClient = linked?.nom || clientNom.trim() || 'Client';
+      // Intervention : temps d'intervention bloqué (salle de bloc, sinon vétérinaire indisponible).
+      if (intervention && bloc) {
+        const finBloc = new Date(bloc.getTime() + blocDuree * 60000);
+        const motifBloc = `Intervention — ${motifTxt}${animalNom.trim() ? ` — ${animalNom.trim()}` : ''}`;
+        const { error: eBloc } = salleBloc
+          ? await supabase.from('occupations_salle').insert({ clinique_profile_id: profileId, salle_id: salleBloc, debut: bloc.toISOString(),
+              fin: finBloc.toISOString(), motif: motifBloc, rdv_id: rdvId, praticien_profile_id: praticien || null, cree_par_uid: proUid })
+          : await supabase.from('agenda_events').insert({ uid: proUid, titre: motifBloc, type: 'indisponible', date_debut: bloc.toISOString(),
+              date_fin: finBloc.toISOString(), pro_profile_id: profileId, praticien_profile_id: praticien || null, couleur: `bloc:${rdvId}` });
+        if (eBloc) alert(`RDV créé, mais le temps d’intervention n’a pas pu être bloqué : ${eBloc.message}`);
+      }
       // Intervention : rattachée à la fiche (CR pré-op / opératoire / consignes).
       if (intervention) await lierChirurgieRdv({ id: rdvId, animal_id: patientId, date_heure: dh.toISOString(), motif: motifTxt, pro_uid: proUid, pro_profile_id: profileId, intervention_type: intervention }).catch(() => null);
       const detailIntervention = intervention ? [
@@ -1179,6 +1213,15 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
               <div><label className={label}>Récupération</label>
                 <input type="time" step={300} value={heureRecup} onChange={e => setHeureRecup(e.target.value)} className={`${champ} bg-white`} /></div>
             </div>
+            {blocHeure && (sallesBloc.length > 0 ? (
+              <div><label className={label}>Salle de bloc</label>
+                <select value={salleBloc} onChange={e => setSalleBloc(e.target.value)} className={`${champ} bg-white`}>
+                  {sallesBloc.map(x => <option key={x.id} value={x.id}>{x.nom}</option>)}
+                  <option value="">Sans salle (vétérinaire indisponible seulement)</option>
+                </select></div>
+            ) : (
+              <p className="text-[11px] text-gray-500">Pendant l’intervention, le vétérinaire est indiqué indisponible (pas de réservation en ligne sur ce créneau).</p>
+            ))}
             <div>
               <label className={label}>Consignes au propriétaire</label>
               <textarea value={consignes} rows={4} onChange={e => { setConsignes(e.target.value); setConsignesModifiees(true); }}
@@ -2015,12 +2058,27 @@ export default function MesRdvPage() {
   const [dossierSoins, setDossierSoins] = useState<Rdv | null>(null);
   // Vétérinaire / ostéo : dossier à rouvrir au retour d'une action (?rdv=…&dossier=1).
   const [dossierARouvrir, setDossierARouvrir] = useState<string | null>(null);
+  // Dossier à rouvrir (?rdv=…&dossier=1, hospitalisés du jour, retour d'une action).
   useEffect(() => {
     if (!dossierARouvrir) return;
+    const ouvrir = (r: Rdv) => { if (catPro === 'toilettage') setDossierToilettage(r); else setDossierSoins(r); setDossierARouvrir(null); };
     const r = rdvs.find(x => x.id === dossierARouvrir);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (r) { if (catPro === 'toilettage') setDossierToilettage(r); else setDossierSoins(r); setDossierARouvrir(null); }
-  }, [dossierARouvrir, rdvs, catPro]);
+    if (r) { ouvrir(r); return; }
+    // RDV hors de la liste chargée (animal hospitalisé depuis un jour précédent…) : lu directement.
+    if (fetching) return;
+    const id = dossierARouvrir;
+    let annule = false;
+    (async () => {
+      const { data } = await supabase.from('rdv').select('*').eq('id', id).maybeSingle();
+      if (annule || !data) return;
+      const x = data as Rdv & { animal_id?: string | number | null };
+      let animalNom: string | undefined;
+      if (x.animal_id != null) animalNom = ((await supabase.from('animaux').select('nom').eq('id', String(x.animal_id)).maybeSingle()).data as { nom?: string } | null)?.nom;
+      if (!annule) ouvrir({ ...x, ...(animalNom ? { animalNom } : {}) } as Rdv);
+    })();
+    return () => { annule = true; };
+  }, [dossierARouvrir, rdvs, catPro, fetching]);
   // Nouveau RDV pris depuis le dossier d'une séance ouvert ailleurs (tableau
   // de bord du toiletteur) : ce dossier est rouvert ensuite (?retourDossier=…).
   const [dossierApresNouveau, setDossierApresNouveau] = useState<string | null>(null);

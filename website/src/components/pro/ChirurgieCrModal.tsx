@@ -7,6 +7,8 @@
 // archivée par le serveur (migration_chirurgies_cr.sql).
 // Miroir appli : lib/widgets/pro/chirurgie_cr_page.dart.
 
+import TrameDentaireModal from '@/components/pro/TrameDentaireModal';
+import { avecLigneDentaire } from '@/lib/trame-dentaire';
 import { useEffect, useMemo, useState } from 'react';
 import LienDocument from '@/components/LienDocument';
 import ConsignesEditeur, { type ActionsConsignes } from '@/components/pro/ConsignesEditeur';
@@ -16,10 +18,12 @@ const TEAL = '#0C5C6C';
 
 type Onglet = TypeCrChir | 'consignes';
 
-export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, peutValider, apercu, enregistrer, consignes, onOrdonnance, onTransmettre, onPlanifierRdv, onClose }: {
+export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, espece, peutValider, apercu, enregistrer, consignes, onOrdonnance, onTransmettre, onPlanifierRdv, onClose }: {
   chirurgie: ChirurgieCr;
   typeInitial: Onglet;
   poidsFiche?: number | string | null;
+  /** Espèce de l'animal (schéma dentaire chien / chat). */
+  espece?: string | null;
   peutValider: boolean;
   apercu: (type: TypeCrChir, champs: Record<string, string>) => Promise<Blob>;
   /** valider : statut « valide » + PDF ; sinon brouillon. */
@@ -44,6 +48,7 @@ export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, p
   const [verifie, setVerifie] = useState(false);
   const [pdf, setPdf] = useState<{ blob: Blob; url: string } | null>(null);
   const [occupe, setOccupe] = useState<null | 'apercu' | 'brouillon' | 'valider'>(null);
+  const [trameDentaire, setTrameDentaire] = useState(false);
 
   useEffect(() => () => { if (pdf) URL.revokeObjectURL(pdf.url); }, [pdf]);
 
@@ -188,6 +193,17 @@ export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, p
                 className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: TEAL, color: TEAL }}>
                 Planifier le RDV de l’intervention (la famille le voit dans son agenda)
               </button>
+            )}
+            {type === 'operatoire' && !verrouille && (
+              <button type="button" onClick={() => setTrameDentaire(true)}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: TEAL, color: TEAL }}>
+                Schéma dentaire (détartrage, extractions)
+              </button>
+            )}
+            {trameDentaire && (
+              <TrameDentaireModal especeInitiale={/chat/i.test(espece ?? '') ? 'chat' : 'chien'} gestes={c.gestes ?? ''}
+                onClose={() => setTrameDentaire(false)}
+                onValider={ligne => { maj('gestes', avecLigneDentaire(c.gestes ?? '', ligne)); setTrameDentaire(false); }} />
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {CHAMPS_CR_CHIR[type].map(([k, l, long]) => (
