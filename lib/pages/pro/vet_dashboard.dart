@@ -4,6 +4,7 @@
 // rendu) — aucun module médical parallèle. Miroir site :
 // website/src/components/dashboard/VetDashboard.tsx.
 
+import 'package:PetsMatch/widgets/pro/hospitalises_du_jour.dart';
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -288,6 +289,10 @@ class _VetDashboardState extends State<VetDashboard> {
         ],
         _kpis(now, aCloturer.length, large),
         const SizedBox(height: 16),
+        // Interventions du jour : animaux présents à la clinique (masqué s'il n'y en a pas).
+        if (_pid.isNotEmpty)
+          HospitalisesDuJour(profileId: _pid,
+              onOuvrir: (id) => _go(ProAgendaPage(initialTabIndex: 1, focusRdvId: id))),
         if (large)
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(flex: 2, child: planning),

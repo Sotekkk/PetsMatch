@@ -1,4 +1,5 @@
 'use client';
+import HospitalisesDuJour from '@/components/rdv/HospitalisesDuJour';
 import { SOUS_TYPES_INTERVENTION, CONSIGNES_PREOP_DEFAUT, libelleIntervention, consignesPreopDefaut, lierChirurgieRdv, envoyerConsignesPreop } from '@/lib/intervention';
 import { estDansPanneau, MSG_PANNEAU_FERMER, signalerPanneau } from '@/lib/panneau';
 import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/DossierSeanceModal';
@@ -2478,6 +2479,13 @@ export default function MesRdvPage() {
                 {f.label}
               </button>
             ))}
+          </div>
+        )}
+
+        {/* Vétérinaire : hospitalisés du jour (interventions) en tête de « À venir ». */}
+        {activeTab === 'a_venir' && catPro === 'veterinaire' && activeProfileId && (
+          <div className="mb-4">
+            <HospitalisesDuJour profileId={activeProfileId} version={versionDossier} onOuvrirDossier={id => setDossierARouvrir(id)} />
           </div>
         )}
 

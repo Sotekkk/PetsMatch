@@ -6,6 +6,7 @@
 // patient) — aucun module médical parallèle. Miroir appli :
 // lib/pages/pro/vet_dashboard.dart.
 
+import HospitalisesDuJour from '@/components/rdv/HospitalisesDuJour';
 import { useActualisationAuto } from '@/hooks/useActualisationAuto';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -238,6 +239,9 @@ export default function VetDashboard({ nom, avatar }: { nom: string; avatar: str
               <Kpi valeur={aCloturer.length} label="Consultations à clôturer" icone="presse" href="/mes-rdv?onglet=a_venir" />
               <Kpi valeur={patientsCount} label="Patients suivis" icone="stetho" href="/mes-patients" />
             </div>
+
+            {/* Interventions du jour : animaux présents à la clinique. */}
+            {pid && <HospitalisesDuJour profileId={pid} />}
 
             <div className="grid lg:grid-cols-3 gap-5 items-start">
               {/* Planning du jour */}

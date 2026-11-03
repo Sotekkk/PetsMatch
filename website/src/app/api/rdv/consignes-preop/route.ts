@@ -59,6 +59,11 @@ export async function POST(req: NextRequest) {
 
   // Suivi de la journée : notification (appli), sinon e-mail, sinon téléphone.
   if (message !== 'consignes') {
+    // Étape horodatée (hospitalisés du jour), même si le client n'est pas joignable.
+    if (message === 'reveille' || message === 'pret') {
+      await admin.from('rdv').update(message === 'reveille' ? { reveil_le: new Date().toISOString() } : { pret_le: new Date().toISOString() })
+        .eq('id', rdv.id).is(message === 'reveille' ? 'reveil_le' : 'pret_le', null);
+    }
     const nomA = animal || 'Votre animal';
     const texte = message === 'reveille'
       ? `${nomA} est bien réveillé(e).${recup ? ` Récupération prévue vers ${recup} : nous vous confirmons l’heure.` : ''}`

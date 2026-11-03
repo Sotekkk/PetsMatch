@@ -81,3 +81,64 @@ export async function lierChirurgieRdv(rdv: { id: string; animal_id: string | nu
   await supabase.from('rdv').update({ chirurgie_id: id }).eq('id', rdv.id);
   return id;
 }
+
+// ── Hospitalisés du jour (lot 2) ────────────────────────────────────────────
+export interface Hospitalise {
+  id: string; date_heure: string; motif: string | null; statut: string; intervention_type: string | null;
+  animal_id: string | null; animal_nom_manuel: string | null; client_uid: string | null; client_profile_id: string | null;
+  client_nom_manuel: string | null; client_telephone_manuel: string | null;
+  heure_recuperation: string | null; bloc_debut: string | null; bloc_fin: string | null;
+  admis_le: string | null; reveil_le: string | null; pret_le: string | null; sortie_le: string | null;
+  animalNom: string; animalPhoto: string | null; clientNom: string;
+}
+
+export type EtatHospit = 'attendu' | 'depose' | 'bloc' | 'reveil' | 'pret' | 'rentre';
+export const ETATS_HOSPIT: Record<EtatHospit, { label: string; fg: string; bg: string }> = {
+  attendu: { label: 'Attendu', fg: '#6B7280', bg: '#F1F4F3' },
+  depose: { label: 'Déposé', fg: '#0C5C6C', bg: '#E6F2F3' },
+  bloc: { label: 'Au bloc', fg: '#8A5A00', bg: '#FFF4DC' },
+  reveil: { label: 'En réveil', fg: '#6D28D9', bg: '#F1EAFE' },
+  pret: { label: 'Prêt à partir', fg: '#2E7D32', bg: '#E8F5E9' },
+  rentre: { label: 'Rentré', fg: '#6B7280', bg: '#F1F4F3' },
+};
+
+export function etatHospit(h: Pick<Hospitalise, 'admis_le' | 'reveil_le' | 'pret_le' | 'sortie_le' | 'bloc_debut' | 'bloc_fin'>, now = new Date()): EtatHospit {
+  if (h.sortie_le) return 'rentre';
+  if (h.pret_le) return 'pret';
+  if (h.reveil_le) return 'reveil';
+  if (h.admis_le) {
+    const t = now.getTime();
+    if (h.bloc_debut && t >= Date.parse(h.bloc_debut) && (!h.bloc_fin || t <= Date.parse(h.bloc_fin))) return 'bloc';
+    return 'depose';
+  }
+  return 'attendu';
+}
+
+/** Interventions du jour de la clinique + animaux encore hospitalisés (déposés avant, pas rentrés). */
+export async function hospitalisesDuJour(proProfileId: string): Promise<Hospitalise[]> {
+  const d = new Date(); const debut = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const fin = new Date(debut.getTime() + 86400000);
+  const cols = 'id, date_heure, motif, statut, intervention_type, animal_id, animal_nom_manuel, client_uid, client_profile_id, client_nom_manuel, client_telephone_manuel, heure_recuperation, bloc_debut, bloc_fin, admis_le, reveil_le, pret_le, sortie_le';
+  const [{ data: jour }, { data: restants }] = await Promise.all([
+    supabase.from('rdv').select(cols).eq('pro_profile_id', proProfileId).not('intervention_type', 'is', null)
+      .gte('date_heure', debut.toISOString()).lt('date_heure', fin.toISOString()).not('statut', 'in', '(annule,refuse)'),
+    supabase.from('rdv').select(cols).eq('pro_profile_id', proProfileId).not('intervention_type', 'is', null)
+      .not('admis_le', 'is', null).is('sortie_le', null).lt('date_heure', debut.toISOString()),
+  ]);
+  const lignes = [...((restants ?? []) as Omit<Hospitalise, 'animalNom' | 'animalPhoto' | 'clientNom'>[]), ...((jour ?? []) as Omit<Hospitalise, 'animalNom' | 'animalPhoto' | 'clientNom'>[])];
+  const ids = [...new Set(lignes.map(l => l.animal_id).filter(Boolean) as string[])];
+  const pids = [...new Set(lignes.map(l => l.client_profile_id).filter(Boolean) as string[])];
+  const [{ data: an }, { data: cl }] = await Promise.all([
+    ids.length ? supabase.from('animaux').select('id, nom, photo_url').in('id', ids) : Promise.resolve({ data: [] }),
+    pids.length ? supabase.from('user_profiles_complet').select('id, firstname, lastname, nom').in('id', pids) : Promise.resolve({ data: [] }),
+  ]);
+  const animaux = new Map(((an ?? []) as { id: string; nom: string | null; photo_url: string | null }[]).map(a => [String(a.id), a]));
+  const clients = new Map(((cl ?? []) as { id: string; firstname: string | null; lastname: string | null; nom: string | null }[])
+    .map(c => [c.id, `${c.firstname ?? ''} ${c.lastname ?? ''}`.trim() || (c.nom ?? '')]));
+  const ordre: EtatHospit[] = ['bloc', 'reveil', 'depose', 'pret', 'attendu', 'rentre'];
+  return lignes.map(l => ({
+    ...l,
+    animalNom: (l.animal_id ? animaux.get(String(l.animal_id))?.nom : null) || l.animal_nom_manuel || 'Animal',
+    animalPhoto: l.animal_id ? animaux.get(String(l.animal_id))?.photo_url ?? null : null,
+    clientNom: (l.client_profile_id ? clients.get(l.client_profile_id) : '') || l.client_nom_manuel || 'Client',
+  })).sort((a, b) => ordre.indexOf(etatHospit(a)) - ordre.indexOf(etatHospit(b)) || a.date_heure.localeCompare(b.date_heure));
+}
