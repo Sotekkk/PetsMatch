@@ -237,6 +237,22 @@ function DevisPageInner() {
           const { data } = await supabase.rpc('pm_client_facturation', { p_animal_id: animalId, ...(profil ? { p_client_profile_id: profil } : {}) });
           if (data) sources.push(data as Record<string, unknown>);
         }
+        // Profils du client (celui du RDV, puis son profil principal) : mêmes
+        // données que « Chercher un client » (e-mail de contact, téléphone, adresse).
+        const uidClient = searchParams.get('clientUid');
+        const champsProfil = 'firstname, lastname, email_contact, phone_number, phone, telephone, rue, code_postal, ville';
+        const versSource = (p: Record<string, unknown>) => ({
+          prenom: p.firstname, nom: p.lastname, email: p.email_contact,
+          telephone: v(p.phone_number) || v(p.phone) || v(p.telephone), rue: p.rue, code_postal: p.code_postal, ville: p.ville,
+        });
+        if (profil) {
+          const { data } = await supabase.from('user_profiles_complet').select(champsProfil).eq('id', profil).maybeSingle();
+          if (data) sources.push(versSource(data as Record<string, unknown>));
+        }
+        if (uidClient) {
+          const { data } = await supabase.from('user_profiles_complet').select(champsProfil).eq('uid', uidClient).eq('is_main', true).maybeSingle();
+          if (data) sources.push(versSource(data as Record<string, unknown>));
+        }
         if (rdv) {
           const { data } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: rdv });
           if (data) sources.push(data as Record<string, unknown>);

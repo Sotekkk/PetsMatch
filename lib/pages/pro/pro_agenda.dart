@@ -5330,7 +5330,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           onDevis: (showProTools && AgendaContexte.catPro == 'veterinaire')
               ? () async {
                 final cc = await coordClientDevis(animalId: hasAnimal ? animalId : null, rdvId: rdv['id']?.toString(),
-                    clientProfileId: rdv['client_profile_id']?.toString());
+                    clientProfileId: rdv['client_profile_id']?.toString(), clientUid: rdv['client_uid']?.toString());
                 String? ou(String? a, dynamic b) => (a ?? '').isNotEmpty ? a : ((b?.toString() ?? '').trim().isEmpty ? null : b.toString().trim());
                 if (!context.mounted) return;
                 await Navigator.push(context, MaterialPageRoute(builder: (_) => DevisPage(prefill: DevisPrefill(

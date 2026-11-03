@@ -70,7 +70,7 @@ Future<String?> _syncContratDocument(Map<String, dynamic> devisRow, String devis
 /// éleveur, association — coordonnées de facturation), sinon client sans compte
 /// (fichier clients de la fiche, coordonnées saisies sur le RDV).
 Future<({String prenom, String nom, String email, String tel, String adresse})?> coordClientDevis({
-  String? animalId, String? rdvId, String? clientProfileId,
+  String? animalId, String? rdvId, String? clientProfileId, String? clientUid,
 }) async {
   final supa = Supabase.instance.client;
   String v(dynamic x) => x?.toString().trim() ?? '';
@@ -82,6 +82,24 @@ Future<({String prenom, String nom, String email, String tel, String adresse})?>
         'p_animal_id': animalId, if ((clientProfileId ?? '').isNotEmpty) 'p_client_profile_id': clientProfileId,
       });
       if (j is Map) sources.add(j);
+    }
+  } catch (_) {}
+  // Profils du client (celui du RDV, puis son profil principal) : mêmes données
+  // que « Chercher un client » (e-mail de contact, téléphone, adresse).
+  const champsProfil = 'firstname, lastname, email_contact, phone_number, phone, telephone, rue, code_postal, ville';
+  Map versSource(Map p) => {
+        'prenom': p['firstname'], 'nom': p['lastname'], 'email': p['email_contact'],
+        'telephone': [p['phone_number'], p['phone'], p['telephone']].map(v).firstWhere((x) => x.isNotEmpty, orElse: () => ''),
+        'rue': p['rue'], 'code_postal': p['code_postal'], 'ville': p['ville'],
+      };
+  try {
+    if ((clientProfileId ?? '').isNotEmpty) {
+      final p = await supa.from('user_profiles_complet').select(champsProfil).eq('id', clientProfileId!).maybeSingle();
+      if (p != null) sources.add(versSource(p));
+    }
+    if ((clientUid ?? '').isNotEmpty) {
+      final p = await supa.from('user_profiles_complet').select(champsProfil).eq('uid', clientUid!).eq('is_main', true).maybeSingle();
+      if (p != null) sources.add(versSource(p));
     }
   } catch (_) {}
   try {
