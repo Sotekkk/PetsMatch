@@ -1829,20 +1829,30 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             <p className="text-xs font-medium text-gray-600 mt-2 mb-2">Autres actes</p>
             <div className="space-y-2">
               {tarifsVetoExtra.map((e, i) => (
-                <div key={i} className="bg-gray-50 rounded-xl p-2 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <input placeholder="Nom de l'acte" value={e.label}
-                      onChange={ev => setTarifsVetoExtra(prev => prev.map((x, j) => j === i ? { ...x, label: ev.target.value } : x))}
-                      className={`${inputCls} flex-1`} />
-                    <input type="number" min={0} step={1} value={e.prix}
-                      onChange={ev => setTarifsVetoExtra(prev => prev.map((x, j) => j === i ? { ...x, prix: Number(ev.target.value) } : x))}
-                      className={`${inputCls} w-20`} />
+                <div key={i} className="bg-gray-50 rounded-xl p-3 space-y-2">
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1 min-w-0">
+                      <label className="text-xs font-medium text-gray-500 block mb-1">Intitulé</label>
+                      <input placeholder="Ex : Détartrage - de 10 kg" value={e.label}
+                        onChange={ev => setTarifsVetoExtra(prev => prev.map((x, j) => j === i ? { ...x, label: ev.target.value } : x))}
+                        className={inputCls} />
+                    </div>
+                    <div className="w-28 shrink-0">
+                      <label className="text-xs font-medium text-gray-500 block mb-1">Prix (€)</label>
+                      <input type="number" min={0} step={1} value={e.prix}
+                        onChange={ev => setTarifsVetoExtra(prev => prev.map((x, j) => j === i ? { ...x, prix: Number(ev.target.value) } : x))}
+                        className={`${inputCls} text-right`} />
+                    </div>
                     <button type="button" onClick={() => setTarifsVetoExtra(prev => prev.filter((_, j) => j !== i))}
-                      className="text-red-400 hover:text-red-600 text-lg px-1">×</button>
+                      title="Supprimer cet acte"
+                      className="text-red-400 hover:text-red-600 text-lg px-1 pb-2.5 shrink-0">×</button>
                   </div>
-                  <input placeholder="Description (facultatif)" value={e.description}
-                    onChange={ev => setTarifsVetoExtra(prev => prev.map((x, j) => j === i ? { ...x, description: ev.target.value } : x))}
-                    className={`${inputCls} w-full text-xs`} />
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 block mb-1">Description (facultatif)</label>
+                    <input placeholder="Ex : sous anesthésie, polissage compris" value={e.description}
+                      onChange={ev => setTarifsVetoExtra(prev => prev.map((x, j) => j === i ? { ...x, description: ev.target.value } : x))}
+                      className={inputCls} />
+                  </div>
                 </div>
               ))}
               <button type="button"

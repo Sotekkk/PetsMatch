@@ -2041,6 +2041,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
   // ── Prestations libres (éducateur / pet-sitter) ────────────────────────────
 
+  /// Clé stable de chaque ligne « autre prestation » (champ '_k', retiré à
+  /// l'enregistrement par _cleanTarifsExtra) : sans elle, supprimer une ligne
+  /// décale le texte des champs (initialValue gardé par position).
+  int _cleTarifExtra = 0;
+
   Widget _tarifsExtraEditor(
     List<Map<String, dynamic>> items,
     void Function(List<Map<String, dynamic>>) set, {
@@ -2052,50 +2057,70 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       set(next);
     }
 
+    for (final e in items) {
+      e['_k'] ??= ++_cleTarifExtra;
+    }
+
+    InputDecoration deco(String label, {String? hint, String? suffix}) => InputDecoration(
+          isDense: true,
+          labelText: label,
+          hintText: hint,
+          suffixText: suffix,
+          filled: true,
+          fillColor: Colors.white,
+          labelStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600),
+          hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: Colors.grey.shade300)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: Colors.grey.shade300)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: accent)),
+        );
+
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       for (int i = 0; i < items.length; i++)
         Container(
+          key: ValueKey('extra_${items[i]['_k']}'),
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(color: const Color(0xFFF8F8F6), borderRadius: BorderRadius.circular(12)),
           child: Column(children: [
-            Row(children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
               Expanded(
                 child: TextFormField(
                   initialValue: items[i]['label']?.toString() ?? '',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                  decoration: const InputDecoration(
-                    isDense: true, hintText: 'Nom de la prestation',
-                    hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13),
-                    border: InputBorder.none,
-                  ),
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: deco('Intitulé', hint: 'Ex : Détartrage - de 10 kg'),
                   onChanged: (v) => update(i, 'label', v),
                 ),
               ),
+              const SizedBox(width: 8),
               SizedBox(
-                width: 74,
+                width: 96,
                 child: TextFormField(
                   initialValue: (items[i]['prix'] as num?)?.toString() ?? '0',
                   keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
+                  textAlign: TextAlign.right,
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                  decoration: const InputDecoration(isDense: true, suffixText: '€', border: InputBorder.none),
+                  decoration: deco('Prix', suffix: '€'),
                   onChanged: (v) => update(i, 'prix', int.tryParse(v) ?? 0),
                 ),
               ),
               IconButton(
+                tooltip: 'Supprimer',
                 onPressed: () => set([...items]..removeAt(i)),
                 icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
               ),
             ]),
+            const SizedBox(height: 8),
             TextFormField(
               initialValue: items[i]['description']?.toString() ?? '',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700),
-              decoration: const InputDecoration(
-                isDense: true, hintText: 'Description (facultatif)',
-                hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 12),
-                border: InputBorder.none,
-              ),
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade800),
+              textCapitalization: TextCapitalization.sentences,
+              decoration: deco('Description (facultatif)', hint: 'Ex : sous anesthésie, polissage compris'),
               onChanged: (v) => update(i, 'description', v),
             ),
           ]),
@@ -2103,7 +2128,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       Align(
         alignment: Alignment.centerLeft,
         child: TextButton.icon(
-          onPressed: () => set([...items, {'label': '', 'prix': 0, 'description': ''}]),
+          onPressed: () => set([...items, {'label': '', 'prix': 0, 'description': '', '_k': ++_cleTarifExtra}]),
           icon: const Icon(Icons.add, size: 18),
           label: const Text('Ajouter une prestation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
           style: TextButton.styleFrom(foregroundColor: accent),
