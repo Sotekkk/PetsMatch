@@ -208,6 +208,66 @@ function DevisPageInner() {
 
   // ── Pré-remplissage depuis un bilan (query params, une seule fois) ──
   const searchParams = useSearchParams();
+  const [clientARecuperer, setClientARecuperer] = useState<{ rdv: string | null; profil: string | null; uidClient: string | null; animalId: string | null } | null>(null);
+  useEffect(() => {
+    if (!user || !clientARecuperer) return;
+    const cible = clientARecuperer;
+    const { rdv, profil, animalId } = cible;
+    setClientARecuperer(null);
+    (async () => {
+        const v = (x: unknown) => String(x ?? '').trim();
+      // Toutes les sources, puis champ par champ la première valeur connue :
+      // coordonnées de facturation (particulier, éleveur, association), client
+      // du RDV (compte ou fichier clients), fiche du fichier clients.
+      const sources: Record<string, unknown>[] = [];
+      if (animalId) {
+        const { data } = await supabase.rpc('pm_client_facturation', { p_animal_id: animalId, ...(profil ? { p_client_profile_id: profil } : {}) });
+        if (data) sources.push(data as Record<string, unknown>);
+      }
+      // Profils du client (celui du RDV, puis son profil principal) : mêmes
+      // données que « Chercher un client » (e-mail de contact, téléphone, adresse).
+      const uidClient = cible.uidClient;
+      const champsProfil = 'firstname, lastname, email_contact, phone_number, phone, telephone, rue, code_postal, ville';
+      const versSource = (p: Record<string, unknown>) => ({
+        prenom: p.firstname, nom: p.lastname, email: p.email_contact,
+        telephone: v(p.phone_number) || v(p.phone) || v(p.telephone), rue: p.rue, code_postal: p.code_postal, ville: p.ville,
+      });
+      if (profil) {
+        const { data } = await supabase.from('user_profiles_complet').select(champsProfil).eq('id', profil).maybeSingle();
+        if (data) sources.push(versSource(data as Record<string, unknown>));
+      }
+      if (uidClient) {
+        const { data } = await supabase.from('user_profiles_complet').select(champsProfil).eq('uid', uidClient).eq('is_main', true).maybeSingle();
+        if (data) sources.push(versSource(data as Record<string, unknown>));
+      }
+      if (rdv) {
+        const { data } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: rdv });
+        if (data) sources.push(data as Record<string, unknown>);
+      }
+      if (animalId) {
+        const { data: an } = await supabase.from('animaux').select('client_clinique_id').eq('id', animalId).maybeSingle();
+        const cc = (an as { client_clinique_id?: string | null } | null)?.client_clinique_id;
+        if (cc) {
+          const { data } = await supabase.from('clients_clinique').select('nom, prenom, email, telephone, adresse, code_postal, ville').eq('id', cc).maybeSingle();
+          if (data) sources.push({ ...(data as Record<string, unknown>), rue: (data as Record<string, unknown>).adresse });
+        }
+      }
+      const premier = (k: string) => sources.map(x => v(x[k])).find(Boolean) ?? '';
+      const societe = sources[0]?.societe === true;
+      // Adresse complète d'une même source (comme la facture : rue, code postal,
+      // ville) — d'abord une source qui a la rue, sinon le code postal / la ville.
+      const adresse = (() => {
+        const src = sources.find(x => v(x.rue)) ?? sources.find(x => v(x.ville) || v(x.code_postal));
+        return src ? [v(src.rue), `${v(src.code_postal)} ${v(src.ville)}`.trim()].filter(Boolean).join(', ') : '';
+      })();
+      // Seuls les champs encore vides sont complétés.
+      setNomClient(x => x.trim() ? x : premier('nom'));
+      setPrenomClient(x => x.trim() ? x : (societe ? '' : premier('prenom')));
+      setEmailClient(x => x.trim() ? x : premier('email'));
+      setTelClient(x => x.trim() ? x : premier('telephone'));
+      setAdresseClient(x => x.trim() ? x : adresse);
+    })().catch(() => {});
+  }, [user, clientARecuperer]);
   const prefillRef = useRef<{ animalId?: string } | null>(null);
   const prefillDone = useRef(false);
   useEffect(() => {
@@ -224,64 +284,10 @@ function DevisPageInner() {
     setTelClient(searchParams.get('tel') ?? '');
     setNote(searchParams.get('note') ?? '');
     setRdvId(searchParams.get('rdv') || null);
-    {
-      const rdv = searchParams.get('rdv');
-      const profil = searchParams.get('clientProfileId');
-      (async () => {
-        const v = (x: unknown) => String(x ?? '').trim();
-        // Toutes les sources, puis champ par champ la première valeur connue :
-        // coordonnées de facturation (particulier, éleveur, association), client
-        // du RDV (compte ou fichier clients), fiche du fichier clients.
-        const sources: Record<string, unknown>[] = [];
-        if (animalId) {
-          const { data } = await supabase.rpc('pm_client_facturation', { p_animal_id: animalId, ...(profil ? { p_client_profile_id: profil } : {}) });
-          if (data) sources.push(data as Record<string, unknown>);
-        }
-        // Profils du client (celui du RDV, puis son profil principal) : mêmes
-        // données que « Chercher un client » (e-mail de contact, téléphone, adresse).
-        const uidClient = searchParams.get('clientUid');
-        const champsProfil = 'firstname, lastname, email_contact, phone_number, phone, telephone, rue, code_postal, ville';
-        const versSource = (p: Record<string, unknown>) => ({
-          prenom: p.firstname, nom: p.lastname, email: p.email_contact,
-          telephone: v(p.phone_number) || v(p.phone) || v(p.telephone), rue: p.rue, code_postal: p.code_postal, ville: p.ville,
-        });
-        if (profil) {
-          const { data } = await supabase.from('user_profiles_complet').select(champsProfil).eq('id', profil).maybeSingle();
-          if (data) sources.push(versSource(data as Record<string, unknown>));
-        }
-        if (uidClient) {
-          const { data } = await supabase.from('user_profiles_complet').select(champsProfil).eq('uid', uidClient).eq('is_main', true).maybeSingle();
-          if (data) sources.push(versSource(data as Record<string, unknown>));
-        }
-        if (rdv) {
-          const { data } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: rdv });
-          if (data) sources.push(data as Record<string, unknown>);
-        }
-        if (animalId) {
-          const { data: an } = await supabase.from('animaux').select('client_clinique_id').eq('id', animalId).maybeSingle();
-          const cc = (an as { client_clinique_id?: string | null } | null)?.client_clinique_id;
-          if (cc) {
-            const { data } = await supabase.from('clients_clinique').select('nom, prenom, email, telephone, adresse, code_postal, ville').eq('id', cc).maybeSingle();
-            if (data) sources.push({ ...(data as Record<string, unknown>), rue: (data as Record<string, unknown>).adresse });
-          }
-        }
-        const premier = (k: string) => sources.map(x => v(x[k])).find(Boolean) ?? '';
-        const societe = sources[0]?.societe === true;
-        const adresse = (() => {
-          for (const x of sources) {
-            const a = [v(x.rue), `${v(x.code_postal)} ${v(x.ville)}`.trim()].filter(Boolean).join(', ');
-            if (a) return a;
-          }
-          return '';
-        })();
-        // Seuls les champs encore vides sont complétés.
-        setNomClient(x => x.trim() ? x : premier('nom'));
-        setPrenomClient(x => x.trim() ? x : (societe ? '' : premier('prenom')));
-        setEmailClient(x => x.trim() ? x : premier('email'));
-        setTelClient(x => x.trim() ? x : premier('telephone'));
-        setAdresseClient(x => x.trim() ? x : adresse);
-      })().catch(() => {});
-    }
+    // Coordonnées du client : recherchées une fois la connexion prête (sans
+    // elle, seuls les champs publics revenaient — la ville, jamais l'e-mail).
+    setClientARecuperer({ rdv: searchParams.get('rdv'), profil: searchParams.get('clientProfileId'),
+      uidClient: searchParams.get('clientUid'), animalId: animalId ?? null });
     const ld = searchParams.get('ligneDesc');
     // Plusieurs animaux sur la séance : une ligne par animal (JSON [{d, q, p}]).
     let lj: { d: string; q?: number; p?: number }[] = [];

@@ -120,11 +120,15 @@ Future<({String prenom, String nom, String email, String tel, String adresse})?>
   } catch (_) {}
   if (sources.isEmpty) return null;
   String premier(String k) => sources.map((x) => v(x[k])).firstWhere((x) => x.isNotEmpty, orElse: () => '');
-  var adresse = '';
-  for (final x in sources) {
-    final a = [v(x['rue']), '${v(x['code_postal'])} ${v(x['ville'])}'.trim()].where((e) => e.isNotEmpty).join(', ');
-    if (a.isNotEmpty) { adresse = a; break; }
+  // Adresse complète d'une même source (comme la facture : rue, code postal,
+  // ville) — d'abord une source qui a la rue, sinon le code postal / la ville.
+  Map? src;
+  for (final x in sources) { if (v(x['rue']).isNotEmpty) { src = x; break; } }
+  if (src == null) {
+    for (final x in sources) { if (v(x['ville']).isNotEmpty || v(x['code_postal']).isNotEmpty) { src = x; break; } }
   }
+  final adresse = src == null ? ''
+      : [v(src['rue']), '${v(src['code_postal'])} ${v(src['ville'])}'.trim()].where((e) => e.isNotEmpty).join(', ');
   final societe = sources.first['societe'] == true;
   return (prenom: societe ? '' : premier('prenom'), nom: premier('nom'), email: premier('email'), tel: premier('telephone'), adresse: adresse);
 }

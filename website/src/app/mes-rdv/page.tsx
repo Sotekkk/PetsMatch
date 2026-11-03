@@ -2461,7 +2461,8 @@ export default function MesRdvPage() {
             onDevis={catPro === 'veterinaire' ? () => {
               const r = dossierSoins;
               const q = new URLSearchParams({ prefill: '1', rdv: r.id });
-              if (r.animal_id) q.set('animal', String(r.animal_id));
+              const animalDevis = r.animal_id ?? animauxDetailRdv(r)[0]?.id;
+              if (animalDevis) q.set('animal', String(animalDevis));
               if (r.client_uid) q.set('clientUid', r.client_uid);
               if (r.client_profile_id) q.set('clientProfileId', r.client_profile_id);
               const nom = r.clientName ?? r.client_nom_manuel;
