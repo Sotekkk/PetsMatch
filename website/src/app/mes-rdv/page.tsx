@@ -1928,8 +1928,16 @@ export default function MesRdvPage() {
     if (!dossierARouvrir) return;
     const r = rdvs.find(x => x.id === dossierARouvrir);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (r) { setDossierSoins(r); setDossierARouvrir(null); }
-  }, [dossierARouvrir, rdvs]);
+    if (r) { if (catPro === 'toilettage') setDossierToilettage(r); else setDossierSoins(r); setDossierARouvrir(null); }
+  }, [dossierARouvrir, rdvs, catPro]);
+  // Nouveau RDV pris depuis le dossier d'une séance ouvert ailleurs (tableau
+  // de bord du toiletteur) : ce dossier est rouvert ensuite (?retourDossier=…).
+  const [dossierApresNouveau, setDossierApresNouveau] = useState<string | null>(null);
+  function rouvrirDossier(id: string) {
+    setDossierApresNouveau(null);
+    if (catPro === 'education') setDossierEducation({ id, nomClient: '' });
+    else setDossierARouvrir(id);
+  }
   // Vétérinaire : fin de consultation (envoi des documents, facture acquittée).
   const [finConsultation, setFinConsultation] = useState<Rdv | null>(null);
   const [docPro, setDocPro] = useState<{ rdv: Rdv; mode: 'compte_rendu' | 'contrat'; titre?: string } | null>(null);
@@ -1996,7 +2004,8 @@ export default function MesRdvPage() {
     else if (catPro === 'veterinaire') setActiveTab('a_venir');
     setRdvFocus(q.get('rdv'));
     if (q.get('dossier') === '1' && q.get('rdv') && catPro === 'education') setDossierEducation({ id: q.get('rdv')!, nomClient: '' });
-    if (q.get('dossier') === '1' && q.get('rdv') && (catPro === 'veterinaire' || catPro === 'sante')) setDossierARouvrir(q.get('rdv'));
+    if (q.get('dossier') === '1' && q.get('rdv') && (catPro === 'veterinaire' || catPro === 'sante' || catPro === 'toilettage')) setDossierARouvrir(q.get('rdv'));
+    setDossierApresNouveau(q.get('retourDossier'));
     setModifierFocus(q.get('modifier') === '1');
     setRetourFiche(q.get('animal'));
     // Accès rapide « Nouveau RDV » de l'accueil, ou depuis la fiche d'un patient.
@@ -2506,10 +2515,15 @@ export default function MesRdvPage() {
       {modalNouveau && user && activeProfileId && (
         <NouveauRdvModal proUid={proUid} profileId={activeProfileId} proName={proName} catPro={catPro}
           initial={modalNouveau}
-          onClose={() => { setModalNouveau(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); }}
+          onClose={() => {
+            setModalNouveau(null);
+            if (dossierApresNouveau) { rouvrirDossier(dossierApresNouveau); return; }
+            if (retourFiche) router.push(`/mes-patients/${retourFiche}`);
+          }}
           onDone={() => {
             setModalNouveau(null);
             setVersionDossier(v => v + 1);
+            if (dossierApresNouveau) { fetchRdvs(true); rouvrirDossier(dossierApresNouveau); return; }
             // Ouvert depuis la fiche (panneau « RDV de l'intervention ») : retour à la fiche.
             if (estDansPanneau()) { signalerPanneau(MSG_PANNEAU_FERMER); return; }
             if (retourFiche) router.push(`/mes-patients/${retourFiche}`); else fetchRdvs(true);

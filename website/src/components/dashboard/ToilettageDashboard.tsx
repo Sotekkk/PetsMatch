@@ -6,6 +6,7 @@
 import { useActualisationAuto } from '@/hooks/useActualisationAuto';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -53,6 +54,7 @@ const hm = (d: Date) => d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute:
 const jm = (d: Date) => d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
 
 export default function ToilettageDashboard({ nom, avatar }: { nom: string; avatar: string | null }) {
+  const router = useRouter();
   const { user } = useAuth();
   const uid = user?.uid ?? '';
   const actifPid = useActiveProfile();
@@ -336,7 +338,14 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
       })()}
       {dossierId && (() => {
         const d = rdvs.find(x => x.id === dossierId);
-        return d ? <DossierToilettageModal rdvId={d.id} nomClient={nomClient(d)} animal={nomAnimal(d)} onClose={() => setDossierId(null)} onChanged={charger} /> : null;
+        return d ? <DossierToilettageModal rdvId={d.id} nomClient={nomClient(d)} animal={nomAnimal(d)} onClose={() => setDossierId(null)} onChanged={charger}
+          // Prise de RDV dans Gérer mes RDV, puis ce dossier y est rouvert.
+          onProgrammerRdv={p => {
+            const q = new URLSearchParams({ nouveau: '1', retourDossier: d.id });
+            if (p.animalId) q.set('animal', p.animalId);
+            if (p.motif) q.set('motif', p.motif);
+            router.push(`/mes-rdv?${q.toString()}`);
+          }} /> : null;
       })()}
       {seanceRdv?.animal_id && uid && pid && (
         <SeanceToilettageModal animalId={seanceRdv.animal_id} animalNom={nomAnimal(seanceRdv)} proUid={uid} profileId={pid}
