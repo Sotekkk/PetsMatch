@@ -3,6 +3,7 @@
 // de séance + conseils de soin du pelage, partagé au propriétaire), contrat de
 // prestation, facture. Pas de compte rendu vétérinaire ni d'ordonnance.
 // Miroir appli : toilettage_dossier_seance.dart.
+import { prochainRdv, libelleProchainRdv, type ProchainRdv } from '@/lib/prochain-rdv';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -58,6 +59,9 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
   const [ouvrirCr, setOuvrirCr] = useState(false);
   const [saisirConsignes, setSaisirConsignes] = useState(false);
   const [message, setMessage] = useState('');
+  // Prochain rendez-vous (facultatif) : programmé tout de suite ou par le client plus tard.
+  const [prochain, setProchain] = useState<ProchainRdv | null>(null);
+  useEffect(() => { prochainRdv(rdvId).then(setProchain).catch(() => {}); }, [rdvId]);
   const [enCours, setEnCours] = useState('');
   // Contrat généré sans signature enregistrée : la dessiner, elle est apposée.
   const [signerContrat, setSignerContrat] = useState<string | null>(null);
@@ -271,6 +275,12 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
             </div>
           )}
         </div>
+        {prochain && (
+          <div className="mt-2 border border-gray-100 rounded-xl px-3 py-1.5">
+            {ligne('Prochain RDV', libelleProchainRdv(prochain), prochain.date ? VERT : GRIS,
+              [btn(prochain.date ? 'Programmer un autre' : 'Programmer', () => router.push(prochain.chemin))])}
+          </div>
+        )}
         <p className="text-[11px] text-gray-400 mt-1">Le compte rendu partagé (avec vos conseils de soin du pelage) apparaît dans l&apos;onglet Consultations de l&apos;animal.</p>
 
         <div className="mt-3">

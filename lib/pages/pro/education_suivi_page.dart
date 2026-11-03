@@ -1,3 +1,5 @@
+import 'package:PetsMatch/utils/prochain_rdv.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart' show ProAgendaPage;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -86,6 +88,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   bool _rdvTraite = false;
   /// Mode dossier : le RDV de la séance.
   Map<String, dynamic>? _rdvDossier;
+  // Prochain RDV (facultatif) : programmé tout de suite ou par le client plus tard.
+  DateTime? _rdvSuivantDossier;
   /// RDV du dossier = bilan (cours de type « Bilan » du catalogue).
   bool _rdvEstBilan = false;
   /// Bilans chargés par le pro (documents_animaux « compte_rendu_pro » titrés « Bilan… »).
@@ -212,7 +216,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             final pe = await _supa.from('prestations_education').select('bilan_requis').eq('id', r!['prestation_id']).maybeSingle();
             bilan = pe?['bilan_requis'] == true;
           }
-          if (mounted) setState(() { _rdvDossier = r; _rdvEstBilan = bilan; });
+          final prochain = r == null ? null : await prochainRdvDate(r);
+          if (mounted) setState(() { _rdvDossier = r; _rdvEstBilan = bilan; _rdvSuivantDossier = prochain; });
         } catch (_) {}
       }
       if (widget.rdvId != null && !widget.dossier && !_rdvTraite && mounted) {
@@ -1253,6 +1258,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         Text('Séance${d == null ? '' : ' du ${_dateFr(rdv['date_heure']?.toString())} à ${d.hour.toString().padLeft(2, '0')}h${d.minute.toString().padLeft(2, '0')}'}'
             '${animauxDetailRdv(rdv).isNotEmpty ? ' · ${widget.animalNom}' : ''}'
             '${crRdv == null ? ' · compte rendu à rédiger' : crRdv['statut'] == 'brouillon' ? ' · compte rendu en brouillon' : ' · compte rendu rédigé'}'
+            '${_rdvSuivantDossier != null ? ' · prochain RDV : ${libelleProchainRdv(_rdvSuivantDossier).replaceFirst('Prévu le ', '').replaceAll('.', '')}' : ''}'
             '${DateTime.tryParse(rdv['documents_envoyes_le']?.toString() ?? '') != null ? ' · documents envoyés le ${_dateFr(rdv['documents_envoyes_le'].toString())}' : ''}',
             style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
         const SizedBox(height: 6),
@@ -1291,6 +1297,11 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           else
             chip(Icons.confirmation_number_outlined, 'Attribuer un forfait', () async { _tab.animateTo(1); await _enregistrerForfait(); }),
           chip(Icons.request_quote_outlined, 'Devis', () => devisDepuisRdv(context, rdv, animalNom: widget.animalNom)),
+          chip(Icons.event_available_outlined, _rdvSuivantDossier == null ? 'Programmer le prochain RDV' : 'Programmer un autre RDV', () async {
+            await Navigator.push(context, MaterialPageRoute(builder: (_) => ProAgendaPage(nouveauRdv: true,
+                nouveauRdvAnimalId: widget.animalId, nouveauRdvMotif: rdv['motif']?.toString())));
+            _rdvDossier = null;
+          }),
           if (rdv['forfait_souscrit_id'] == null)
             chip(Icons.receipt_long_outlined, 'Facture', () => factureDepuisRdv(context, rdv, animalNom: widget.animalNom)),
           chip(Icons.upload_file_outlined, _rdvEstBilan ? 'Charger mon bilan' : 'Charger mon compte rendu', () async {

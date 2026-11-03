@@ -3,6 +3,7 @@
 // soin du pelage, partagé au propriétaire), contrat de prestation, facture.
 // Pas de compte rendu vétérinaire ni d'ordonnance. Chaque module garde son
 // statut. Miroir site : website/src/components/toilettage/DossierToilettageModal.tsx.
+import 'package:PetsMatch/utils/prochain_rdv.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -415,6 +416,8 @@ class _DossierToilettageState extends State<_DossierToilettage> {
   Map<String, String> _coord = {};
 
   Map<String, dynamic> get r => widget.rdv;
+  // Prochain RDV (facultatif) : programmé tout de suite ou par le client plus tard.
+  DateTime? _prochain;
   String get _uid => r['pro_uid']?.toString() ?? '';
   String get _pid => (r['pro_profile_id']?.toString() ?? '').isNotEmpty ? r['pro_profile_id'].toString() : User_Info.activeProfileId;
   DateTime get _debut => DateTime.tryParse(r['date_heure']?.toString() ?? '')?.toLocal() ?? DateTime.now();
@@ -430,6 +433,7 @@ class _DossierToilettageState extends State<_DossierToilettage> {
   Future<void> _charger() async {
     final id = r['id'];
     _coord = await coordonneesClientRdv(r);
+    _prochain = await prochainRdvDate(r);
     try { _seance = await _supa.from('seances_toilettage').select().eq('rdv_id', id).maybeSingle(); } catch (_) {}
     try { _consignes = await _supa.from('rdv').select('consignes, consignes_le, consignes_demandees_le').eq('id', id).maybeSingle(); } catch (_) {}
     try {
@@ -672,6 +676,14 @@ class _DossierToilettageState extends State<_DossierToilettage> {
                                 {'facture_id': f['id'], if (f['pdf_url'] != null) 'url': f['pdf_url']})),
                         ],
                       ]),
+                  _ligne('Prochain RDV', libelleProchainRdv(_prochain), _prochain != null ? _vert : _muted, [
+                    (_prochain == null ? 'Programmer' : 'Programmer un autre', () async {
+                      await _go(ProAgendaPage(nouveauRdv: true,
+                          nouveauRdvAnimalId: _animalId.isEmpty ? null : _animalId,
+                          nouveauRdvMotif: r['motif']?.toString()));
+                      if (mounted) { setState(() => _loading = true); _charger(); }
+                    }),
+                  ]),
                 ]),
         ),
         const SizedBox(height: 4),

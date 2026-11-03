@@ -7,6 +7,7 @@
 // facturation) et revient ensuite sur ce dossier (/mes-rdv?rdv=…&dossier=1).
 // Miroir appli : EducationSuiviPage(rdvId, dossier: true).
 
+import { prochainRdv, libelleProchainRdv, type ProchainRdv } from '@/lib/prochain-rdv';
 import { devisModifiable } from '@/lib/devis-rdv';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -67,6 +68,9 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   // RDV de bilan (cours de type « Bilan » du catalogue) : bilan comportemental.
   const [estBilan, setEstBilan] = useState(false);
   const [devis, setDevis] = useState<{ id: string; statut: string | null; total_ttc: number | null } | null>(null);
+  // Prochain rendez-vous (facultatif) : programmé tout de suite ou par le client plus tard.
+  const [prochain, setProchain] = useState<ProchainRdv | null>(null);
+  useEffect(() => { prochainRdv(rdvId).then(setProchain).catch(() => {}); }, [rdvId]);
   const [facture, setFacture] = useState<{ id: string; statut: string | null; total_ttc: number | null; numero_affichage: string | null } | null>(null);
   const [coord, setCoord] = useState<Record<string, string>>({});
   const [finSeance, setFinSeance] = useState(false);
@@ -331,6 +335,8 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
             : ligne('Facture', !facture ? 'À émettre' : `${facture.statut === 'payee' ? 'Payée' : 'Émise'} · ${eur(facture.total_ttc)}`,
             !facture ? GRIS : facture.statut === 'payee' ? VERT : AMBRE,
             [!facture ? btn('Facturer', facturer) : btn('Voir', () => ouvrir('/elevage/facturation', 'Factures'))])}
+          {prochain && ligne('Prochain RDV', libelleProchainRdv(prochain), prochain.date ? VERT : GRIS,
+            [btn(prochain.date ? 'Programmer un autre' : 'Programmer', () => ouvrir(prochain.chemin, 'Nouveau rendez-vous'))])}
           {ligne('Contrat',
             contrat ? `Contrat PetsMatch · ${STATUT_CONTRAT[contrat.statut] ?? contrat.statut}` : 'Générer avec PetsMatch ou charger le vôtre (photo ou PDF)',
             !contrat ? GRIS : contrat.statut === 'signe' ? VERT : AMBRE,

@@ -7,6 +7,7 @@
 // d'ajouter les soins (produits, traitements, vaccins) via le compte rendu
 // PetsMatch : c'est le document chargé qui part au client à la fin.
 
+import { prochainRdv, libelleProchainRdv, type ProchainRdv } from '@/lib/prochain-rdv';
 import { devisModifiable } from '@/lib/devis-rdv';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -40,6 +41,9 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
   const [devis, setDevis] = useState<{ id: string; statut: string | null; total_ttc: number | null } | null>(null);
   const [devisCharges, setDevisCharges] = useState<{ id: string; titre: string | null; statut: string | null; url: string | null }[]>([]);
   const veto = metier === 'veterinaire';
+  // Prochain rendez-vous (facultatif) : programmé tout de suite ou par le client plus tard.
+  const [prochain, setProchain] = useState<ProchainRdv | null>(null);
+  useEffect(() => { prochainRdv(rdvId).then(setProchain).catch(() => {}); }, [rdvId]);
 
   useEffect(() => {
     let annule = false;
@@ -157,7 +161,13 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
             </div>
           ))}
 
-          {(onHistorique || animaux.length > 0) && etape(veto ? 5 : 4, 'Dossier de l’animal', '', GRIS, (
+          {prochain && etape(veto ? 5 : 4, 'Prochain rendez-vous', libelleProchainRdv(prochain), prochain.date ? VERT : GRIS, (
+            <div className="flex flex-wrap gap-2">
+              {btn(prochain.date ? 'Programmer un autre RDV' : 'Programmer un RDV', () => onOuvrirPage(prochain.chemin, 'Nouveau rendez-vous'))}
+            </div>
+          ))}
+
+          {(onHistorique || animaux.length > 0) && etape(veto ? 6 : 5, 'Dossier de l’animal', '', GRIS, (
             <div className="flex flex-wrap gap-2">
               {animaux.map(a => <span key={a.id}>{btn(animaux.length > 1 ? `Fiche — ${a.nom}` : 'Fiche de l’animal', () => onFiche(a.id))}</span>)}
               {onHistorique && btn('Historique', onHistorique)}

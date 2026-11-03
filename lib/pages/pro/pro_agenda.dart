@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/prochain_rdv.dart';
 import 'package:PetsMatch/utils/consignes_rdv.dart';
 import 'package:PetsMatch/utils/rdv_animaux.dart';
 import 'package:PetsMatch/widgets/rdv/motif_annulation.dart';
@@ -5359,6 +5360,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 ))));
               }
               : null,
+          onProgrammerRdv: showProTools && rdv['statut'] != 'annule' && rdv['statut'] != 'refuse'
+              ? () async {
+                  await _showNouveauRdvDialog(animalInit: hasAnimal ? animalId : null, motifInit: rdv['motif']?.toString());
+                }
+              : null,
           onHistorique: (AgendaContexte.catPro == 'veterinaire' && hasAnimal)
               ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => HistoriquePatientPage(
                   animalId: animalId, animalNom: rdv['_animal_nom']?.toString() ?? 'Patient')))
@@ -5472,6 +5478,8 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback? onHistorique;
   /// Vétérinaire : devis (opération à prévoir) fait avec PetsMatch.
   final VoidCallback? onDevis;
+  /// Dossier de la séance : programmer le prochain RDV (facultatif).
+  final VoidCallback? onProgrammerRdv;
   /// Tous les pros : mon compte rendu / mon contrat (photo ou PDF).
   final void Function(String mode)? onDocumentPro;
 
@@ -5500,6 +5508,7 @@ class _RdvCard extends StatelessWidget {
     this.onDossier,
     this.regrouperEnDossier = false,
     this.onDevis,
+    this.onProgrammerRdv,
     this.onHistorique,
     this.onDocumentPro,
   });
@@ -5546,6 +5555,9 @@ class _RdvCard extends StatelessWidget {
           ]),
         );
     var n = 0;
+    // Prochain RDV (facultatif) : programmé tout de suite ou par le client plus tard.
+    final prochain = onProgrammerRdv == null ? null : await prochainRdvDate(rdv);
+    if (!context.mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -5577,6 +5589,9 @@ class _RdvCard extends StatelessWidget {
               if (onDocumentPro != null) ('Charger le mien (PDF / photo)', () => onDocumentPro!('contrat')),
             ]),
           if (onFacturer != null) etape(ctx, ++n, 'Facture', null, [('Facturer', onFacturer!)]),
+          if (onProgrammerRdv != null)
+            etape(ctx, ++n, 'Prochain rendez-vous', libelleProchainRdv(prochain),
+                [(prochain == null ? 'Programmer un RDV' : 'Programmer un autre RDV', onProgrammerRdv!)]),
           if (onCarnetSante != null || onHistorique != null)
             etape(ctx, ++n, 'Dossier de l\'animal', null, [
               if (onCarnetSante != null) ('Carnet de santé', onCarnetSante!),
