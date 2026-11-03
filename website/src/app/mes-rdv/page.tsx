@@ -927,7 +927,7 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
   const label = 'text-xs font-semibold text-gray-500 uppercase tracking-wide';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 px-4" onClick={onClose}>
       <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 max-h-[92vh] overflow-y-auto"
         onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
         <div>
@@ -2437,13 +2437,15 @@ export default function MesRdvPage() {
       )}
       {dossierToilettage && (
         <DossierToilettageModal rdvId={dossierToilettage.id} nomClient={dossierToilettage.clientName ?? dossierToilettage.client_nom_manuel ?? 'Client'}
-          animal={dossierToilettage.animalNom} onClose={() => setDossierToilettage(null)} onChanged={() => fetchRdvs(true)} />
+          animal={dossierToilettage.animalNom} onClose={() => setDossierToilettage(null)} onChanged={() => fetchRdvs(true)}
+          onProgrammerRdv={p => setModalNouveau({ animalId: p.animalId, motif: p.motif })} version={versionDossier} />
       )}
       {dossierEducation && (
         <DossierEducationModal rdvId={dossierEducation.id}
           nomClient={dossierEducation.nomClient || (rdvs.find(x => x.id === dossierEducation.id)?.clientName ?? 'Client')}
           onClose={() => setDossierEducation(null)} onChanged={() => fetchRdvs(true)}
-          onOuvrirPage={(url, titre) => setPanneau({ url, titre })} version={versionDossier} />
+          onOuvrirPage={(url, titre) => setPanneau({ url, titre })} version={versionDossier}
+          onProgrammerRdv={p => setModalNouveau({ animalId: p.animalId, motif: p.motif })} />
       )}
       {dossierSoins && (catPro === 'veterinaire' || catPro === 'sante') && (() => {
         const det = animauxDetailRdv(dossierSoins);
@@ -2474,6 +2476,7 @@ export default function MesRdvPage() {
             } : undefined}
             onFacturer={!dossierSoins.facture_id && animaux.length > 0 ? () => facturerSoins(dossierSoins) : undefined}
             onFin={() => setFinConsultation(dossierSoins)}
+            onProgrammerRdv={p => setModalNouveau({ animalId: p.animalId, motif: p.motif })}
             onHistorique={catPro === 'veterinaire' && dossierSoins.animal_id ? () => setHistoriqueRdv(dossierSoins) : undefined}
             onFiche={openAnimalFiche} />
         );
@@ -2506,6 +2509,7 @@ export default function MesRdvPage() {
           onClose={() => { setModalNouveau(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); }}
           onDone={() => {
             setModalNouveau(null);
+            setVersionDossier(v => v + 1);
             // Ouvert depuis la fiche (panneau « RDV de l'intervention ») : retour à la fiche.
             if (estDansPanneau()) { signalerPanneau(MSG_PANNEAU_FERMER); return; }
             if (retourFiche) router.push(`/mes-patients/${retourFiche}`); else fetchRdvs(true);

@@ -42,8 +42,11 @@ const jour = (d: Date) => d.toLocaleDateString('fr-FR', { weekday: 'short', day:
 const hm = (d: Date) => d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 const eur = (n: number | null | undefined) => `${Math.round(Number(n) || 0)} €`;
 
-export default function DossierToilettageModal({ rdvId, nomClient, animal, onClose, onChanged }: {
+export default function DossierToilettageModal({ rdvId, nomClient, animal, onClose, onChanged, onProgrammerRdv, version }: {
   rdvId: string; nomClient: string; animal?: string | null; onClose: () => void; onChanged?: () => void;
+  /** Prise de RDV ouverte sur la page hôte (Gérer mes RDV) : un panneau sur /mes-rdv se refermerait aussitôt. */
+  onProgrammerRdv?: (p: { animalId?: string; motif?: string }) => void;
+  version?: number;
 }) {
   const router = useRouter();
   const { user } = useAuth();
@@ -61,7 +64,7 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
   const [message, setMessage] = useState('');
   // Prochain rendez-vous (facultatif) : programmé tout de suite ou par le client plus tard.
   const [prochain, setProchain] = useState<ProchainRdv | null>(null);
-  useEffect(() => { prochainRdv(rdvId).then(setProchain).catch(() => {}); }, [rdvId]);
+  useEffect(() => { prochainRdv(rdvId).then(setProchain).catch(() => {}); }, [rdvId, version]);
   const [enCours, setEnCours] = useState('');
   // Contrat généré sans signature enregistrée : la dessiner, elle est apposée.
   const [signerContrat, setSignerContrat] = useState<string | null>(null);
@@ -278,7 +281,7 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
         {prochain && (
           <div className="mt-2 border border-gray-100 rounded-xl px-3 py-1.5">
             {ligne('Prochain RDV', libelleProchainRdv(prochain), prochain.date ? VERT : GRIS,
-              [btn(prochain.date ? 'Programmer un autre' : 'Programmer', () => router.push(prochain.chemin))])}
+              [btn(prochain.date ? 'Programmer un autre' : 'Programmer', () => onProgrammerRdv ? onProgrammerRdv({ animalId: prochain.animalId, motif: prochain.motif }) : router.push(prochain.chemin))])}
           </div>
         )}
         <p className="text-[11px] text-gray-400 mt-1">Le compte rendu partagé (avec vos conseils de soin du pelage) apparaît dans l&apos;onglet Consultations de l&apos;animal.</p>

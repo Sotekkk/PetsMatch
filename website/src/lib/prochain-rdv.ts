@@ -8,6 +8,8 @@ export interface ProchainRdv {
   date: string | null;
   /** Page de prise de RDV préremplie (animal, motif). */
   chemin: string;
+  animalId?: string;
+  motif?: string;
 }
 
 export async function prochainRdv(rdvId: string): Promise<ProchainRdv> {
@@ -25,7 +27,7 @@ export async function prochainRdv(rdvId: string): Promise<ProchainRdv> {
     const { data } = await s.maybeSingle();
     date = (data as { date_heure?: string } | null)?.date_heure ?? null;
   }
-  return { date, chemin: `/mes-rdv?${q.toString()}` };
+  return { date, chemin: `/mes-rdv?${q.toString()}`, animalId: x?.animal_id != null ? String(x.animal_id) : undefined, motif: x?.motif ?? undefined };
 }
 
 export const libelleProchainRdv = (p: ProchainRdv | null) => !p ? '' : p.date

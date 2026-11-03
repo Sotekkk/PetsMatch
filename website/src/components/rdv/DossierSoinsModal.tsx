@@ -21,7 +21,7 @@ const VERT = '#2E7D32';
 const GRIS = '#6B7280';
 
 export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient, animaux, proProfileId, version,
-  onClose, onOuvrirPage, onChargerDoc, onDevis, onFacturer, onFin, onHistorique, onFiche }: {
+  onClose, onOuvrirPage, onChargerDoc, onDevis, onFacturer, onFin, onHistorique, onFiche, onProgrammerRdv }: {
   rdvId: string; metier: 'veterinaire' | 'sante'; dateHeure: string; nomClient: string;
   animaux: AnimalRdv[]; proProfileId: string | null; version: number;
   onClose: () => void;
@@ -32,6 +32,8 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
   /** Absent : facture déjà émise. */
   onFacturer?: () => void;
   onFin: () => void;
+  /** Prise de RDV ouverte sur la page hôte (Gérer mes RDV) : un panneau sur /mes-rdv se refermerait aussitôt. */
+  onProgrammerRdv?: (p: { animalId?: string; motif?: string }) => void;
   onHistorique?: () => void;
   onFiche: (animalId: string) => void;
 }) {
@@ -43,7 +45,7 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
   const veto = metier === 'veterinaire';
   // Prochain rendez-vous (facultatif) : programmé tout de suite ou par le client plus tard.
   const [prochain, setProchain] = useState<ProchainRdv | null>(null);
-  useEffect(() => { prochainRdv(rdvId).then(setProchain).catch(() => {}); }, [rdvId]);
+  useEffect(() => { prochainRdv(rdvId).then(setProchain).catch(() => {}); }, [rdvId, version]);
 
   useEffect(() => {
     let annule = false;
@@ -163,7 +165,7 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
 
           {prochain && etape(veto ? 5 : 4, 'Prochain rendez-vous', libelleProchainRdv(prochain), prochain.date ? VERT : GRIS, (
             <div className="flex flex-wrap gap-2">
-              {btn(prochain.date ? 'Programmer un autre RDV' : 'Programmer un RDV', () => onOuvrirPage(prochain.chemin, 'Nouveau rendez-vous'))}
+              {btn(prochain.date ? 'Programmer un autre RDV' : 'Programmer un RDV', () => onProgrammerRdv ? onProgrammerRdv({ animalId: prochain.animalId, motif: prochain.motif }) : onOuvrirPage(prochain.chemin, 'Nouveau rendez-vous'))}
             </div>
           ))}
 

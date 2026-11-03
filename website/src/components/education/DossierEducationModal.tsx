@@ -39,7 +39,9 @@ interface RdvRow {
 /** Lien de retour vers ce dossier (après une action dans une autre page). */
 export const retourDossierEducation = (rdvId: string) => `/mes-rdv?rdv=${encodeURIComponent(rdvId)}&dossier=1`;
 
-export default function DossierEducationModal({ rdvId, nomClient, onClose, onChanged, onOuvrirPage, version }: {
+export default function DossierEducationModal({ rdvId, nomClient, onClose, onChanged, onOuvrirPage, version, onProgrammerRdv }: {
+  /** Prise de RDV ouverte sur la page hôte (Gérer mes RDV) : un panneau sur /mes-rdv se refermerait aussitôt. */
+  onProgrammerRdv?: (p: { animalId?: string; motif?: string }) => void;
   rdvId: string; nomClient: string; onClose: () => void; onChanged?: () => void;
   /** Ouvre une page (fiche animal, devis, facturation) dans un panneau au lieu
    *  de quitter Gérer mes RDV ; sans lui, navigation classique. */
@@ -70,7 +72,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   const [devis, setDevis] = useState<{ id: string; statut: string | null; total_ttc: number | null } | null>(null);
   // Prochain rendez-vous (facultatif) : programmé tout de suite ou par le client plus tard.
   const [prochain, setProchain] = useState<ProchainRdv | null>(null);
-  useEffect(() => { prochainRdv(rdvId).then(setProchain).catch(() => {}); }, [rdvId]);
+  useEffect(() => { prochainRdv(rdvId).then(setProchain).catch(() => {}); }, [rdvId, version]);
   const [facture, setFacture] = useState<{ id: string; statut: string | null; total_ttc: number | null; numero_affichage: string | null } | null>(null);
   const [coord, setCoord] = useState<Record<string, string>>({});
   const [finSeance, setFinSeance] = useState(false);
@@ -336,7 +338,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
             !facture ? GRIS : facture.statut === 'payee' ? VERT : AMBRE,
             [!facture ? btn('Facturer', facturer) : btn('Voir', () => ouvrir('/elevage/facturation', 'Factures'))])}
           {prochain && ligne('Prochain RDV', libelleProchainRdv(prochain), prochain.date ? VERT : GRIS,
-            [btn(prochain.date ? 'Programmer un autre' : 'Programmer', () => ouvrir(prochain.chemin, 'Nouveau rendez-vous'))])}
+            [btn(prochain.date ? 'Programmer un autre' : 'Programmer', () => onProgrammerRdv ? onProgrammerRdv({ animalId: prochain.animalId, motif: prochain.motif }) : ouvrir(prochain.chemin, 'Nouveau rendez-vous'))])}
           {ligne('Contrat',
             contrat ? `Contrat PetsMatch · ${STATUT_CONTRAT[contrat.statut] ?? contrat.statut}` : 'Générer avec PetsMatch ou charger le vôtre (photo ou PDF)',
             !contrat ? GRIS : contrat.statut === 'signe' ? VERT : AMBRE,
