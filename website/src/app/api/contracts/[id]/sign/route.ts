@@ -38,8 +38,10 @@ async function notify(opts: {
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const { role, signature, actorUid, actorNom } = await req.json() as {
+    const { role, signature, actorUid, actorNom, sansNotification } = await req.json() as {
       role: Role; signature: string; actorUid?: string; actorNom?: string;
+      /** Pro qui signe en même temps qu'il envoie (devis) : le client a déjà la notification d'envoi. */
+      sansNotification?: boolean;
     };
     if (!role || (role !== 'eleveur' && role !== 'acquereur') || !signature) {
       return NextResponse.json({ error: 'role et signature requis' }, { status: 400 });
@@ -211,7 +213,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         profileType: proProfileType,
         data: { token: id, ...(doc.animal_id ? { animalId: doc.animal_id } : {}) },
       });
-    } else {
+    } else if (!sansNotification) {
       await notifierClient('contrat_signe_eleveur', `✍️ ${partieVendeur} a signé`, `${partieVendeur} a signé ${titre} — à vous de signer pour finaliser.`);
     }
 

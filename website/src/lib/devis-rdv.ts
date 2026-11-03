@@ -15,7 +15,8 @@ export async function signerDevisPro(devisId: string, uid: string, nom: string, 
   const m = (doc.metadata ?? {}) as Record<string, unknown>;
   if (String(m.signature_eleveur ?? '').trim()) return true;
   if (['brouillon', 'signe', 'annule', 'refuse', 'expire'].includes(String(doc.statut))) return false;
-  return signerContratAvecSignaturePro(String(doc.id), uid, nom, signature);
+  // Signée en même temps que l'envoi : le client a déjà la notification « devis reçu ».
+  return signerContratAvecSignaturePro(String(doc.id), uid, nom, signature, true);
 }
 
 /** Devis modifiable : pas encore signé par le client (ni refusé / expiré). */

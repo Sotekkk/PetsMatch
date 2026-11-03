@@ -12,12 +12,12 @@ export async function maSignaturePro(uid: string): Promise<string | null> {
 
 /** Contrat généré par le pro : sa signature enregistrée y est apposée d'office
  *  (côté « professionnel » du contrat). Faux si aucune signature / échec. */
-export async function signerContratAvecSignaturePro(docId: string, uid: string, nom: string, signature?: string | null): Promise<boolean> {
+export async function signerContratAvecSignaturePro(docId: string, uid: string, nom: string, signature?: string | null, sansNotification = false): Promise<boolean> {
   const sig = signature ?? await maSignaturePro(uid).catch(() => null);
   if (!sig) return false;
   const res = await fetch(`/api/contracts/${docId}/sign`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ role: 'eleveur', signature: sig, actorUid: uid, actorNom: nom }),
+    body: JSON.stringify({ role: 'eleveur', signature: sig, actorUid: uid, actorNom: nom, ...(sansNotification ? { sansNotification: true } : {}) }),
   });
   return res.ok;
 }

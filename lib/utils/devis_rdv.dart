@@ -31,8 +31,9 @@ Future<bool> signerDevisPro(String devisId, {String? signature}) async {
     if (sig == null) return false;
     final r = await http.post(Uri.parse('$kSiteBaseUrl/api/contracts/${doc['id']}/sign'),
         headers: {...await siteApiHeaders(), 'Content-Type': 'application/json'},
+        // Signée en même temps que l'envoi : le client a déjà la notification « devis reçu ».
         body: jsonEncode({'role': 'eleveur', 'signature': sig, 'actorUid': User_Info.uid,
-            'actorNom': '${User_Info.firstname} ${User_Info.lastname}'.trim()}));
+            'actorNom': '${User_Info.firstname} ${User_Info.lastname}'.trim(), 'sansNotification': true}));
     return r.statusCode == 200;
   } catch (_) {
     return false;

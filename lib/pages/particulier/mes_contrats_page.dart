@@ -62,7 +62,9 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
     try {
       final sel = _supa
           .from('documents_animaux')
-          .select('id, type, titre, statut, token, uid_acquereur, uid_eleveur, pro_profile_id, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)');
+          .select('id, type, titre, statut, token, uid_acquereur, uid_eleveur, pro_profile_id, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)')
+          // Brouillon (devis pas encore envoyé…) : jamais montré au destinataire.
+          .neq('statut', 'brouillon');
       // Destinataire d'un contrat : acquéreur (vente/cession) OU client
       // (prestation de garde/pet-sitting → metadata.client_uid / client_email).
       final rows = await (uid != null

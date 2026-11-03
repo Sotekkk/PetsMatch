@@ -179,7 +179,9 @@ class AgendaPage extends StatefulWidget {
   final bool isParticulier;
   final int initialViewMode; // 0 = mois, 1 = jour, 2 = liste
   final bool autoOpenAddTache;
-  const AgendaPage({super.key, this.onBack, this.isAssociation = false, this.isParticulier = false, this.initialViewMode = 0, this.autoOpenAddTache = false});
+  /// Ouvre directement la fiche de ce RDV (notification : consignes, réveil, prêt…).
+  final String? ouvrirRdvId;
+  const AgendaPage({super.key, this.onBack, this.isAssociation = false, this.isParticulier = false, this.initialViewMode = 0, this.autoOpenAddTache = false, this.ouvrirRdvId});
   @override
   State<AgendaPage> createState() => _AgendaPageState();
 }
@@ -236,6 +238,7 @@ class _AgendaPageState extends State<AgendaPage> {
     _loadEmployes().then((_) {
       if (mounted && widget.autoOpenAddTache) _showAddTacheSheet(DateTime.now());
     });
+    if (widget.ouvrirRdvId != null) WidgetsBinding.instance.addPostFrameCallback((_) => _ouvrirRdv(widget.ouvrirRdvId!));
     // Rechargement automatique quand le profil actif change (ex: switcher d'avatar)
     User_Info.profileNotifier.addListener(_onProfileChanged);
   }
@@ -633,6 +636,19 @@ class _AgendaPageState extends State<AgendaPage> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Fiche d'un RDV précis (depuis une notification), même hors du mois affiché.
+  Future<void> _ouvrirRdv(String rdvId) async {
+    try {
+      final r = await _supa.from('rdv').select('date_heure').eq('id', rdvId).maybeSingle();
+      if (r == null || !mounted) return;
+      await showModalBottomSheet(
+        context: context, isScrollControlled: true, useSafeArea: true, backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        builder: (_) => _RdvDetailSheet(event: {'rdv_id': rdvId, 'type': 'rdv', 'date_debut': r['date_heure']}, onRefresh: _load),
+      );
+    } catch (_) {}
   }
 
   List<Map<String, dynamic>> _eventsForDay(DateTime day) => _events.where((e) {

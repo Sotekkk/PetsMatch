@@ -18,7 +18,7 @@ interface RdvRow {
   id: string; date_heure: string; motif: string | null; animal_id: string | null; animal_nom_manuel: string | null;
   pro_uid: string; pro_profile_id: string | null; client_uid: string | null; client_profile_id: string | null;
   client_email_manuel: string | null; client_nom_manuel: string | null; client_telephone_manuel: string | null;
-  intervention_type: string | null; heure_recuperation: string | null; consignes_preop: string | null;
+  intervention_type: string | null; heure_recuperation: string | null; consignes_preop: string | null; admis_le: string | null;
 }
 
 async function estPro(rdv: RdvRow, uid: string) {
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   const message = ['reveille', 'pret', 'recuperation'].includes(body.message ?? '') ? body.message! : 'consignes';
   if (!body.rdvId || !/^[0-9a-f-]{36}$/i.test(body.rdvId)) return NextResponse.json({ error: 'rdvId requis' }, { status: 400 });
   const { data } = await admin.from('rdv')
-    .select('id, date_heure, motif, animal_id, animal_nom_manuel, pro_uid, pro_profile_id, client_uid, client_profile_id, client_email_manuel, client_nom_manuel, client_telephone_manuel, intervention_type, heure_recuperation, consignes_preop')
+    .select('id, date_heure, motif, animal_id, animal_nom_manuel, pro_uid, pro_profile_id, client_uid, client_profile_id, client_email_manuel, client_nom_manuel, client_telephone_manuel, intervention_type, heure_recuperation, consignes_preop, admis_le')
     .eq('id', body.rdvId).maybeSingle();
   const rdv = data as RdvRow | null;
   if (!rdv) return NextResponse.json({ error: 'Rendez-vous introuvable' }, { status: 404 });
@@ -54,12 +54,20 @@ export async function POST(req: NextRequest) {
   if (rdv.animal_id) animal = ((await admin.from('animaux').select('nom').eq('id', rdv.animal_id).maybeSingle()).data as { nom?: string } | null)?.nom ?? animal;
   const fmt = (d: string, o: Intl.DateTimeFormatOptions) => new Date(d).toLocaleString('fr-FR', { ...o, timeZone: 'Europe/Paris' });
   const depot = fmt(rdv.date_heure, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
-  const recup = rdv.heure_recuperation ? fmt(rdv.heure_recuperation, { hour: '2-digit', minute: '2-digit' }) : null;
+  // Récupération : heure, précédée du jour si ce n'est pas le jour du dépôt (hospitalisation).
+  const jourDe = (d: string) => new Date(d).toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+  const recup = rdv.heure_recuperation
+    ? `${jourDe(rdv.heure_recuperation) !== jourDe(rdv.date_heure) ? `${fmt(rdv.heure_recuperation, { weekday: 'long', day: 'numeric', month: 'long' })} ` : ''}${fmt(rdv.heure_recuperation, { hour: '2-digit', minute: '2-digit' })}`
+    : null;
   const intitule = rdv.motif || 'Intervention';
 
   // Suivi de la journée : notification (appli), sinon e-mail, sinon téléphone.
   if (message !== 'consignes') {
-    // Étape horodatée (hospitalisés du jour), même si le client n'est pas joignable.
+    // Étape horodatée (hospitalisés du jour), même si le client n'est pas joignable —
+    // seulement une fois l'animal déposé (ordre des étapes contrôlé aussi en base).
+    if ((message === 'reveille' || message === 'pret') && !rdv.admis_le) {
+      return NextResponse.json({ error: 'Animal pas encore déposé : indiquez d’abord « Animal déposé ».' }, { status: 400 });
+    }
     if (message === 'reveille' || message === 'pret') {
       await admin.from('rdv').update(message === 'reveille' ? { reveil_le: new Date().toISOString() } : { pret_le: new Date().toISOString() })
         .eq('id', rdv.id).is(message === 'reveille' ? 'reveil_le' : 'pret_le', null);

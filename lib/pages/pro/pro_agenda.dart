@@ -2067,7 +2067,38 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         lieuLat = (rdv['lieu_lat'] as num?)?.toDouble();
         lieuLng = (rdv['lieu_lng'] as num?)?.toDouble();
       }
+      // Vétérinaire au bloc ou indisponible sur le nouveau créneau (temps d'intervention d'un autre RDV).
+      final pidRdv = rdv['pro_profile_id']?.toString() ?? '';
+      if (pidRdv.isNotEmpty && mounted) {
+        try {
+          final occ = await supa.rpc('pm_plages_occupees', params: {'p_pro_profile_id': pidRdv,
+            'p_debut': newDh.toUtc().toIso8601String(), 'p_fin': newDh.add(Duration(minutes: duree)).toUtc().toIso8601String()}) as List;
+          final bloque = occ.where((o) => (o['statut'] == 'occupation' || o['statut'] == 'indisponible')
+              && (o['praticien_profile_id']?.toString() ?? '') == (instructeurProfileId ?? '')).firstOrNull;
+          if (bloque != null && mounted) {
+            final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+              content: Text('Le vétérinaire est pris à ce moment (${bloque['statut'] == 'occupation' ? (bloque['motif'] ?? 'bloc') : 'indisponible'}). Déplacer quand même ?',
+                  style: const TextStyle(fontFamily: 'Galey')),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Non')),
+                TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Déplacer quand même')),
+              ],
+            ));
+            if (ok != true) return;
+          }
+        } catch (_) {}
+      }
+      // Intervention déplacée : bloc et récupération décalés d'autant (horaires
+      // cohérents, contrôlés en base), salle / indisponibilité du bloc aussi.
+      final ancien = DateTime.tryParse(rdv['date_heure']?.toString() ?? '');
+      final decal = ancien == null ? Duration.zero : newDh.difference(ancien);
+      String? plus(dynamic iso) {
+        final d = DateTime.tryParse(iso?.toString() ?? '');
+        return d?.add(decal).toUtc().toIso8601String();
+      }
+      final inter = rdv['intervention_type'] != null && decal != Duration.zero;
       await supa.from('rdv').update({
+        if (inter) ...{'bloc_debut': plus(rdv['bloc_debut']), 'bloc_fin': plus(rdv['bloc_fin']), 'heure_recuperation': plus(rdv['heure_recuperation'])},
         'date_heure': newDh.toIso8601String(),
         'duree_minutes': duree,
         'motif': motif.isNotEmpty ? motif : null,
@@ -2085,6 +2116,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         'reminder_48h_sent': false, 'reminder_24h_sent': false,
         'reminder_1h_sent': false, 'reminder_15min_sent': false,
       }).eq('id', rdvId);
+      if (inter && rdv['bloc_debut'] != null && rdv['bloc_fin'] != null) {
+        try {
+          await supa.from('occupations_salle').update({'debut': plus(rdv['bloc_debut']), 'fin': plus(rdv['bloc_fin'])}).eq('rdv_id', rdvId);
+          await supa.from('agenda_events').update({'date_debut': plus(rdv['bloc_debut']), 'date_fin': plus(rdv['bloc_fin'])}).eq('couleur', 'bloc:$rdvId');
+        } catch (e) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('RDV déplacé, mais la salle de bloc n’a pas pu suivre : $e')));
+        }
+      }
 
       final clientUid = rdv['client_uid'] as String?;
       final proUid = AgendaContexte.uid;
@@ -2942,6 +2981,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     final estVeto = AgendaContexte.catPro == 'veterinaire';
     String intervention = '';
     TimeOfDay recup = const TimeOfDay(hour: 17, minute: 0);
+    DateTime? jourRecup; // null = jour du dépôt
     TimeOfDay? bloc;
     int blocDuree = 60;
     final consignesCtrl = TextEditingController();
@@ -2982,6 +3022,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     String? jourCharge;
     List<String> libres = [];
     List<String> planningJour = [];
+    // Temps de bloc (interventions) et indisponibilités du vétérinaire, ce jour-là.
+    var blocsJour = <({DateTime debut, int duree, String libelle})>[];
     Future<void> chargerJour(void Function(void Function()) setModal) async {
       final cle = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}|$duree';
       if (jourCharge == cle) return;
@@ -2998,11 +3040,24 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               .eq('pro_profile_id', pid).gte('date_heure', debut.toUtc().toIso8601String())
               .lt('date_heure', fin.toUtc().toIso8601String()).not('statut', 'in', '(annule,refuse)').order('date_heure'),
         ]);
+        var occ = <dynamic>[];
+        try {
+          occ = await supa.rpc('pm_plages_occupees', params: {'p_pro_profile_id': pid,
+            'p_debut': debut.toUtc().toIso8601String(), 'p_fin': fin.toUtc().toIso8601String()}) as List;
+        } catch (_) {}
+        blocsJour = [
+          for (final o in occ)
+            if ((o['statut'] == 'occupation' || o['statut'] == 'indisponible')
+                && (o['praticien_profile_id']?.toString() ?? '') == (praticienInit ?? ''))
+              (debut: DateTime.parse(o['date_heure'].toString()).toLocal(), duree: (o['duree_minutes'] as num?)?.toInt() ?? 30,
+               libelle: o['statut'] == 'occupation' ? ((o['motif'] ?? '').toString().isEmpty ? 'Bloc / salle occupée' : o['motif'].toString()) : 'Indisponible'),
+        ];
         final pris = [
           for (final r in res[1] as List)
             (debut: DateTime.parse(r['date_heure'].toString()).toLocal(), duree: (r['duree_minutes'] as num?)?.toInt() ?? 30,
              libelle: [r['animal_nom_manuel'], r['client_nom_manuel'], r['motif']].map((x) => (x ?? '').toString().trim()).where((x) => x.isNotEmpty).join(' · ')),
-        ];
+          ...blocsJour,
+        ]..sort((a, b) => a.debut.compareTo(b.debut));
         String hm(DateTime d) => '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
         final heures = {for (final c in res[0] as List) c['heure_debut'].toString().substring(0, 5)}.toList();
         setModal(() {
@@ -3581,6 +3636,18 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                         label: Text('Récupération ${hm(recup)}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
                         style: OutlinedButton.styleFrom(foregroundColor: _teal),
                       ),
+                      // Hospitalisation : récupération un autre jour.
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final j = await showDatePicker(context: ctx, initialDate: jourRecup ?? date,
+                              firstDate: DateTime(date.year, date.month, date.day), lastDate: date.add(const Duration(days: 60)));
+                          if (j != null) setModal(() => jourRecup = DateUtils.isSameDay(j, date) ? null : j);
+                        },
+                        icon: const Icon(Icons.event_outlined, size: 16),
+                        label: Text(jourRecup == null ? 'Le jour même' : 'Le ${jourRecup!.day}/${jourRecup!.month}',
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                        style: OutlinedButton.styleFrom(foregroundColor: _teal),
+                      ),
                     ]),
                     if (bloc != null) ...[
                       const SizedBox(height: 8),
@@ -3653,6 +3720,29 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       return;
                     }
                     DateTime? at(TimeOfDay? t) => t == null ? null : DateTime(date.year, date.month, date.day, t.hour, t.minute);
+                    final depot = at(heure)!;
+                    if (intervention.isNotEmpty) {
+                      final rc = DateTime((jourRecup ?? date).year, (jourRecup ?? date).month, (jourRecup ?? date).day, recup.hour, recup.minute);
+                      final bd = at(bloc), bf = at(bloc)?.add(Duration(minutes: blocDuree));
+                      final msg = bd != null && bd.isBefore(depot) ? 'L\u2019intervention ne peut pas commencer avant le dépôt.'
+                          : !rc.isAfter(depot) ? 'La récupération doit être après le dépôt.'
+                          : bf != null && rc.isBefore(bf) ? 'La récupération doit être après la fin de l\u2019intervention.' : null;
+                      if (msg != null) { setModal(() => error = msg); return; }
+                    }
+                    // Vétérinaire au bloc ou indisponible sur ce créneau (temps d'intervention d'un autre RDV).
+                    final finRdv = depot.add(Duration(minutes: duree));
+                    final bloque = blocsJour.where((b) => depot.isBefore(b.debut.add(Duration(minutes: b.duree))) && finRdv.isAfter(b.debut)).firstOrNull;
+                    if (bloque != null && ctx.mounted) {
+                      final ok = await showDialog<bool>(context: ctx, builder: (c) => AlertDialog(
+                        content: Text('Le vétérinaire est pris à ce moment (${bloque.libelle}, ${hm(TimeOfDay.fromDateTime(bloque.debut))}). Créer quand même ?',
+                            style: const TextStyle(fontFamily: 'Galey')),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Non')),
+                          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Créer quand même')),
+                        ],
+                      ));
+                      if (ok != true) return;
+                    }
                     // Temps d'intervention : salle de bloc libre, et vétérinaire sans autre RDV.
                     if (intervention.isNotEmpty && bloc != null) {
                       final bd = at(bloc)!, bf = at(bloc)!.add(Duration(minutes: blocDuree));
@@ -3695,7 +3785,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     setModal(() { saving = true; error = null; });
                     final ok = await _creerRdvManuel(
                       intervention: intervention.isEmpty ? null : (
-                        type: intervention, recuperation: at(recup), blocDebut: at(bloc),
+                        type: intervention,
+                        recuperation: DateTime((jourRecup ?? date).year, (jourRecup ?? date).month, (jourRecup ?? date).day, recup.hour, recup.minute),
+                        blocDebut: at(bloc),
                         blocFin: at(bloc)?.add(Duration(minutes: blocDuree)), consignes: consignesCtrl.text.trim(), salleBloc: salleBloc),
                       clientNom: clientNomCtrl.text.trim(),
                       clientTel: clientTelCtrl.text.trim(),
@@ -5784,8 +5876,9 @@ class _RdvCard extends StatelessWidget {
     if (veto && rdv['intervention_type'] != null) {
       final supa = Supabase.instance.client;
       try {
-        inter = await supa.from('rdv').select('id, motif, animal_id, client_uid, client_profile_id, intervention_type, '
-            'heure_recuperation, bloc_debut, bloc_fin, chirurgie_id, consignes_preop, admis_le, sortie_le, suivi_hospitalisation')
+        inter = await supa.from('rdv').select('id, motif, animal_id, client_uid, client_profile_id, intervention_type, date_heure, '
+            'pro_uid, pro_profile_id, instructeur_profile_id, heure_recuperation, bloc_debut, bloc_fin, chirurgie_id, consignes_preop, '
+            'admis_le, reveil_le, pret_le, sortie_le, suivi_hospitalisation')
             .eq('id', rdv['id']).maybeSingle();
         if (inter?['chirurgie_id'] != null) chir = await supa.from('chirurgies').select().eq('id', inter!['chirurgie_id']).maybeSingle();
       } catch (_) {}
@@ -5797,8 +5890,77 @@ class _RdvCard extends StatelessWidget {
     }
     String etatDoc(String cle) => chir?[cle] is Map ? ((chir![cle] as Map)['statut'] == 'valide' ? 'Validé' : 'Brouillon') : 'À faire';
     void snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m, style: const TextStyle(fontFamily: 'Galey'))));
-    Future<void> majRdv(Map<String, dynamic> champs) async {
-      try { await Supabase.instance.client.from('rdv').update(champs).eq('id', rdv['id']); } catch (e) { snack('Non enregistré : $e'); }
+    // Erreurs de cohérence de la base, en clair.
+    String lisible(Object e) {
+      final m = e.toString();
+      if (m.contains('rdv_intervention_horaires')) return 'Horaires incohérents : intervention après le dépôt, récupération après le dépôt et après l\u2019intervention.';
+      if (m.contains('rdv_intervention_etapes')) return 'Étapes dans le désordre : l\u2019animal doit d\u2019abord être déposé.';
+      return m;
+    }
+    Future<bool> majRdv(Map<String, dynamic> champs) async {
+      try {
+        await Supabase.instance.client.from('rdv').update(champs).eq('id', rdv['id']);
+        return true;
+      } catch (e) {
+        snack('Non enregistré : ${lisible(e)}');
+        return false;
+      }
+    }
+    final admis = inter?['admis_le'] != null;
+    final etapesApres = inter?['reveil_le'] != null || inter?['pret_le'] != null || inter?['sortie_le'] != null;
+    DateTime? local(dynamic iso) => DateTime.tryParse(iso?.toString() ?? '')?.toLocal();
+    String jourHm(dynamic iso) {
+      final d = local(iso), ref = local(inter?['date_heure']);
+      if (d == null) return '';
+      final memeJour = ref != null && d.year == ref.year && d.month == ref.month && d.day == ref.day;
+      return '${memeJour ? '' : 'le ${d.day}/${d.month} '}${hmIso(iso)}';
+    }
+    Future<void> changerBloc() async {
+      final depot = local(inter?['date_heure']);
+      if (depot == null) return;
+      final actuel = local(inter?['bloc_debut']) ?? depot;
+      final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(actuel), helpText: 'Début de l\u2019intervention');
+      if (t == null || !context.mounted) return;
+      final dureeActuelle = (local(inter?['bloc_debut']) != null && local(inter?['bloc_fin']) != null)
+          ? local(inter?['bloc_fin'])!.difference(local(inter?['bloc_debut'])!).inMinutes : 60;
+      final duree = await showDialog<int>(context: context, builder: (c) => SimpleDialog(
+        title: const Text('Durée de l\u2019intervention', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        children: [for (final m in const [30, 45, 60, 90, 120, 180, 240])
+          SimpleDialogOption(onPressed: () => Navigator.pop(c, m),
+              child: Text('${m < 60 ? '$m min' : m % 60 == 0 ? '${m ~/ 60} h' : '${m ~/ 60}h${m % 60}'}${m == dureeActuelle ? '  (actuelle)' : ''}',
+                  style: const TextStyle(fontFamily: 'Galey')))],
+      ));
+      if (duree == null) return;
+      final bd = DateTime(actuel.year, actuel.month, actuel.day, t.hour, t.minute), bf = bd.add(Duration(minutes: duree));
+      final rc = local(inter?['heure_recuperation']);
+      if (bd.isBefore(depot)) { snack('L\u2019intervention ne peut pas commencer avant le dépôt.'); return; }
+      if (rc != null && bf.isAfter(rc)) { snack('L\u2019intervention doit finir avant la récupération : changez d\u2019abord l\u2019heure de récupération.'); return; }
+      final supa = Supabase.instance.client;
+      try {
+        final occ = await supa.from('occupations_salle').select('id').eq('rdv_id', rdv['id']).limit(1).maybeSingle();
+        if (occ != null) {
+          await supa.from('occupations_salle').update({'debut': bd.toUtc().toIso8601String(), 'fin': bf.toUtc().toIso8601String()}).eq('id', occ['id']);
+        } else {
+          final ev = await supa.from('agenda_events').select('id').eq('couleur', 'bloc:${rdv['id']}').limit(1).maybeSingle();
+          if (ev != null) {
+            await supa.from('agenda_events').update({'date_debut': bd.toUtc().toIso8601String(), 'date_fin': bf.toUtc().toIso8601String()}).eq('id', ev['id']);
+          } else {
+            await supa.from('agenda_events').insert({
+              'uid': inter?['pro_uid'], 'type': 'indisponible',
+              'titre': 'Intervention — ${inter?['motif'] ?? libelleIntervention(inter?['intervention_type']?.toString())}',
+              'date_debut': bd.toUtc().toIso8601String(), 'date_fin': bf.toUtc().toIso8601String(),
+              'pro_profile_id': inter?['pro_profile_id'], if (inter?['instructeur_profile_id'] != null) 'praticien_profile_id': inter?['instructeur_profile_id'],
+              'couleur': 'bloc:${rdv['id']}',
+            });
+          }
+        }
+      } catch (e) {
+        snack('Non enregistré : $e');
+        return;
+      }
+      if (await majRdv({'bloc_debut': bd.toUtc().toIso8601String(), 'bloc_fin': bf.toUtc().toIso8601String()})) {
+        snack('Intervention de ${hmIso(bd.toIso8601String())} à ${hmIso(bf.toIso8601String())}.');
+      }
     }
     Future<void> ouvrirDocInter(String type) async {
       if (chir == null) { snack('Intervention non rattachée à une fiche animal.'); return; }
@@ -5806,15 +5968,22 @@ class _RdvCard extends StatelessWidget {
     }
     // Notification (appli), sinon e-mail, sinon « appelez-le au … » (vétérinaire ou ASV).
     Future<void> prevenir(String message) async => snack(await messageIntervention(rdv['id'].toString(), message));
+    // Récupération : jour (hospitalisation de plusieurs jours) puis heure.
     Future<void> changerRecuperation() async {
-      final actuelle = DateTime.tryParse(inter?['heure_recuperation']?.toString() ?? '')?.toLocal()
-          ?? DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal() ?? DateTime.now();
-      final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(actuelle));
+      final depot = local(inter?['date_heure']) ?? DateTime.now();
+      final actuelle = local(inter?['heure_recuperation']) ?? depot;
+      final j = await showDatePicker(context: context, initialDate: actuelle.isBefore(depot) ? depot : actuelle,
+          firstDate: DateTime(depot.year, depot.month, depot.day), lastDate: depot.add(const Duration(days: 60)),
+          helpText: 'Jour de récupération');
+      if (j == null || !context.mounted) return;
+      final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(actuelle), helpText: 'Heure de récupération');
       if (t == null) return;
-      final nouvelle = DateTime(actuelle.year, actuelle.month, actuelle.day, t.hour, t.minute);
-      await majRdv({'heure_recuperation': nouvelle.toUtc().toIso8601String()});
-      snack('Récupération à ${t.hour.toString().padLeft(2, '0')}h${t.minute.toString().padLeft(2, '0')}. '
-          '${await messageIntervention(rdv['id'].toString(), 'recuperation')}');
+      final nouvelle = DateTime(j.year, j.month, j.day, t.hour, t.minute);
+      final bf = local(inter?['bloc_fin']);
+      if (!nouvelle.isAfter(depot)) { snack('La récupération doit être après le dépôt.'); return; }
+      if (bf != null && nouvelle.isBefore(bf)) { snack('La récupération doit être après la fin de l\u2019intervention.'); return; }
+      if (!await majRdv({'heure_recuperation': nouvelle.toUtc().toIso8601String()})) return;
+      snack('Récupération ${jourHm(nouvelle.toIso8601String())}. ${await messageIntervention(rdv['id'].toString(), 'recuperation')}');
     }
     Future<void> noterSuivi() async {
       final ctrl = TextEditingController(text: inter?['suivi_hospitalisation']?.toString() ?? '');
@@ -5844,7 +6013,7 @@ class _RdvCard extends StatelessWidget {
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700, color: teal)),
             Padding(padding: const EdgeInsets.only(top: 2, bottom: 12), child: Text([
               if (inter['bloc_debut'] != null) 'au bloc ${hmIso(inter['bloc_debut'])}${inter['bloc_fin'] != null ? '–${hmIso(inter['bloc_fin'])}' : ''}',
-              if (inter['heure_recuperation'] != null) 'récupération prévue vers ${hmIso(inter['heure_recuperation'])}',
+              if (inter['heure_recuperation'] != null) 'récupération prévue ${jourHm(inter['heure_recuperation'])}',
             ].join(' · '), style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600))),
             etape(ctx, ++n, 'Consignes au propriétaire', (inter['consignes_preop'] ?? '').toString().trim().isEmpty ? 'Aucune' : inter['consignes_preop'].toString(), [
               if ((inter['consignes_preop'] ?? '').toString().trim().isNotEmpty)
@@ -5855,24 +6024,33 @@ class _RdvCard extends StatelessWidget {
             ]),
             etape(ctx, ++n, 'Admission', inter['admis_le'] != null ? 'Déposé à ${hmIso(inter['admis_le'])}' : 'En attente', [
               if (inter['admis_le'] == null) ('Animal déposé', () => majRdv({'admis_le': DateTime.now().toUtc().toIso8601String()}))
-              else ('Annuler', () => majRdv({'admis_le': null})),
+              else ('Annuler', () async {
+                if (etapesApres) { snack('Réveil, départ ou sortie déjà notés : annulez-les d\u2019abord.'); return; }
+                await majRdv({'admis_le': null});
+              }),
+            ]),
+            etape(ctx, ++n, 'Créneau d\u2019intervention',
+                inter['bloc_debut'] != null ? '${hmIso(inter['bloc_debut'])}–${hmIso(inter['bloc_fin'])} — salle de bloc / temps du vétérinaire bloqués.' : 'Non fixé', [
+              ('Modifier', changerBloc),
             ]),
             etape(ctx, ++n, 'Compte rendu opératoire', '${etatDoc('operatoire')} — anesthésie, protocole, actes.', [
               (chir?['operatoire'] is Map ? 'Ouvrir' : 'Rédiger', () => ouvrirDocInter('operatoire')),
             ]),
             etape(ctx, ++n, 'Réveil / hospitalisation', (inter['suivi_hospitalisation'] ?? '').toString().trim().isEmpty ? null : inter['suivi_hospitalisation'].toString(), [
               ('Noter', noterSuivi),
-              ('Prévenir : réveillé', () => prevenir('reveille')),
-              ('Prévenir : prêt à partir', () => prevenir('pret')),
+              if (admis) ...[
+                (inter['reveil_le'] != null ? 'Réveillé à ${hmIso(inter['reveil_le'])}' : 'Prévenir : réveillé', () => prevenir('reveille')),
+                (inter['pret_le'] != null ? 'Prêt à ${hmIso(inter['pret_le'])}' : 'Prévenir : prêt à partir', () => prevenir('pret')),
+              ],
             ]),
-            etape(ctx, ++n, 'Heure de récupération',
-                inter['heure_recuperation'] != null ? 'Prévue vers ${hmIso(inter['heure_recuperation'])} — le client est prévenu si vous la changez.' : 'Non fixée', [
+            etape(ctx, ++n, 'Récupération',
+                inter['heure_recuperation'] != null ? 'Prévue ${jourHm(inter['heure_recuperation'])} — le client est prévenu si vous la changez.' : 'Non fixée', [
               ('Modifier', changerRecuperation),
             ]),
             etape(ctx, ++n, 'Sortie', inter['sortie_le'] != null ? 'Récupéré à ${hmIso(inter['sortie_le'])}' : 'Consignes postopératoires (${etatDoc('consignes').toLowerCase()}), puis animal récupéré', [
               ('Consignes post-op', () => ouvrirDocInter('consignes')),
-              if (inter['sortie_le'] == null) ('Animal récupéré', () => majRdv({'sortie_le': DateTime.now().toUtc().toIso8601String()}))
-              else ('Annuler la sortie', () => majRdv({'sortie_le': null})),
+              if (inter['sortie_le'] == null && admis) ('Animal récupéré', () => majRdv({'sortie_le': DateTime.now().toUtc().toIso8601String()}))
+              else if (inter['sortie_le'] != null) ('Annuler la sortie', () => majRdv({'sortie_le': null})),
             ]),
             const Divider(height: 18),
           ],

@@ -388,8 +388,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await Navigator.push(context, MaterialPageRoute(builder: (_) => ProAgendaPage(initialTabIndex: 1, focusRdvId: rdvId)));
       return;
     }
-    if (type == 'rdv_confirme' || type == 'rdv_refuse' || type == 'rdv_annule' || type == 'rdv_modifie'
-        || type == 'rdv_consignes_preop' || type == 'intervention_suivi') {
+    // Intervention : la fiche du RDV (consignes, récupération) s'ouvre directement.
+    if (type == 'rdv_consignes_preop' || type == 'intervention_suivi') {
+      final rdvId = data is Map ? data['rdv_id']?.toString() : null;
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => AgendaPage(ouvrirRdvId: rdvId)));
+      return;
+    }
+    if (type == 'rdv_confirme' || type == 'rdv_refuse' || type == 'rdv_annule' || type == 'rdv_modifie') {
       await Navigator.push(context, MaterialPageRoute(builder: (_) => const AgendaPage()));
       return;
     }

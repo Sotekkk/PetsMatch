@@ -72,7 +72,8 @@ export default function HospitalisesDuJour({ profileId, version, onOuvrirDossier
                     <p className="text-sm font-bold text-[#1E2025] truncate">{h.animalNom} <span className="font-normal text-gray-500">· {h.motif || libelleIntervention(h.intervention_type)}</span></p>
                     <p className="text-xs text-gray-500 truncate">
                       {[h.clientNom, jourAvant ? `depuis le ${new Date(h.date_heure).toLocaleDateString('fr-FR')}` : `dépôt ${hm(h.date_heure)}`,
-                        h.bloc_debut ? `bloc ${hm(h.bloc_debut)}` : '', h.heure_recuperation ? `récup. ${hm(h.heure_recuperation)}` : ''].filter(Boolean).join(' · ')}
+                        h.bloc_debut ? `bloc ${hm(h.bloc_debut)}` : '', h.heure_recuperation ? `récup. ${new Date(h.heure_recuperation).toDateString() !== new Date().toDateString()
+                          ? `${new Date(h.heure_recuperation).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })} ` : ''}${hm(h.heure_recuperation)}` : ''].filter(Boolean).join(' · ')}
                     </p>
                   </div>
                   <span className="text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ color: st.fg, background: st.bg }}>{st.label}</span>

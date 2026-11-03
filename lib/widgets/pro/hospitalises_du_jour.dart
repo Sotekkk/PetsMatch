@@ -185,7 +185,11 @@ class _HospitalisesDuJourState extends State<HospitalisesDuJour> {
                       h['_client'],
                       avant ? 'depuis le ${depot.day}/${depot.month}' : 'dépôt ${_hm(h['date_heure'])}',
                       if (h['bloc_debut'] != null) 'bloc ${_hm(h['bloc_debut'])}',
-                      if (h['heure_recuperation'] != null) 'récup. ${_hm(h['heure_recuperation'])}',
+                      if (h['heure_recuperation'] != null) 'récup. ${() {
+                        final r = DateTime.tryParse(h['heure_recuperation'].toString())?.toLocal();
+                        final autreJour = r != null && (r.year != aujourdhui.year || r.month != aujourdhui.month || r.day != aujourdhui.day);
+                        return '${autreJour ? 'le ${r.day}/${r.month} ' : ''}${_hm(h['heure_recuperation'])}';
+                      }()}',
                     ].join(' · '), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                   ])),
                   Container(

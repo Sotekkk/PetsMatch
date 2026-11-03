@@ -71,6 +71,8 @@ export default function MesContratsPage() {
       // Destinataire : acquéreur (vente/cession) OU client d'une prestation
       // (garde, photographe… → metadata.client_uid / client_email), comme l'appli.
       .or(`metadata->>acquereur_email.eq.${email},uid_acquereur.eq.${user?.uid ?? '-'},metadata->>acquereur_uid.eq.${user?.uid ?? '-'},metadata->>client_uid.eq.${user?.uid ?? '-'},metadata->>client_email.eq.${email}`)
+      // Brouillon (devis pas encore envoyé…) : jamais montré au destinataire.
+      .neq('statut', 'brouillon')
       .order('created_at', { ascending: false })
       .then(({ data }) => {
         const all = (data ?? []) as unknown as DocRow[];
