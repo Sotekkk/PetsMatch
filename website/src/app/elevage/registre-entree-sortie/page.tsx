@@ -26,6 +26,7 @@ interface Animal {
   destinataire_nom?: string;
   destinataire_adresse?: string;
   cause_mort?: string;
+  circonstances_deces?: string | null;
   importation_ref?: string;
   nom_mere?: string;
   puce_mere?: string;
@@ -46,6 +47,7 @@ interface Mouvement {
   destinataire_nom?: string | null;
   destinataire_adresse?: string | null;
   cause_mort?: string | null;
+  circonstances_deces?: string | null;
   eleveur_profile_id?: string | null;
 }
 
@@ -80,6 +82,7 @@ function resolveForViewer(doc: Animal, mouvements: Mouvement[], myUid: string): 
     resolved.destinataire_nom = undefined;
     resolved.destinataire_adresse = undefined;
     resolved.cause_mort = undefined;
+    resolved.circonstances_deces = undefined;
   } else {
     const causeMort = last.cause_mort ?? undefined;
     resolved.statut = causeMort ? 'decede' : 'sorti';
@@ -88,6 +91,7 @@ function resolveForViewer(doc: Animal, mouvements: Mouvement[], myUid: string): 
     resolved.destinataire_nom = last.destinataire_nom ?? undefined;
     resolved.destinataire_adresse = last.destinataire_adresse ?? undefined;
     resolved.cause_mort = causeMort;
+    resolved.circonstances_deces = last.circonstances_deces ?? doc.circonstances_deces ?? undefined;
     const entreesAvant = mine.filter(m => m.type === 'entree' && (m.date_mouvement ?? '') <= (last.date_mouvement ?? ''));
     resolved.date_entree = entreesAvant.length > 0
       ? entreesAvant[entreesAvant.length - 1].date_mouvement
@@ -162,7 +166,7 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
   async function loadData() {
     if (!user) return;
     try {
-      const cols = 'id, nom, espece, race, sexe, identification, date_naissance, photo_url, statut, date_entree, date_sortie, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, importation_ref, nom_mere, puce_mere, uid_eleveur, is_association';
+      const cols = 'id, nom, espece, race, sexe, identification, date_naissance, photo_url, statut, date_entree, date_sortie, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, circonstances_deces, importation_ref, nom_mere, puce_mere, uid_eleveur, is_association';
       const assoCond = isAssociation ? 'is_association.eq.true' : 'is_association.is.null,is_association.eq.false';
       // r2 (animaux acquis par cession) ne filtre PAS sur is_association : ce
       // flag reflète le contexte du cédant, pas le mien — un animal reçu d'une
@@ -173,7 +177,7 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
         supabase.from('animaux').select(cols).eq('uid_eleveur', user.uid).or(assoCond).order('date_entree', { ascending: false }),
         supabase.from('animaux').select(cols).eq('uid_acquereur', user.uid).neq('uid_eleveur', user.uid),
         supabase.from('registre_mouvements')
-          .select('animal_id, type, date_mouvement, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, eleveur_profile_id')
+          .select('animal_id, type, date_mouvement, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, circonstances_deces, eleveur_profile_id')
           .eq('uid_eleveur', user.uid),
       ]);
       // Multi-profil : un même compte (élevage + association) partage l'uid —
@@ -227,7 +231,7 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
   });
 
   function exportCSV() {
-    const headers = ['Nom', 'Espèce', 'Race', 'Sexe', 'Identification', 'Né·e le', 'Statut', 'Date d\'entrée', 'Provenance', 'Fournisseur', 'Adresse fournisseur', 'Date de sortie/décès', 'Destinataire', 'Nom destinataire', 'Adresse destinataire', 'Cause décès', 'Réf. importation'];
+    const headers = ['Nom', 'Espèce', 'Race', 'Sexe', 'Identification', 'Né·e le', 'Statut', 'Date d\'entrée', 'Provenance', 'Fournisseur', 'Adresse fournisseur', 'Date de sortie/décès', 'Destinataire', 'Nom destinataire', 'Adresse destinataire', 'Cause décès', 'Circonstances', 'Réf. importation'];
     const rows = filtered.map(a => [
       a.nom ?? '', ESPECE_LABELS[a.espece ?? ''] ?? a.espece ?? '', a.race ?? '', a.sexe ?? '',
       a.identification ?? '', fmtDate(a.date_naissance),
@@ -239,6 +243,7 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
       DEST_LABELS[a.destinataire_qualite ?? ''] ?? a.destinataire_qualite ?? '',
       a.destinataire_nom ?? '', a.destinataire_adresse ?? '',
       MORT_LABELS[a.cause_mort ?? ''] ?? a.cause_mort ?? '',
+      a.circonstances_deces ?? '',
       a.importation_ref ?? '',
     ]);
     const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n');
@@ -347,6 +352,7 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
                     <td className="px-4 py-3 text-gray-500 hidden lg:table-cell whitespace-nowrap">
                       {statut !== 'present' ? fmtDate(a.date_sortie) : '—'}
                       {statut === 'decede' && a.cause_mort ? <><br /><span className="text-xs text-red-400">{MORT_LABELS[a.cause_mort] ?? a.cause_mort}</span></> : null}
+                      {statut === 'decede' && a.circonstances_deces ? <><br /><span className="text-xs text-gray-400 whitespace-normal">{a.circonstances_deces}</span></> : null}
                     </td>
                     <td className="px-4 py-3 text-gray-500 hidden lg:table-cell text-xs">
                       {statut === 'sorti' ? (DEST_LABELS[a.destinataire_qualite ?? ''] ?? a.destinataire_qualite ?? '—') : '—'}
@@ -396,6 +402,7 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
                   ...(selected.statut === 'decede' ? [
                     ['Date de décès', fmtDate(selected.date_sortie)],
                     ['Cause', MORT_LABELS[selected.cause_mort ?? ''] ?? selected.cause_mort],
+                    ['Circonstances', selected.circonstances_deces ?? undefined],
                   ] : []),
                 ].map(([label, val]) => val ? (
                   <div key={label} className="flex gap-3">
@@ -438,6 +445,7 @@ function EditRegistreForm({ animal, uid, onClose, onSaved }: {
   const [destNom, setDestNom] = useState(animal.destinataire_nom ?? '');
   const [destAdresse, setDestAdresse] = useState(animal.destinataire_adresse ?? '');
   const [causeMort, setCauseMort] = useState(animal.cause_mort ?? '');
+  const [circonstances, setCirconstances] = useState(animal.circonstances_deces ?? '');
   const [saving, setSaving] = useState(false);
   const [nomElevage, setNomElevage] = useState('');
   const [adresseElevage, setAdresseElevage] = useState('');
@@ -465,8 +473,16 @@ function EditRegistreForm({ animal, uid, onClose, onSaved }: {
       destinataire_nom: statut === 'sorti' ? destNom : '',
       destinataire_adresse: statut === 'sorti' ? destAdresse : '',
       cause_mort: statut === 'decede' ? causeMort : '',
+      circonstances_deces: statut === 'decede' ? (circonstances.trim() || null) : null,
     };
     await supabase.from('animaux').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', animal.id);
+    // Décès déjà au registre : circonstances / cause modifiées reprises sur la sortie.
+    if (statut === 'decede' && ['sorti', 'decede'].includes(animal.statut ?? 'present')) {
+      try {
+        await supabase.from('registre_mouvements').update({ circonstances_deces: circonstances.trim() || null, ...(causeMort ? { cause_mort: causeMort } : {}) })
+          .eq('animal_id', animal.id).eq('type', 'sortie').not('cause_mort', 'is', null);
+      } catch { /* ignore */ }
+    }
 
     // Répercute un passage « présent → sorti » sur animaux_proprietes +
     // registre_mouvements — sinon l'animal reste "présent" dans Mes Animaux
@@ -492,6 +508,7 @@ function EditRegistreForm({ animal, uid, onClose, onSaved }: {
             ...(destNom ? { destinataire_nom: destNom } : {}),
             ...(destAdresse ? { destinataire_adresse: destAdresse } : {}),
             ...(statut === 'decede' && causeMort ? { cause_mort: causeMort } : {}),
+            ...(statut === 'decede' && circonstances.trim() ? { circonstances_deces: circonstances.trim() } : {}),
           });
         }
       } catch { /* ignore */ }
@@ -600,6 +617,9 @@ function EditRegistreForm({ animal, uid, onClose, onSaved }: {
                 <option value="">—</option>
                 {Object.entries(MORT_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
+              <label className={`${labelCls} mt-3`}>Circonstances</label>
+              <textarea value={circonstances} onChange={(e) => setCirconstances(e.target.value)} rows={3}
+                placeholder="Ex : retrouvé mort au box le matin, euthanasie après…" className={`${inputCls} resize-none`} />
             </div>
           )}
         </>

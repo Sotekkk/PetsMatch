@@ -72,6 +72,7 @@ interface Animal {
   date_entree?: string; provenance_qualite?: string; provenance_nom?: string;
   provenance_adresse?: string; date_sortie?: string; destinataire_qualite?: string;
   destinataire_nom?: string; destinataire_adresse?: string; cause_mort?: string;
+  circonstances_deces?: string | null;
   uid_eleveur?: string | null; uid_proprietaire?: string | null; uid_acquereur?: string | null;
   cession_contrat_url?: string | null; cession_certificat_url?: string | null;
   cession_prix?: number | null; cession_notes?: string | null;
@@ -3515,6 +3516,7 @@ function AnimalFichePageInner() {
         destinataire_nom: animal.destinataire_nom || undefined,
         destinataire_adresse: animal.destinataire_adresse || undefined,
         cause_mort: animal.cause_mort || undefined,
+        circonstances_deces: animal.statut === 'decede' ? (animal.circonstances_deces?.trim() || null) : null,
       };
 
       if (isNew || !id) {
@@ -3626,7 +3628,15 @@ function AnimalFichePageInner() {
       date_sortie: animal.date_sortie,
       destinataire_qualite: animal.destinataire_qualite, destinataire_nom: animal.destinataire_nom,
       destinataire_adresse: animal.destinataire_adresse, cause_mort: animal.cause_mort,
+      circonstances_deces: animal.statut === 'decede' ? (animal.circonstances_deces?.trim() || null) : null,
     }).eq('id', id);
+    // Décès déjà au registre : circonstances / cause modifiées reprises sur la sortie.
+    if (animal.statut === 'decede' && ['sorti', 'decede'].includes(oldStatut)) {
+      try {
+        await supabase.from('registre_mouvements').update({ circonstances_deces: animal.circonstances_deces?.trim() || null, ...(animal.cause_mort ? { cause_mort: animal.cause_mort } : {}) })
+          .eq('animal_id', id).eq('type', 'sortie').not('cause_mort', 'is', null);
+      } catch { /* ignore */ }
+    }
 
     // Sortie/décès déclarés directement dans le registre (sans passer par la
     // modale de cession) : clôturer/rouvrir aussi la ligne animaux_proprietes
@@ -3653,6 +3663,7 @@ function AnimalFichePageInner() {
             ...(animal.destinataire_nom ? { destinataire_nom: animal.destinataire_nom } : {}),
             ...(animal.destinataire_adresse ? { destinataire_adresse: animal.destinataire_adresse } : {}),
             ...(animal.statut === 'decede' && animal.cause_mort ? { cause_mort: animal.cause_mort } : {}),
+            ...(animal.statut === 'decede' && animal.circonstances_deces?.trim() ? { circonstances_deces: animal.circonstances_deces.trim() } : {}),
           });
         }
       } catch { /* ignore */ }
@@ -5166,6 +5177,7 @@ function AnimalFichePageInner() {
                         ...(animal.statut==='decede' ? [
                           { label:'Date de décès', value: animal.date_sortie ? new Date(animal.date_sortie).toLocaleDateString('fr-FR') : undefined },
                           { label:'Cause', value: MORT_FR[animal.cause_mort??''] },
+                          { label:'Circonstances', value: animal.circonstances_deces ?? undefined },
                         ] : []),
                       ].filter(r=>r.value).map((r: { label: string; value?: string; href?: string })=>(
                         <div key={r.label} className="flex gap-2 text-sm">
@@ -5232,6 +5244,13 @@ function AnimalFichePageInner() {
                           <Field label="Date de décès" value={animal.date_sortie??''} onChange={v=>set('date_sortie',v)} type="date" />
                           <SelectField label="Cause du décès" value={animal.cause_mort??''} onChange={v=>set('cause_mort',v)}
                             options={[{value:'',label:'—'}, ...CAUSES_MORT.map(c=>({value:c,label:MORT_FR[c]??c}))]} />
+                          {/* Texte libre repris au registre des entrées / sorties. */}
+                          <label className="block">
+                            <span className="text-xs font-medium text-gray-500">Circonstances</span>
+                            <textarea value={animal.circonstances_deces ?? ''} onChange={e=>set('circonstances_deces', e.target.value)} rows={3}
+                              placeholder="Ex : retrouvé mort au box le matin, euthanasie après…"
+                              className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
+                          </label>
                         </>
                       )}
                       {!isNew && (

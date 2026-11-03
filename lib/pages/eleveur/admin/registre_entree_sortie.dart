@@ -16,6 +16,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 // Page Registre Entrées / Sorties
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Libellé de la cause du décès (toutes valeurs connues).
+String _causeMortLibelle(String v) => const {
+  'maladie': 'Maladie', 'accident': 'Accident', 'naturelle': 'Mort naturelle',
+  'euthanasie': 'Euthanasie', 'inconnue': 'Cause inconnue', 'autre': 'Autre',
+}[v] ?? v;
+
 class RegistreEntreeSortiePage extends StatefulWidget {
   final bool isAssociation;
   const RegistreEntreeSortiePage({super.key, this.isAssociation = false});
@@ -47,7 +53,7 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   final _supa = Supabase.instance.client;
 
-  static const _animalCols = 'id, nom, espece, race, sexe, identification, date_naissance, statut, date_entree, date_sortie, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, importation_ref, is_association, uid_eleveur';
+  static const _animalCols = 'id, nom, espece, race, sexe, identification, date_naissance, statut, date_entree, date_sortie, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, circonstances_deces, importation_ref, is_association, uid_eleveur';
 
   @override
   void initState() {
@@ -79,7 +85,7 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
     try {
       final mvts = await _supa
           .from('registre_mouvements')
-          .select('animal_id, type, date_mouvement, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, eleveur_profile_id')
+          .select('animal_id, type, date_mouvement, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, circonstances_deces, eleveur_profile_id')
           .eq('uid_eleveur', uid);
       // Multi-profil : un même compte (élevage + association) partage
       // l'uid — ne garder que les mouvements du profil actif. Les anciens
@@ -135,6 +141,7 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
       resolved['destinataire_nom']     = null;
       resolved['destinataire_adresse'] = null;
       resolved['cause_mort']           = null;
+      resolved['circonstances_deces']  = null;
     } else {
       final causeMort = last['cause_mort'] as String?;
       resolved['statut']               = (causeMort != null && causeMort.isNotEmpty) ? 'decede' : 'sorti';
@@ -143,6 +150,7 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
       resolved['destinataire_nom']     = last['destinataire_nom'];
       resolved['destinataire_adresse'] = last['destinataire_adresse'];
       resolved['cause_mort']           = causeMort;
+      resolved['circonstances_deces']  = last['circonstances_deces'] ?? doc['circonstances_deces'];
       final entreesAvant = mine.where((m) =>
           m['type'] == 'entree' &&
           ((m['date_mouvement'] as String?) ?? '')
@@ -328,7 +336,10 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
         mereInfo.isNotEmpty ? mereInfo : '—',
         statut == 'present' ? 'Présent' : statut == 'sorti' ? 'Sorti' : 'Décédé',
         fmtIso('date_sortie'),
-        [d['destinataire_nom'], d['destinataire_adresse']].where((v) => v != null && v.toString().isNotEmpty).join(' / '),
+        statut == 'decede'
+            ? [if ((d['cause_mort'] ?? '').toString().isNotEmpty) 'Cause : ${_causeMortLibelle(d['cause_mort'].toString())}',
+               if ((d['circonstances_deces'] ?? '').toString().isNotEmpty) d['circonstances_deces'].toString()].join(' — ')
+            : [d['destinataire_nom'], d['destinataire_adresse']].where((v) => v != null && v.toString().isNotEmpty).join(' / '),
       ];
     }).toList();
 
@@ -671,6 +682,17 @@ class _EntreeCard extends StatelessWidget {
                     ),
                   ],
                 ]),
+                // Décès : cause et circonstances
+                if (statut == 'decede' && ((data['cause_mort'] ?? '').toString().isNotEmpty ||
+                    (data['circonstances_deces'] ?? '').toString().isNotEmpty)) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    [if ((data['cause_mort'] ?? '').toString().isNotEmpty) _causeMortLibelle(data['cause_mort'].toString()),
+                     if ((data['circonstances_deces'] ?? '').toString().isNotEmpty) data['circonstances_deces'].toString()].join(' — '),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.redAccent),
+                    maxLines: 3, overflow: TextOverflow.ellipsis,
+                  ),
+                ],
                 // Provenance
                 if ((data['provenance_nom'] ?? '').isNotEmpty ||
                     (data['provenance_qualite'] ?? '').isNotEmpty) ...[
@@ -756,6 +778,7 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
   late final TextEditingController _destinataireNomCtrl;
   late final TextEditingController _destinataireAdresseCtrl;
   String       _causeMort = '';
+  late final TextEditingController _circonstancesCtrl;
   bool _saving = false;
   String? _nomElevage;
   String? _adresseElevage;
@@ -777,6 +800,7 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
     _destinataireNomCtrl= TextEditingController(text: d['destinataire_nom'] as String? ?? '');
     _destinataireAdresseCtrl = TextEditingController(text: d['destinataire_adresse'] as String? ?? '');
     _causeMort          = d['cause_mort'] as String? ?? '';
+    _circonstancesCtrl  = TextEditingController(text: d['circonstances_deces'] as String? ?? '');
     _loadEleveurProfile();
   }
 
@@ -787,6 +811,7 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
     _importationRefCtrl.dispose();
     _destinataireNomCtrl.dispose();
     _destinataireAdresseCtrl.dispose();
+    _circonstancesCtrl.dispose();
     super.dispose();
   }
 
@@ -876,8 +901,19 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
         'destinataire_nom':     _statut == 'sorti' ? _destinataireNomCtrl.text.trim() : '',
         'destinataire_adresse': _statut == 'sorti' ? _destinataireAdresseCtrl.text.trim() : '',
         'cause_mort':           _statut == 'decede' ? _causeMort : '',
+        'circonstances_deces':  _statut == 'decede' && _circonstancesCtrl.text.trim().isNotEmpty ? _circonstancesCtrl.text.trim() : null,
         'updated_at':           DateTime.now().toUtc().toIso8601String(),
       }).eq('id', widget.animalId);
+
+      // Décès déjà au registre : circonstances / cause modifiées reprises sur la sortie.
+      if (_statut == 'decede' && _statutSorti(oldStatut)) {
+        try {
+          await Supabase.instance.client.from('registre_mouvements').update({
+            'circonstances_deces': _circonstancesCtrl.text.trim().isEmpty ? null : _circonstancesCtrl.text.trim(),
+            if (_causeMort.isNotEmpty) 'cause_mort': _causeMort,
+          }).eq('animal_id', widget.animalId).eq('type', 'sortie').not('cause_mort', 'is', null);
+        } catch (_) {}
+      }
 
       final devientSorti = _statutSorti(_statut) && !_statutSorti(oldStatut);
       final redevientPresent = !_statutSorti(_statut) && _statutSorti(oldStatut);
@@ -905,6 +941,8 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
               if (_destinataireNomCtrl.text.trim().isNotEmpty) 'destinataire_nom': _destinataireNomCtrl.text.trim(),
               if (_destinataireAdresseCtrl.text.trim().isNotEmpty) 'destinataire_adresse': _destinataireAdresseCtrl.text.trim(),
               if (_statut == 'decede' && _causeMort.isNotEmpty) 'cause_mort': _causeMort,
+              if (_statut == 'decede' && _circonstancesCtrl.text.trim().isNotEmpty)
+                'circonstances_deces': _circonstancesCtrl.text.trim(),
             });
           }
         } catch (_) {}
@@ -1071,6 +1109,8 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
                         const ['—', 'Maladie', 'Accident', 'Mort naturelle', 'Euthanasie', 'Autre'],
                         (v) => setState(() => _causeMort = v ?? ''),
                       ),
+                      const SizedBox(height: 10),
+                      _textField('Circonstances (texte libre)', _circonstancesCtrl),
                     ],
                   ]),
                   const SizedBox(height: 16),

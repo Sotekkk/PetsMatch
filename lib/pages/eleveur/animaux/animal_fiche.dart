@@ -279,6 +279,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   final _destinataireNomCtrl     = TextEditingController();
   String    _destinataireQualite = '';
   final _destinataireAdresseCtrl = TextEditingController();
+  // Décès : circonstances en texte libre (reprises au registre).
+  final _circonstancesDecesCtrl = TextEditingController();
   String    _causeMort           = ''; // 'maladie' | 'accident' | 'naturelle' | 'inconnue'
   String? _nomElevage;
   String? _adresseElevage;
@@ -1235,6 +1237,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _destinataireNomCtrl.text     = (d['destinataire_nom'] as String?) ?? '';
     _destinataireQualite          = (d['destinataire_qualite'] as String?) ?? '';
     _destinataireAdresseCtrl.text = (d['destinataire_adresse'] as String?) ?? '';
+    _circonstancesDecesCtrl.text = (d['circonstances_deces'] as String?) ?? '';
     _causeMort = (d['cause_mort'] as String?) ?? '';
     _dateEntree      = _parseDate(d['date_entree']);
     _dateNaissanceMere = _parseDate(d['date_naissance_mere']);
@@ -1307,7 +1310,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       _nomPedigreePereCtrl, _nomPedigreeMereCtrl,
       _nomMereCtrl, _puceMereCtrl, _passeportCtrl, _clubRegistreCtrl, _pedigreeNumeroCtrl, _descriptionCtrl,
       _provenanceNomCtrl, _provenanceAdresseCtrl, _importationRefCtrl,
-      _raceMereCtrl, _destinataireNomCtrl, _destinataireAdresseCtrl]) { c.dispose(); }
+      _raceMereCtrl, _destinataireNomCtrl, _destinataireAdresseCtrl, _circonstancesDecesCtrl]) { c.dispose(); }
     for (final c in _contactsUrgence) c.dispose();
     for (final c in _personnesAutorisees) c.dispose();
     _ageEstimeAnneesCtrl.dispose();
@@ -1427,6 +1430,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'destinataire_qualite': _destinataireQualite,
         'destinataire_adresse': _destinataireAdresseCtrl.text.trim(),
         'cause_mort':          _causeMort,
+        'circonstances_deces': _statut == 'decede' && _circonstancesDecesCtrl.text.trim().isNotEmpty ? _circonstancesDecesCtrl.text.trim() : null,
         'updated_at':          DateTime.now().toUtc().toIso8601String(),
         'is_association':      widget.isAssociation,
       };
@@ -1899,9 +1903,20 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'destinataire_qualite': _destinataireQualite,
         'destinataire_adresse': _destinataireAdresseCtrl.text.trim(),
         'cause_mort':           _causeMort,
+        'circonstances_deces':  _statut == 'decede' && _circonstancesDecesCtrl.text.trim().isNotEmpty ? _circonstancesDecesCtrl.text.trim() : null,
         'is_retraite':          _isRetraite,
         'updated_at':           DateTime.now().toUtc().toIso8601String(),
       }).eq('id', animalId);
+
+      // Décès déjà au registre : circonstances / cause modifiées reprises sur la sortie.
+      if (_statut == 'decede' && _statutSorti(oldStatut)) {
+        try {
+          await _supa.from('registre_mouvements').update({
+            'circonstances_deces': _circonstancesDecesCtrl.text.trim().isEmpty ? null : _circonstancesDecesCtrl.text.trim(),
+            if (_causeMort.isNotEmpty) 'cause_mort': _causeMort,
+          }).eq('animal_id', animalId).eq('type', 'sortie').not('cause_mort', 'is', null);
+        } catch (_) {}
+      }
 
       // Sortie/décès déclarés directement dans le registre (sans passer par
       // la fiche de cession) : clôturer/rouvrir aussi la ligne
@@ -1935,6 +1950,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               if (_destinataireNomCtrl.text.trim().isNotEmpty) 'destinataire_nom': _destinataireNomCtrl.text.trim(),
               if (_destinataireAdresseCtrl.text.trim().isNotEmpty) 'destinataire_adresse': _destinataireAdresseCtrl.text.trim(),
               if (_statut == 'decede' && _causeMort.isNotEmpty) 'cause_mort': _causeMort,
+              if (_statut == 'decede' && _circonstancesDecesCtrl.text.trim().isNotEmpty)
+                'circonstances_deces': _circonstancesDecesCtrl.text.trim(),
             });
             await _loadMouvements();
           }
@@ -1963,6 +1980,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   Future<void> _declarerDeces() async {
     DateTime date = DateTime.now();
     String cause = '';
+    final circCtrl = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -2016,6 +2034,21 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   .toList(),
               onChanged: (v) => setSheet(() => cause = v ?? ''),
             ),
+            const SizedBox(height: 14),
+            const Text('Circonstances (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
+            const SizedBox(height: 6),
+            TextField(
+              controller: circCtrl, maxLines: 3, minLines: 2,
+              textCapitalization: TextCapitalization.sentences,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Ex : retrouvé mort au box le matin, euthanasie après…',
+                hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF9AA0A4)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
           ]),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false),
@@ -2029,6 +2062,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         ),
       ),
     );
+    final circonstances = circCtrl.text.trim();
+    circCtrl.dispose();
     if (confirmed != true) return;
     if (widget.animalId == null) return;
     final animalId = widget.animalId!;
@@ -2042,6 +2077,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'statut':      'decede',
         'date_sortie': dateStr,
         'cause_mort':  cause,
+        'circonstances_deces': circonstances.isEmpty ? null : circonstances,
         'updated_at':  DateTime.now().toUtc().toIso8601String(),
       }).eq('id', animalId);
       // Clôture (best-effort) de la ligne de propriété en cours, pour que
@@ -2060,6 +2096,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         _statut = 'decede';
         _dateSortie = date;
         _causeMort = cause;
+        _circonstancesDecesCtrl.text = circonstances;
       });
       await _refreshFromSupabase();
       if (!mounted) return;
@@ -4607,6 +4644,16 @@ class _IdentiteTab extends StatelessWidget {
                       DropdownMenuItem(value: v, child: Text(_causeMortLabel(v),
                           style: const TextStyle(fontFamily: 'Galey', fontSize: 13)))).toList(),
                   onChanged: (v) => s.setState(() => s._causeMort = v ?? ''),
+                ),
+                const SizedBox(height: 8),
+                // Texte libre repris au registre des entrées / sorties.
+                TextField(
+                  controller: s._circonstancesDecesCtrl, maxLines: 3, minLines: 2,
+                  textCapitalization: TextCapitalization.sentences,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                  decoration: _dropDeco().copyWith(labelText: 'Circonstances',
+                      labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                      hintText: 'Ex : retrouvé mort au box le matin, euthanasie après…'),
                 ),
               ],
             ],
