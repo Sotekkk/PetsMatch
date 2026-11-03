@@ -11,6 +11,7 @@ import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
 import 'package:PetsMatch/pages/pro/garde_acceptation.dart' show apresAcceptationGarde;
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -80,10 +81,12 @@ class ProAgendaPage extends StatefulWidget {
   /// pré-remplis, retour à la fiche une fois le formulaire fermé.
   final String? nouveauRdvAnimalId;
   final String? nouveauRdvMotif;
+  /// RDV de l'intervention (CR préopératoire) : date prévue.
+  final DateTime? nouveauRdvDate;
   /// Avec [focusRdvId] : ouvre directement « Modifier » puis revient en arrière.
   final bool modifierFocus;
   const ProAgendaPage({super.key, this.initialTabIndex, this.ongletAgenda = false, this.employeur, this.focusRdvId, this.nouveauRdv = false,
-      this.nouveauRdvAnimalId, this.nouveauRdvMotif, this.modifierFocus = false});
+      this.nouveauRdvAnimalId, this.nouveauRdvMotif, this.nouveauRdvDate, this.modifierFocus = false});
 
   @override
   State<ProAgendaPage> createState() => _ProAgendaPageState();
@@ -453,7 +456,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     if (widget.nouveauRdv) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
-        await _showNouveauRdvDialog(animalInit: widget.nouveauRdvAnimalId, motifInit: widget.nouveauRdvMotif);
+        await _showNouveauRdvDialog(animalInit: widget.nouveauRdvAnimalId, motifInit: widget.nouveauRdvMotif, dateInit: widget.nouveauRdvDate);
         if (mounted && widget.nouveauRdvAnimalId != null) Navigator.pop(context);
       });
     }
@@ -2141,9 +2144,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   /// miroir site DocumentProModal (boutons « Mon compte rendu » / « Mon contrat »).
   Future<void> _documentPro(Map<String, dynamic> rdv, String mode) async {
     final proNom = User_Info.nameElevage.trim().isNotEmpty ? User_Info.nameElevage.trim() : '${User_Info.firstname} ${User_Info.lastname}'.trim();
-    if (await showDocumentProSheet(context, rdv: {...rdv, 'pro_profile_id': rdv['pro_profile_id'] ?? _resolveProProfileId()}, mode: mode,
+    final devis = mode == 'devis';
+    if (await showDocumentProSheet(context, rdv: {...rdv, 'pro_profile_id': rdv['pro_profile_id'] ?? _resolveProProfileId()},
+        mode: devis ? 'contrat' : mode,
         clientNom: rdv['_client_name']?.toString() ?? 'Client', animalNom: rdv['_animal_nom']?.toString() ?? '', proNom: proNom,
-        catPro: AgendaContexte.catPro)) {
+        catPro: AgendaContexte.catPro, titre: devis ? 'Devis — ${rdv['_client_name'] ?? 'Client'}' : null)) {
       _loadRdvs();
     }
   }
@@ -5302,16 +5307,16 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     'toilettage',
                     'sante', 'veterinaire', 'marechal_ferrant', 'garde',
                   }.contains(AgendaContexte.catPro))
-              ? () {
+              ? () async {
                   switch (AgendaContexte.catPro) {
                     case 'toilettage':
-                      _facturerToilettage(rdv);
+                      await _facturerToilettage(rdv);
                     case 'photographe':
-                      _facturerPhoto(rdv);
+                      await _facturerPhoto(rdv);
                     case 'garde':
-                      _facturerGarde(rdv);
+                      await _facturerGarde(rdv);
                     default:
-                      _facturerConsultation(rdv);
+                      await _facturerConsultation(rdv);
                   }
                 }
               : null,
@@ -5321,6 +5326,17 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     rdvId: rdv['id'].toString(),
                     clientName: rdv['_client_name']?.toString() ?? 'Client',
                   )))
+              : null,
+          onDevis: (showProTools && AgendaContexte.catPro == 'veterinaire')
+              ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => DevisPage(prefill: DevisPrefill(
+                  animalId: hasAnimal ? animalId : null,
+                  clientUid: rdv['client_uid']?.toString(), clientProfileId: rdv['client_profile_id']?.toString(),
+                  clientNom: rdv['_client_name']?.toString() ?? rdv['client_nom_manuel']?.toString(),
+                  clientEmail: rdv['client_email_manuel']?.toString(), clientTel: rdv['client_telephone_manuel']?.toString(),
+                  rdvId: rdv['id']?.toString(),
+                  lignes: [if ((rdv['motif']?.toString() ?? '').trim().isNotEmpty)
+                    {'description': rdv['motif'].toString().trim(), 'quantite': 1, 'prix_unitaire': 0}],
+                ))))
               : null,
           onHistorique: (AgendaContexte.catPro == 'veterinaire' && hasAnimal)
               ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => HistoriquePatientPage(
@@ -5433,6 +5449,8 @@ class _RdvCard extends StatelessWidget {
   final bool regrouperEnDossier;
   /// Vétérinaire : historique des consultations du patient.
   final VoidCallback? onHistorique;
+  /// Vétérinaire : devis (opération à prévoir) fait avec PetsMatch.
+  final VoidCallback? onDevis;
   /// Tous les pros : mon compte rendu / mon contrat (photo ou PDF).
   final void Function(String mode)? onDocumentPro;
 
@@ -5460,6 +5478,7 @@ class _RdvCard extends StatelessWidget {
     this.onFiche,
     this.onDossier,
     this.regrouperEnDossier = false,
+    this.onDevis,
     this.onHistorique,
     this.onDocumentPro,
   });
@@ -5488,7 +5507,15 @@ class _RdvCard extends StatelessWidget {
               Wrap(spacing: 6, runSpacing: 6, children: [
                 for (final a in actions)
                   OutlinedButton(
-                    onPressed: () { Navigator.pop(ctx); a.$2(); },
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      // Action terminée (page refermée) : retour au dossier de la séance.
+                      final r = (a.$2 as dynamic)();
+                      if (r is Future) {
+                        await r;
+                        if (context.mounted) await _dossierSoins(context);
+                      }
+                    },
                     style: OutlinedButton.styleFrom(foregroundColor: teal, side: const BorderSide(color: teal),
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), visualDensity: VisualDensity.compact),
                     child: Text(a.$1, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
@@ -5518,6 +5545,11 @@ class _RdvCard extends StatelessWidget {
                   if (onSuiviMorpho != null) ('Rédiger avec PetsMatch', onSuiviMorpho!),
                   if (onDocumentPro != null) ('Charger le mien (PDF / photo)', () => onDocumentPro!('compte_rendu')),
                 ]),
+          if (veto && (onDevis != null || onDocumentPro != null))
+            etape(ctx, ++n, 'Devis', 'Pour une opération à prévoir : devis fait avec PetsMatch, ou le vôtre chargé ; le client l\'accepte en ligne.', [
+              if (onDevis != null) ('Créer avec PetsMatch', onDevis!),
+              if (onDocumentPro != null) ('Charger le mien (PDF / photo)', () => onDocumentPro!('devis')),
+            ]),
           if (onContrat != null || onDocumentPro != null)
             etape(ctx, ++n, 'Contrat', null, [
               if (onContrat != null) ('Générer avec PetsMatch', onContrat!),

@@ -8,6 +8,7 @@
 const champsCrChir = <String, List<(String, String, bool)>>{
   'preop': [
     ('intervention', 'Intervention prévue', false),
+    ('date_prevue', 'Date prévue de l’opération', false),
     ('antecedents', 'Antécédents pertinents', true),
     ('examen_clinique', 'Examen clinique', true),
     ('poids', 'Poids (kg)', false),
@@ -44,6 +45,9 @@ Map<String, String> prerempliCrChir(String type, Map<String, dynamic> c, {dynami
   final d = c[type];
   final out = {for (final f in champsCrChir[type]!) f.$1: _v(d, f.$1)};
   if (out['intervention']!.isEmpty) out['intervention'] = (c['intitule'] ?? '').toString();
+  if (type == 'preop' && out['date_prevue']!.isEmpty && (c['date']?.toString() ?? '').length >= 10) {
+    out['date_prevue'] = c['date'].toString().substring(0, 10);
+  }
   if (type == 'preop' && out['protocole']!.isEmpty) out['protocole'] = (c['protocole_preop'] ?? '').toString();
   if (type == 'preop' && out['poids']!.isEmpty && (poidsFiche?.toString().trim() ?? '').isNotEmpty) out['poids'] = poidsFiche.toString();
   if (type == 'operatoire' && out['surveillance']!.isEmpty) out['surveillance'] = (c['protocole_postop'] ?? '').toString();
@@ -72,13 +76,17 @@ Map<String, String> prerempliCrChir(String type, Map<String, dynamic> c, {dynami
 String texteCrChir(String type, Map<String, String> champs, String? dateIntervention) {
   final lignes = <String>[];
   final d = DateTime.tryParse(dateIntervention ?? '');
-  if (d != null) {
+  // Pré-op : la date figure dans « Date prévue de l'opération ».
+  if (d != null && !(type == 'preop' && (champs['date_prevue'] ?? '').trim().isNotEmpty)) {
     lignes.add("Date de l'intervention : ${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}");
   }
   for (final f in champsCrChir[type]!) {
     final v = (champs[f.$1] ?? '').trim();
     if (v.isEmpty) continue;
-    lignes.add('${f.$2.replaceAll(RegExp(r'\s*\(kg\)$'), '')} : ${f.$1 == 'poids' ? '${v.replaceAll('.', ',')} kg' : v}');
+    final dp = f.$1 == 'date_prevue' ? DateTime.tryParse(v) : null;
+    final val = f.$1 == 'poids' ? '${v.replaceAll('.', ',')} kg'
+        : dp != null ? '${dp.day.toString().padLeft(2, '0')}/${dp.month.toString().padLeft(2, '0')}/${dp.year}' : v;
+    lignes.add('${f.$2.replaceAll(RegExp(r'\s*\(kg\)$'), '')} : $val');
   }
   if (type == 'preop') lignes.add("Ce compte rendu ne vaut pas consentement du propriétaire à l'intervention.");
   return lignes.join('\n\n');

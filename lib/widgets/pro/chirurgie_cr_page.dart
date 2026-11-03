@@ -15,6 +15,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
 import 'package:PetsMatch/utils/chirurgie_cr.dart';
 import 'package:PetsMatch/widgets/pro/consignes_editeur.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart' show ProAgendaPage;
 import 'package:PetsMatch/widgets/pro/documents_consultation.dart' show transmettreDocIntervention;
 import 'package:PetsMatch/utils/client_document.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart';
@@ -149,8 +150,11 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
       final valider = a == 'valider';
       final contenu = {for (final e in champs.entries) if (e.value.isNotEmpty) e.key: e.value};
       final sansPro = (widget.chirurgie['pro_uid'] ?? '').toString().isEmpty;
+      final datePrevue = _type == 'preop' && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(contenu['date_prevue'] ?? '')
+          ? contenu['date_prevue'] : null;
       final row = await _supa.from('chirurgies').update({
         _type: {...contenu, 'statut': valider ? 'valide' : 'brouillon'},
+        if (datePrevue != null && datePrevue != (widget.chirurgie['date']?.toString() ?? '').padRight(10).substring(0, 10).trim()) 'date': datePrevue,
         if (sansPro) 'pro_uid': AgendaContexte.uid,
         if (sansPro && AgendaContexte.profileId.isNotEmpty) 'pro_profile_id': AgendaContexte.profileId,
       }).eq('id', widget.chirurgie['id']).select().single();
@@ -315,7 +319,41 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
                   const Padding(padding: EdgeInsets.only(bottom: 8),
                     child: Text("L'évaluation préopératoire ne vaut pas consentement du propriétaire : le PDF le précise.",
                         style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _muted))),
+                if (_type == 'preop')
+                  Padding(padding: const EdgeInsets.only(bottom: 10), child: OutlinedButton.icon(
+                    onPressed: () {
+                      final d = DateTime.tryParse(_ctrl['preop']!['date_prevue']!.text);
+                      Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => ProAgendaPage(
+                        nouveauRdv: true, nouveauRdvAnimalId: widget.chirurgie['animal_id']?.toString(),
+                        nouveauRdvMotif: 'Intervention : ${_ctrl['preop']!['intervention']!.text.trim().isEmpty ? (widget.chirurgie['intitule'] ?? '') : _ctrl['preop']!['intervention']!.text.trim()}',
+                        nouveauRdvDate: d == null ? null : DateTime(d.year, d.month, d.day, 9),
+                      )));
+                    },
+                    icon: const Icon(Icons.event_available, size: 18, color: _teal),
+                    label: const Text('Planifier le RDV de l’intervention (la famille le voit dans son agenda)',
+                        style: TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700, fontSize: 12.5)),
+                  )),
                 for (final f in champsCrChir[_type]!) ...[
+                  if (f.$1 == 'date_prevue')
+                    InkWell(
+                      onTap: _verrouille ? null : () async {
+                        final c = _ctrl[_type]![f.$1]!;
+                        final p = await showDatePicker(context: context, initialDate: DateTime.tryParse(c.text) ?? DateTime.now(),
+                            firstDate: DateTime(2000), lastDate: DateTime.now().add(const Duration(days: 730)));
+                        if (p != null) {
+                          c.text = '${p.year}-${p.month.toString().padLeft(2, '0')}-${p.day.toString().padLeft(2, '0')}';
+                        }
+                      },
+                      child: InputDecorator(
+                        decoration: InputDecoration(labelText: f.$2, isDense: true, enabled: !_verrouille,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
+                        child: Text(() {
+                          final d = DateTime.tryParse(_ctrl[_type]![f.$1]!.text);
+                          return d == null ? 'Choisir la date' : '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+                        }(), style: const TextStyle(fontFamily: 'Galey')),
+                      ),
+                    )
+                  else
                   TextField(
                     controller: _ctrl[_type]![f.$1],
                     enabled: !_verrouille,

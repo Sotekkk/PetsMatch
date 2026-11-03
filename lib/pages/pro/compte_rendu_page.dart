@@ -1909,16 +1909,15 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             Row(children: [
               Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx),
                   child: const Text('Fermer', style: TextStyle(fontFamily: 'Galey')))),
-              if (acquittee) ...[
-                const SizedBox(width: 8),
-                Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx, 'acquitter'),
-                    child: const Text('Acquitter seulement', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5)))),
-              ],
+              // Terminer la consultation avec ou sans envoi des documents (au choix).
+              const SizedBox(width: 8),
+              Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx, 'terminer'),
+                  child: const Text('Terminer sans envoyer', textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5)))),
               const SizedBox(width: 8),
               Expanded(flex: 2, child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: c, foregroundColor: Colors.white),
                 onPressed: nb == 0 ? null : () => Navigator.pop(ctx, 'envoyer'),
-                child: Text('Envoyer ($nb)', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                child: Text('Terminer et envoyer ($nb)', textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
               )),
             ]),
           ]),
@@ -1932,9 +1931,18 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         await _supa.from('factures').update(maj).eq('id', facture['id']);
         facture = {...facture, ...maj};
       }
+      // Le RDV passe à « terminé » (avec ou sans envoi).
+      if (rdvId != null) {
+        try {
+          await _supa.from('rdv').update({'statut': 'termine', 'termine_at': DateTime.now().toUtc().toIso8601String()})
+              .eq('id', rdvId).neq('statut', 'termine');
+        } catch (_) {}
+      }
       if (choix != 'envoyer') {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Facture acquittée.', style: TextStyle(fontFamily: 'Galey')),
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(acquittee && !dejaPayee ? 'Consultation terminée, facture acquittée.' : "Consultation terminée (rien n’a été envoyé).",
+                  style: const TextStyle(fontFamily: 'Galey')),
               behavior: SnackBarBehavior.floating));
         }
         return;

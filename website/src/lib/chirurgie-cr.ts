@@ -10,6 +10,7 @@ export type TypeCrChir = 'preop' | 'operatoire';
 export const CHAMPS_CR_CHIR: Record<TypeCrChir, [string, string, boolean][]> = {
   preop: [
     ['intervention', 'Intervention prévue', false],
+    ['date_prevue', 'Date prévue de l’opération', false],
     ['antecedents', 'Antécédents pertinents', true],
     ['examen_clinique', 'Examen clinique', true],
     ['poids', 'Poids (kg)', false],
@@ -62,6 +63,7 @@ export function prerempli(type: TypeCrChir, c: ChirurgieCr, poidsFiche?: number 
   const out: Record<string, string> = {};
   for (const [k] of CHAMPS_CR_CHIR[type]) out[k] = valeur(d, k);
   if (!out.intervention) out.intervention = c.intitule ?? '';
+  if (type === 'preop' && !out.date_prevue && c.date) out.date_prevue = c.date.slice(0, 10);
   if (type === 'preop' && !out.protocole) out.protocole = c.protocole_preop ?? '';
   if (type === 'preop' && !out.poids && poidsFiche != null && String(poidsFiche).trim()) out.poids = String(poidsFiche);
   if (type === 'operatoire' && !out.surveillance) out.surveillance = c.protocole_postop ?? '';
@@ -87,11 +89,14 @@ export function controlerCrChir(type: TypeCrChir, champs: Record<string, string>
 /** Texte du PDF (« Libellé : valeur » par paragraphe, champs vides omis). */
 export function texteCrChir(type: TypeCrChir, champs: Record<string, string>, dateIntervention?: string | null): string {
   const lignes: string[] = [];
-  if (dateIntervention) lignes.push(`Date de l'intervention : ${new Date(`${dateIntervention.slice(0, 10)}T12:00:00`).toLocaleDateString('fr-FR')}`);
+  // Pré-op : la date figure dans « Date prévue de l'opération ».
+  if (dateIntervention && !(type === 'preop' && champs.date_prevue?.trim())) lignes.push(`Date de l'intervention : ${new Date(`${dateIntervention.slice(0, 10)}T12:00:00`).toLocaleDateString('fr-FR')}`);
   for (const [k, l] of CHAMPS_CR_CHIR[type]) {
     const v = champs[k]?.trim();
     if (!v) continue;
-    lignes.push(`${l.replace(/\s*\(kg\)$/, '')} : ${k === 'poids' ? `${v.replace('.', ',')} kg` : v}`);
+    const val = k === 'poids' ? `${v.replace('.', ',')} kg`
+      : k === 'date_prevue' && /^\d{4}-\d{2}-\d{2}/.test(v) ? new Date(`${v.slice(0, 10)}T12:00:00`).toLocaleDateString('fr-FR') : v;
+    lignes.push(`${l.replace(/\s*\(kg\)$/, '')} : ${val}`);
   }
   if (type === 'preop') lignes.push("Ce compte rendu ne vaut pas consentement du propriétaire à l'intervention.");
   return lignes.join('\n\n');

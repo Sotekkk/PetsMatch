@@ -37,6 +37,7 @@ import { ordonnancePdfBlob, compteRenduPdfBlob, ageAnimal, sexeAnimal } from '@/
 import OrdonnanceEditeur from '@/components/pro/OrdonnanceEditeur';
 import ChirurgieCrModal from '@/components/pro/ChirurgieCrModal';
 import DocumentsConsultation from '@/components/pro/DocumentsConsultation';
+import PanneauPage from '@/components/PanneauPage';
 import LienSecuriseModal, { type DocumentPartage } from '@/components/pro/LienSecuriseModal';
 import { consignesPdfBlob } from '@/lib/consignes-pdf';
 import { prerempliConsignes, type ModeleConsignes, type SectionConsigne } from '@/lib/consignes-postop';
@@ -1161,6 +1162,8 @@ function PatientDetailPageInner() {
   // rectificative (remplace) ; fin : reprise du flux du CR à la fermeture.
   // Lien sécurisé d'un document (lot 6) : fenêtre de création / envoi / révocation.
   const [partage, setPartage] = useState<DocumentPartage | null>(null);
+  // Prise de RDV de l'intervention, dans un panneau (la fiche reste en place).
+  const [panneauRdv, setPanneauRdv] = useState<string | null>(null);
   // Comptes rendus pré / opératoire d'une intervention.
   const [crChir, setCrChir] = useState<{ c: ChirurgieEntry; type: TypeCrChir | 'consignes' } | null>(null);
   const [editeurOrdo, setEditeurOrdo] = useState<{ ordo: Ordonnance | null; remplace?: Ordonnance | null; rdvId?: string | null; fin?: () => void } | null>(null);
@@ -1821,8 +1824,10 @@ function PatientDetailPageInner() {
    *  serveur) puis PDF signé déposé une fois. */
   async function enregistrerCrChir(c: ChirurgieEntry, type: TypeCrChir, champs: Record<string, string>, valider: boolean) {
     const contenu = Object.fromEntries(Object.entries(champs).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v));
+    const datePrevue = type === 'preop' && /^\d{4}-\d{2}-\d{2}$/.test(String(contenu.date_prevue ?? '')) ? String(contenu.date_prevue) : null;
     const { data, error } = await supabase.from('chirurgies').update({
       [type]: { ...contenu, statut: valider ? 'valide' : 'brouillon' },
+      ...(datePrevue && datePrevue !== c.date?.slice(0, 10) ? { date: datePrevue } : {}),
       ...(c.pro_uid ? {} : { pro_uid: proUid, ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}) }),
     }).eq('id', c.id).select('*').single();
     if (error) throw error;
@@ -2298,8 +2303,10 @@ function PatientDetailPageInner() {
   }, [searchParams, catPro, animalId, animal]);
 
   /** Retour à la vue du RDV (Gérer mes RDV, RDV mis en avant). */
+  /** Retour au dossier de la séance : dans le panneau du dossier, on le
+   *  ferme ; en page entière, liste des RDV avec le dossier rouvert. */
   function retourAuRdv(rdvId: string) {
-    window.location.assign(`/mes-rdv?rdv=${encodeURIComponent(rdvId)}`);
+    allerOuFermer({ push: (u: string) => window.location.assign(u) }, `/mes-rdv?rdv=${encodeURIComponent(rdvId)}&dossier=1`);
   }
 
   /** Nouveau compte rendu : formulaire vierge (rien d'une saisie précédente). */
@@ -4688,12 +4695,18 @@ function PatientDetailPageInner() {
 
       {/* ── Modales d'ajout ── */}
       {partage && <LienSecuriseModal doc={partage} onClose={() => setPartage(null)} />}
+      {panneauRdv && <PanneauPage url={panneauRdv} titre="RDV de l’intervention" onClose={() => setPanneauRdv(null)} />}
       {crChir && (
         <ChirurgieCrModal key={crChir.c.id} chirurgie={chirurgies.find(x => x.id === crChir.c.id) ?? crChir.c} typeInitial={crChir.type} poidsFiche={animal?.poids}
           peutValider={peutPrescrire}
           apercu={(t, champs) => crChirPdf(t, crChir.c, champs, true)}
           enregistrer={(t, champs, valider) => enregistrerCrChir(crChir.c, t, champs, valider)}
           onOrdonnance={peutPreparerOrdo ? () => setEditeurOrdo({ ordo: null, rdvId: crRdvId }) : undefined}
+          onPlanifierRdv={(d, intitule) => {
+            const q = new URLSearchParams({ nouveau: '1', animal: String(animalId), motif: `Intervention : ${intitule}` });
+            if (d) q.set('date', `${d}T09:00`);
+            setPanneauRdv(`/mes-rdv?${q.toString()}`);
+          }}
           onTransmettre={transmettreDocIntervention}
           consignes={{
             chargerModeles: async () => {

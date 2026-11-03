@@ -19,12 +19,14 @@ const VERT = '#2E7D32';
 const GRIS = '#6B7280';
 
 export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient, animaux, proProfileId, version,
-  onClose, onOuvrirPage, onChargerDoc, onFacturer, onFin, onHistorique, onFiche }: {
+  onClose, onOuvrirPage, onChargerDoc, onDevis, onFacturer, onFin, onHistorique, onFiche }: {
   rdvId: string; metier: 'veterinaire' | 'sante'; dateHeure: string; nomClient: string;
   animaux: AnimalRdv[]; proProfileId: string | null; version: number;
   onClose: () => void;
   onOuvrirPage: (url: string, titre: string) => void;
-  onChargerDoc: (mode: 'compte_rendu' | 'contrat') => void;
+  onChargerDoc: (mode: 'compte_rendu' | 'contrat' | 'devis') => void;
+  /** Devis fait avec PetsMatch (lignes, envoi, acceptation en ligne), dans un panneau. */
+  onDevis?: () => void;
   /** Absent : facture déjà émise. */
   onFacturer?: () => void;
   onFin: () => void;
@@ -34,21 +36,28 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
   const [docs, setDocs] = useState<DocumentProRdv[]>([]);
   const [facture, setFacture] = useState<{ statut: string | null; total_ttc: number | null; numero_affichage: string | null } | null>(null);
   const [envoyeLe, setEnvoyeLe] = useState<string | null>(null);
+  const [devis, setDevis] = useState<{ statut: string | null; total_ttc: number | null } | null>(null);
+  const [devisCharges, setDevisCharges] = useState<{ id: string; titre: string | null; statut: string | null; url: string | null }[]>([]);
   const veto = metier === 'veterinaire';
 
   useEffect(() => {
     let annule = false;
     (async () => {
-      const [d, { data: f }, { data: rv }] = await Promise.all([
+      const [d, { data: f }, { data: rv }, { data: dv }, { data: dc }] = await Promise.all([
         comptesRendusProDuRdv(rdvId).catch(() => [] as DocumentProRdv[]),
         supabase.from('factures').select('statut, total_ttc, numero_affichage').eq('source_rdv_id', rdvId).neq('statut', 'annulee')
           .or('type_facture.is.null,type_facture.not.in.(acompte,avoir)').order('created_at', { ascending: false }).limit(1).maybeSingle(),
         supabase.from('rdv').select('documents_envoyes_le').eq('id', rdvId).maybeSingle(),
+        supabase.from('devis').select('statut, total_ttc').eq('rdv_id', rdvId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        // Devis chargé (PDF / photo) : signé en ligne par le client = accepté.
+        supabase.from('documents_animaux').select('id, titre, statut, url').eq('rdv_id', rdvId).eq('type', 'contrat_document_pro').ilike('titre', 'Devis%'),
       ]);
       if (annule) return;
       setEnvoyeLe((rv as { documents_envoyes_le?: string | null } | null)?.documents_envoyes_le ?? null);
       setDocs(d);
       setFacture((f as typeof facture) ?? null);
+      setDevis((dv as typeof devis) ?? null);
+      setDevisCharges((dc ?? []) as typeof devisCharges);
     })();
     return () => { annule = true; };
   }, [rdvId, version]);
@@ -115,20 +124,38 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
             </div>
           ))}
 
-          {etape(2, 'Contrat', '', GRIS, (
+          {veto && etape(2, 'Devis', devis ? `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'Brouillon'}${devis.total_ttc != null ? ` · ${Number(devis.total_ttc).toFixed(2)} €` : ''}`
+            : devisCharges.length ? (devisCharges.some(x => x.statut === 'signe') ? 'Accepté (signé)' : 'Chargé, en attente') : '',
+            devis?.statut === 'accepte' || devisCharges.some(x => x.statut === 'signe') ? VERT : GRIS, (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-500">Pour une opération à prévoir : devis fait avec PetsMatch, ou le vôtre chargé ; le client l’accepte en ligne.</p>
+              {devisCharges.map(x => (
+                <button key={x.id} type="button" onClick={() => x.url && ouvrirDocument(x.url)}
+                  className="block w-full text-left text-xs font-semibold px-2 py-1.5 rounded-lg bg-[#EEF5EA] text-[#2E5E20]">
+                  {x.titre ?? 'Devis'} · {x.statut === 'signe' ? 'signé' : 'en attente de signature'}{x.url ? ' · ouvrir' : ''}
+                </button>
+              ))}
+              <div className="flex flex-wrap gap-2">
+                {onDevis && btn(devis ? 'Voir le devis' : 'Créer avec PetsMatch', devis ? () => onOuvrirPage('/education/devis', 'Devis') : onDevis)}
+                {btn('Charger le mien (PDF / photo)', () => onChargerDoc('devis'))}
+              </div>
+            </div>
+          ))}
+
+          {etape(veto ? 3 : 2, 'Contrat', '', GRIS, (
             <div className="flex flex-wrap gap-2">
               {btn('Charger mon contrat (PDF / photo)', () => onChargerDoc('contrat'))}
             </div>
           ))}
 
-          {etape(3, 'Facture', facture ? `${facture.statut === 'payee' ? 'Payée' : 'Émise'}${facture.total_ttc != null ? ` · ${Number(facture.total_ttc).toFixed(2)} €` : ''}` : 'À émettre',
+          {etape(veto ? 4 : 3, 'Facture', facture ? `${facture.statut === 'payee' ? 'Payée' : 'Émise'}${facture.total_ttc != null ? ` · ${Number(facture.total_ttc).toFixed(2)} €` : ''}` : 'À émettre',
             facture ? VERT : GRIS, (
             <div className="flex flex-wrap gap-2">
               {!facture && onFacturer ? btn('Facturer', onFacturer) : btn('Voir mes factures', () => onOuvrirPage('/elevage/facturation', 'Factures'))}
             </div>
           ))}
 
-          {(onHistorique || animaux.length > 0) && etape(4, 'Dossier de l’animal', '', GRIS, (
+          {(onHistorique || animaux.length > 0) && etape(veto ? 5 : 4, 'Dossier de l’animal', '', GRIS, (
             <div className="flex flex-wrap gap-2">
               {animaux.map(a => <span key={a.id}>{btn(animaux.length > 1 ? `Fiche — ${a.nom}` : 'Fiche de l’animal', () => onFiche(a.id))}</span>)}
               {onHistorique && btn('Historique', onHistorique)}
@@ -137,14 +164,14 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
         </div>
 
         <button type="button" onClick={onFin} className="w-full mt-4 py-3 rounded-xl text-sm font-bold text-white" style={{ background: TEAL }}>
-          {veto ? 'Terminer la consultation et envoyer' : 'Terminer la séance et envoyer'}
+          {veto ? 'Terminer la consultation' : 'Terminer la séance'}
         </button>
         {envoyeLe ? (
           <p className="text-xs font-semibold text-center mt-1.5" style={{ color: VERT }}>
             {`Documents envoyés au client le ${new Date(envoyeLe).toLocaleDateString('fr-FR')} à ${new Date(envoyeLe).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`}
           </p>
         ) : (
-          <p className="text-[11px] text-gray-400 mt-1.5 text-center">Compte rendu (le vôtre ou celui de PetsMatch), ordonnance et facture, en un seul e-mail.</p>
+          <p className="text-[11px] text-gray-400 mt-1.5 text-center">Vous choisissez ensuite d’envoyer ou non les documents (compte rendu, ordonnance, facture) en un seul e-mail.</p>
         )}
       </div>
     </div>

@@ -27,8 +27,10 @@ const MODES = ['Carte bancaire', 'Espèces', 'Chèque', 'Virement'];
 // technique) + facture ; « Préparer la facture » via [onPreparerFacture].
 // Éducateur (metier « education ») : compte rendu de séance / bilan avec
 // exercices et programme (PDF signé) + facture.
-export default function FinConsultationModal({ rdvId, proProfileId, clientNom, onClose, onDone, metier = 'veterinaire', onPreparerFacture }: {
+export default function FinConsultationModal({ rdvId, proProfileId, clientNom, onClose, onDone, metier = 'veterinaire', onPreparerFacture, onTerminer }: {
   rdvId: string; proProfileId: string | null; clientNom?: string; onClose: () => void; onDone: () => void;
+  /** RDV marqué terminé (avec ou sans envoi des documents). */
+  onTerminer?: () => Promise<void> | void;
   metier?: 'veterinaire' | 'sante' | 'toilettage' | 'education';
   onPreparerFacture?: () => void;
 }) {
@@ -291,6 +293,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         // Éducateur : la famille est prévenue dans l'appli à l'envoi.
         if (education) await notifierFamilleSeances(seancesEdu.filter(s => coches[`edu:${s.id}`]), userData?.nameElevage || praticien).catch(() => {});
       }
+      await onTerminer?.();
       onDone();
     } catch (e) {
       alert(`Impossible : ${(e as Error).message}`);
@@ -395,15 +398,15 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
           )}
           <div className="flex gap-2">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-600">Fermer</button>
-            {(acquittee || acquitteeForfait) && (
+            {(onTerminer || acquittee || acquitteeForfait) && (
               <button type="button" disabled={envoi} onClick={() => valider(false)}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-[#0C5C6C] text-[#0C5C6C] disabled:opacity-40">
-                Acquitter sans envoyer
+                {onTerminer ? 'Terminer sans envoyer' : 'Acquitter sans envoyer'}
               </button>
             )}
             <button type="button" disabled={envoi || nbCoches === 0} onClick={() => valider(true)}
               className="flex-[2] py-2.5 rounded-xl text-sm font-semibold text-white bg-[#0C5C6C] disabled:opacity-40">
-              {envoi ? 'Préparation et envoi…' : `Envoyer (${nbCoches})`}
+              {envoi ? 'Préparation et envoi…' : `${onTerminer ? 'Terminer et envoyer' : 'Envoyer'} (${nbCoches})`}
             </button>
           </div>
         </>)}

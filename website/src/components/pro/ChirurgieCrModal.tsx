@@ -16,7 +16,7 @@ const TEAL = '#0C5C6C';
 
 type Onglet = TypeCrChir | 'consignes';
 
-export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, peutValider, apercu, enregistrer, consignes, onOrdonnance, onTransmettre, onClose }: {
+export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, peutValider, apercu, enregistrer, consignes, onOrdonnance, onTransmettre, onPlanifierRdv, onClose }: {
   chirurgie: ChirurgieCr;
   typeInitial: Onglet;
   poidsFiche?: number | string | null;
@@ -28,6 +28,8 @@ export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, p
   consignes?: ActionsConsignes;
   /** Ordonnance depuis le dossier opératoire (fenêtre au-dessus, saisie conservée). */
   onOrdonnance?: () => void;
+  /** RDV de l'intervention (visible par la famille), à la date prévue. */
+  onPlanifierRdv?: (datePrevue: string | null, intitule: string) => void;
   /** Document validé : imprimer / envoyer au propriétaire (avec ou sans compte). */
   onTransmettre?: (doc: Onglet, url: string, action: 'imprimer' | 'email' | 'lien') => void;
   onClose: () => void;
@@ -181,6 +183,12 @@ export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, p
             {type === 'preop' && (
               <p className="text-xs text-gray-500">L&apos;évaluation préopératoire ne vaut pas consentement du propriétaire : le PDF le précise.</p>
             )}
+            {type === 'preop' && onPlanifierRdv && (
+              <button onClick={() => onPlanifierRdv(c.date_prevue || null, c.intervention || chirurgie.intitule)}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: TEAL, color: TEAL }}>
+                Planifier le RDV de l’intervention (la famille le voit dans son agenda)
+              </button>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {CHAMPS_CR_CHIR[type].map(([k, l, long]) => (
                 <div key={k} className={long ? 'sm:col-span-2' : ''}>
@@ -188,7 +196,7 @@ export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, p
                   {long
                     ? <textarea value={c[k] ?? ''} onChange={e => maj(k, e.target.value)} rows={2} disabled={verrouille} className={`${champCls} resize-y`} />
                     : <input value={c[k] ?? ''} onChange={e => maj(k, e.target.value)} disabled={verrouille} className={champCls}
-                        inputMode={k === 'poids' ? 'decimal' : undefined} />}
+                        type={k === 'date_prevue' ? 'date' : undefined} inputMode={k === 'poids' ? 'decimal' : undefined} />}
                 </div>
               ))}
             </div>
