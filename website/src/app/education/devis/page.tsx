@@ -10,6 +10,7 @@ import { usePlanGarde } from '@/lib/use-plan';
 import { apiFetch } from '@/lib/api-fetch';
 import { rechercherUtilisateurs } from '@/lib/user-lookup';
 import { chargerPrestationsEducation } from '@/lib/prestations-education';
+import { TARIFS_VETO_GROUPES, libelleTarifVeto } from '@/lib/tarifs-veto';
 import { allerOuFermer } from '@/lib/panneau';
 
 interface Ligne { description: string; quantite: number; prix_unitaire: number; total: number; }
@@ -114,6 +115,8 @@ function DevisPageInner() {
   const [animaux, setAnimaux] = useState<AnimalOption[]>([]);
   const [animalId, setAnimalId] = useState('');
   const [catPro, setCatPro] = useState('');
+  // Vétérinaire : mes tarifs (grille) et ma pharmacie (prix de vente), en liste déroulante sur chaque ligne.
+  const [tarifsVeto, setTarifsVeto] = useState<{ groupe: string; label: string; prix: number }[]>([]);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [loading, user, router]);
 
@@ -127,7 +130,7 @@ function DevisPageInner() {
       : supabase.from('devis').select('*').eq('pro_uid', user.uid).order('created_at', { ascending: false });
     Promise.all([
       devisQ,
-      supabase.from('user_profiles_complet').select('tarifs_education, tarifs_education_extra, tarifs_garde, profile_type, cat_pro').eq('id', activeProfileId).maybeSingle(),
+      supabase.from('user_profiles_complet').select('tarifs_education, tarifs_education_extra, tarifs_garde, tarifs_veto, profile_type, cat_pro').eq('id', activeProfileId).maybeSingle(),
       activeProfileId
         ? supabase.from('animal_access').select('animal_id').eq('pro_profile_id', activeProfileId).in('statut', ['active', 'active_write'])
         : Promise.resolve({ data: [] }),
@@ -156,6 +159,16 @@ function DevisPageInner() {
               .map(e => ({ label: e.label!.trim(), prix: Number(e.prix) || 0 }))
           : [],
       );
+      if (pt === 'veterinaire') {
+        const tv = (t.data?.tarifs_veto ?? {}) as Record<string, unknown>;
+        const prixDe = (v: unknown) => { const n = parseFloat(String(v ?? '').replace(',', '.')); return isNaN(n) ? 0 : n; };
+        const grille = TARIFS_VETO_GROUPES.flatMap(g => g.items.filter(i => prixDe(tv[i.key]) > 0)
+          .map(i => ({ groupe: g.groupe.replace(' (selon le poids)', ''), label: libelleTarifVeto(g.groupe, i.label), prix: prixDe(tv[i.key]) })));
+        const { data: ph } = activeProfileId
+          ? await supabase.from('inventaire_items').select('nom, prix_vente').eq('eleveur_profile_id', activeProfileId).gt('prix_vente', 0).order('nom')
+          : { data: [] };
+        setTarifsVeto([...grille, ...((ph ?? []) as { nom: string; prix_vente: number }[]).map(x => ({ groupe: 'Pharmacie', label: x.nom, prix: Number(x.prix_vente) }))]);
+      }
       if (pt === 'toilettage') {
         // Toiletteur : prestations du catalogue (prix de base, ou le plus bas
         // de la grille espèce / gabarit) — miroir appli _catalogueToilettage.
@@ -204,6 +217,30 @@ function DevisPageInner() {
     setTelClient(searchParams.get('tel') ?? '');
     setNote(searchParams.get('note') ?? '');
     setRdvId(searchParams.get('rdv') || null);
+    {
+      const rdv = searchParams.get('rdv');
+      const profil = searchParams.get('clientProfileId');
+      (async () => {
+        const v = (x: unknown) => String(x ?? '').trim();
+        let c: Record<string, unknown> | null = null;
+        if (animalId) {
+          const { data } = await supabase.rpc('pm_client_facturation', { p_animal_id: animalId, ...(profil ? { p_client_profile_id: profil } : {}) });
+          const j = (data ?? null) as Record<string, unknown> | null;
+          if (j && (v(j.nom) || v(j.prenom))) c = j;
+        }
+        if (!c && rdv) {
+          const { data } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: rdv });
+          const j = (data ?? null) as Record<string, unknown> | null;
+          if (j && (v(j.nom) || v(j.prenom) || v(j.email))) c = j;
+        }
+        if (!c) return;
+        // Seuls les champs encore vides sont complétés.
+        setNomClient(x => x.trim() ? x : v(c!.nom));
+        setPrenomClient(x => x.trim() ? x : (c!.societe === true ? '' : v(c!.prenom)));
+        setEmailClient(x => x.trim() ? x : v(c!.email));
+        setTelClient(x => x.trim() ? x : v(c!.telephone));
+      })().catch(() => {});
+    }
     const ld = searchParams.get('ligneDesc');
     // Plusieurs animaux sur la séance : une ligne par animal (JSON [{d, q, p}]).
     let lj: { d: string; q?: number; p?: number }[] = [];
@@ -601,6 +638,17 @@ function DevisPageInner() {
                 <div className="space-y-2">
                   {lignes.map((l, i) => (
                     <div key={i} className="flex items-center gap-2">
+                      {tarifsVeto.length > 0 && (
+                        <select value="" onChange={e => { const t = tarifsVeto[Number(e.target.value)]; if (t) updateLigne(i, { description: t.label, prix_unitaire: t.prix }); }}
+                          aria-label="Choisir dans mes tarifs" className="w-40 border border-gray-200 rounded-lg px-2 py-2 text-sm bg-white">
+                          <option value="">Mes tarifs…</option>
+                          {[...new Set(tarifsVeto.map(t => t.groupe))].map(g => (
+                            <optgroup key={g} label={g}>
+                              {tarifsVeto.map((t, k) => t.groupe === g ? <option key={k} value={k}>{t.label} ({t.prix.toFixed(2)} €)</option> : null)}
+                            </optgroup>
+                          ))}
+                        </select>
+                      )}
                       <input value={l.description} onChange={e => updateLigne(i, { description: e.target.value })}
                         placeholder="Description" className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" />
                       <input type="number" min={1} value={l.quantite}

@@ -6,6 +6,8 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
 import 'package:PetsMatch/utils/prestations_education.dart';
+import 'package:PetsMatch/utils/tarifs_veto.dart';
+import 'package:PetsMatch/utils/contexte_pro.dart';
 
 const _kTeal = Color(0xFF0C5C6C);
 const _kPurple = Color(0xFF7B5EA7);
@@ -62,6 +64,33 @@ Future<String?> _syncContratDocument(Map<String, dynamic> devisRow, String devis
 }
 
 /// Pré-remplissage d'un nouveau devis (ex. depuis un bilan comportemental).
+/// Coordonnées du client pour un devis : client avec l'appli (particulier,
+/// éleveur, association — coordonnées de facturation), sinon client sans compte
+/// (fichier clients de la fiche, coordonnées saisies sur le RDV).
+Future<({String prenom, String nom, String email, String tel})?> coordClientDevis({
+  String? animalId, String? rdvId, String? clientProfileId,
+}) async {
+  final supa = Supabase.instance.client;
+  String v(dynamic x) => x?.toString().trim() ?? '';
+  try {
+    if ((animalId ?? '').isNotEmpty) {
+      final j = await supa.rpc('pm_client_facturation', params: {
+        'p_animal_id': animalId, if ((clientProfileId ?? '').isNotEmpty) 'p_client_profile_id': clientProfileId,
+      });
+      if (j is Map && (v(j['nom']).isNotEmpty || v(j['prenom']).isNotEmpty)) {
+        return (prenom: j['societe'] == true ? '' : v(j['prenom']), nom: v(j['nom']), email: v(j['email']), tel: v(j['telephone']));
+      }
+    }
+    if ((rdvId ?? '').isNotEmpty) {
+      final j = await supa.rpc('pm_contact_client_rdv', params: {'p_rdv_id': rdvId});
+      if (j is Map && (v(j['nom']).isNotEmpty || v(j['prenom']).isNotEmpty || v(j['email']).isNotEmpty)) {
+        return (prenom: v(j['prenom']), nom: v(j['nom']), email: v(j['email']), tel: v(j['telephone']));
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
 class DevisPrefill {
   final String? animalId;
   final String? clientUid;
@@ -334,6 +363,9 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
   Map<String, dynamic> _tarifs = {};
   Map<String, dynamic> _tarifsBase = {};
   List<Map<String, dynamic>> _tarifsExtra = []; // éducateur : options tarifaires
+  /// Vétérinaire : mes tarifs (grille) et ma pharmacie (prix de vente), en liste déroulante sur chaque ligne.
+  List<({String groupe, String label, double prix})> _tarifsVeto = [];
+  bool get _veto => AgendaContexte.catPro == 'veterinaire' || User_Info.catPro == 'veterinaire';
   // Éducateur : cours du catalogue « Prestations & tarifs » (source des prix).
   List<Map<String, dynamic>> _coursCatalogue = [];
   List<Map<String, dynamic>> _forfaits = [];
@@ -409,6 +441,27 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final pid = User_Info.activeProfileId;
+    if (_veto) {
+      final pro = AgendaContexte.profileId.isNotEmpty ? AgendaContexte.profileId : pid;
+      try {
+        final row = pro.isEmpty ? null : await _supa.from('user_profiles_complet').select('tarifs_veto').eq('id', pro).maybeSingle();
+        final tv = (row?['tarifs_veto'] as Map?) ?? const {};
+        double prixDe(dynamic x) => double.tryParse((x ?? '').toString().replaceAll(',', '.')) ?? 0;
+        final ph = pro.isEmpty ? const [] : await _supa.from('inventaire_items').select('nom, prix_vente')
+            .eq('eleveur_profile_id', pro).gt('prix_vente', 0).order('nom') as List;
+        if (mounted) {
+          setState(() => _tarifsVeto = [
+                for (final g in kTarifsVetoGroupes)
+                  for (final it in g.$2)
+                    if (prixDe(tv[it.$1]) > 0)
+                      (groupe: g.$1.replaceAll(' (selon le poids)', ''), label: libelleTarifVeto(g.$1, it.$2), prix: prixDe(tv[it.$1])),
+                for (final x in ph)
+                  (groupe: 'Pharmacie', label: (x['nom'] ?? '').toString(), prix: prixDe(x['prix_vente'])),
+              ]);
+        }
+      } catch (_) {}
+      return;
+    }
     if (User_Info.catPro == 'toilettage') {
       try {
         var q = _supa.from('prestations_toilettage').select('nom, prix_base, grille_prix').eq('pro_uid', uid).eq('actif', true);
@@ -754,6 +807,28 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(children: [
+        // Vétérinaire : liste déroulante de mes tarifs (la ligne reste modifiable).
+        if (_tarifsVeto.isNotEmpty)
+          PopupMenuButton<int>(
+            tooltip: 'Choisir dans mes tarifs',
+            icon: const Icon(Icons.arrow_drop_down_circle_outlined, color: _kTeal),
+            onSelected: (k) {
+              final t = _tarifsVeto[k];
+              setState(() {
+                l.description = t.label; l.descCtrl.text = t.label;
+                l.prixUnitaire = t.prix; l.prixCtrl.text = t.prix.toStringAsFixed(2);
+              });
+            },
+            itemBuilder: (_) => [
+              for (var k = 0; k < _tarifsVeto.length; k++) ...[
+                if (k == 0 || _tarifsVeto[k - 1].groupe != _tarifsVeto[k].groupe)
+                  PopupMenuItem<int>(enabled: false, height: 28,
+                      child: Text(_tarifsVeto[k].groupe, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700))),
+                PopupMenuItem<int>(value: k,
+                    child: Text('${_tarifsVeto[k].label} (${_tarifsVeto[k].prix.toStringAsFixed(2)} €)', style: const TextStyle(fontFamily: 'Galey'))),
+              ],
+            ],
+          ),
         Expanded(flex: 3, child: TextField(
           controller: l.descCtrl,
           onChanged: (v) => l.description = v,

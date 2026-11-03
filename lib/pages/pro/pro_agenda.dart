@@ -11,7 +11,7 @@ import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
 import 'package:PetsMatch/pages/pro/garde_acceptation.dart' show apresAcceptationGarde;
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill;
+import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill, coordClientDevis;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5328,15 +5328,22 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   )))
               : null,
           onDevis: (showProTools && AgendaContexte.catPro == 'veterinaire')
-              ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => DevisPage(prefill: DevisPrefill(
+              ? () async {
+                final cc = await coordClientDevis(animalId: hasAnimal ? animalId : null, rdvId: rdv['id']?.toString(),
+                    clientProfileId: rdv['client_profile_id']?.toString());
+                String? ou(String? a, dynamic b) => (a ?? '').isNotEmpty ? a : ((b?.toString() ?? '').trim().isEmpty ? null : b.toString().trim());
+                if (!context.mounted) return;
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => DevisPage(prefill: DevisPrefill(
                   animalId: hasAnimal ? animalId : null,
                   clientUid: rdv['client_uid']?.toString(), clientProfileId: rdv['client_profile_id']?.toString(),
-                  clientNom: rdv['_client_name']?.toString() ?? rdv['client_nom_manuel']?.toString(),
-                  clientEmail: rdv['client_email_manuel']?.toString(), clientTel: rdv['client_telephone_manuel']?.toString(),
+                  clientNom: ou(cc?.nom, rdv['_client_name'] ?? rdv['client_nom_manuel']),
+                  clientPrenom: ou(cc?.prenom, null),
+                  clientEmail: ou(cc?.email, rdv['client_email_manuel']), clientTel: ou(cc?.tel, rdv['client_telephone_manuel']),
                   rdvId: rdv['id']?.toString(),
                   lignes: [if ((rdv['motif']?.toString() ?? '').trim().isNotEmpty)
                     {'description': rdv['motif'].toString().trim(), 'quantite': 1, 'prix_unitaire': 0}],
-                ))))
+                ))));
+              }
               : null,
           onHistorique: (AgendaContexte.catPro == 'veterinaire' && hasAnimal)
               ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => HistoriquePatientPage(
