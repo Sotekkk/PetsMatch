@@ -1011,6 +1011,9 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'rdv_refuse':
     case 'rdv_annule':
     case 'rdv_rappel':
+    // Intervention : consignes, réveil, prêt, heure de récupération (agenda du client).
+    case 'rdv_consignes_preop':
+    case 'intervention_suivi':
       return '/agenda';
     case 'cours_collectif_rappel':
     case 'cours_collectif_place_liberee':

@@ -1978,7 +1978,8 @@ class _AgendaPageState extends State<AgendaPage> {
                     heureFin: 22,
                     onRdvTap: (e) {
                       final hasLink = (e['rdv_id']?.toString().isNotEmpty ?? false)
-                          || (e['couleur']?.toString() ?? '').startsWith('rdv:');
+                          || (e['couleur']?.toString() ?? '').startsWith('rdv:')
+                          || (e['couleur']?.toString() ?? '').startsWith('recup:');
                       if (e['type'] == 'rdv' && hasLink) {
                         showModalBottomSheet(
                           context: context,
@@ -2053,7 +2054,8 @@ class _AgendaPageState extends State<AgendaPage> {
               onDayHeaderTap: (d) => setState(() { _selectedDay = d; _viewMode = 1; }),
               onEventTap: (e) {
                 final hasLink = (e['rdv_id']?.toString().isNotEmpty ?? false)
-                    || (e['couleur']?.toString() ?? '').startsWith('rdv:');
+                    || (e['couleur']?.toString() ?? '').startsWith('rdv:')
+                          || (e['couleur']?.toString() ?? '').startsWith('recup:');
                 if (e['type'] == 'rdv' && hasLink) {
                   showModalBottomSheet(
                     context: context,
@@ -2733,6 +2735,8 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
     final rid = widget.event['rdv_id']?.toString();
     if (rid != null && rid.isNotEmpty) return rid;
     final c = widget.event['couleur']?.toString() ?? '';
+    // 'recup:<rdv>' : récupération de l'animal après une intervention.
+    if (c.startsWith('recup:')) return c.substring(6);
     return c.startsWith('rdv:') ? c.substring(4) : null;
   }
 
@@ -2749,7 +2753,8 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
       final rdvRows = await _supa.from('rdv')
           .select('id, pro_uid, pro_profile_id, client_uid, client_profile_id, animal_id, '
               'animal_nom_manuel, client_nom_manuel, client_telephone_manuel, '
-              'date_heure, motif, statut, duree_minutes, notes_client, lieu, lieu_lat, lieu_lng, adresse_depart')
+              'date_heure, motif, statut, duree_minutes, notes_client, lieu, lieu_lat, lieu_lng, adresse_depart, '
+              'intervention_type, heure_recuperation, consignes_preop, admis_le, sortie_le')
           .eq('id', rdvId).maybeSingle();
       if (rdvRows == null) { setState(() => _loading = false); return; }
       _rdv = Map<String, dynamic>.from(rdvRows);
@@ -3017,6 +3022,33 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
                     const SizedBox(height: 8),
                     _InfoRow(icon: Icons.chat_bubble_outline,
                         text: _rdv!['notes_client'].toString()),
+                  ],
+                  // Intervention : dépôt, récupération, consignes à respecter.
+                  if (_rdv?['intervention_type'] != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: const Color(0xFFF1F7F8), borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _teal.withValues(alpha: 0.2))),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('Intervention — dépôt ${DateFormat("HH'h'mm").format(DateTime.parse(_rdv!['date_heure'].toString()).toLocal())}',
+                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal)),
+                        if (_rdv!['heure_recuperation'] != null)
+                          Padding(padding: const EdgeInsets.only(top: 4), child: Text(
+                              'Récupération prévue vers ${DateFormat("HH'h'mm").format(DateTime.parse(_rdv!['heure_recuperation'].toString()).toLocal())} — la clinique vous prévient quand votre animal est prêt.',
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                        if (_rdv!['sortie_le'] != null)
+                          const Padding(padding: EdgeInsets.only(top: 4), child: Text('Votre animal est rentré.',
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF2E7D5E)))),
+                        if ((_rdv!['consignes_preop']?.toString() ?? '').trim().isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          const Text('Consignes à respecter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+                          const SizedBox(height: 2),
+                          Text(_rdv!['consignes_preop'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                        ],
+                      ]),
+                    ),
                   ],
                   if (_rdv?['duree_minutes'] != null) ...[
                     const SizedBox(height: 8),

@@ -5715,15 +5715,17 @@ class _RdvCard extends StatelessWidget {
       if (chir == null) { snack('Intervention non rattachée à une fiche animal.'); return; }
       await ouvrirCrChirurgie(context, chir!, type: type);
     }
-    Future<void> prevenir(String texte) async {
-      if (inter?['client_uid'] == null) { snack('Client sans compte PetsMatch : prévenez-le par téléphone.'); return; }
-      await Supabase.instance.client.from('notifications').insert({
-        'uid': inter!['client_uid'], 'type': 'intervention_suivi',
-        'title': '${rdv['_animal_nom'] ?? 'Votre animal'} — ${inter!['motif'] ?? libelleIntervention(inter!['intervention_type']?.toString())}',
-        'body': texte, if (inter!['client_profile_id'] != null) 'profile_id': inter!['client_profile_id'],
-        'data': {'rdv_id': rdv['id'].toString()}, 'read': false,
-      });
-      snack('Famille prévenue dans l\u2019appli.');
+    // Notification (appli), sinon e-mail, sinon « appelez-le au … » (vétérinaire ou ASV).
+    Future<void> prevenir(String message) async => snack(await messageIntervention(rdv['id'].toString(), message));
+    Future<void> changerRecuperation() async {
+      final actuelle = DateTime.tryParse(inter?['heure_recuperation']?.toString() ?? '')?.toLocal()
+          ?? DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal() ?? DateTime.now();
+      final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(actuelle));
+      if (t == null) return;
+      final nouvelle = DateTime(actuelle.year, actuelle.month, actuelle.day, t.hour, t.minute);
+      await majRdv({'heure_recuperation': nouvelle.toUtc().toIso8601String()});
+      snack('Récupération à ${t.hour.toString().padLeft(2, '0')}h${t.minute.toString().padLeft(2, '0')}. '
+          '${await messageIntervention(rdv['id'].toString(), 'recuperation')}');
     }
     Future<void> noterSuivi() async {
       final ctrl = TextEditingController(text: inter?['suivi_hospitalisation']?.toString() ?? '');
@@ -5771,9 +5773,12 @@ class _RdvCard extends StatelessWidget {
             ]),
             etape(ctx, ++n, 'Réveil / hospitalisation', (inter['suivi_hospitalisation'] ?? '').toString().trim().isEmpty ? null : inter['suivi_hospitalisation'].toString(), [
               ('Noter', noterSuivi),
-              ('Prévenir : réveillé', () => prevenir('${rdv['_animal_nom'] ?? 'Votre animal'} est bien réveillé(e). Nous vous confirmons l\u2019heure de récupération'
-                  '${inter!['heure_recuperation'] != null ? ' (prévue vers ${hmIso(inter['heure_recuperation'])})' : ''}.')),
-              ('Prévenir : prêt à partir', () => prevenir('${rdv['_animal_nom'] ?? 'Votre animal'} peut être récupéré(e) à la clinique.')),
+              ('Prévenir : réveillé', () => prevenir('reveille')),
+              ('Prévenir : prêt à partir', () => prevenir('pret')),
+            ]),
+            etape(ctx, ++n, 'Heure de récupération',
+                inter['heure_recuperation'] != null ? 'Prévue vers ${hmIso(inter['heure_recuperation'])} — le client est prévenu si vous la changez.' : 'Non fixée', [
+              ('Modifier', changerRecuperation),
             ]),
             etape(ctx, ++n, 'Sortie', inter['sortie_le'] != null ? 'Récupéré à ${hmIso(inter['sortie_le'])}' : 'Consignes postopératoires (${etatDoc('consignes').toLowerCase()}), puis animal récupéré', [
               ('Consignes post-op', () => ouvrirDocInter('consignes')),

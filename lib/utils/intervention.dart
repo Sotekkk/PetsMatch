@@ -74,6 +74,22 @@ Future<String> envoyerConsignesPreop(String rdvId) async {
   }
 }
 
+/// Suivi de la journée au propriétaire ('reveille' | 'pret' | 'recuperation') :
+/// notification (appli), sinon e-mail, sinon message « appelez-le au … ».
+Future<String> messageIntervention(String rdvId, String message) async {
+  try {
+    final r = await http.post(Uri.parse('$kSiteBaseUrl/api/rdv/consignes-preop'),
+        headers: {...await siteApiHeaders(), 'Content-Type': 'application/json'},
+        body: jsonEncode({'rdvId': rdvId, 'message': message}));
+    final j = (jsonDecode(r.body) as Map?) ?? const {};
+    if (j['notifie'] == true) return 'Client prévenu dans l\u2019appli.';
+    if (j['email_envoye'] == true) return 'Client prévenu par e-mail.';
+    return (j['error'] ?? 'Envoi impossible.').toString();
+  } catch (_) {
+    return 'Envoi impossible (connexion).';
+  }
+}
+
 /// Intervention (chirurgies) du RDV : celle de l'animal ce jour-là (CR pré-op
 /// fait en consultation avec la date prévue), sinon une nouvelle. Renvoie son id.
 Future<String?> lierChirurgieRdv({required String rdvId, required String? animalId, required DateTime dateHeure,

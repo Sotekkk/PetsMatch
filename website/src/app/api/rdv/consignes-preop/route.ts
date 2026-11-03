@@ -3,17 +3,21 @@ import { createClient } from '@supabase/supabase-js';
 import { requireUser } from '@/lib/server-auth';
 import { echapperHtml, emailValide, gabaritEmail, envoyerEmail } from '@/lib/email-petsmatch';
 
-// RDV « Intervention » (vétérinaire) : consignes avant l'intervention (à
-// jeun…) envoyées au propriétaire — notification s'il a un compte, e-mail
-// sinon / en plus. POST { rdvId }. Réservé au professionnel du RDV (titulaire,
-// cogérant, employé actif de la clinique). Miroir appli : envoyerConsignesPreop
-// (lib/utils/intervention.dart) qui appelle cette route.
+// RDV « Intervention » (vétérinaire) : messages au propriétaire.
+//  POST { rdvId, message? } — message :
+//   • 'consignes' (défaut) : consignes avant l'intervention (à jeun…) —
+//     notification s'il a un compte ET e-mail ;
+//   • 'reveille' / 'pret' / 'recuperation' (heure de récupération changée) :
+//     notification s'il a l'appli, sinon e-mail ; sinon on renvoie son
+//     téléphone pour l'appeler.
+// Réservé au professionnel du RDV (titulaire, cogérant, employé actif de la
+// clinique — vétérinaire ou ASV). Miroir appli : lib/utils/intervention.dart.
 const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY ?? '', { auth: { persistSession: false } });
 
 interface RdvRow {
   id: string; date_heure: string; motif: string | null; animal_id: string | null; animal_nom_manuel: string | null;
   pro_uid: string; pro_profile_id: string | null; client_uid: string | null; client_profile_id: string | null;
-  client_email_manuel: string | null; client_nom_manuel: string | null;
+  client_email_manuel: string | null; client_nom_manuel: string | null; client_telephone_manuel: string | null;
   intervention_type: string | null; heure_recuperation: string | null; consignes_preop: string | null;
 }
 
@@ -31,16 +35,17 @@ async function estPro(rdv: RdvRow, uid: string) {
 export async function POST(req: NextRequest) {
   const auth = await requireUser(req);
   if (auth instanceof NextResponse) return auth;
-  const body = await req.json().catch(() => ({})) as { rdvId?: string };
+  const body = await req.json().catch(() => ({})) as { rdvId?: string; message?: string };
+  const message = ['reveille', 'pret', 'recuperation'].includes(body.message ?? '') ? body.message! : 'consignes';
   if (!body.rdvId || !/^[0-9a-f-]{36}$/i.test(body.rdvId)) return NextResponse.json({ error: 'rdvId requis' }, { status: 400 });
   const { data } = await admin.from('rdv')
-    .select('id, date_heure, motif, animal_id, animal_nom_manuel, pro_uid, pro_profile_id, client_uid, client_profile_id, client_email_manuel, client_nom_manuel, intervention_type, heure_recuperation, consignes_preop')
+    .select('id, date_heure, motif, animal_id, animal_nom_manuel, pro_uid, pro_profile_id, client_uid, client_profile_id, client_email_manuel, client_nom_manuel, client_telephone_manuel, intervention_type, heure_recuperation, consignes_preop')
     .eq('id', body.rdvId).maybeSingle();
   const rdv = data as RdvRow | null;
   if (!rdv) return NextResponse.json({ error: 'Rendez-vous introuvable' }, { status: 404 });
   if (!(await estPro(rdv, auth.uid))) return NextResponse.json({ error: 'Réservé au professionnel' }, { status: 403 });
   const consignes = (rdv.consignes_preop ?? '').trim();
-  if (!consignes) return NextResponse.json({ error: 'Aucune consigne à envoyer' }, { status: 400 });
+  if (message === 'consignes' && !consignes) return NextResponse.json({ error: 'Aucune consigne à envoyer' }, { status: 400 });
 
   const { data: p } = await admin.from('user_profiles_complet').select('nom, firstname, lastname').eq('id', rdv.pro_profile_id ?? '').maybeSingle();
   const pp = p as { nom?: string | null; firstname?: string | null; lastname?: string | null } | null;
@@ -51,6 +56,37 @@ export async function POST(req: NextRequest) {
   const depot = fmt(rdv.date_heure, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
   const recup = rdv.heure_recuperation ? fmt(rdv.heure_recuperation, { hour: '2-digit', minute: '2-digit' }) : null;
   const intitule = rdv.motif || 'Intervention';
+
+  // Suivi de la journée : notification (appli), sinon e-mail, sinon téléphone.
+  if (message !== 'consignes') {
+    const nomA = animal || 'Votre animal';
+    const texte = message === 'reveille'
+      ? `${nomA} est bien réveillé(e).${recup ? ` Récupération prévue vers ${recup} : nous vous confirmons l’heure.` : ''}`
+      : message === 'pret'
+        ? `${nomA} est prêt(e) : vous pouvez venir le/la récupérer à la clinique.`
+        : `Nouvelle heure de récupération de ${nomA} : vers ${recup ?? '—'}.`;
+    const titre = message === 'pret' ? `${nomA} peut rentrer` : message === 'reveille' ? `${nomA} est réveillé(e)` : 'Heure de récupération modifiée';
+    if (rdv.client_uid) {
+      await admin.from('notifications').insert({
+        uid: rdv.client_uid, type: 'intervention_suivi', title: titre, body: `${texte} — ${proNom}`,
+        ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}), data: { rdv_id: rdv.id }, read: false,
+      });
+      return NextResponse.json({ ok: true, notifie: true, email_envoye: false });
+    }
+    const mail = rdv.client_email_manuel;
+    if (emailValide(mail)) {
+      try {
+        await envoyerEmail(mail!.trim(), `${titre} — ${proNom}`, gabaritEmail({
+          sousTitre: intitule,
+          salutation: `Bonjour${rdv.client_nom_manuel ? ` <strong>${echapperHtml(rdv.client_nom_manuel)}</strong>` : ''},`,
+          paragraphes: [echapperHtml(texte), `<strong>${echapperHtml(proNom)}</strong>`],
+        }));
+        return NextResponse.json({ ok: true, notifie: false, email_envoye: true });
+      } catch (e) { console.error('[intervention] e-mail', e); }
+    }
+    return NextResponse.json({ ok: false, notifie: false, email_envoye: false, telephone: rdv.client_telephone_manuel ?? null,
+      error: `Client sans appli ni e-mail : appelez-le${rdv.client_telephone_manuel ? ` au ${rdv.client_telephone_manuel}` : ''}.` }, { status: 200 });
+  }
 
   let notifie = false;
   if (rdv.client_uid) {

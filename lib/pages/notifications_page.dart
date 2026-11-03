@@ -388,7 +388,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await Navigator.push(context, MaterialPageRoute(builder: (_) => ProAgendaPage(initialTabIndex: 1, focusRdvId: rdvId)));
       return;
     }
-    if (type == 'rdv_confirme' || type == 'rdv_refuse' || type == 'rdv_annule' || type == 'rdv_modifie') {
+    if (type == 'rdv_confirme' || type == 'rdv_refuse' || type == 'rdv_annule' || type == 'rdv_modifie'
+        || type == 'rdv_consignes_preop' || type == 'intervention_suivi') {
       await Navigator.push(context, MaterialPageRoute(builder: (_) => const AgendaPage()));
       return;
     }

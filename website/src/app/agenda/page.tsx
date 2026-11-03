@@ -1811,7 +1811,7 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnim
         <div className="flex-1 min-w-0">
           <p className="font-bold text-sm text-[#1E2025] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{e.titre}</p>
           <p className="text-xs text-gray-400">{fmtTimeRange(e.date_debut, e.duree_minutes ?? e.rdv?.duree_minutes)} · {TYPE_LABEL[e.type] ?? e.type}</p>
-          {e.notes && <p className="text-xs text-gray-400 truncate">{e.notes}</p>}
+          {e.notes && <p className={`text-xs text-gray-400 ${/^(Intervention|Récupérer)/.test(e.titre ?? '') ? 'whitespace-pre-line' : 'truncate'}`}>{e.notes}</p>}
           {lieu && <p className="text-xs text-gray-400 truncate">📍 {lieu}</p>}
         </div>
         {!isRdv && !hasRdvInfo && (

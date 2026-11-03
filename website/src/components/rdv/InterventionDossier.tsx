@@ -9,7 +9,7 @@
 // Miroir appli : _dossierIntervention (pro_agenda.dart).
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { libelleIntervention, envoyerConsignesPreop } from '@/lib/intervention';
+import { libelleIntervention, envoyerConsignesPreop, messageIntervention } from '@/lib/intervention';
 
 const TEAL = '#0C5C6C';
 const VERT = '#2E7D32';
@@ -65,14 +65,21 @@ export default function InterventionDossier({ rdvId, version, onOuvrirPage, anim
   const ouvrirDoc = (doc: 'preop' | 'operatoire' | 'consignes', titre: string) => r.animal_id && r.chirurgie_id
     ? onOuvrirPage(`/mes-patients/${encodeURIComponent(r.animal_id)}?chirDoc=${encodeURIComponent(`${r.chirurgie_id}:${doc}`)}`, titre)
     : setMessage('Intervention non rattachée à une fiche animal.');
-  const prevenirFamille = (texte: string) => action('famille', async () => {
-    if (!r.client_uid) { setMessage('Client sans compte PetsMatch : prévenez-le par téléphone.'); return; }
-    await supabase.from('notifications').insert({
-      uid: r.client_uid, type: 'intervention_suivi', title: `${animalNom || 'Votre animal'} — ${r.motif || libelleIntervention(r.intervention_type)}`,
-      body: texte, ...(r.client_profile_id ? { profile_id: r.client_profile_id } : {}), data: { rdv_id: r.id }, read: false,
+  // Notification (appli), sinon e-mail, sinon « appelez-le au … » (vétérinaire ou ASV).
+  const prevenirFamille = (m: 'reveille' | 'pret' | 'recuperation') => action(m, async () => setMessage(await messageIntervention(r.id, m)));
+  const heureRecupLocale = r.heure_recuperation ? new Date(r.heure_recuperation).toTimeString().slice(0, 5) : '';
+  async function changerRecuperation(hhmm: string) {
+    if (!hhmm || !r) return;
+    const base = new Date(r.heure_recuperation ?? Date.now());
+    const [h, m] = hhmm.split(':').map(Number);
+    base.setHours(h, m, 0, 0);
+    await action('recuperation', async () => {
+      const { error } = await supabase.from('rdv').update({ heure_recuperation: base.toISOString() }).eq('id', r.id);
+      if (error) { setMessage(`Non enregistré : ${error.message}`); return; }
+      await charger();
+      setMessage(`Récupération à ${hhmm.replace(':', 'h')}. ${await messageIntervention(r.id, 'recuperation')}`);
     });
-    setMessage('Famille prévenue dans l’appli.');
-  });
+  }
 
   const btn = (cle: string, label: string, f: () => unknown, plein = false) => (
     <button key={cle} type="button" disabled={!!enCours} onClick={() => f()}
@@ -114,11 +121,18 @@ export default function InterventionDossier({ rdvId, version, onOuvrirPage, anim
           'Anesthésie, protocole, actes réalisés.')}
         {ligne('Réveil / hospitalisation', suivi.trim() ? 'Noté' : '', suivi.trim() ? VERT : GRIS, [
           btn('suivi_hospitalisation', 'Enregistrer', () => maj({ suivi_hospitalisation: suivi.trim() || null })),
-          btn('famille', 'Prévenir : réveillé', () => prevenirFamille(`${animalNom || 'Votre animal'} est bien réveillé(e). Nous vous confirmons l’heure de récupération${r.heure_recuperation ? ` (prévue vers ${hm(r.heure_recuperation)})` : ''}.`)),
-          btn('pret', 'Prévenir : prêt à partir', () => prevenirFamille(`${animalNom || 'Votre animal'} peut être récupéré(e) à la clinique.`)),
+          btn('reveille', 'Prévenir : réveillé', () => prevenirFamille('reveille')),
+          btn('pret', 'Prévenir : prêt à partir', () => prevenirFamille('pret')),
         ])}
         <textarea value={suivi} onChange={e => setSuivi(e.target.value)} rows={2} placeholder="Réveil, surveillance, prise d'eau, miction…"
           className="w-full -mt-1 mb-2 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#0C5C6C] resize-none" />
+        <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
+          <p className="flex-1 text-sm font-bold text-[#1F2A2E]">Heure de récupération</p>
+          <input type="time" step={300} defaultValue={heureRecupLocale} key={heureRecupLocale}
+            onBlur={e => { if (e.target.value && e.target.value !== heureRecupLocale) changerRecuperation(e.target.value); }}
+            className="border border-gray-200 rounded-lg px-2 py-1 text-sm" />
+          <span className="text-[11px] text-gray-500">le client est prévenu</span>
+        </div>
         {ligne('Sortie', r.sortie_le ? `Récupéré à ${hm(r.sortie_le)}` : 'Consignes postopératoires, puis animal récupéré', r.sortie_le ? VERT : GRIS, [
           btn('consignes_post', `Consignes post-op (${eCons.toLowerCase()})`, () => ouvrirDoc('consignes', 'Consignes après l’intervention')),
           r.sortie_le ? btn('sortie_le', 'Annuler', () => maj({ sortie_le: null })) : btn('sortie_le', 'Animal récupéré', () => maj({ sortie_le: new Date().toISOString() }), true),

@@ -51,6 +51,16 @@ export async function envoyerConsignesPreop(rdvId: string): Promise<{ ok: boolea
   return { ok: true, message: `Consignes envoyées${j.email_envoye ? ' par e-mail' : ''}${j.notifie ? `${j.email_envoye ? ' et' : ''} dans l’appli du client` : ''}.` };
 }
 
+/** Suivi de la journée au propriétaire : notification (appli), sinon e-mail,
+ *  sinon message « appelez-le au … ». */
+export async function messageIntervention(rdvId: string, message: 'reveille' | 'pret' | 'recuperation'): Promise<string> {
+  const r = await apiFetch('/api/rdv/consignes-preop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rdvId, message }) });
+  const j = await r.json().catch(() => ({})) as { error?: string; notifie?: boolean; email_envoye?: boolean };
+  if (j.notifie) return 'Client prévenu dans l’appli.';
+  if (j.email_envoye) return 'Client prévenu par e-mail.';
+  return j.error ?? 'Envoi impossible.';
+}
+
 /** Intervention (chirurgies) du RDV : celle de l'animal ce jour-là (CR pré-op
  *  fait en consultation avec la date prévue), sinon une nouvelle. Renvoie son id. */
 export async function lierChirurgieRdv(rdv: { id: string; animal_id: string | null; date_heure: string; motif: string | null; pro_uid: string; pro_profile_id: string | null; intervention_type: string | null }, veterinaire?: string): Promise<string | null> {

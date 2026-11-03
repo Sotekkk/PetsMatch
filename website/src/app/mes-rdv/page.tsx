@@ -898,9 +898,7 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
         ...(notes.trim() ? { notes_client: notes.trim() } : {}),
         ...(intervention ? {
           intervention_type: intervention,
-          ...(recup ? { heure_recuperation: recup.toISOString() } : {}),
           ...(bloc ? { bloc_debut: bloc.toISOString(), bloc_fin: new Date(bloc.getTime() + blocDuree * 60000).toISOString() } : {}),
-          ...(consignes.trim() ? { consignes_preop: consignes.trim() } : {}),
         } : {}),
         statut: 'confirme',
         ...(praticien ? { instructeur_profile_id: praticien } : {}),
@@ -950,8 +948,15 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
             body: JSON.stringify({ action: 'demander', rdvId }) }).catch(() => {});
         }
       }
-      // Intervention : consignes au propriétaire (rappelées la veille).
-      if (intervention && consignes.trim()) await envoyerConsignesPreop(rdvId).catch(() => null);
+      // Intervention : récupération et consignes posées après coup — la base
+      // écrit alors l'agenda de la famille (dépôt + « Récupérer … »).
+      if (intervention) {
+        await supabase.from('rdv').update({
+          ...(recup ? { heure_recuperation: recup.toISOString() } : {}),
+          ...(consignes.trim() ? { consignes_preop: consignes.trim() } : {}),
+        }).eq('id', rdvId);
+        if (consignes.trim()) await envoyerConsignesPreop(rdvId).catch(() => null);
+      }
       onDone();
     } catch (e) {
       const msg = (e as { message?: string })?.message;
