@@ -4,6 +4,22 @@
 // par e-mail + notification s'il a un compte. Miroir appli : lib/utils/devis_rdv.dart.
 import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
+import { signerContratAvecSignaturePro } from '@/lib/signature-pro';
+
+/** Signature du pro sur le devis envoyé (sa signature enregistrée, comme
+ *  sur les ordonnances), s'il ne l'a pas déjà signé. Faux si aucune signature. */
+export async function signerDevisPro(devisId: string, uid: string, nom: string, signature?: string | null): Promise<boolean> {
+  const { data: doc } = await supabase.from('documents_animaux').select('id, statut, metadata')
+    .contains('metadata', { devis_id: devisId }).limit(1).maybeSingle();
+  if (!doc) return false;
+  const m = (doc.metadata ?? {}) as Record<string, unknown>;
+  if (String(m.signature_eleveur ?? '').trim()) return true;
+  if (['brouillon', 'signe', 'annule', 'refuse', 'expire'].includes(String(doc.statut))) return false;
+  return signerContratAvecSignaturePro(String(doc.id), uid, nom, signature);
+}
+
+/** Devis modifiable : pas encore signé par le client (ni refusé / expiré). */
+export const devisModifiable = (statut: string | null | undefined) => statut === 'brouillon' || statut === 'envoye';
 
 export interface DevisRdv {
   id: string; statut: string; total_ttc: number; email_client: string | null;
@@ -27,11 +43,12 @@ export async function devisDuRdv(rdvId: string): Promise<DevisRdv[]> {
 }
 
 /** Envoie le devis : statut « envoyé », document à signer, notification, e-mail. Renvoie false si aucun e-mail n'est parti. */
-export async function envoyerDevisRdv(d: DevisRdv, o: { proNom: string; emailSecours?: string | null }): Promise<boolean> {
+export async function envoyerDevisRdv(d: DevisRdv, o: { proNom: string; emailSecours?: string | null; uid?: string }): Promise<boolean> {
   if (d.statut === 'brouillon') {
     await supabase.from('devis').update({ statut: 'envoye', updated_at: new Date().toISOString() }).eq('id', d.id);
   }
   if (d.docId) await supabase.from('documents_animaux').update({ statut: 'en_attente' }).eq('id', d.docId).eq('statut', 'brouillon');
+  if (o.uid) await signerDevisPro(d.id, o.uid, o.proNom).catch(() => false);
   const chemin = d.docToken ? `/signer-contrat/${d.docToken}` : `/devis/${d.token_acceptation}`;
   if (d.client_uid) {
     await supabase.from('notifications').insert({

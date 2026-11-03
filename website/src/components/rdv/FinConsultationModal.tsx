@@ -306,7 +306,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
           const { data: cc } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: rdvId });
           const secours = (cc as { email?: string } | null)?.email || (facture?.email_client as string | null) || null;
           for (const d of devisAEnvoyer) {
-            const ok = await envoyerDevisRdv(d, { proNom: userData?.nameElevage || praticien, emailSecours: secours });
+            const ok = await envoyerDevisRdv(d, { proNom: userData?.nameElevage || praticien, emailSecours: secours, uid: user.uid });
             if (!ok && !d.client_uid) alert(`Devis de ${d.total_ttc.toFixed(2)} € : e-mail non envoyé (adresse manquante ou erreur).`);
           }
         }

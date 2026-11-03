@@ -12,6 +12,9 @@ import { rechercherUtilisateurs } from '@/lib/user-lookup';
 import { chargerPrestationsEducation } from '@/lib/prestations-education';
 import { TARIFS_VETO_GROUPES, libelleTarifVeto } from '@/lib/tarifs-veto';
 import { allerOuFermer } from '@/lib/panneau';
+import { maSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
+import { signerDevisPro, devisModifiable } from '@/lib/devis-rdv';
+import SignatureProModal from '@/components/signature/SignatureProModal';
 
 interface Ligne { description: string; quantite: number; prix_unitaire: number; total: number; }
 
@@ -35,6 +38,7 @@ interface Devis {
   token_acceptation: string;
   date_reponse: string | null;
   created_at: string;
+  rdv_id?: string | null;
 }
 
 interface UserResult {
@@ -109,6 +113,11 @@ function DevisPageInner() {
   const [lignes, setLignes] = useState<Ligne[]>([{ description: '', quantite: 1, prix_unitaire: 0, total: 0 }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Modification d'un devis pas encore signé par le client (brouillon ou envoyé).
+  const [editId, setEditId] = useState<string | null>(null);
+  // Ma signature (comme sur les ordonnances) : apposée sur le devis à l'envoi.
+  const [maSig, setMaSig] = useState<string | null>(null);
+  const [signerOuvert, setSignerOuvert] = useState(false);
 
   const [userSearch, setUserSearch] = useState('');
   const [userResults, setUserResults] = useState<UserResult[]>([]);
@@ -121,6 +130,7 @@ function DevisPageInner() {
   const [tarifsVeto, setTarifsVeto] = useState<{ groupe: string; label: string; prix: number }[]>([]);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [loading, user, router]);
+  useEffect(() => { if (user) maSignaturePro(user.uid).then(setMaSig).catch(() => {}); }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -139,7 +149,12 @@ function DevisPageInner() {
     ]).then(async ([d, t, acc]) => {
       const pt = (t.data?.profile_type ?? t.data?.cat_pro ?? '') as string;
       setCatPro(pt);
-      setDevisList((d.data ?? []) as Devis[]);
+      const liste = (d.data ?? []) as Devis[];
+      setDevisList(liste);
+      // Ouvert depuis le dossier du RDV : « Modifier le devis ».
+      const aModifier = searchParams.get('modifier');
+      const dm = aModifier ? liste.find(x => x.id === aModifier) : null;
+      if (dm && devisModifiable(dm.statut)) ouvrirModif(dm);
 
       // Charger les tokens des contrats (documents_animaux) rattachés aux devis
       // déjà envoyés/répondus — pour les liens "Voir le lien" / email.
@@ -381,7 +396,19 @@ function DevisPageInner() {
 
   const totalTtc = lignes.reduce((s, l) => s + (l.total || 0), 0);
 
+  function ouvrirModif(d: Devis) {
+    setEditId(d.id);
+    setNomClient(d.nom_client ?? ''); setPrenomClient(d.prenom_client ?? ''); setEmailClient(d.email_client ?? '');
+    setTelClient(d.telephone_client ?? ''); setAdresseClient(d.adresse_client ?? '');
+    setClientUid(d.client_uid); setClientProfileId(d.client_profile_id);
+    setDateValidite(d.date_validite ?? ''); setNote(d.note ?? ''); setAnimalId(d.animal_id ?? '');
+    setRdvId(d.rdv_id ?? null);
+    setLignes(d.lignes?.length ? d.lignes.map(l => ({ ...l })) : [{ description: '', quantite: 1, prix_unitaire: 0, total: 0 }]);
+    setError(''); setNewLink(null); setShowForm(true);
+  }
+
   function resetForm() {
+    setEditId(null);
     setNomClient(''); setPrenomClient(''); setEmailClient(''); setTelClient(''); setAdresseClient('');
     setClientUid(null); setClientProfileId(null);
     setDateValidite(''); setNote(''); setAnimalId('');
@@ -401,10 +428,20 @@ function DevisPageInner() {
     const docType = contratTypeFor(catPro);
     const docStatut = statut === 'accepte' ? 'signe' : statut === 'refuse' ? 'refuse' : statut === 'brouillon' ? 'brouillon' : 'en_attente';
     const clientNom = `${d.prenom_client ?? ''} ${d.nom_client ?? ''}`.trim() || d.nom_client || 'Client';
-    const { data: existing } = await supabase.from('documents_animaux').select('id, token')
+    const { data: existing } = await supabase.from('documents_animaux').select('id, token, statut, metadata')
       .eq('type', docType).contains('metadata', { devis_id: d.id }).maybeSingle();
     if (existing) {
-      await supabase.from('documents_animaux').update({ statut: docStatut }).eq('id', existing.id);
+      // Contenu à jour (devis modifié), signatures gardées ; déjà signé par le
+      // pro (partiellement_signe) : statut gardé.
+      const m = (existing.metadata ?? {}) as Record<string, unknown>;
+      const statutDoc = docStatut === 'en_attente' && existing.statut === 'partiellement_signe' ? 'partiellement_signe' : docStatut;
+      await supabase.from('documents_animaux').update({
+        statut: statutDoc, titre: `Devis — ${Number(d.total_ttc).toFixed(2)} €`,
+        metadata: { ...m, acquereur_nom: clientNom, acquereur_email: d.email_client,
+          acquereur_adresse: d.adresse_client ?? null, acquereur_telephone: d.telephone_client ?? null,
+          ...(d.client_profile_id ? { client_profile_id: d.client_profile_id } : {}),
+          lignes: d.lignes, total_ttc: d.total_ttc, date_validite: d.date_validite, notes: d.note },
+      }).eq('id', existing.id);
       return existing.token as string;
     }
     const { data: inserted } = await supabase.from('documents_animaux').insert({
@@ -465,11 +502,42 @@ function DevisPageInner() {
         token_acceptation: token,
         ...(rdvId ? { rdv_id: rdvId } : {}),
       };
+      // Modification : contenu mis à jour, numéro / lien gardés ; un devis déjà
+      // envoyé le reste (le client voit la version modifiée sur le même lien).
+      const avant = editId ? devisList.find(x => x.id === editId) : null;
+      if (avant) {
+        const { token_acceptation: _t, ...maj } = row;
+        void _t;
+        const statut = avant.statut === 'envoye' ? 'envoye' : row.statut;
+        const { data: upd, error: errU } = await supabase.from('devis').update({ ...maj, statut, updated_at: new Date().toISOString() })
+          .eq('id', avant.id).in('statut', ['brouillon', 'envoye']).select().maybeSingle();
+        if (errU || !upd) { setError(errU?.message ?? 'Devis déjà signé par le client : modification impossible.'); return; }
+        const tok = await syncContratDocument(upd as Devis, statut);
+        if (tok) setDocTokens(prev => ({ ...prev, [avant.id]: tok }));
+        if (statut === 'envoye') await signerDevisPro(avant.id, user.uid, userData?.nameElevage || user.displayName || '', maSig).catch(() => false);
+        if (envoyer && avant.statut === 'brouillon' && clientUid) {
+          await supabase.from('notifications').insert({
+            uid: clientUid, type: 'devis_recu', title: 'Vous avez reçu un devis',
+            body: `Un devis de ${totalTtc.toFixed(2)} € vous a été envoyé.`,
+            ...(clientProfileId ? { profile_id: clientProfileId } : {}),
+            data: { devis_id: avant.id, token: tok ?? avant.token_acceptation, url: tok ? `/signer-contrat/${tok}` : `/devis/${avant.token_acceptation}` },
+            read: false,
+          });
+        }
+        setDevisList(prev => prev.map(x => x.id === avant.id ? upd as Devis : x));
+        setShowForm(false);
+        const retourM = searchParams.get('retour');
+        if (retourM?.startsWith('/')) { resetForm(); allerOuFermer(router, retourM); return; }
+        if (envoyer && avant.statut === 'brouillon') setNewLink(`${window.location.origin}/signer-contrat/${tok ?? avant.token_acceptation}`);
+        resetForm();
+        return;
+      }
       const { data, error: err } = await supabase.from('devis').insert(row).select().single();
       if (err) { setError(err.message); return; }
 
       const docToken = await syncContratDocument(data as Devis, row.statut);
       if (docToken) setDocTokens(prev => ({ ...prev, [data.id]: docToken }));
+      if (envoyer) await signerDevisPro(data.id, user.uid, userData?.nameElevage || user.displayName || '', maSig).catch(() => false);
 
       if (envoyer && clientUid) {
         await supabase.from('notifications').insert({
@@ -499,6 +567,7 @@ function DevisPageInner() {
     await supabase.from('devis').update({ statut: 'envoye', updated_at: new Date().toISOString() }).eq('id', d.id);
     const docToken = await syncContratDocument(d, 'envoye');
     if (docToken) setDocTokens(prev => ({ ...prev, [d.id]: docToken }));
+    if (user) await signerDevisPro(d.id, user.uid, userData?.nameElevage || user.displayName || '', maSig).catch(() => false);
     const signingUrl = docToken ? `/signer-contrat/${docToken}` : `/devis/${d.token_acceptation}`;
     if (d.client_uid) {
       await supabase.from('notifications').insert({
@@ -576,11 +645,17 @@ function DevisPageInner() {
         </div>
       )}
 
+      {signerOuvert && user && (
+        <SignatureProModal onClose={() => setSignerOuvert(false)} onValider={async dataUrl => {
+          if (await enregistrerSignaturePro(user.uid, dataUrl)) { setMaSig(dataUrl); setSignerOuvert(false); }
+          else alert('Signature non enregistrée — réessayez.');
+        }} />
+      )}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-[#1F2A2E]">Nouveau devis</h2>
+              <h2 className="text-lg font-bold text-[#1F2A2E]">{editId ? 'Modifier le devis' : 'Nouveau devis'}</h2>
               <button onClick={() => { setShowForm(false); resetForm(); }} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
             </div>
 
@@ -746,10 +821,32 @@ function DevisPageInner() {
               </div>
             </div>
 
+            {/* Ma signature : apposée sur le devis à l'envoi (comme sur les ordonnances). */}
+            <div className="mt-5 rounded-xl border border-gray-200 p-3 flex items-center gap-3">
+              {maSig ? (<>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={maSig} alt="Ma signature" className="h-12 w-auto bg-white" />
+                <p className="flex-1 text-xs text-gray-600">Votre signature est apposée sur le devis à l&apos;envoi.</p>
+                <button type="button" onClick={() => setSignerOuvert(true)} className="text-xs font-semibold text-[#0C5C6C] hover:underline">Changer</button>
+              </>) : (<>
+                <p className="flex-1 text-xs text-gray-600">Aucune signature enregistrée : signez une fois, elle sera apposée sur vos devis (et vos documents).</p>
+                <button type="button" onClick={() => setSignerOuvert(true)}
+                  className="text-xs font-semibold bg-[#0C5C6C] text-white px-3 py-1.5 rounded-lg">Signer</button>
+              </>)}
+            </div>
+            {editId && devisList.find(x => x.id === editId)?.statut === 'envoye' && (
+              <p className="mt-2 text-xs text-gray-500">Devis déjà envoyé : le client verra la version modifiée avec le même lien, tant qu&apos;il ne l&apos;a pas signé.</p>
+            )}
+
             <div className="flex gap-3 mt-6">
               <button onClick={() => { setShowForm(false); resetForm(); }} className="flex-1 border border-gray-200 text-gray-600 font-medium py-2.5 rounded-xl text-sm hover:bg-gray-50">Annuler</button>
-              {/* Depuis le RDV : le devis part avec le reste à « Terminer et envoyer ». */}
-              {rdvId ? (<>
+              {/* Devis déjà envoyé : enregistré tel quel (même lien). */}
+              {editId && devisList.find(x => x.id === editId)?.statut === 'envoye' ? (
+                <button onClick={() => handleCreate(false)} disabled={saving}
+                  className="flex-[2] bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-sm">
+                  {saving ? 'Enregistrement…' : 'Enregistrer les modifications'}
+                </button>
+              ) : rdvId ? (<>
                 <button onClick={() => handleCreate(true)} disabled={saving}
                   className="flex-1 border border-[#0C5C6C]/30 text-[#0C5C6C] font-semibold py-2.5 rounded-xl text-sm hover:bg-[#E8F4F6] disabled:opacity-50">
                   Envoyer maintenant
@@ -799,6 +896,12 @@ function DevisPageInner() {
                 </p>
               </div>
               <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
+                {devisModifiable(d.statut) && (
+                  <button onClick={() => ouvrirModif(d)}
+                    className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-3 py-1.5 rounded-lg hover:bg-[#E8F4F6] font-medium">
+                    Modifier
+                  </button>
+                )}
                 {d.statut === 'brouillon' && (
                   <button onClick={() => handleSend(d)}
                     className="text-xs bg-[#0C5C6C] text-white px-3 py-1.5 rounded-lg hover:bg-[#094F5D] font-medium">

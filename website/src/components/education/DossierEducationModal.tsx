@@ -7,6 +7,7 @@
 // facturation) et revient ensuite sur ce dossier (/mes-rdv?rdv=…&dossier=1).
 // Miroir appli : EducationSuiviPage(rdvId, dossier: true).
 
+import { devisModifiable } from '@/lib/devis-rdv';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -325,7 +326,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
                 : [btn('Attribuer un forfait', () => fiche('tab=Programme&forfait=1', 'Attribuer un forfait'))])}
           {ligne('Devis', !devis ? 'Aucun' : `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'À envoyer à la fin'} · ${eur(devis.total_ttc)}`,
             !devis ? GRIS : devis.statut === 'accepte' ? VERT : AMBRE,
-            [!devis ? btn('Créer', creerDevis) : btn('Voir', () => ouvrir('/education/devis', 'Devis'))])}
+            [!devis ? btn('Créer', creerDevis) : devisModifiable(devis.statut) ? btn('Modifier', () => ouvrir(`/education/devis?modifier=${devis.id}`, 'Devis')) : btn('Voir', () => ouvrir('/education/devis', 'Devis'))])}
           {!facture && r.forfait_souscrit_id ? ligne('Facture', 'Couverte par le forfait (payé d’avance)', VERT, [])
             : ligne('Facture', !facture ? 'À émettre' : `${facture.statut === 'payee' ? 'Payée' : 'Émise'} · ${eur(facture.total_ttc)}`,
             !facture ? GRIS : facture.statut === 'payee' ? VERT : AMBRE,

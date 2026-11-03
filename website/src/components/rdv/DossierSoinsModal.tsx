@@ -7,6 +7,7 @@
 // d'ajouter les soins (produits, traitements, vaccins) via le compte rendu
 // PetsMatch : c'est le document chargé qui part au client à la fin.
 
+import { devisModifiable } from '@/lib/devis-rdv';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import ComptesRendusAnimauxRdv from '@/components/rdv/ComptesRendusAnimauxRdv';
@@ -36,7 +37,7 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
   const [docs, setDocs] = useState<DocumentProRdv[]>([]);
   const [facture, setFacture] = useState<{ statut: string | null; total_ttc: number | null; numero_affichage: string | null } | null>(null);
   const [envoyeLe, setEnvoyeLe] = useState<string | null>(null);
-  const [devis, setDevis] = useState<{ statut: string | null; total_ttc: number | null } | null>(null);
+  const [devis, setDevis] = useState<{ id: string; statut: string | null; total_ttc: number | null } | null>(null);
   const [devisCharges, setDevisCharges] = useState<{ id: string; titre: string | null; statut: string | null; url: string | null }[]>([]);
   const veto = metier === 'veterinaire';
 
@@ -48,7 +49,7 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
         supabase.from('factures').select('statut, total_ttc, numero_affichage').eq('source_rdv_id', rdvId).neq('statut', 'annulee')
           .or('type_facture.is.null,type_facture.not.in.(acompte,avoir)').order('created_at', { ascending: false }).limit(1).maybeSingle(),
         supabase.from('rdv').select('documents_envoyes_le').eq('id', rdvId).maybeSingle(),
-        supabase.from('devis').select('statut, total_ttc').eq('rdv_id', rdvId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('devis').select('id, statut, total_ttc').eq('rdv_id', rdvId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
         // Devis chargé (PDF / photo) : signé en ligne par le client = accepté.
         supabase.from('documents_animaux').select('id, titre, statut, url').eq('rdv_id', rdvId).eq('type', 'contrat_document_pro').ilike('titre', 'Devis%'),
       ]);
@@ -136,7 +137,8 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
                 </button>
               ))}
               <div className="flex flex-wrap gap-2">
-                {onDevis && btn(devis ? 'Voir le devis' : 'Créer avec PetsMatch', devis ? () => onOuvrirPage('/education/devis', 'Devis') : onDevis)}
+                {onDevis && btn(!devis ? 'Créer avec PetsMatch' : devisModifiable(devis.statut) ? 'Modifier le devis' : 'Voir le devis',
+                  !devis ? onDevis : () => onOuvrirPage(devisModifiable(devis.statut) ? `/education/devis?modifier=${devis.id}` : '/education/devis', 'Devis'))}
                 {btn('Charger le mien (PDF / photo)', () => onChargerDoc('devis'))}
               </div>
             </div>

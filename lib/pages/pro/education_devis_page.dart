@@ -1,3 +1,5 @@
+import 'package:PetsMatch/utils/devis_rdv.dart' show devisModifiable, signerDevisPro;
+import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro, signerEtEnregistrer, octetsSignature;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -33,10 +35,27 @@ Future<String?> _syncContratDocument(Map<String, dynamic> devisRow, String devis
   final docStatut = statut == 'accepte' ? 'signe' : statut == 'refuse' ? 'refuse' : statut == 'brouillon' ? 'brouillon' : 'en_attente';
   final nomClient = '${devisRow['prenom_client'] ?? ''} ${devisRow['nom_client'] ?? ''}'.trim();
   try {
-    final existing = await supa.from('documents_animaux').select('id, token')
+    final existing = await supa.from('documents_animaux').select('id, token, statut, metadata')
         .eq('type', 'contrat_education').contains('metadata', {'devis_id': devisId}).maybeSingle();
     if (existing != null) {
-      await supa.from('documents_animaux').update({'statut': docStatut}).eq('id', existing['id']);
+      // Contenu à jour (devis modifié), signatures gardées ; déjà signé par
+      // le pro (partiellement_signe) : statut gardé.
+      final m = Map<String, dynamic>.from((existing['metadata'] as Map?) ?? const {});
+      final statutDoc = docStatut == 'en_attente' && existing['statut'] == 'partiellement_signe' ? 'partiellement_signe' : docStatut;
+      await supa.from('documents_animaux').update({
+        'statut': statutDoc,
+        'titre': 'Devis — ${((devisRow['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} €',
+        'metadata': {
+          ...m,
+          'acquereur_nom': nomClient.isEmpty ? devisRow['nom_client'] : nomClient,
+          'acquereur_email': devisRow['email_client'],
+          'acquereur_adresse': devisRow['adresse_client'],
+          'acquereur_telephone': devisRow['telephone_client'],
+          if (devisRow['client_profile_id'] != null) 'client_profile_id': devisRow['client_profile_id'],
+          'lignes': devisRow['lignes'], 'total_ttc': devisRow['total_ttc'],
+          'date_validite': devisRow['date_validite'], 'notes': devisRow['note'],
+        },
+      }).eq('id', existing['id']);
       return existing['token'] as String?;
     }
     final inserted = await supa.from('documents_animaux').insert({
@@ -155,7 +174,9 @@ class DevisPrefill {
 
 class DevisPage extends StatefulWidget {
   final DevisPrefill? prefill;
-  const DevisPage({super.key, this.prefill});
+  /// Devis à ouvrir en modification (depuis le dossier du RDV).
+  final String? modifierId;
+  const DevisPage({super.key, this.prefill, this.modifierId});
   @override
   State<DevisPage> createState() => _DevisPageState();
 }
@@ -165,6 +186,7 @@ class _DevisPageState extends State<DevisPage> {
   List<Map<String, dynamic>> _devis = [];
   Map<String, String> _docTokens = {}; // devisId -> token du contrat rattaché
   bool _loading = true;
+  bool _modifOuverte = false;
 
   @override
   void initState() {
@@ -207,10 +229,35 @@ class _DevisPageState extends State<DevisPage> {
           _docTokens = docTokens;
           _loading = false;
         });
+        final aModifier = widget.modifierId;
+        if (aModifier != null && !_modifOuverte) {
+          _modifOuverte = true;
+          final d = _devis.where((x) => x['id'] == aModifier).firstOrNull;
+          if (d != null && devisModifiable(d['statut'])) _openEdit(d);
+        }
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Modification d'un devis pas encore signé par le client.
+  Future<void> _openEdit(Map<String, dynamic> d) async {
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _DevisFormSheet(existing: d, prefill: DevisPrefill(
+        animalId: d['animal_id']?.toString(),
+        clientUid: d['client_uid']?.toString(), clientProfileId: d['client_profile_id']?.toString(),
+        clientNom: d['nom_client']?.toString(), clientPrenom: d['prenom_client']?.toString(),
+        clientEmail: d['email_client']?.toString(), clientTel: d['telephone_client']?.toString(),
+        clientAdresse: d['adresse_client']?.toString(),
+        lignes: List<Map<String, dynamic>>.from(((d['lignes'] as List?) ?? const []).map((l) => Map<String, dynamic>.from(l as Map))),
+        note: d['note']?.toString(), rdvId: d['rdv_id']?.toString(),
+      )),
+    );
+    if (saved == true) _load();
   }
 
   Future<void> _openCreate([DevisPrefill? prefill]) async {
@@ -229,6 +276,7 @@ class _DevisPageState extends State<DevisPage> {
     }).eq('id', d['id']);
     final docToken = await _syncContratDocument(d, d['id'] as String, 'envoye');
     if (docToken != null) setState(() => _docTokens[d['id'] as String] = docToken);
+    await signerDevisPro(d['id'] as String);
     final signingToken = docToken ?? (d['token_acceptation'] as String);
     final clientUid = d['client_uid'] as String?;
     if (clientUid != null) {
@@ -332,6 +380,13 @@ class _DevisPageState extends State<DevisPage> {
                             style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                         const SizedBox(height: 10),
                         Row(children: [
+                          if (devisModifiable(statut))
+                            TextButton.icon(
+                              onPressed: () => _openEdit(d),
+                              icon: const Icon(Icons.edit_outlined, size: 15),
+                              label: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                              style: TextButton.styleFrom(foregroundColor: _kTeal),
+                            ),
                           if (statut == 'brouillon')
                             TextButton.icon(
                               onPressed: () => _send(d),
@@ -384,7 +439,9 @@ class _Ligne {
 
 class _DevisFormSheet extends StatefulWidget {
   final DevisPrefill? prefill;
-  const _DevisFormSheet({this.prefill});
+  /// Devis modifié (pas encore signé par le client).
+  final Map<String, dynamic>? existing;
+  const _DevisFormSheet({this.prefill, this.existing});
   @override
   State<_DevisFormSheet> createState() => _DevisFormSheetState();
 }
@@ -418,10 +475,14 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
   final List<_Ligne> _lignes = [_Ligne()];
   bool _saving = false;
   String? _error;
+  // Ma signature (comme sur les ordonnances) : apposée sur le devis à l'envoi.
+  String? _maSig;
+  bool get _dejaEnvoye => widget.existing?['statut'] == 'envoye';
 
   @override
   void initState() {
     super.initState();
+    maSignaturePro().then((v) { if (mounted) setState(() => _maSig = v); });
     _loadTarifsForfaits();
     _loadAnimaux();
     final p = widget.prefill;
@@ -666,8 +727,41 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
         'token_acceptation': token,
         if (widget.prefill?.rdvId != null) 'rdv_id': widget.prefill!.rdvId,
       };
+      final avant = widget.existing;
+      if (avant != null) {
+        // Modification : numéro / lien gardés ; un devis déjà envoyé le reste
+        // (le client voit la version modifiée sur le même lien).
+        final statut = avant['statut'] == 'envoye' ? 'envoye' : row['statut'] as String;
+        final maj = Map<String, dynamic>.from(row)..remove('token_acceptation')..remove('date_devis');
+        maj['statut'] = statut;
+        maj['updated_at'] = DateTime.now().toUtc().toIso8601String();
+        final upd = await _supa.from('devis').update(maj).eq('id', avant['id'])
+            .inFilter('statut', ['brouillon', 'envoye']).select().maybeSingle();
+        if (upd == null) {
+          setState(() => _error = 'Devis déjà signé par le client : modification impossible.');
+          return;
+        }
+        final tok = await _syncContratDocument(upd, avant['id'] as String, statut);
+        if (statut == 'envoye') await signerDevisPro(avant['id'] as String, signature: _maSig);
+        if (envoyer && avant['statut'] == 'brouillon' && _clientUid != null) {
+          await _supa.from('notifications').insert({
+            'uid': _clientUid, 'type': 'devis_recu',
+            'title': 'Vous avez reçu un devis',
+            'body': 'Un devis de ${_total.toStringAsFixed(2)} € vous a été envoyé.',
+            if (_clientProfileId != null) 'profile_id': _clientProfileId,
+            'data': {
+              'devis_id': avant['id'], 'token': tok ?? avant['token_acceptation'],
+              'url': tok != null ? '/signer-contrat/$tok' : '/devis/${avant['token_acceptation']}',
+            },
+            'read': false,
+          });
+        }
+        if (mounted) Navigator.pop(context, true);
+        return;
+      }
       final inserted = await _supa.from('devis').insert(row).select().single();
       final docToken = await _syncContratDocument(row, inserted['id'] as String, row['statut'] as String);
+      if (envoyer) await signerDevisPro(inserted['id'] as String, signature: _maSig);
       if (envoyer && _clientUid != null) {
         await _supa.from('notifications').insert({
           'uid': _clientUid, 'type': 'devis_recu',
@@ -702,7 +796,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
           Center(child: Container(width: 40, height: 4,
               decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 16),
-          const Text('Nouveau devis', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+          Text(widget.existing != null ? 'Modifier le devis' : 'Nouveau devis', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
           const SizedBox(height: 16),
 
           if (_error != null)
@@ -819,9 +913,47 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
           TextField(controller: _noteCtrl, maxLines: 2,
               decoration: const InputDecoration(labelText: 'Notes internes', filled: true, fillColor: Colors.white, border: OutlineInputBorder())),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          // Ma signature : apposée sur le devis à l'envoi (comme sur les ordonnances).
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300)),
+            child: Row(children: [
+              if (_maSig != null && octetsSignature(_maSig) != null) ...[
+                Image.memory(octetsSignature(_maSig)!, height: 44),
+                const SizedBox(width: 10),
+              ],
+              Expanded(child: Text(
+                  _maSig != null
+                      ? 'Votre signature est apposée sur le devis à l\u2019envoi.'
+                      : 'Aucune signature enregistrée : signez une fois, elle sera apposée sur vos devis.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700))),
+              TextButton(
+                onPressed: () async {
+                  final v = await signerEtEnregistrer(context);
+                  if (v != null && mounted) setState(() => _maSig = v);
+                },
+                style: TextButton.styleFrom(foregroundColor: _kTeal),
+                child: Text(_maSig != null ? 'Changer' : 'Signer', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              ),
+            ]),
+          ),
+          if (_dejaEnvoye)
+            Padding(padding: const EdgeInsets.only(top: 6), child: Text(
+                'Devis déjà envoyé : le client verra la version modifiée avec le même lien, tant qu\u2019il ne l\u2019a pas signé.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600))),
+          const SizedBox(height: 16),
+          if (_dejaEnvoye)
+            SizedBox(width: double.infinity, child: ElevatedButton(
+              onPressed: _saving ? null : () => _save(false),
+              style: ElevatedButton.styleFrom(backgroundColor: _kTeal, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 13)),
+              child: Text(_saving ? '…' : 'Enregistrer les modifications',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            ))
           // Depuis le RDV : le devis part avec le reste à « Terminer et envoyer ».
-          if (widget.prefill?.rdvId != null) ...[
+          else if (widget.prefill?.rdvId != null) ...[
             SizedBox(width: double.infinity, child: ElevatedButton(
               onPressed: _saving ? null : () => _save(false),
               style: ElevatedButton.styleFrom(backgroundColor: _kTeal, foregroundColor: Colors.white,

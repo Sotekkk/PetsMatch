@@ -5329,6 +5329,17 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               : null,
           onDevis: (showProTools && AgendaContexte.catPro == 'veterinaire')
               ? () async {
+                // Devis du RDV pas encore signé par le client : ouvert en modification.
+                try {
+                  final ex = await Supabase.instance.client.from('devis').select('id')
+                      .eq('rdv_id', rdv['id'].toString()).inFilter('statut', ['brouillon', 'envoye'])
+                      .order('created_at', ascending: false).limit(1).maybeSingle();
+                  if (ex != null) {
+                    if (!context.mounted) return;
+                    await Navigator.push(context, MaterialPageRoute(builder: (_) => DevisPage(modifierId: ex['id'].toString())));
+                    return;
+                  }
+                } catch (_) {}
                 final detail = animauxDetailRdv(rdv);
                 final animalDevis = hasAnimal ? animalId : (detail.isNotEmpty ? detail.first['id']?.toString() : null);
                 final cc = await coordClientDevis(animalId: animalDevis, rdvId: rdv['id']?.toString(),

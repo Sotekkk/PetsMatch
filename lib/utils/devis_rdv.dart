@@ -8,7 +8,36 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
+import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro;
 import 'package:PetsMatch/utils/site_api.dart';
+
+/// Devis modifiable : pas encore signé par le client (ni refusé / expiré).
+bool devisModifiable(dynamic statut) => statut == 'brouillon' || statut == 'envoye';
+
+/// Signature du pro sur le devis envoyé (sa signature enregistrée, comme sur
+/// les ordonnances), s'il ne l'a pas déjà signé. Faux si aucune signature.
+/// Miroir site : signerDevisPro (website/src/lib/devis-rdv.ts).
+Future<bool> signerDevisPro(String devisId, {String? signature}) async {
+  final supa = Supabase.instance.client;
+  try {
+    final doc = await supa.from('documents_animaux').select('id, statut, metadata')
+        .contains('metadata', {'devis_id': devisId}).limit(1).maybeSingle();
+    if (doc == null) return false;
+    final m = (doc['metadata'] as Map?) ?? const {};
+    if ((m['signature_eleveur']?.toString() ?? '').trim().isNotEmpty) return true;
+    if (const ['brouillon', 'signe', 'annule', 'refuse', 'expire'].contains(doc['statut'])) return false;
+    final sig = signature ?? await maSignaturePro();
+    if (sig == null) return false;
+    final r = await http.post(Uri.parse('$kSiteBaseUrl/api/contracts/${doc['id']}/sign'),
+        headers: {...await siteApiHeaders(), 'Content-Type': 'application/json'},
+        body: jsonEncode({'role': 'eleveur', 'signature': sig, 'actorUid': User_Info.uid,
+            'actorNom': '${User_Info.firstname} ${User_Info.lastname}'.trim()}));
+    return r.statusCode == 200;
+  } catch (_) {
+    return false;
+  }
+}
 
 /// Devis du RDV pas encore acceptés / refusés (brouillon ou déjà envoyé),
 /// avec l'id et le jeton de leur document signable (`_doc_id`, `_doc_token`).
@@ -49,6 +78,7 @@ Future<bool> envoyerDevisRdv(Map<String, dynamic> d, {required String proNom, St
   if (d['_doc_id'] != null) {
     await supa.from('documents_animaux').update({'statut': 'en_attente'}).eq('id', d['_doc_id']).eq('statut', 'brouillon');
   }
+  await signerDevisPro(d['id'].toString());
   final chemin = docToken != null ? '/signer-contrat/$docToken' : '/devis/${d['token_acceptation']}';
   if (d['client_uid'] != null) {
     await supa.from('notifications').insert({
