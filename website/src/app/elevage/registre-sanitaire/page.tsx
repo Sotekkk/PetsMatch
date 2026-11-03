@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { usePlan, usePensionPlan } from '@/lib/use-plan';
+import { usePlan, usePensionPlan, resolveOwnerUid } from '@/lib/use-plan';
 
 interface Acte {
   id: string;
@@ -57,6 +57,12 @@ function RegistreSanitairePageInner() {
   const [dateFin, setDateFin] = useState('');
   const [selected, setSelected] = useState<Acte | null>(null);
   const [showForm, setShowForm] = useState(false);
+  // Propriétaire réel du profil actif (un cogérant a un uid différent du gérant).
+  const [ownerUid, setOwnerUid] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user) return;
+    resolveOwnerUid(user.uid, activeProfileId || '').then(setOwnerUid);
+  }, [user, activeProfileId]);
 
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
@@ -82,10 +88,10 @@ function RegistreSanitairePageInner() {
   }
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !ownerUid) return;
     (async () => {
       try {
-        const q = supabase.from('registre_sanitaire').select('*').eq('uid_eleveur', user.uid)
+        const q = supabase.from('registre_sanitaire').select('*').eq('uid_eleveur', ownerUid)
           .order('date_acte', { ascending: false });
         const { data } = await (profilSource === 'pension'
           ? q.eq('profil_source', 'pension')
@@ -97,7 +103,7 @@ function RegistreSanitairePageInner() {
         setFetching(false);
       }
     })();
-  }, [user, profilSource]);
+  }, [user, ownerUid, profilSource]);
 
   async function handleDelete(id: string) {
     if (!confirm('Supprimer cet acte ?')) return;
@@ -288,7 +294,7 @@ function RegistreSanitairePageInner() {
       )}
 
       {/* Formulaire nouvel acte */}
-      {showForm && <NouvelActeForm uid={user.uid} profileId={activeProfileId || null} profilSource={profilSource} onClose={() => setShowForm(false)} onSaved={(acte) => { setActes((prev) => [acte, ...prev]); setShowForm(false); }} />}
+      {showForm && <NouvelActeForm uid={ownerUid ?? user.uid} profileId={activeProfileId || null} profilSource={profilSource} onClose={() => setShowForm(false)} onSaved={(acte) => { setActes((prev) => [acte, ...prev]); setShowForm(false); }} />}
     </div>
   );
 }
@@ -312,12 +318,26 @@ function NouvelActeForm({ uid, profileId, profilSource = 'eleveur', onClose, onS
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!animalId || !typeActe || !dateActe) { setError('Animal, type et date sont requis.'); return; }
+    if (!animalId || !typeActe || !dateActe || !intervenant.trim()) { setError('Animal, type, date et intervenant sont requis.'); return; }
     setSaving(true);
     const animal = animaux.find((a) => a.id === animalId);
+    // Visite vétérinaire : inscrite au carnet de l'animal (Visites vétérinaires),
+    // la base la reporte au registre (trigger pm_registre_depuis_visite).
+    if (typeActe === 'visite') {
+      const vid = crypto.randomUUID();
+      const { error: errV } = await supabase.from('visites').insert({
+        id: vid, animal_id: animalId, date: dateActe, veterinaire: intervenant.trim() || null,
+        motif: description.trim() || 'Visite vétérinaire', source: 'owner',
+        ordonnance_num: ordonnance.trim() || null,
+      });
+      if (errV) { setError('Erreur : ' + errV.message); setSaving(false); return; }
+      const { data: ligne } = await supabase.from('registre_sanitaire').select('*').eq('source_table', 'visites').eq('source_id', vid).maybeSingle();
+      onSaved((ligne as Acte | null) ?? { id: vid, animal_nom: animal?.nom, espece: animal?.espece, date_acte: dateActe, type_acte: 'visite', intervenant, description });
+      return;
+    }
     const id = Date.now().toString();
     const { error: err } = await supabase.from('registre_sanitaire').insert({
-      id, uid_eleveur: uid,
+      id, uid_eleveur: uid, animal_id: animalId,
       ...(profileId ? { eleveur_profile_id: profileId } : {}),
       animal_nom: animal?.nom ?? '',
       espece: animal?.espece ?? '',
@@ -363,8 +383,8 @@ function NouvelActeForm({ uid, profileId, profilSource = 'eleveur', onClose, onS
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Intervenant</label>
-            <input value={intervenant} onChange={(e) => setIntervenant(e.target.value)} placeholder="Vétérinaire, ostéopathe…"
+            <label className="block text-sm font-medium text-gray-700 mb-1">Intervenant *</label>
+            <input value={intervenant} required onChange={(e) => setIntervenant(e.target.value)} placeholder="Vétérinaire, ostéopathe…"
               className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white" />
           </div>
           <div>

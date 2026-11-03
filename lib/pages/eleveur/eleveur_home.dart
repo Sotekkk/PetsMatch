@@ -127,7 +127,11 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       // Annonces) affichent bien les vraies données.
       final activeProfileIdEarly = User_Info.activeProfileId;
       String ownerUid = uid;
-      final profilDuCompte = User_Info.availableProfiles.any((p) => p['id']?.toString() == activeProfileIdEarly);
+      // Élevage cogéré : présent dans availableProfiles (marqué _is_cogerance)
+      // mais pas du compte — sans cette exclusion les compteurs restaient
+      // ceux du compte personnel du cogérant.
+      final profilDuCompte = User_Info.availableProfiles.any((p) =>
+          p['id']?.toString() == activeProfileIdEarly && p['_is_cogerance'] != true);
       if (activeProfileIdEarly.isNotEmpty && !profilDuCompte) {
         final ownerRow = await supa.from('user_profiles_complet')
             .select('uid').eq('id', activeProfileIdEarly).maybeSingle();

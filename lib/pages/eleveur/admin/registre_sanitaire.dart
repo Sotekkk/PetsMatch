@@ -58,6 +58,11 @@ class RegistreHelper {
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    // Visites vétérinaires : inscrites au registre du propriétaire (élevage /
+    // association) par la base — trigger pm_registre_depuis_visite, comme les
+    // comptes rendus validés du vétérinaire (migration_registre_visites_veto.sql).
+    // La pension tient son propre registre (pensionnaires) : écrit ici.
+    if (typeActe == 'visite' && User_Info.activeType != 'pension') return;
     try {
       final supa = Supabase.instance.client;
       final rows = await supa.from('animaux')
@@ -105,6 +110,11 @@ class RegistreHelper {
 
 // ── Page principale ────────────────────────────────────────────────────────────
 
+// Propriétaire réel du profil actif : un cogérant (elevage_cogerants) a un
+// uid différent du gérant — le registre est celui de l'élevage.
+String? _ownerUidRegistre;
+String get _uidRegistre => _ownerUidRegistre ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+
 class RegistreSanitairePage extends StatefulWidget {
   final bool isAssociation;
   final bool isPension;
@@ -132,7 +142,22 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
   @override
   void initState() {
     super.initState();
+    _ownerUidRegistre = null;
     _checkPlan();
+    _resoudreProprietaire();
+  }
+
+  Future<void> _resoudreProprietaire() async {
+    final pid = User_Info.activeProfileId;
+    String? owner;
+    if (pid.isNotEmpty) {
+      try {
+        final r = await Supabase.instance.client.from('user_profiles_complet').select('uid').eq('id', pid).maybeSingle();
+        owner = r?['uid']?.toString();
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() => _ownerUidRegistre = owner);
     if (widget.isAssociation) _loadAssoAnimalIds();
   }
 
@@ -171,7 +196,7 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
   int get _activeFilterCount =>
       (_filterEspece != null ? 1 : 0) + (_filterType != null ? 1 : 0);
 
-  static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+  static String get _uid => _uidRegistre;
 
   Future<void> _openFilterSheet() async {
     Set<String> availableEspeces = {};
@@ -552,7 +577,7 @@ class _RegistreList extends StatelessWidget {
   final Set<String> assoAnimalIds;
   const _RegistreList({this.filterEspece, this.filterType, this.isAssociation = false, this.isPension = false, this.assoAnimalIds = const {}});
 
-  static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+  static String get _uid => _uidRegistre;
 
   @override
   Widget build(BuildContext context) {
@@ -876,7 +901,7 @@ class _NouvelActePageState extends State<_NouvelActePage> {
 
   bool _saving = false;
 
-  static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+  static String get _uid => _uidRegistre;
 
   @override
   void initState() {
@@ -953,12 +978,31 @@ class _NouvelActePageState extends State<_NouvelActePage> {
     if (_typeActe == null) {
       _snack('Veuillez choisir le type d\'acte'); return;
     }
+    if (_intervenantCtrl.text.trim().isEmpty) {
+      _snack('Veuillez indiquer l\'intervenant'); return;
+    }
     setState(() => _saving = true);
     try {
       final id = DateTime.now().microsecondsSinceEpoch.toString();
+      final date = '${_dateActe!.year}-${_dateActe!.month.toString().padLeft(2, '0')}-${_dateActe!.day.toString().padLeft(2, '0')}';
+      // Visite vétérinaire (élevage / association) : inscrite au carnet de
+      // l'animal (Visites vétérinaires), la base la reporte au registre
+      // (trigger pm_registre_depuis_visite).
+      if (_typeActe == 'visite' && User_Info.activeType != 'pension') {
+        await Supabase.instance.client.from('visites').insert({
+          'id': id, 'animal_id': _animalId, 'date': date,
+          'veterinaire': _intervenantCtrl.text.trim().isEmpty ? null : _intervenantCtrl.text.trim(),
+          'motif': _effectiveDescription.isEmpty ? 'Visite vétérinaire' : _effectiveDescription,
+          'source': 'owner',
+          if (_ordonnanceCtrl.text.trim().isNotEmpty) 'ordonnance_num': _ordonnanceCtrl.text.trim(),
+        });
+        if (mounted) Navigator.pop(context);
+        return;
+      }
       await Supabase.instance.client.from('registre_sanitaire').insert({
         'id':             id,
         'uid_eleveur':    _uid,
+        'animal_id':      _animalId,
         if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
         'animal_nom':     _animalNom,
         'espece':         _espece,
@@ -1323,7 +1367,7 @@ class _NouvelActePageState extends State<_NouvelActePage> {
           _sectionTitle('Détails'),
           const SizedBox(height: 8),
           _card([
-            _field('Intervenant (vétérinaire, ostéopathe…)',
+            _field('Intervenant * (vétérinaire, ostéopathe…)',
                 _intervenantCtrl),
             const SizedBox(height: 10),
             _field('Description / Acte réalisé', _descriptionCtrl,

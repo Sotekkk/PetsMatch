@@ -13,7 +13,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 // use*Plan()/useProfessionPlanCode() en dépendent, donc toute vérification
 // de forfait reflète l'abonnement de l'élevage cogéré, pas celui du compte
 // du cogérant. Miroir de PlanService._resolveOwnerUid côté appli.
-async function resolveOwnerUid(fallbackUid: string, activeProfileId: string): Promise<string> {
+export async function resolveOwnerUid(fallbackUid: string, activeProfileId: string): Promise<string> {
   if (!activeProfileId) return fallbackUid;
   try {
     const { data } = await supabase.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle();

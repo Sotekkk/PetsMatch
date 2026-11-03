@@ -97,7 +97,7 @@ const HEALTH_SECTIONS = [
   { table: 'poids',            label: 'Courbe de poids',    icon: '⚖️', color: SANTE_COULEURS.poids,
     fields: [{ key: 'valeur', label: 'Poids (kg, ex. 8,5)', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'notes', label: 'Notes' }] },
   { table: 'visites',          label: 'Visites vétérinaires', icon: '🏥', color: '#26A69A',
-    fields: [{ key: 'motif', label: 'Motif', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'veterinaire', label: 'Vétérinaire' }, { key: 'notes', label: 'Notes' }] },
+    fields: [{ key: 'motif', label: 'Motif', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'veterinaire', label: 'Vétérinaire', required: true }, { key: 'ordonnance_num', label: "N° d'ordonnance" }, { key: 'notes', label: 'Notes' }] },
 ];
 
 function AddForm({ fields, onSave, onCancel, saving, extra, dateObligatoire = true }:

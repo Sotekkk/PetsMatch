@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { usePlan } from '@/lib/use-plan';
+import { usePlan, resolveOwnerUid } from '@/lib/use-plan';
 import { Kpi, EnteteAccueil, Puce, BoutonPilule, TitreRubrique, Icone, BORDURE, OMBRE } from '@/components/dashboard/kit';
 
 interface Annonce {
@@ -33,9 +33,12 @@ export default function EleveurDashboard() {
 
   useEffect(() => {
     if (!user || authLoading) return;
-    const uid = user.uid;
+    const userUid = user.uid;
 
     async function loadCount() {
+      // Propriétaire réel du profil actif : un cogérant (elevage_cogerants) a
+      // un uid différent du gérant — les compteurs sont ceux de l'élevage.
+      const uid = await resolveOwnerUid(userUid, activeProfileId ?? '');
       let count = 0;
       if (activeProfileId) {
         const { data: check } = await supabase
@@ -61,8 +64,9 @@ export default function EleveurDashboard() {
           .eq('uid_proprio', uid).is('date_fin', null);
         count = c ?? 0;
       }
-      const { data: alertes } = await supabase
-        .from('alertes_perdus').select('id').eq('uid_proprietaire', uid).eq('statut', 'perdu');
+      let qa = supabase.from('alertes_perdus').select('id').eq('uid_proprietaire', uid).eq('statut', 'perdu');
+      if (activeProfileId) qa = qa.eq('profile_id', activeProfileId);
+      const { data: alertes } = await qa;
       setAnimalCount(count);
       setMesAlertes((alertes ?? []) as { id: string }[]);
       setLoading(false);
@@ -73,19 +77,21 @@ export default function EleveurDashboard() {
 
   useEffect(() => {
     if (!user) return;
-    supabase
-      .from('annonces')
-      .select('id, titre, espece, race, photos, statut, vues, created_at')
-      .eq('uid_eleveur', user.uid)
-      .in('statut', ['disponible', 'reserve', 'pause'])
-      .order('created_at', { ascending: false })
-      .limit(10)
-      .then(({ data }) => {
-        const docs = (data ?? []) as Annonce[];
-        setPostCount(docs.filter(d => ['disponible', 'reserve'].includes(d.statut ?? '')).length);
-        setRecentAnnonces(docs.slice(0, 3));
-      });
-  }, [user]);
+    (async () => {
+      // Annonces de l'élevage (profil actif), cogérant compris — miroir appli.
+      const ownerUid = await resolveOwnerUid(user.uid, activeProfileId ?? '');
+      let q = supabase
+        .from('annonces')
+        .select('id, titre, espece, race, photos, statut, vues, created_at')
+        .eq('uid_eleveur', ownerUid)
+        .in('statut', ['disponible', 'reserve', 'pause']);
+      q = activeProfileId ? q.eq('profile_id', activeProfileId) : q.neq('profil_source', 'association');
+      const { data } = await q.order('created_at', { ascending: false }).limit(50);
+      const docs = (data ?? []) as Annonce[];
+      setPostCount(docs.filter(d => ['disponible', 'reserve'].includes(d.statut ?? '')).length);
+      setRecentAnnonces(docs.slice(0, 3));
+    })();
+  }, [user, activeProfileId]);
 
   if (loading) {
     return (

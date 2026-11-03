@@ -5840,9 +5840,10 @@ class _CarnetSanteTab extends StatelessWidget {
     // Radios / examens : onglet Consultations côté propriétaire (actes du
     // vétérinaire, miroir du site) ; le vétérinaire les garde dans le carnet.
     // Visites : doublon des consultations (comptes rendus) pour le vétérinaire.
-    // Visites vétérinaires : plus dans le carnet — les consultations (comptes
-    // rendus) sont dans l'onglet Consultations.
-    final cats = [for (final c in _cats) if (c.key != 'visites' && (vetMode || c.key != 'radios')
+    // Visites vétérinaires : élevage / association seulement (registre
+    // sanitaire) — inscrites au registre par la base, comme les comptes rendus
+    // validés du vétérinaire. Masquées pour le vétérinaire (Consultations).
+    final cats = [for (final c in _cats) if ((!vetMode || c.key != 'visites') && (vetMode || c.key != 'radios')
         && !(carnetCommun && (c.key == 'chirurgies' || c.key == 'radios'))) c];
     Widget ligne(int i) {
         final cat = cats[i];
@@ -6859,7 +6860,7 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
     'vaccinations':     [('vaccin','Vaccin *',true,false),('lot','N° de lot',false,false),('veterinaire','Vétérinaire',false,false)],
     'antiparasitaires': [('produit','Produit *',true,false),('frequence','Fréquence',false,false),('notes','Notes',false,true)],
     'traitements':      [('nom','Nom *',true,false),('posologie','Posologie',false,false)],
-    'visites':          [('veterinaire','Vétérinaire',false,false),('diagnostic','Diagnostic',false,true),('notes','Notes',false,true)],
+    'visites':          [('veterinaire','Vétérinaire',true,false),('ordonnance_num',"N° d'ordonnance",false,false),('diagnostic','Diagnostic',false,true),('notes','Notes',false,true)],
     'radios':           [('titre','Titre *',true,false),('notes','Notes',false,true)],
     'allergies':        [('description','Description *',true,true)],
     'chirurgies':       [('intitule','Intervention *',true,false),('clinique','Clinique / vétérinaire',false,false),('protocole_preop','Protocole pré-opératoire',false,true),('protocole_postop','Protocole post-opératoire',false,true),('notes','Notes',false,true)],
@@ -7930,6 +7931,7 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
   static const _motifs = ['Consultation', 'Rappel de vaccin', 'Urgence', 'Suivi', 'Autre'];
   String _motif = 'Consultation';
   final _veto   = TextEditingController();
+  final _ordo   = TextEditingController();
   final _diag   = TextEditingController();
   final _notes  = TextEditingController();
   final _vaccin = TextEditingController();
@@ -7948,8 +7950,10 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
   @override
   Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter une visite', fields: [
     _DDrop('Motif *', _motif, _motifs, (v) => setState(() => _motif = v!)),
-    _DF('Vétérinaire', _veto, readOnly: widget.source == 'veterinaire'),
+    _DF('Vétérinaire *', _veto, readOnly: widget.source == 'veterinaire'),
     _DD('Date *', _date, (d) => setState(() => _date = d)),
+    // Repris au registre sanitaire (élevage / association).
+    _DF("N° d'ordonnance", _ordo),
     if (_isVaccin) ...[
       _DF('Vaccin *', _vaccin),
       _DF('N° de lot', _lot),
@@ -7959,6 +7963,7 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
     _DF('Notes', _notes, maxLines: 3),
   ], onSave: () async {
     controlerDatesSante(date: _date, rappel: _isVaccin ? _dateRappel : null);
+    if (_veto.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le vétérinaire.');
     if (_isVaccin && _vaccin.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du vaccin.');
     final supa = Supabase.instance.client;
     final visiteId = DateTime.now().microsecondsSinceEpoch.toString();
@@ -7973,6 +7978,7 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
       'motif': _motif, 'veterinaire': _veto.text.trim(),
       'date': _date!.toIso8601String(),
       'diagnostic': _diag.text.trim(), 'notes': _notes.text.trim(),
+      if (_ordo.text.trim().isNotEmpty) 'ordonnance_num': _ordo.text.trim(),
       'source': widget.source,
       if (widget.vetId != null) 'vet_id': widget.vetId,
       if (vetProfileId != null) 'vet_profile_id': vetProfileId,

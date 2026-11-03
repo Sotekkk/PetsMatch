@@ -3675,7 +3675,8 @@ function AnimalFichePageInner() {
   // apparaissaient donc jamais, et une suppression ne nettoyait rien.
   const REGISTRE_TYPE_ACTE: Record<string,string> = {
     vaccinations: 'vaccination', vermifuges: 'vermifuge',
-    antiparasitaires: 'antiparasitaire', traitements: 'traitement', visites: 'visite',
+    antiparasitaires: 'antiparasitaire', traitements: 'traitement',
+    // visites : inscrites au registre par la base (trigger pm_registre_depuis_visite).
   };
   function registreDescription(table: string, data: Record<string,unknown>): string {
     switch (table) {
@@ -5728,7 +5729,27 @@ function AnimalFichePageInner() {
           </HealthSection>
 
 
-          {/* Visites vétérinaires : plus dans le carnet — consultations dans l'onglet Consultations. */}
+          {/* Visites vétérinaires : élevage seulement (registre sanitaire obligatoire).
+              Particulier : les consultations sont dans l'onglet Consultations.
+              Inscrites au registre par la base (comme les comptes rendus validés du vétérinaire). */}
+          {(isEleveur || isEmployeOfOwner) && (() => {
+            const champsVisite = [{key:'motif',label:'Motif',required:true},{key:'date',label:'Date',type:'date',required:true},{key:'veterinaire',label:'Vétérinaire',required:true},{key:'ordonnance_num',label:"N° d'ordonnance"},{key:'diagnostic',label:'Diagnostic'},{key:'notes',label:'Notes'}];
+            return (
+              <HealthSection title="Visites vétérinaires" color="#26A69A" count={health.visites.length}
+                onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='visites'?null:'visites') : undefined}
+                addFormOpen={addOpen==='visites'}
+                addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
+                  onSave={d=>saveHealthRecord('visites',d)} fields={champsVisite}/>}>
+                <p className="px-4 pt-2 text-xs text-gray-500">Visites hors PetsMatch. Les consultations faites par un vétérinaire sur PetsMatch (onglet Consultations) sont inscrites d&apos;office au registre sanitaire.</p>
+                {health.visites.map(r=>(
+                  <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('visites',r.id)}
+                    onSave={d=>updateHealthRecord('visites',r.id,d)} saving={savingHealth} canWrite={canWriteSante && r.source !== 'veterinaire'}
+                    fields={champsVisite}/>
+                ))}
+                {health.visites.length===0 && <p className="p-4 text-sm text-gray-400">Aucune visite</p>}
+              </HealthSection>
+            );
+          })()}
 
           {/* Génétique & tests : particulier ici, éleveur dans le suivi repro. */}
           {!(isEleveur || isEmployeOfOwner) && especeHasGenetics(animal.espece) && id && (
