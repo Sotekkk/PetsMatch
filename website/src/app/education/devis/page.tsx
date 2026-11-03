@@ -27,6 +27,7 @@ interface Devis {
   prenom_client: string | null;
   email_client: string | null;
   telephone_client: string | null;
+  adresse_client?: string | null;
   lignes: Ligne[];
   total_ttc: number;
   note: string | null;
@@ -98,6 +99,7 @@ function DevisPageInner() {
   const [prenomClient, setPrenomClient] = useState('');
   const [emailClient, setEmailClient] = useState('');
   const [telClient, setTelClient] = useState('');
+  const [adresseClient, setAdresseClient] = useState('');
   const [clientUid, setClientUid] = useState<string | null>(null);
   const [clientProfileId, setClientProfileId] = useState<string | null>(null);
   const [dateValidite, setDateValidite] = useState('');
@@ -130,7 +132,7 @@ function DevisPageInner() {
       : supabase.from('devis').select('*').eq('pro_uid', user.uid).order('created_at', { ascending: false });
     Promise.all([
       devisQ,
-      supabase.from('user_profiles_complet').select('tarifs_education, tarifs_education_extra, tarifs_garde, tarifs_veto, profile_type, cat_pro').eq('id', activeProfileId).maybeSingle(),
+      supabase.from('user_profiles_complet').select('tarifs_education, tarifs_education_extra, tarifs_garde, tarifs_veto, tarifs_veto_extra, profile_type, cat_pro').eq('id', activeProfileId).maybeSingle(),
       activeProfileId
         ? supabase.from('animal_access').select('animal_id').eq('pro_profile_id', activeProfileId).in('statut', ['active', 'active_write'])
         : Promise.resolve({ data: [] }),
@@ -164,10 +166,15 @@ function DevisPageInner() {
         const prixDe = (v: unknown) => { const n = parseFloat(String(v ?? '').replace(',', '.')); return isNaN(n) ? 0 : n; };
         const grille = TARIFS_VETO_GROUPES.flatMap(g => g.items.filter(i => prixDe(tv[i.key]) > 0)
           .map(i => ({ groupe: g.groupe.replace(' (selon le poids)', ''), label: libelleTarifVeto(g.groupe, i.label), prix: prixDe(tv[i.key]) })));
+        const extra = Array.isArray((t.data as { tarifs_veto_extra?: unknown } | null)?.tarifs_veto_extra)
+          ? ((t.data as { tarifs_veto_extra: { label?: string; prix?: unknown }[] }).tarifs_veto_extra)
+              .filter(e => e?.label?.trim() && prixDe(e.prix) > 0)
+              .map(e => ({ groupe: 'Mes autres tarifs', label: e.label!.trim(), prix: prixDe(e.prix) }))
+          : [];
         const { data: ph } = activeProfileId
           ? await supabase.from('inventaire_items').select('nom, prix_vente').eq('eleveur_profile_id', activeProfileId).gt('prix_vente', 0).order('nom')
           : { data: [] };
-        setTarifsVeto([...grille, ...((ph ?? []) as { nom: string; prix_vente: number }[]).map(x => ({ groupe: 'Pharmacie', label: x.nom, prix: Number(x.prix_vente) }))]);
+        setTarifsVeto([...grille, ...extra, ...((ph ?? []) as { nom: string; prix_vente: number }[]).map(x => ({ groupe: 'Pharmacie', label: x.nom, prix: Number(x.prix_vente) }))]);
       }
       if (pt === 'toilettage') {
         // Toiletteur : prestations du catalogue (prix de base, ou le plus bas
@@ -222,23 +229,41 @@ function DevisPageInner() {
       const profil = searchParams.get('clientProfileId');
       (async () => {
         const v = (x: unknown) => String(x ?? '').trim();
-        let c: Record<string, unknown> | null = null;
+        // Toutes les sources, puis champ par champ la première valeur connue :
+        // coordonnées de facturation (particulier, éleveur, association), client
+        // du RDV (compte ou fichier clients), fiche du fichier clients.
+        const sources: Record<string, unknown>[] = [];
         if (animalId) {
           const { data } = await supabase.rpc('pm_client_facturation', { p_animal_id: animalId, ...(profil ? { p_client_profile_id: profil } : {}) });
-          const j = (data ?? null) as Record<string, unknown> | null;
-          if (j && (v(j.nom) || v(j.prenom))) c = j;
+          if (data) sources.push(data as Record<string, unknown>);
         }
-        if (!c && rdv) {
+        if (rdv) {
           const { data } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: rdv });
-          const j = (data ?? null) as Record<string, unknown> | null;
-          if (j && (v(j.nom) || v(j.prenom) || v(j.email))) c = j;
+          if (data) sources.push(data as Record<string, unknown>);
         }
-        if (!c) return;
+        if (animalId) {
+          const { data: an } = await supabase.from('animaux').select('client_clinique_id').eq('id', animalId).maybeSingle();
+          const cc = (an as { client_clinique_id?: string | null } | null)?.client_clinique_id;
+          if (cc) {
+            const { data } = await supabase.from('clients_clinique').select('nom, prenom, email, telephone, adresse, code_postal, ville').eq('id', cc).maybeSingle();
+            if (data) sources.push({ ...(data as Record<string, unknown>), rue: (data as Record<string, unknown>).adresse });
+          }
+        }
+        const premier = (k: string) => sources.map(x => v(x[k])).find(Boolean) ?? '';
+        const societe = sources[0]?.societe === true;
+        const adresse = (() => {
+          for (const x of sources) {
+            const a = [v(x.rue), `${v(x.code_postal)} ${v(x.ville)}`.trim()].filter(Boolean).join(', ');
+            if (a) return a;
+          }
+          return '';
+        })();
         // Seuls les champs encore vides sont complétés.
-        setNomClient(x => x.trim() ? x : v(c!.nom));
-        setPrenomClient(x => x.trim() ? x : (c!.societe === true ? '' : v(c!.prenom)));
-        setEmailClient(x => x.trim() ? x : v(c!.email));
-        setTelClient(x => x.trim() ? x : v(c!.telephone));
+        setNomClient(x => x.trim() ? x : premier('nom'));
+        setPrenomClient(x => x.trim() ? x : (societe ? '' : premier('prenom')));
+        setEmailClient(x => x.trim() ? x : premier('email'));
+        setTelClient(x => x.trim() ? x : premier('telephone'));
+        setAdresseClient(x => x.trim() ? x : adresse);
       })().catch(() => {});
     }
     const ld = searchParams.get('ligneDesc');
@@ -335,7 +360,7 @@ function DevisPageInner() {
   const totalTtc = lignes.reduce((s, l) => s + (l.total || 0), 0);
 
   function resetForm() {
-    setNomClient(''); setPrenomClient(''); setEmailClient(''); setTelClient('');
+    setNomClient(''); setPrenomClient(''); setEmailClient(''); setTelClient(''); setAdresseClient('');
     setClientUid(null); setClientProfileId(null);
     setDateValidite(''); setNote(''); setAnimalId('');
     setLignes([{ description: '', quantite: 1, prix_unitaire: 0, total: 0 }]);
@@ -371,6 +396,8 @@ function DevisPageInner() {
         devis_id: d.id,
         acquereur_nom: clientNom,
         acquereur_email: d.email_client,
+        ...(d.adresse_client ? { acquereur_adresse: d.adresse_client } : {}),
+        ...(d.telephone_client ? { acquereur_telephone: d.telephone_client } : {}),
         ...(d.client_profile_id ? { client_profile_id: d.client_profile_id } : {}),
         lignes: d.lignes,
         total_ttc: d.total_ttc,
@@ -408,6 +435,7 @@ function DevisPageInner() {
         prenom_client: prenomClient.trim(),
         email_client: emailClient.trim(),
         telephone_client: telClient.trim() || null,
+        adresse_client: adresseClient.trim() || null,
         lignes: validLignes,
         total_ttc: totalTtc,
         note: note.trim() || null,
@@ -577,6 +605,11 @@ function DevisPageInner() {
                 <div className="mt-3">
                   <label className="block text-xs text-gray-600 mb-1">Téléphone</label>
                   <input value={telClient} onChange={e => setTelClient(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div className="mt-3">
+                  <label className="block text-xs text-gray-600 mb-1">Adresse</label>
+                  <input value={adresseClient} onChange={e => setAdresseClient(e.target.value)} placeholder="Rue, code postal, ville"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
                 </div>
               </div>
 

@@ -5339,6 +5339,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   clientNom: ou(cc?.nom, rdv['_client_name'] ?? rdv['client_nom_manuel']),
                   clientPrenom: ou(cc?.prenom, null),
                   clientEmail: ou(cc?.email, rdv['client_email_manuel']), clientTel: ou(cc?.tel, rdv['client_telephone_manuel']),
+                  clientAdresse: ou(cc?.adresse, null),
                   rdvId: rdv['id']?.toString(),
                   lignes: [if ((rdv['motif']?.toString() ?? '').trim().isNotEmpty)
                     {'description': rdv['motif'].toString().trim(), 'quantite': 1, 'prix_unitaire': 0}],

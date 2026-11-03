@@ -50,6 +50,8 @@ Future<String?> _syncContratDocument(Map<String, dynamic> devisRow, String devis
         'devis_id': devisId,
         'acquereur_nom': nomClient.isEmpty ? devisRow['nom_client'] : nomClient,
         'acquereur_email': devisRow['email_client'],
+        if ((devisRow['adresse_client'] ?? '').toString().isNotEmpty) 'acquereur_adresse': devisRow['adresse_client'],
+        if ((devisRow['telephone_client'] ?? '').toString().isNotEmpty) 'acquereur_telephone': devisRow['telephone_client'],
         if (devisRow['client_profile_id'] != null) 'client_profile_id': devisRow['client_profile_id'],
         'lignes': devisRow['lignes'],
         'total_ttc': devisRow['total_ttc'],
@@ -67,28 +69,46 @@ Future<String?> _syncContratDocument(Map<String, dynamic> devisRow, String devis
 /// Coordonnées du client pour un devis : client avec l'appli (particulier,
 /// éleveur, association — coordonnées de facturation), sinon client sans compte
 /// (fichier clients de la fiche, coordonnées saisies sur le RDV).
-Future<({String prenom, String nom, String email, String tel})?> coordClientDevis({
+Future<({String prenom, String nom, String email, String tel, String adresse})?> coordClientDevis({
   String? animalId, String? rdvId, String? clientProfileId,
 }) async {
   final supa = Supabase.instance.client;
   String v(dynamic x) => x?.toString().trim() ?? '';
+  // Toutes les sources, puis champ par champ la première valeur connue.
+  final sources = <Map>[];
   try {
     if ((animalId ?? '').isNotEmpty) {
       final j = await supa.rpc('pm_client_facturation', params: {
         'p_animal_id': animalId, if ((clientProfileId ?? '').isNotEmpty) 'p_client_profile_id': clientProfileId,
       });
-      if (j is Map && (v(j['nom']).isNotEmpty || v(j['prenom']).isNotEmpty)) {
-        return (prenom: j['societe'] == true ? '' : v(j['prenom']), nom: v(j['nom']), email: v(j['email']), tel: v(j['telephone']));
-      }
+      if (j is Map) sources.add(j);
     }
+  } catch (_) {}
+  try {
     if ((rdvId ?? '').isNotEmpty) {
       final j = await supa.rpc('pm_contact_client_rdv', params: {'p_rdv_id': rdvId});
-      if (j is Map && (v(j['nom']).isNotEmpty || v(j['prenom']).isNotEmpty || v(j['email']).isNotEmpty)) {
-        return (prenom: v(j['prenom']), nom: v(j['nom']), email: v(j['email']), tel: v(j['telephone']));
+      if (j is Map) sources.add(j);
+    }
+  } catch (_) {}
+  try {
+    if ((animalId ?? '').isNotEmpty) {
+      final a = await supa.from('animaux').select('client_clinique_id').eq('id', animalId!).maybeSingle();
+      if (v(a?['client_clinique_id']).isNotEmpty) {
+        final cc = await supa.from('clients_clinique').select('nom, prenom, email, telephone, adresse, code_postal, ville')
+            .eq('id', a!['client_clinique_id']).maybeSingle();
+        if (cc != null) sources.add({...cc, 'rue': cc['adresse']});
       }
     }
   } catch (_) {}
-  return null;
+  if (sources.isEmpty) return null;
+  String premier(String k) => sources.map((x) => v(x[k])).firstWhere((x) => x.isNotEmpty, orElse: () => '');
+  var adresse = '';
+  for (final x in sources) {
+    final a = [v(x['rue']), '${v(x['code_postal'])} ${v(x['ville'])}'.trim()].where((e) => e.isNotEmpty).join(', ');
+    if (a.isNotEmpty) { adresse = a; break; }
+  }
+  final societe = sources.first['societe'] == true;
+  return (prenom: societe ? '' : premier('prenom'), nom: premier('nom'), email: premier('email'), tel: premier('telephone'), adresse: adresse);
 }
 
 class DevisPrefill {
@@ -99,13 +119,14 @@ class DevisPrefill {
   final String? clientPrenom;
   final String? clientEmail;
   final String? clientTel;
+  final String? clientAdresse;
   final List<Map<String, dynamic>> lignes; // {description, quantite, prix_unitaire}
   final String? note;
   /// Séance (rdv) à laquelle le devis est rattaché (photographe…).
   final String? rdvId;
   const DevisPrefill({
     this.animalId, this.clientUid, this.clientProfileId,
-    this.clientNom, this.clientPrenom, this.clientEmail, this.clientTel,
+    this.clientNom, this.clientPrenom, this.clientEmail, this.clientTel, this.clientAdresse,
     this.lignes = const [], this.note, this.rdvId,
   });
 }
@@ -353,6 +374,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
   final _prenomCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _telCtrl = TextEditingController();
+  final _adresseCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
 
   bool _searching = false;
@@ -389,6 +411,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
       _prenomCtrl.text = p.clientPrenom ?? '';
       _emailCtrl.text = p.clientEmail ?? '';
       if ((p.clientTel ?? '').isNotEmpty) _telCtrl.text = p.clientTel!;
+      if ((p.clientAdresse ?? '').isNotEmpty) _adresseCtrl.text = p.clientAdresse!;
       if ((p.clientNom ?? '').isNotEmpty) {
         _searchCtrl.text = '${p.clientPrenom ?? ''} ${p.clientNom ?? ''}'.trim();
       }
@@ -426,7 +449,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
   @override
   void dispose() {
     _searchCtrl.dispose(); _nomCtrl.dispose(); _prenomCtrl.dispose();
-    _emailCtrl.dispose(); _telCtrl.dispose(); _noteCtrl.dispose();
+    _emailCtrl.dispose(); _telCtrl.dispose(); _adresseCtrl.dispose(); _noteCtrl.dispose();
     for (final l in _lignes) { l.dispose(); }
     super.dispose();
   }
@@ -444,7 +467,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
     if (_veto) {
       final pro = AgendaContexte.profileId.isNotEmpty ? AgendaContexte.profileId : pid;
       try {
-        final row = pro.isEmpty ? null : await _supa.from('user_profiles_complet').select('tarifs_veto').eq('id', pro).maybeSingle();
+        final row = pro.isEmpty ? null : await _supa.from('user_profiles_complet').select('tarifs_veto, tarifs_veto_extra').eq('id', pro).maybeSingle();
         final tv = (row?['tarifs_veto'] as Map?) ?? const {};
         double prixDe(dynamic x) => double.tryParse((x ?? '').toString().replaceAll(',', '.')) ?? 0;
         final ph = pro.isEmpty ? const [] : await _supa.from('inventaire_items').select('nom, prix_vente')
@@ -455,6 +478,9 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
                   for (final it in g.$2)
                     if (prixDe(tv[it.$1]) > 0)
                       (groupe: g.$1.replaceAll(' (selon le poids)', ''), label: libelleTarifVeto(g.$1, it.$2), prix: prixDe(tv[it.$1])),
+                for (final e in (row?['tarifs_veto_extra'] as List? ?? const []))
+                  if (e is Map && (e['label']?.toString().trim() ?? '').isNotEmpty && prixDe(e['prix']) > 0)
+                    (groupe: 'Mes autres tarifs', label: e['label'].toString().trim(), prix: prixDe(e['prix'])),
                 for (final x in ph)
                   (groupe: 'Pharmacie', label: (x['nom'] ?? '').toString(), prix: prixDe(x['prix_vente'])),
               ]);
@@ -610,6 +636,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
         'prenom_client': _prenomCtrl.text.trim(),
         'email_client': _emailCtrl.text.trim(),
         'telephone_client': _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
+        'adresse_client': _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
         'lignes': validLignes.map((l) => l.toMap()).toList(),
         'total_ttc': _total,
         'note': _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
@@ -702,6 +729,10 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
           const SizedBox(height: 8),
           TextField(controller: _telCtrl,
               decoration: const InputDecoration(labelText: 'Téléphone', filled: true, fillColor: Colors.white, border: OutlineInputBorder())),
+          const SizedBox(height: 8),
+          TextField(controller: _adresseCtrl,
+              decoration: const InputDecoration(labelText: 'Adresse', hintText: 'Rue, code postal, ville',
+                  filled: true, fillColor: Colors.white, border: OutlineInputBorder())),
 
           const SizedBox(height: 20),
           const Text('Prestations', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
