@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:io';
+import 'package:PetsMatch/utils/devis_rdv.dart';
 import 'package:PetsMatch/utils/rdv_animaux.dart';
 import 'package:PetsMatch/utils/signature_pro.dart';
 import 'package:flutter/material.dart';
@@ -1848,8 +1849,11 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     // Mes comptes rendus chargés (photo / PDF) : envoyés à la place des comptes rendus rédigés.
     final rdvIdFin = widget.rdv?['id']?.toString();
     final crsPro = rdvIdFin == null ? <Map<String, dynamic>>[] : await comptesRendusProDuRdv(rdvIdFin);
+    // Devis du RDV (créés depuis le dossier) : envoyés avec le reste, lien de signature.
+    final devis = rdvId == null ? <Map<String, dynamic>>[] : await devisDuRdv(rdvId);
     if (!mounted) return;
     final coches = <String, bool>{
+      for (final d in devis) 'dev:${d['id']}': d['statut'] == 'brouillon',
       for (final c in crs) 'cr:${c['id']}': crsPro.isEmpty,
       for (final d in crsPro) 'pro:${d['id']}': true,
       for (final o in ordos) 'ordo:${o['id']}': (o['doc_url'] ?? '').toString().isNotEmpty,
@@ -1878,7 +1882,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             const Text('Fin de consultation', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
             Text('Envoyer au propriétaire par e-mail', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
-            if (crs.isEmpty && ordos.isEmpty && facture == null && crsPro.isEmpty)
+            if (crs.isEmpty && ordos.isEmpty && facture == null && crsPro.isEmpty && devis.isEmpty)
               const Padding(padding: EdgeInsets.symmetric(vertical: 8),
                   child: Text('Aucun document pour l\u2019instant (compte rendu validé, ordonnance ou facture).',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
@@ -1890,6 +1894,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             for (final x in interventions)
               ligne(x.cle, '${x.doc == 'consignes' ? 'Consignes après l’intervention' : x.doc == 'preop' ? 'Compte rendu préopératoire' : 'Compte rendu opératoire'} — ${nom(x.animalId)}',
                   x.intitule.isEmpty ? null : x.intitule),
+            for (final d in devis) ligne('dev:${d['id']}', titreDevisRdv(d), sousTitreDevisRdv(d)),
             if (facture != null) ligne('fac:${facture['id']}', 'Facture ${facture['numero_affichage'] ?? ''}',
                 '${((facture['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}'),
             if (facture != null && !dejaPayee) ...[
@@ -1981,6 +1986,15 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         emailParDefaut ??= (facture['email_client'] ?? '').toString().isEmpty ? null : facture['email_client'].toString();
         pieces.add((type: 'facture', nomFichier: 'Facture-${facture['numero_affichage'] ?? ''}${facture['statut'] == 'payee' ? '-acquittee' : ''}.pdf',
             bytes: await facturePdfDepuisLigne(facture)));
+      }
+      // Devis : lien de signature par e-mail (+ notification s'il a un compte).
+      if (rdvId != null) {
+        final echecsDevis = await envoyerDevisCoches(devis, coches, rdvId: rdvId,
+            proNom: expediteur ?? User_Info.nameElevage, emailSecours: emailParDefaut);
+        if (echecsDevis > 0 && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Devis : e-mail non envoyé (adresse manquante ou erreur).',
+              style: TextStyle(fontFamily: 'Galey')), behavior: SnackBarBehavior.floating));
+        }
       }
       if (pieces.isEmpty || !mounted) return;
       await envoyerDocumentsParEmail(context, pieces: pieces,

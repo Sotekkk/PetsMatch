@@ -820,7 +820,23 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
               decoration: const InputDecoration(labelText: 'Notes internes', filled: true, fillColor: Colors.white, border: OutlineInputBorder())),
 
           const SizedBox(height: 20),
-          Row(children: [
+          // Depuis le RDV : le devis part avec le reste à « Terminer et envoyer ».
+          if (widget.prefill?.rdvId != null) ...[
+            SizedBox(width: double.infinity, child: ElevatedButton(
+              onPressed: _saving ? null : () => _save(false),
+              style: ElevatedButton.styleFrom(backgroundColor: _kTeal, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 13)),
+              child: Text(_saving ? '…' : 'Enregistrer — envoyé à la fin de la consultation', textAlign: TextAlign.center,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+            const SizedBox(height: 8),
+            SizedBox(width: double.infinity, child: OutlinedButton(
+              onPressed: _saving ? null : () => _save(true),
+              style: OutlinedButton.styleFrom(foregroundColor: _kTeal, side: const BorderSide(color: _kTeal),
+                  padding: const EdgeInsets.symmetric(vertical: 13)),
+              child: const Text('Envoyer maintenant', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            )),
+          ] else Row(children: [
             Expanded(child: OutlinedButton(
               onPressed: _saving ? null : () => _save(false),
               style: OutlinedButton.styleFrom(foregroundColor: _kTeal, side: const BorderSide(color: _kTeal),

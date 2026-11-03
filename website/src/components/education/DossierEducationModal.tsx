@@ -323,7 +323,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
                 await decompterSeance(t);
               }), btn('Gérer', () => fiche('tab=Programme', 'Forfait'))]
                 : [btn('Attribuer un forfait', () => fiche('tab=Programme&forfait=1', 'Attribuer un forfait'))])}
-          {ligne('Devis', !devis ? 'Aucun' : `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'Brouillon'} · ${eur(devis.total_ttc)}`,
+          {ligne('Devis', !devis ? 'Aucun' : `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'À envoyer à la fin'} · ${eur(devis.total_ttc)}`,
             !devis ? GRIS : devis.statut === 'accepte' ? VERT : AMBRE,
             [!devis ? btn('Créer', creerDevis) : btn('Voir', () => ouvrir('/education/devis', 'Devis'))])}
           {!facture && r.forfait_souscrit_id ? ligne('Facture', 'Couverte par le forfait (payé d’avance)', VERT, [])

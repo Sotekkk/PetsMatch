@@ -13,6 +13,8 @@ import 'package:PetsMatch/pages/animaux/morpho/morpho_pdf_service.dart' show mor
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne, facturePdfDepuisLigne;
 import 'package:PetsMatch/pages/pro/transmission_document.dart' show envoyerDocumentsParEmail;
 import 'package:PetsMatch/utils/document_pro.dart' show comptesRendusProDuRdv, lignesCrsPro, ajouterPiecesCrsPro;
+import 'package:PetsMatch/utils/devis_rdv.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 const _teal = Color(0xFF0C5C6C);
 
@@ -130,8 +132,11 @@ Future<void> finSeanceOsteo(BuildContext context, {required String rdvId, String
   final pro = proProfileId ?? (seances.isNotEmpty ? seances.first['pro_profile_id']?.toString() : null);
   // Mes comptes rendus chargés (photo / PDF) : envoyés à la place des comptes rendus de séance.
   final crsPro = await comptesRendusProDuRdv(rdvId);
+  // Devis du RDV (créés depuis le dossier) : envoyés avec le reste, lien de signature.
+  final devis = await devisDuRdv(rdvId);
   if (!context.mounted) return;
   final coches = <String, bool>{
+    for (final d in devis) 'dev:${d['id']}': d['statut'] == 'brouillon',
     for (final s in seances) 'seance:${s['id']}': crsPro.isEmpty,
     for (final d in crsPro) 'pro:${d['id']}': true,
     if (facture != null) 'fac:${facture['id']}': true,
@@ -157,12 +162,13 @@ Future<void> finSeanceOsteo(BuildContext context, {required String rdvId, String
           const Text('Fin de séance', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
           Text('Envoyer au propriétaire par e-mail', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
-          if (seances.isEmpty && facture == null && crsPro.isEmpty)
+          if (seances.isEmpty && facture == null && crsPro.isEmpty && devis.isEmpty)
             const Padding(padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text('Aucun document pour ce rendez-vous : finalisez d’abord la séance.', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
           for (final s in seances)
             ligne('seance:${s['id']}', 'Compte rendu de séance — ${noms[s['animal_id']?.toString()] ?? s['animal_nom_libre'] ?? 'Animal'}'),
           ...lignesCrsPro(ctx, setM, rdvId: rdvId, crsPro: crsPro, coches: coches, ligne: ligne, estGenere: (k) => k.startsWith('seance:')),
+          for (final d in devis) ligne('dev:${d['id']}', titreDevisRdv(d), sousTitreDevisRdv(d)),
           if (facture != null)
             ligne('fac:${facture['id']}', 'Facture ${facture['numero_affichage'] ?? ''}',
                 '${((facture['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}'),
@@ -271,6 +277,13 @@ Future<void> finSeanceOsteo(BuildContext context, {required String rdvId, String
     if (facture != null && coches['fac:${facture['id']}'] == true) {
       pieces.add((type: 'facture', nomFichier: 'Facture-${facture['numero_affichage'] ?? ''}${facture['statut'] == 'payee' ? '-acquittee' : ''}.pdf',
           bytes: await facturePdfDepuisLigne(facture)));
+    }
+    // Devis : lien de signature par e-mail (+ notification s'il a un compte).
+    final echecsDevis = await envoyerDevisCoches(devis, coches, rdvId: rdvId, proNom: User_Info.nameElevage,
+        emailSecours: (facture?['email_client'] ?? '').toString().isEmpty ? null : facture!['email_client'].toString());
+    if (echecsDevis > 0) {
+      messenger.showSnackBar(const SnackBar(content: Text('Devis : e-mail non envoyé (adresse manquante ou erreur).',
+          style: TextStyle(fontFamily: 'Galey')), behavior: SnackBarBehavior.floating));
     }
     if (pieces.isEmpty || !context.mounted) return;
     final ok = await envoyerDocumentsParEmail(context, pieces: pieces,

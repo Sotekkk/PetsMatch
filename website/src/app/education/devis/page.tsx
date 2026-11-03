@@ -748,14 +748,26 @@ function DevisPageInner() {
 
             <div className="flex gap-3 mt-6">
               <button onClick={() => { setShowForm(false); resetForm(); }} className="flex-1 border border-gray-200 text-gray-600 font-medium py-2.5 rounded-xl text-sm hover:bg-gray-50">Annuler</button>
-              <button onClick={() => handleCreate(false)} disabled={saving}
-                className="flex-1 border border-[#0C5C6C]/30 text-[#0C5C6C] font-semibold py-2.5 rounded-xl text-sm hover:bg-[#E8F4F6] disabled:opacity-50">
-                Enregistrer en brouillon
-              </button>
-              <button onClick={() => handleCreate(true)} disabled={saving}
-                className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-sm">
-                {saving ? 'Envoi…' : 'Créer et envoyer'}
-              </button>
+              {/* Depuis le RDV : le devis part avec le reste à « Terminer et envoyer ». */}
+              {rdvId ? (<>
+                <button onClick={() => handleCreate(true)} disabled={saving}
+                  className="flex-1 border border-[#0C5C6C]/30 text-[#0C5C6C] font-semibold py-2.5 rounded-xl text-sm hover:bg-[#E8F4F6] disabled:opacity-50">
+                  Envoyer maintenant
+                </button>
+                <button onClick={() => handleCreate(false)} disabled={saving}
+                  className="flex-[2] bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-sm">
+                  {saving ? 'Enregistrement…' : 'Enregistrer — envoyé à la fin de la consultation'}
+                </button>
+              </>) : (<>
+                <button onClick={() => handleCreate(false)} disabled={saving}
+                  className="flex-1 border border-[#0C5C6C]/30 text-[#0C5C6C] font-semibold py-2.5 rounded-xl text-sm hover:bg-[#E8F4F6] disabled:opacity-50">
+                  Enregistrer en brouillon
+                </button>
+                <button onClick={() => handleCreate(true)} disabled={saving}
+                  className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-sm">
+                  {saving ? 'Envoi…' : 'Créer et envoyer'}
+                </button>
+              </>)}
             </div>
           </div>
         </div>

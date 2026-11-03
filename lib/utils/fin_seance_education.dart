@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/devis_rdv.dart';
 import 'package:PetsMatch/utils/client_document.dart';
 import 'dart:convert';
 // Éducateur : fin de séance d'un RDV — compte rendu de séance / bilan avec
@@ -223,10 +224,12 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
       }
     }
     if (aid != null && uidPro != null) {
-      final ct = await supa.from('documents_animaux').select('id, type, titre, url, pdf_signe_url, statut, token')
+      final ct = await supa.from('documents_animaux').select('id, type, titre, url, pdf_signe_url, statut, token, metadata')
           .eq('uid_eleveur', uidPro).eq('animal_id', aid).inFilter('type', ['contrat_education', 'contrat_document_pro'])
           .not('statut', 'in', '(annule,refuse)').order('created_at', ascending: false);
       for (final d in ct as List) {
+        // Devis : proposés à part (section devis du RDV), avec leur statut.
+        if (d['metadata'] is Map && (d['metadata'] as Map)['devis_id'] != null) continue;
         // PDF : signé (PetsMatch) ou document chargé ; sinon pas encore signé.
         final url = d['statut'] == 'signe' ? (_v(d['pdf_signe_url']).isNotEmpty ? _v(d['pdf_signe_url']) : _v(d['url']))
             : d['type'] == 'contrat_document_pro' ? _v(d['url']) : '';
@@ -238,8 +241,11 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
   // Plusieurs animaux : chaque compte rendu porte le nom de son animal.
   final nomsAnimaux = {for (final a in animauxDetailRdv(rdv)) a['id'].toString(): _v(a['nom'])};
   String nomDe(Map<String, dynamic> s) => nomsAnimaux[s['animal_id']?.toString()] ?? animalNom;
+  // Devis du RDV (créés depuis le dossier) : envoyés avec le reste, lien de signature.
+  final devis = await devisDuRdv(rdvId);
   if (!context.mounted) return;
   final coches = <String, bool>{
+    for (final d in devis) 'dev:${d['id']}': d['statut'] == 'brouillon',
     for (final s in seances) 'edu:${s['id']}': crsPro.isEmpty,
     for (final d in crsPro) 'pro:${d['id']}': true,
     if (facture != null) 'fac:${facture['id']}': true,
@@ -269,13 +275,14 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
           const Text('Fin de séance', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
           Text('Envoyer au client par e-mail', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
-          if (seances.isEmpty && facture == null && crsPro.isEmpty)
+          if (seances.isEmpty && facture == null && crsPro.isEmpty && devis.isEmpty)
             const Padding(padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text('Aucun document pour ce rendez-vous : rédigez d’abord le compte rendu.', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
           for (final s in seances)
             ligne('edu:${s['id']}', '${s['type'] == 'bilan' ? 'Bilan' : 'Compte rendu de séance'}${nomDe(s).isEmpty ? '' : ' — ${nomDe(s)}'}',
                 'Avec les exercices et le programme de travail, signé'),
           ...lignesCrsPro(ctx, setM, rdvId: rdvId, crsPro: crsPro, coches: coches, ligne: ligne, estGenere: (k) => k.startsWith('edu:')),
+          for (final d in devis) ligne('dev:${d['id']}', titreDevisRdv(d), sousTitreDevisRdv(d)),
           if (facture != null)
             ligne('fac:${facture['id']}', 'Facture ${facture['numero_affichage'] ?? ''}',
                 '${((facture['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}'),
@@ -406,6 +413,14 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
     }
     final c = await _client(rdv);
     fermerAttente();
+    if (!context.mounted) return;
+    // Devis : lien de signature par e-mail (+ notification s'il a un compte).
+    final echecsDevis = await envoyerDevisCoches(devis, coches, rdvId: rdvId, proNom: User_Info.nameElevage,
+        emailSecours: (c['email'] ?? '').isNotEmpty ? c['email'] : null);
+    if (echecsDevis > 0) {
+      messenger.showSnackBar(const SnackBar(content: Text('Devis : e-mail non envoyé (adresse manquante ou erreur).',
+          style: TextStyle(fontFamily: 'Galey')), behavior: SnackBarBehavior.floating));
+    }
     if (!context.mounted) return;
     final aSigner = contrats.where((x) => x.url == null && x.token != null && coches['sig:${x.id}'] == true).toList();
     if (pieces.isEmpty && aSigner.isEmpty) return;

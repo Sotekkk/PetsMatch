@@ -15,6 +15,7 @@ import {
   chargerDocsConsultation, pdfCompteRendu, pdfFacture, pdfOrdonnance, type DocsConsultation,
 } from '@/lib/fin-consultation';
 import { envoyerContratParEmail } from '@/lib/contrat-email';
+import { devisDuRdv, envoyerDevisRdv, type DevisRdv } from '@/lib/devis-rdv';
 
 const MODES = ['Carte bancaire', 'Espèces', 'Chèque', 'Virement'];
 
@@ -55,6 +56,15 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
   const [factureForfait, setFactureForfait] = useState<DocsConsultation['facture']>(null);
   const [acquitteeForfait, setAcquitteeForfait] = useState(false);
   const [contrats, setContrats] = useState<{ id: string; titre: string; url: string | null; token: string | null; email: string | null }[]>([]);
+
+  // Devis du RDV (créés depuis le dossier) : envoyés avec le reste, lien de signature.
+  const [devisRdv, setDevisRdv] = useState<DevisRdv[]>([]);
+  useEffect(() => {
+    devisDuRdv(rdvId).then(l => {
+      setDevisRdv(l);
+      if (l.length) setCoches(c => ({ ...c, ...Object.fromEntries(l.map(d => [`dev:${d.id}`, d.statut === 'brouillon'])) }));
+    }).catch(() => {});
+  }, [rdvId]);
 
   useEffect(() => {
     comptesRendusProDuRdv(rdvId).then(l => {
@@ -123,6 +133,8 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
             .not('statut', 'in', '(annule,refuse)').order('created_at', { ascending: false });
           const liste = ((ct ?? []) as { id: string; type: string; titre: string | null; url: string | null; pdf_signe_url: string | null;
             statut: string; token: string | null; metadata: Record<string, unknown> | null }[])
+            // Devis : proposés à part (section « Devis »), avec leur statut.
+            .filter(d => !d.metadata?.devis_id)
             .map(d => ({ id: d.id, titre: d.titre ?? 'Contrat', token: d.token,
               email: ((d.metadata?.acquereur_email ?? d.metadata?.client_email) as string | undefined) ?? null,
               // PDF : signé (PetsMatch) ou document chargé ; sinon pas encore signé.
@@ -148,7 +160,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         setDocs({ rdvId, animalIdPrincipal: aid,
           noms: aid ? { [aid]: (an?.nom as string | undefined) ?? (r?.animal_nom_manuel as string | undefined) ?? 'Animal' } : {},
           crs: [], ordos: [], facture, seances: [] });
-        setCoches(Object.fromEntries([...(fiche ? [['toil', true]] : []), ...(facture ? [[`fac:${facture.id}`, true]] : [])]));
+        setCoches(c => ({ ...c, ...Object.fromEntries([...(fiche ? [['toil', true]] : []), ...(facture ? [[`fac:${facture.id}`, true]] : [])]) }));
       })();
       return;
     }
@@ -165,15 +177,15 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         setDocs({ rdvId, animalIdPrincipal: r?.animal_id != null ? String(r.animal_id) : null,
           noms: Object.fromEntries(((an ?? []) as { id: string; nom: string }[]).map(a => [String(a.id), a.nom])),
           crs: [], ordos: [], facture, seances });
-        setCoches(Object.fromEntries([...seances.map(s => [`seance:${s.id}`, true]), ...(facture ? [[`fac:${facture.id}`, true]] : [])]));
+        setCoches(c => ({ ...c, ...Object.fromEntries([...seances.map(s => [`seance:${s.id}`, true]), ...(facture ? [[`fac:${facture.id}`, true]] : [])]) }));
       })();
       return;
     }
     chargerDocsConsultation(rdvId).then(d => {
       setDocs(d);
-      setCoches(Object.fromEntries([...d.crs.map(c => [`cr:${c.id}`, true]), ...d.ordos.map(o => [`ordo:${o.id}`, !!o.doc_url]),
+      setCoches(c0 => ({ ...c0, ...Object.fromEntries([...d.crs.map(c => [`cr:${c.id}`, true]), ...d.ordos.map(o => [`ordo:${o.id}`, !!o.doc_url]),
         ...(d.interventions ?? []).map(x => [`chir:${x.chirurgieId}:${x.doc}`, true]),
-        ...(d.facture ? [[`fac:${d.facture.id}`, true]] : [])]));
+        ...(d.facture ? [[`fac:${d.facture.id}`, true]] : [])]) }));
     });
   }, [rdvId, osteo, toilettage, education]);
 
@@ -288,6 +300,16 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
             }
           }
         }
+        // Devis : lien de signature par e-mail (+ notification s'il a un compte).
+        const devisAEnvoyer = devisRdv.filter(d => coches[`dev:${d.id}`]);
+        if (devisAEnvoyer.length) {
+          const { data: cc } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: rdvId });
+          const secours = (cc as { email?: string } | null)?.email || (facture?.email_client as string | null) || null;
+          for (const d of devisAEnvoyer) {
+            const ok = await envoyerDevisRdv(d, { proNom: userData?.nameElevage || praticien, emailSecours: secours });
+            if (!ok && !d.client_uid) alert(`Devis de ${d.total_ttc.toFixed(2)} € : e-mail non envoyé (adresse manquante ou erreur).`);
+          }
+        }
         // Trace de l'envoi : affichée dans le dossier de la séance.
         await supabase.from('rdv').update({ documents_envoyes_le: new Date().toISOString() }).eq('id', rdvId);
         // Éducateur : la famille est prévenue dans l'appli à l'envoi.
@@ -319,7 +341,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         {!docs ? <p className="text-sm text-gray-500">Chargement…</p> : (<>
           <div className="space-y-2">
             <p className="text-xs font-semibold text-gray-500">Envoyer au propriétaire par e-mail</p>
-            {docs.crs.length === 0 && docs.ordos.length === 0 && !(docs.interventions?.length) && !docs.facture && !(docs.seances?.length) && !ficheToil && crsPro.length === 0 && seancesEdu.length === 0 && (
+            {docs.crs.length === 0 && docs.ordos.length === 0 && !(docs.interventions?.length) && !docs.facture && !(docs.seances?.length) && !ficheToil && crsPro.length === 0 && seancesEdu.length === 0 && devisRdv.length === 0 && (
               <p className="text-sm text-gray-500">{osteo
                 ? <>Aucun document pour ce rendez-vous pour l&apos;instant : finalisez d&apos;abord la séance.</>
                 : <>Aucun document pour ce rendez-vous pour l&apos;instant (compte rendu validé, ordonnance ou facture).</>}</p>
@@ -339,6 +361,8 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
             {(docs.interventions ?? []).map(x => ligne(`chir:${x.chirurgieId}:${x.doc}`,
               `${x.doc === 'consignes' ? 'Consignes après l’intervention' : x.doc === 'preop' ? 'Compte rendu préopératoire' : 'Compte rendu opératoire'} — ${nom(x.animal_id)}`,
               x.intitule || undefined))}
+            {devisRdv.map(d => ligne(`dev:${d.id}`, `Devis — ${d.total_ttc.toFixed(2)} € TTC`,
+              d.statut === 'brouillon' ? 'À signer en ligne par le client (lien par e-mail)' : 'Déjà envoyé — renvoyer le lien de signature'))}
             {docs.facture && ligne(`fac:${docs.facture.id}`, `Facture ${docs.facture.numero_affichage ?? ''}`,
               `${Number(docs.facture.total_ttc ?? 0).toFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}`)}
             {factureForfait && ligne(`facf:${factureForfait.id}`, `Facture du forfait ${factureForfait.numero_affichage ?? ''}`,

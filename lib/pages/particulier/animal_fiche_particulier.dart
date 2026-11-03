@@ -5392,8 +5392,9 @@ class _EducationTabPState extends State<_EducationTabP> {
     try {
       final r = await _supa.from('education_progression').select()
           .eq('animal_id', widget.animalId!).order('date_seance', ascending: false);
+      // Devis pas encore envoyés par le pro (brouillon) : pas montrés au client.
       final d = await _supa.from('devis').select()
-          .eq('animal_id', widget.animalId!).order('created_at', ascending: false);
+          .eq('animal_id', widget.animalId!).neq('statut', 'brouillon').order('created_at', ascending: false);
       List objectifs = const [];
       List exercices = const [];
       try {

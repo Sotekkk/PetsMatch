@@ -124,7 +124,7 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
             </div>
           ))}
 
-          {veto && etape(2, 'Devis', devis ? `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'Brouillon'}${devis.total_ttc != null ? ` · ${Number(devis.total_ttc).toFixed(2)} €` : ''}`
+          {veto && etape(2, 'Devis', devis ? `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'À envoyer à la fin'}${devis.total_ttc != null ? ` · ${Number(devis.total_ttc).toFixed(2)} €` : ''}`
             : devisCharges.length ? (devisCharges.some(x => x.statut === 'signe') ? 'Accepté (signé)' : 'Chargé, en attente') : '',
             devis?.statut === 'accepte' || devisCharges.some(x => x.statut === 'signe') ? VERT : GRIS, (
             <div className="space-y-2">
