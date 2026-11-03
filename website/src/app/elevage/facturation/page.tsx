@@ -937,8 +937,18 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
         const target = await trouverUtilisateurParEmail(emailTrim);
         const clientUid = target?.uid as string | undefined;
         if (clientUid) {
+          // Profil destinataire : celui du client de la facture (RDV / fiche),
+          // sinon son profil particulier — jamais son profil principal par
+          // défaut (une facture de vétérinaire arrivait sur le profil éleveur).
+          let profilClient: string | null = prefill?.clientProfileId && prefill.clientUid === clientUid ? prefill.clientProfileId : null;
+          if (!profilClient) {
+            const { data: pp } = await supabase.from('user_profiles_complet').select('id')
+              .eq('uid', clientUid).eq('profile_type', 'particulier').limit(1).maybeSingle();
+            profilClient = (pp?.id as string | undefined) ?? null;
+          }
           await supabase.from('notifications').insert({
             uid: clientUid,
+            ...(profilClient ? { profile_id: profilClient } : {}),
             type: 'facture_recue',
             title: `Nouvelle facture — ${emNom.trim() || 'votre prestataire'}`,
             body: `Facture n° ${numero} · ${totalTTC.toFixed(2)} €`,

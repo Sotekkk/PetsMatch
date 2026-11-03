@@ -927,7 +927,10 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             await _supa.from('allergies').insert({...base, 'description': s.nom, if (s.detail.isNotEmpty) 'severite': s.detail});
           case 'chirurgie':
           case 'hospitalisation':
-            await _supa.from('chirurgies').insert({...base, 'type': s.type, 'intitule': s.nom, 'statut': 'realise',
+            // Clinique auteure : ses comptes rendus d'intervention et le journal s'y rattachent.
+            await _supa.from('chirurgies').insert({...base, 'pro_uid': AgendaContexte.uid,
+                if (AgendaContexte.profileId.isNotEmpty) 'pro_profile_id': AgendaContexte.profileId,
+                'type': s.type, 'intitule': s.nom, 'statut': 'realise',
                 'veterinaire': praticien, if (s.detail.isNotEmpty) 'notes': s.detail});
           case 'radio':
             await _supa.from('radios').insert({...base, 'titre': s.nom, 'veterinaire': praticien,

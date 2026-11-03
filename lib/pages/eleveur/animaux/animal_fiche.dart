@@ -8398,6 +8398,9 @@ class _AddChirurgieDialogState extends State<AddChirurgieDialog> {
         'notes': _notes.text.trim(),
         'source': widget.source,
         if (widget.vetId != null) 'vet_id': widget.vetId,
+        // Saisie par un professionnel : clinique auteure (CR d'intervention, journal).
+        if (widget.source == 'veterinaire') 'pro_uid': AgendaContexte.uid,
+        if (widget.source == 'veterinaire' && AgendaContexte.profileId.isNotEmpty) 'pro_profile_id': AgendaContexte.profileId,
       });
       if (_statut == 'prevu' && _date!.isAfter(DateTime.now())) {
         await _scheduleRappelAgenda(

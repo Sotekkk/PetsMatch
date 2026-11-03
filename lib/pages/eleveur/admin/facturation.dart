@@ -1357,13 +1357,24 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
       final target = await trouverUtilisateurParEmail(email);
       final clientUid = target?['uid'] as String?;
       if (clientUid != null) {
+        // Profil destinataire : celui du client de la facture, sinon son profil
+        // particulier — jamais son profil principal par défaut.
+        String? profilClient = widget.clientProfileId != null && (widget.clientUid == null || widget.clientUid == clientUid)
+            ? widget.clientProfileId : null;
+        if (profilClient == null) {
+          try {
+            final pp = await supa.from('user_profiles_complet').select('id')
+                .eq('uid', clientUid).eq('profile_type', 'particulier').limit(1).maybeSingle();
+            profilClient = pp?['id']?.toString();
+          } catch (_) {}
+        }
         await supa.from('notifications').insert({
           'uid': clientUid,
+          if (profilClient != null) 'profile_id': profilClient,
           'type': 'facture_recue',
           'title': 'Nouvelle facture — ${d['nomEmetteur'] ?? 'votre prestataire'}',
           'body': 'Facture n° ${_numAff(d)} · ${(d['totalTTC'] as num?)?.toStringAsFixed(2) ?? ''} €',
           'data': {'facture_id': factureId, if (pdfUrl != null) 'url': pdfUrl},
-          if (widget.clientProfileId != null) 'profile_id': widget.clientProfileId,
           'read': false,
         });
       }

@@ -1598,7 +1598,7 @@ function PatientDetailPageInner() {
             ? await supabase.from('allergies').insert({ ...base, description: s.nom, severite: s.detail || null })
             : s.type === 'radio'
               ? await supabase.from('radios').insert({ ...base, id: crypto.randomUUID(), titre: s.nom, notes: s.detail || null, veterinaire: vetName || null })
-              : await supabase.from('chirurgies').insert({ ...base, id: crypto.randomUUID(), type: s.type, intitule: s.nom, statut: 'realise', notes: s.detail || null, veterinaire: vetName || null });
+              : await supabase.from('chirurgies').insert({ ...base, id: crypto.randomUUID(), pro_uid: proUid, ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}), type: s.type, intitule: s.nom, statut: 'realise', notes: s.detail || null, veterinaire: vetName || null });
       if (error) erreurs.push(`${SOINS_LIBELLES[s.type].toLowerCase()} ${s.nom}`);
     }
     for (const t of traitementsCr) {
@@ -2426,7 +2426,7 @@ function PatientDetailPageInner() {
         setAntiparasitaires((data ?? []) as AntiparasitaireEntry[]);
         await notifyOwner('antiparasitaire', vetName);
       } else if (addingType === 'chirurgie') {
-        const { error: eChir } = await supabase.from('chirurgies').insert({ ...base, id: crypto.randomUUID(), type: formSubType || 'chirurgie', intitule: formIntitule.trim(), date: formDate, statut: formStatut, clinique: formClinique.trim() || null, protocole_preop: formPreop.trim() || null, protocole_postop: formPostop.trim() || null, notes: formNotes.trim() || null });
+        const { error: eChir } = await supabase.from('chirurgies').insert({ ...base, id: crypto.randomUUID(), pro_uid: proUid, ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}), type: formSubType || 'chirurgie', intitule: formIntitule.trim(), date: formDate, statut: formStatut, clinique: formClinique.trim() || null, protocole_preop: formPreop.trim() || null, protocole_postop: formPostop.trim() || null, notes: formNotes.trim() || null });
         if (eChir) { alert(`Non enregistré : ${eChir.message}`); return; }
         const { data } = await supabase.from('chirurgies').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setChirurgies((data ?? []) as ChirurgieEntry[]);

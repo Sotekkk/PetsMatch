@@ -51,9 +51,16 @@ export async function POST(req: NextRequest) {
     });
   }
   const plusieurs = jointes.length > 1;
-  const noms = docs.map(d => libelle(d.document_type)[0]);
+  // Facture : numéro (repris du nom du fichier « Facture-<n°>[-acquittee].pdf »).
+  const nomDoc = (d: { document_type?: string; fichier_nom?: string }) => {
+    const m = d.document_type === 'facture' ? /^Facture-(forfait-)?(.+?)(-acquittee)?\.pdf$/i.exec(String(d.fichier_nom ?? '')) : null;
+    return m && m[2] ? `la facture${m[1] ? ' du forfait' : ''} n° ${m[2]}${m[3] ? ' (acquittée)' : ''}` : libelle(d.document_type)[0];
+  };
+  const noms = docs.map(nomDoc);
   const quoi = plusieurs ? `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}` : noms[0];
-  const titre = plusieurs ? 'Documents de consultation' : libelle(docs[0].document_type)[1];
+  const titre = plusieurs ? 'Documents de consultation'
+    : docs[0].document_type === 'facture' && nomDoc(docs[0]).startsWith('la facture n° ') ? `Facture n° ${nomDoc(docs[0]).slice(14)}`
+    : libelle(docs[0].document_type)[1];
   const pro = expediteur_nom || 'Votre vétérinaire';
   const html = `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
