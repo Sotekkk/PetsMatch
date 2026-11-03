@@ -1,4 +1,5 @@
 'use client';
+import { SOUS_TYPES_INTERVENTION, CONSIGNES_PREOP_DEFAUT, libelleIntervention, consignesPreopDefaut, lierChirurgieRdv, envoyerConsignesPreop } from '@/lib/intervention';
 import { estDansPanneau, MSG_PANNEAU_FERMER, signalerPanneau } from '@/lib/panneau';
 import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/DossierSeanceModal';
 import { animauxDetailRdv, dureeRdvLabel, ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
@@ -636,10 +637,26 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
   proUid: string; profileId: string; proName: string; catPro: string;
   /** Depuis le planning : date-heure, praticien ('' = titulaire) et salle ;
    *  depuis la fiche d'un patient : animal (propriétaire pré-rempli) et motif. */
-  initial?: { date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string };
+  initial?: { date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string; intervention?: string };
   onClose: () => void; onDone: () => void;
 }) {
   const d0 = initial?.date ?? new Date();
+  // Vétérinaire : RDV « Intervention » (détartrage, stérilisation…) — dépôt,
+  // récupération prévue, temps d'intervention, consignes au propriétaire.
+  const [intervention, setIntervention] = useState<string>(initial?.intervention ?? '');
+  const [heureRecup, setHeureRecup] = useState('17:00');
+  const [blocHeure, setBlocHeure] = useState('');
+  const [blocDuree, setBlocDuree] = useState(60);
+  const [consignes, setConsignes] = useState('');
+  const [consignesModifiees, setConsignesModifiees] = useState(false);
+  const [consignesDefaut, setConsignesDefaut] = useState<Record<string, string>>(CONSIGNES_PREOP_DEFAUT);
+  useEffect(() => { if (catPro === 'veterinaire') consignesPreopDefaut(profileId).then(setConsignesDefaut).catch(() => {}); }, [catPro, profileId]);
+  useEffect(() => {
+    if (!intervention) return;
+    if (!consignesModifiees) setConsignes(consignesDefaut[intervention] ?? '');
+    setBlocDuree(SOUS_TYPES_INTERVENTION.find(t => t.key === intervention)?.duree ?? 60);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intervention, consignesDefaut]);
   const [clientNom, setClientNom] = useState('');
   const [clientTel, setClientTel] = useState('');
   const [clientEmail, setClientEmail] = useState('');
@@ -857,10 +874,14 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
       const manque = [!clientNom.trim() && 'nom', !clientTel.trim() && 'téléphone', !clientEmail.trim() && 'email'].filter(Boolean);
       if (manque.length) { setError(`Champs requis : ${manque.join(', ')}.`); return; }
     }
+    if (intervention && !patientId) { setError('Une intervention se rattache à la fiche de l’animal : choisissez le patient.'); return; }
     setSaving(true); setError(null);
     try {
       const dh = new Date(`${date}T${heure}:00`);
-      const motifTxt = motif.trim() || 'RDV';
+      const motifTxt = motif.trim() || (intervention ? libelleIntervention(intervention) : 'RDV');
+      const recup = intervention && heureRecup ? new Date(`${date}T${heureRecup}:00`) : null;
+      const bloc = intervention && blocHeure ? new Date(`${date}T${blocHeure}:00`) : null;
+      const recupTxt = recup ? recup.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
       const { data: ins, error: e } = await supabase.from('rdv').insert({
         pro_uid: proUid, pro_profile_id: profileId,
         ...(linked ? { client_uid: linked.uid, client_profile_id: linked.profileId } : {
@@ -875,6 +896,12 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
         motif: motifTxt,
         duree_minutes: duree,
         ...(notes.trim() ? { notes_client: notes.trim() } : {}),
+        ...(intervention ? {
+          intervention_type: intervention,
+          ...(recup ? { heure_recuperation: recup.toISOString() } : {}),
+          ...(bloc ? { bloc_debut: bloc.toISOString(), bloc_fin: new Date(bloc.getTime() + blocDuree * 60000).toISOString() } : {}),
+          ...(consignes.trim() ? { consignes_preop: consignes.trim() } : {}),
+        } : {}),
         statut: 'confirme',
         ...(praticien ? { instructeur_profile_id: praticien } : {}),
         ...(salle ? { salle_id: salle } : {}),
@@ -882,18 +909,26 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
       if (e || !ins) throw e ?? new Error('insert');
       const rdvId = ins.id as string;
       const nomClient = linked?.nom || clientNom.trim() || 'Client';
+      // Intervention : rattachée à la fiche (CR pré-op / opératoire / consignes).
+      if (intervention) await lierChirurgieRdv({ id: rdvId, animal_id: patientId, date_heure: dh.toISOString(), motif: motifTxt, pro_uid: proUid, pro_profile_id: profileId, intervention_type: intervention }).catch(() => null);
+      const detailIntervention = intervention ? [
+        `dépôt ${heure.replace(':', 'h')}`,
+        bloc ? `intervention ${blocHeure.replace(':', 'h')}` : '',
+        recupTxt ? `récupération vers ${recupTxt.replace(':', 'h')}` : '',
+      ].filter(Boolean).join(' · ') : '';
 
       // Agenda du pro
       await supabase.from('agenda_events').insert({
-        uid: proUid, titre: `RDV avec ${nomClient}${animalNom.trim() ? ` — ${animalNom.trim()}` : ''}`,
+        uid: proUid, titre: `${intervention ? `Intervention — ${motifTxt}` : 'RDV'} avec ${nomClient}${animalNom.trim() ? ` — ${animalNom.trim()}` : ''}`,
         type: typeFromMotif(motifTxt), date_debut: dh.toISOString(), duree_minutes: duree,
-        notes: motifTxt, couleur: `rdv:${rdvId}`, pro_profile_id: profileId,
+        notes: intervention ? `${motifTxt} (${detailIntervention})` : motifTxt, couleur: `rdv:${rdvId}`, pro_profile_id: profileId,
       });
       if (linked) {
         // Client PetsMatch : son agenda + notification « RDV confirmé ».
         await supabase.from('agenda_events').upsert({
-          uid: linked.uid, titre: `RDV — ${proName}`, type: typeFromMotif(motifTxt),
-          date_debut: dh.toISOString(), duree_minutes: duree, notes: motifTxt,
+          uid: linked.uid, titre: intervention ? `Intervention — ${motifTxt} (dépôt)` : `RDV — ${proName}`, type: typeFromMotif(motifTxt),
+          date_debut: dh.toISOString(), duree_minutes: duree,
+          notes: intervention ? [proName, recupTxt ? `Récupération prévue vers ${recupTxt.replace(':', 'h')}` : '', consignes.trim() ? `Consignes : ${consignes.trim()}` : ''].filter(Boolean).join('\n') : motifTxt,
           rdv_id: rdvId, pro_profile_id: linked.profileId,
         }, { onConflict: 'rdv_id' });
         await supabase.from('notifications').insert({
@@ -915,6 +950,8 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
             body: JSON.stringify({ action: 'demander', rdvId }) }).catch(() => {});
         }
       }
+      // Intervention : consignes au propriétaire (rappelées la veille).
+      if (intervention && consignes.trim()) await envoyerConsignesPreop(rdvId).catch(() => null);
       onDone();
     } catch (e) {
       const msg = (e as { message?: string })?.message;
@@ -1046,13 +1083,40 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
 
         <div><label className={label}>Nom de l&apos;animal</label>
           <input value={animalNom} onChange={e => setAnimalNom(e.target.value)} className={champ} /></div>
+        {catPro === 'veterinaire' && (
+          <div>
+            <label className={label}>Type de rendez-vous</label>
+            <div className="flex gap-2 mt-1">
+              {[['', 'Consultation'], ['intervention', 'Intervention (anesthésie)']].map(([k, l]) => {
+                const actif = k ? !!intervention : !intervention;
+                return (
+                  <button key={l} type="button"
+                    onClick={() => { if (k) { setIntervention('detartrage'); setDuree(15); if (!motif.trim()) setMotif('Détartrage'); } else { setIntervention(''); setDuree(30); } }}
+                    className="flex-1 px-3 py-2 rounded-xl text-xs font-semibold border"
+                    style={actif ? { background: TEAL, borderColor: TEAL, color: 'white' } : { borderColor: '#D1D5DB', color: '#1E2025' }}>{l}</button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {intervention && (
+          <div><label className={label}>Intervention</label>
+            <select value={intervention} className={`${champ} bg-white`}
+              onChange={e => {
+                const ancien = libelleIntervention(intervention);
+                setIntervention(e.target.value);
+                if (!motif.trim() || motif.trim() === ancien) setMotif(libelleIntervention(e.target.value));
+              }}>
+              {SOUS_TYPES_INTERVENTION.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </select></div>
+        )}
         <div><label className={label}>Motif</label>
           <input value={motif} onChange={e => setMotif(e.target.value)} className={champ} /></div>
 
         <div className="grid grid-cols-2 gap-3">
           <div><label className={label}>Date</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className={champ} /></div>
-          <div><label className={label}>Heure</label>
+          <div><label className={label}>{intervention ? 'Heure de dépôt' : 'Heure'}</label>
             <input type="time" step={300} value={heure} onChange={e => setHeure(e.target.value)} className={champ} /></div>
         </div>
         {/* Créneaux libres du jour (créneaux ouverts moins RDV pris), puis planning du jour pour vérifier. */}
@@ -1084,7 +1148,7 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
           )}
         </div>
         <div>
-          <label className={label}>Durée</label>
+          <label className={label}>{intervention ? 'Durée du dépôt' : 'Durée'}</label>
           <div className="flex flex-wrap gap-2 mt-1">
             {DUREES_MANUEL.map(d => (
               <button key={d} onClick={() => setDuree(d)}
@@ -1096,6 +1160,27 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
             ))}
           </div>
         </div>
+
+        {intervention && (
+          <div className="rounded-xl border border-[#0C5C6C]/20 bg-[#F1F7F8] p-3 space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div><label className={label}>Intervention à</label>
+                <input type="time" step={300} value={blocHeure} onChange={e => setBlocHeure(e.target.value)} className={`${champ} bg-white`} /></div>
+              <div><label className={label}>Durée</label>
+                <select value={blocDuree} onChange={e => setBlocDuree(Number(e.target.value))} className={`${champ} bg-white`}>
+                  {[30, 45, 60, 90, 120, 180, 240].map(m => <option key={m} value={m}>{m < 60 ? `${m} min` : m % 60 ? `${Math.floor(m / 60)}h${m % 60}` : `${m / 60} h`}</option>)}
+                </select></div>
+              <div><label className={label}>Récupération</label>
+                <input type="time" step={300} value={heureRecup} onChange={e => setHeureRecup(e.target.value)} className={`${champ} bg-white`} /></div>
+            </div>
+            <div>
+              <label className={label}>Consignes au propriétaire</label>
+              <textarea value={consignes} rows={4} onChange={e => { setConsignes(e.target.value); setConsignesModifiees(true); }}
+                className={`${champ} bg-white resize-none`} />
+              <p className="text-[11px] text-gray-500 mt-1">Envoyées au client à la création du RDV (e-mail, et notification s’il a l’appli), rappelées la veille. Textes par défaut : Mon profil.</p>
+            </div>
+          </div>
+        )}
 
         {praticiens.length > 1 && (
           <div><label className={label}>Vétérinaire</label>

@@ -7,6 +7,7 @@
 // d'ajouter les soins (produits, traitements, vaccins) via le compte rendu
 // PetsMatch : c'est le document chargé qui part au client à la fin.
 
+import InterventionDossier from '@/components/rdv/InterventionDossier';
 import { prochainRdv, libelleProchainRdv, type ProchainRdv } from '@/lib/prochain-rdv';
 import { devisModifiable } from '@/lib/devis-rdv';
 import { useEffect, useState } from 'react';
@@ -103,6 +104,8 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
         </div>
 
         <div className="space-y-3 mt-3">
+          {/* RDV « Intervention » : ses étapes propres en tête (rien sinon). */}
+          {veto && <InterventionDossier rdvId={rdvId} version={version} onOuvrirPage={onOuvrirPage} animalNom={animaux[0]?.nom} />}
           {etape(1, veto ? 'Compte rendu et soins' : 'Séance (compte rendu)', docs.length ? 'Document chargé' : '', docs.length ? VERT : GRIS, (
             <div className="space-y-2">
               <p className="text-xs text-gray-500">

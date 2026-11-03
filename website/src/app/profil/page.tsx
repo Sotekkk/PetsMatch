@@ -1,5 +1,6 @@
 'use client';
 
+import ConsignesPreopCard from '@/components/pro/ConsignesPreopCard';
 import ChoixEspecesPastilles from '@/components/ChoixEspecesPastilles';
 import { bornesNaissancePersonne, erreurNaissancePersonne } from '@/lib/ages-plausibles';
 import { useProfessionPlanCode, vetFormuleOk } from '@/lib/use-plan';
@@ -1860,6 +1861,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                 className="text-sm font-semibold text-[#0C5C6C] hover:underline">+ Ajouter un acte</button>
             </div>
           </Card>
+          <ConsignesPreopCard profileId={profileId} />
           </div>
         )}
 

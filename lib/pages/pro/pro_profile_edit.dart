@@ -1,3 +1,4 @@
+import 'package:PetsMatch/widgets/pro/consignes_preop_editor.dart';
 import 'package:PetsMatch/pages/pro/education_prestations_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart';
@@ -1634,6 +1635,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                       (v) => setState(() => _tarifsVetoExtra = v),
                       accent: const Color(0xFF0C5C6C),
                     ),
+                    if ((widget.secondaryProfileId ?? _profilRowId) != null) ...[
+                      const SizedBox(height: 20),
+                      ConsignesPreopEditor(profileId: (widget.secondaryProfileId ?? _profilRowId)!),
+                    ],
                   ],
 
                   // ── Délai minimum de réservation (tous pros à RDV) ────────

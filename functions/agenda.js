@@ -264,11 +264,14 @@ exports.sendRdvReminders = functions
             const animalPart = animalNom ? ` pour ${animalNom}` : "";
             const rdvData = {rdvId: String(rdv.id)};
 
+            // Intervention (vétérinaire) : consignes (à jeun…) rappelées la veille.
+            const consignesPart = rdv.intervention_type && (rdv.consignes_preop || "").trim() ?
+                ` — Consignes : ${rdv.consignes_preop.trim()}` : "";
             // → Client + co-propriétaires
             await sendPush(
                 rdv.client_uid,
                 "⏰ Rappel RDV — demain",
-                `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} est prévu le ${dateStr}`,
+                `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} est prévu le ${dateStr}${consignesPart}`,
                 rdvData,
                 {profileId: rdv.client_profile_id || null},
             );

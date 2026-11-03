@@ -1,3 +1,5 @@
+import 'package:PetsMatch/widgets/pro/chirurgie_cr_page.dart' show ouvrirCrChirurgie;
+import 'package:PetsMatch/utils/intervention.dart';
 import 'package:PetsMatch/utils/prochain_rdv.dart';
 import 'package:PetsMatch/utils/consignes_rdv.dart';
 import 'package:PetsMatch/utils/rdv_animaux.dart';
@@ -2935,6 +2937,24 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     DateTime date = dateInit ?? DateTime.now();
     TimeOfDay heure = dateInit != null ? TimeOfDay.fromDateTime(dateInit) : TimeOfDay.now();
     int duree = 30;
+    // Vétérinaire : RDV « Intervention » (détartrage, stérilisation…) — dépôt,
+    // temps d'intervention, récupération prévue, consignes au propriétaire.
+    final estVeto = AgendaContexte.catPro == 'veterinaire';
+    String intervention = '';
+    TimeOfDay recup = const TimeOfDay(hour: 17, minute: 0);
+    TimeOfDay? bloc;
+    int blocDuree = 60;
+    final consignesCtrl = TextEditingController();
+    bool consignesModifiees = false;
+    final consignesDefaut = estVeto ? await consignesPreopDefaut(AgendaContexte.profileId) : kConsignesPreopDefaut;
+    void choisirIntervention(String k) {
+      final ancien = libelleIntervention(intervention);
+      intervention = k;
+      blocDuree = kSousTypesIntervention.where((t) => t.key == k).firstOrNull?.duree ?? 60;
+      if (!consignesModifiees) consignesCtrl.text = consignesDefaut[k] ?? '';
+      if (motifCtrl.text.trim().isEmpty || motifCtrl.text.trim() == ancien) motifCtrl.text = libelleIntervention(k);
+    }
+    String hm(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}h${t.minute.toString().padLeft(2, '0')}';
     bool saving = false;
     String? error;
     // Recherche d'un compte PetsMatch existant (téléphone OU email).
@@ -3348,6 +3368,36 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   contentPadding: const EdgeInsets.all(12),
                 ),
               ),
+              if (estVeto) ...[
+                const SizedBox(height: 10),
+                Row(children: [
+                  for (final (k, l) in const [('', 'Consultation'), ('intervention', 'Intervention (anesthésie)')])
+                    Expanded(child: Padding(
+                      padding: EdgeInsets.only(right: k.isEmpty ? 6 : 0),
+                      child: ChoiceChip(
+                        label: SizedBox(width: double.infinity, child: Text(l, textAlign: TextAlign.center,
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600,
+                                color: (k.isEmpty ? intervention.isEmpty : intervention.isNotEmpty) ? Colors.white : const Color(0xFF1E2025)))),
+                        selected: k.isEmpty ? intervention.isEmpty : intervention.isNotEmpty,
+                        selectedColor: _teal, showCheckmark: false,
+                        onSelected: (_) => setModal(() {
+                          if (k.isEmpty) { intervention = ''; duree = 30; } else { choisirIntervention('detartrage'); duree = 15; }
+                        }),
+                      ),
+                    )),
+                ]),
+                if (intervention.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: intervention,
+                    decoration: InputDecoration(labelText: 'Intervention', labelStyle: const TextStyle(fontFamily: 'Galey'),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.all(12)),
+                    items: [for (final t in kSousTypesIntervention)
+                      DropdownMenuItem(value: t.key, child: Text(t.label, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)))],
+                    onChanged: (v) => setModal(() => choisirIntervention(v ?? 'autre')),
+                  ),
+                ],
+              ],
               const SizedBox(height: 10),
               TextField(
                 controller: motifCtrl,
@@ -3457,8 +3507,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               }),
               const SizedBox(height: 10),
               Row(children: [
-                const Text('Durée',
-                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+                Text(intervention.isNotEmpty ? 'Dépôt' : 'Durée',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Wrap(
@@ -3487,6 +3537,57 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   ),
                 ),
               ]),
+              if (intervention.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: const Color(0xFFF1F7F8), borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _teal.withValues(alpha: 0.2))),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('L\u2019heure ci-dessus est l\u2019heure de dépôt.', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade700)),
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final t = await showTimePicker(context: ctx, initialTime: bloc ?? TimeOfDay(hour: heure.hour + 1, minute: heure.minute));
+                          if (t != null) setModal(() => bloc = t);
+                        },
+                        icon: const Icon(Icons.medical_services_outlined, size: 16),
+                        label: Text(bloc == null ? 'Intervention à…' : 'Intervention ${hm(bloc!)}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                        style: OutlinedButton.styleFrom(foregroundColor: _teal),
+                      ),
+                      DropdownButton<int>(
+                        value: blocDuree,
+                        items: [for (final m in const [30, 45, 60, 90, 120, 180, 240])
+                          DropdownMenuItem(value: m, child: Text(m < 60 ? '$m min' : m % 60 == 0 ? '${m ~/ 60} h' : '${m ~/ 60}h${m % 60}',
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 13)))],
+                        onChanged: (v) => setModal(() => blocDuree = v ?? 60),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final t = await showTimePicker(context: ctx, initialTime: recup);
+                          if (t != null) setModal(() => recup = t);
+                        },
+                        icon: const Icon(Icons.home_outlined, size: 16),
+                        label: Text('Récupération ${hm(recup)}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                        style: OutlinedButton.styleFrom(foregroundColor: _teal),
+                      ),
+                    ]),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: consignesCtrl, maxLines: 4, minLines: 3,
+                      onChanged: (_) => consignesModifiees = true,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                      decoration: InputDecoration(labelText: 'Consignes au propriétaire', labelStyle: const TextStyle(fontFamily: 'Galey'),
+                          filled: true, fillColor: Colors.white,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.all(10)),
+                    ),
+                    const SizedBox(height: 4),
+                    Text('Envoyées au client à la création (e-mail, et notification s\u2019il a l\u2019appli), rappelées la veille.',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+                  ]),
+                ),
+              ],
               const SizedBox(height: 10),
               TextField(
                 controller: notesCtrl,
@@ -3519,8 +3620,16 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                         return;
                       }
                     }
+                    if (intervention.isNotEmpty && patientAnimalId == null) {
+                      setModal(() => error = 'Une intervention se rattache à la fiche de l\u2019animal : choisissez le patient.');
+                      return;
+                    }
                     setModal(() { saving = true; error = null; });
+                    DateTime? at(TimeOfDay? t) => t == null ? null : DateTime(date.year, date.month, date.day, t.hour, t.minute);
                     final ok = await _creerRdvManuel(
+                      intervention: intervention.isEmpty ? null : (
+                        type: intervention, recuperation: at(recup), blocDebut: at(bloc),
+                        blocFin: at(bloc)?.add(Duration(minutes: blocDuree)), consignes: consignesCtrl.text.trim()),
                       clientNom: clientNomCtrl.text.trim(),
                       clientTel: clientTelCtrl.text.trim(),
                       clientEmail: clientEmailCtrl.text.trim(),
@@ -3653,6 +3762,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     String? patientAnimalId,
     String? praticienInit,
     String? salleInit,
+    ({String type, DateTime? recuperation, DateTime? blocDebut, DateTime? blocFin, String consignes})? intervention,
   }) async {
     final uid = AgendaContexte.uid;
     if (uid == null) return false;
@@ -3685,6 +3795,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         'statut':                   'confirme',
         if (praticienInit != null && praticienInit.isNotEmpty) 'instructeur_profile_id': praticienInit,
         if (salleInit != null) 'salle_id': salleInit,
+        if (intervention != null) ...{
+          'intervention_type': intervention.type,
+          if (intervention.blocDebut != null) 'bloc_debut': intervention.blocDebut!.toUtc().toIso8601String(),
+          if (intervention.blocFin != null) 'bloc_fin': intervention.blocFin!.toUtc().toIso8601String(),
+        },
       }).select('id').single();
 
       if (mounted) await Future.wait([_loadRdvs(), _loadAujourdhui()]);
@@ -3728,6 +3843,24 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             if (pid.isNotEmpty) 'pro_profile_id': pid,
           });
         } catch (_) {}
+      }
+      // Intervention : fiche (CR pré-op / opératoire / consignes), récupération
+      // et consignes (posées après la confirmation : l'agenda de la famille
+      // est alors réécrit en « Intervention … » par la base), puis envoi.
+      if (intervention != null) {
+        final rdvId = inserted['id'].toString();
+        await lierChirurgieRdv(rdvId: rdvId, animalId: patientAnimalId, dateHeure: dh,
+            motif: motif.isNotEmpty ? motif : libelleIntervention(intervention.type), proUid: uid, proProfileId: pid);
+        try {
+          await Supabase.instance.client.from('rdv').update({
+            if (intervention.recuperation != null) 'heure_recuperation': intervention.recuperation!.toUtc().toIso8601String(),
+            if (intervention.consignes.isNotEmpty) 'consignes_preop': intervention.consignes,
+          }).eq('id', rdvId);
+        } catch (_) {}
+        if (intervention.consignes.isNotEmpty) {
+          final msg = await envoyerConsignesPreop(rdvId);
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg, style: const TextStyle(fontFamily: 'Galey'))));
+        }
       }
       // Toiletteur, client sans compte : demande de consignes par e-mail
       // (lien personnel) — un client avec compte la reçoit à la confirmation.
@@ -5557,7 +5690,54 @@ class _RdvCard extends StatelessWidget {
     var n = 0;
     // Prochain RDV (facultatif) : programmé tout de suite ou par le client plus tard.
     final prochain = onProgrammerRdv == null ? null : await prochainRdvDate(rdv);
+    // RDV « Intervention » : état à jour (admission, sortie, documents).
+    Map<String, dynamic>? inter, chir;
+    if (veto && rdv['intervention_type'] != null) {
+      final supa = Supabase.instance.client;
+      try {
+        inter = await supa.from('rdv').select('id, motif, animal_id, client_uid, client_profile_id, intervention_type, '
+            'heure_recuperation, bloc_debut, bloc_fin, chirurgie_id, consignes_preop, admis_le, sortie_le, suivi_hospitalisation')
+            .eq('id', rdv['id']).maybeSingle();
+        if (inter?['chirurgie_id'] != null) chir = await supa.from('chirurgies').select().eq('id', inter!['chirurgie_id']).maybeSingle();
+      } catch (_) {}
+    }
     if (!context.mounted) return;
+    String hmIso(dynamic iso) {
+      final d = DateTime.tryParse(iso?.toString() ?? '')?.toLocal();
+      return d == null ? '' : '${d.hour.toString().padLeft(2, '0')}h${d.minute.toString().padLeft(2, '0')}';
+    }
+    String etatDoc(String cle) => chir?[cle] is Map ? ((chir![cle] as Map)['statut'] == 'valide' ? 'Validé' : 'Brouillon') : 'À faire';
+    void snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m, style: const TextStyle(fontFamily: 'Galey'))));
+    Future<void> majRdv(Map<String, dynamic> champs) async {
+      try { await Supabase.instance.client.from('rdv').update(champs).eq('id', rdv['id']); } catch (e) { snack('Non enregistré : $e'); }
+    }
+    Future<void> ouvrirDocInter(String type) async {
+      if (chir == null) { snack('Intervention non rattachée à une fiche animal.'); return; }
+      await ouvrirCrChirurgie(context, chir!, type: type);
+    }
+    Future<void> prevenir(String texte) async {
+      if (inter?['client_uid'] == null) { snack('Client sans compte PetsMatch : prévenez-le par téléphone.'); return; }
+      await Supabase.instance.client.from('notifications').insert({
+        'uid': inter!['client_uid'], 'type': 'intervention_suivi',
+        'title': '${rdv['_animal_nom'] ?? 'Votre animal'} — ${inter!['motif'] ?? libelleIntervention(inter!['intervention_type']?.toString())}',
+        'body': texte, if (inter!['client_profile_id'] != null) 'profile_id': inter!['client_profile_id'],
+        'data': {'rdv_id': rdv['id'].toString()}, 'read': false,
+      });
+      snack('Famille prévenue dans l\u2019appli.');
+    }
+    Future<void> noterSuivi() async {
+      final ctrl = TextEditingController(text: inter?['suivi_hospitalisation']?.toString() ?? '');
+      final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+        title: const Text('Réveil / hospitalisation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: TextField(controller: ctrl, maxLines: 5, minLines: 3, style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+            decoration: const InputDecoration(hintText: 'Réveil, surveillance, prise d\'eau, miction…', border: OutlineInputBorder())),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
+          ElevatedButton(onPressed: () => Navigator.pop(c, true), child: const Text('Enregistrer')),
+        ],
+      ));
+      if (ok == true) await majRdv({'suivi_hospitalisation': ctrl.text.trim().isEmpty ? null : ctrl.text.trim()});
+    }
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -5567,6 +5747,41 @@ class _RdvCard extends StatelessWidget {
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Dossier de la séance', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
           const SizedBox(height: 14),
+          // RDV « Intervention » : ses étapes propres en tête.
+          if (inter != null) ...[
+            Text('Intervention — ${inter['motif'] ?? libelleIntervention(inter['intervention_type']?.toString())}',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700, color: teal)),
+            Padding(padding: const EdgeInsets.only(top: 2, bottom: 12), child: Text([
+              if (inter['bloc_debut'] != null) 'au bloc ${hmIso(inter['bloc_debut'])}${inter['bloc_fin'] != null ? '–${hmIso(inter['bloc_fin'])}' : ''}',
+              if (inter['heure_recuperation'] != null) 'récupération prévue vers ${hmIso(inter['heure_recuperation'])}',
+            ].join(' · '), style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600))),
+            etape(ctx, ++n, 'Consignes au propriétaire', (inter['consignes_preop'] ?? '').toString().trim().isEmpty ? 'Aucune' : inter['consignes_preop'].toString(), [
+              if ((inter['consignes_preop'] ?? '').toString().trim().isNotEmpty)
+                ('Renvoyer', () async => snack(await envoyerConsignesPreop(rdv['id'].toString()))),
+            ]),
+            etape(ctx, ++n, 'Compte rendu préopératoire', '${etatDoc('preop')} — à valider avant l\u2019intervention.', [
+              (chir?['preop'] is Map ? 'Ouvrir' : 'Rédiger', () => ouvrirDocInter('preop')),
+            ]),
+            etape(ctx, ++n, 'Admission', inter['admis_le'] != null ? 'Déposé à ${hmIso(inter['admis_le'])}' : 'En attente', [
+              if (inter['admis_le'] == null) ('Animal déposé', () => majRdv({'admis_le': DateTime.now().toUtc().toIso8601String()}))
+              else ('Annuler', () => majRdv({'admis_le': null})),
+            ]),
+            etape(ctx, ++n, 'Compte rendu opératoire', '${etatDoc('operatoire')} — anesthésie, protocole, actes.', [
+              (chir?['operatoire'] is Map ? 'Ouvrir' : 'Rédiger', () => ouvrirDocInter('operatoire')),
+            ]),
+            etape(ctx, ++n, 'Réveil / hospitalisation', (inter['suivi_hospitalisation'] ?? '').toString().trim().isEmpty ? null : inter['suivi_hospitalisation'].toString(), [
+              ('Noter', noterSuivi),
+              ('Prévenir : réveillé', () => prevenir('${rdv['_animal_nom'] ?? 'Votre animal'} est bien réveillé(e). Nous vous confirmons l\u2019heure de récupération'
+                  '${inter!['heure_recuperation'] != null ? ' (prévue vers ${hmIso(inter['heure_recuperation'])})' : ''}.')),
+              ('Prévenir : prêt à partir', () => prevenir('${rdv['_animal_nom'] ?? 'Votre animal'} peut être récupéré(e) à la clinique.')),
+            ]),
+            etape(ctx, ++n, 'Sortie', inter['sortie_le'] != null ? 'Récupéré à ${hmIso(inter['sortie_le'])}' : 'Consignes postopératoires (${etatDoc('consignes').toLowerCase()}), puis animal récupéré', [
+              ('Consignes post-op', () => ouvrirDocInter('consignes')),
+              if (inter['sortie_le'] == null) ('Animal récupéré', () => majRdv({'sortie_le': DateTime.now().toUtc().toIso8601String()}))
+              else ('Annuler la sortie', () => majRdv({'sortie_le': null})),
+            ]),
+            const Divider(height: 18),
+          ],
           if (onCompteRendu != null || onSuiviMorpho != null || onDocumentPro != null)
             etape(ctx, ++n, veto ? 'Compte rendu et soins' : 'Séance (compte rendu)',
                 veto

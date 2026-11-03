@@ -35,6 +35,7 @@ interface RdvRow {
   id: string; pro_uid: string; client_uid: string;
   pro_profile_id: string | null; client_profile_id: string | null;
   date_heure: string; motif: string | null; animal_id: string | null;
+  intervention_type?: string | null; consignes_preop?: string | null; heure_recuperation?: string | null;
 }
 interface CoursRow {
   id: string; pro_uid: string; pro_profile_id: string | null;
@@ -49,7 +50,7 @@ async function run(): Promise<number> {
   for (const tier of TIERS) {
     const threshold = new Date(now.getTime() + tier.hoursBefore * 3600_000);
     const { data: rows, error } = await supabase.from('rdv')
-      .select('id, pro_uid, client_uid, pro_profile_id, client_profile_id, date_heure, motif, animal_id')
+      .select('id, pro_uid, client_uid, pro_profile_id, client_profile_id, date_heure, motif, animal_id, intervention_type, consignes_preop, heure_recuperation')
       .eq('statut', 'confirme')
       .eq(tier.column, false)
       .gt('date_heure', now.toISOString())
@@ -87,7 +88,12 @@ async function run(): Promise<number> {
       notifRows.push({
         uid: rdv.client_uid, type: 'rdv_rappel',
         title: `Rappel de RDV ${tier.label}`,
-        body: `Votre RDV avec ${proNom}${animalTxt ? ` pour ${animalTxt}` : ''} est prévu le ${heureStr}.`,
+        // Intervention (vétérinaire) : dépôt, récupération et consignes (à jeun…) rappelés.
+        body: rdv.intervention_type
+          ? `${rdv.motif || 'Intervention'}${animalTxt ? ` de ${animalTxt}` : ''} chez ${proNom} : dépôt le ${heureStr}`
+            + `${rdv.heure_recuperation ? `, récupération vers ${new Date(rdv.heure_recuperation).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' })}` : ''}.`
+            + `${rdv.consignes_preop?.trim() ? ` Consignes : ${rdv.consignes_preop.trim()}` : ''}`
+          : `Votre RDV avec ${proNom}${animalTxt ? ` pour ${animalTxt}` : ''} est prévu le ${heureStr}.`,
         ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
         data: { rdv_id: rdv.id, ...(rdv.animal_id ? { animal_id: rdv.animal_id } : {}) }, read: false,
       });

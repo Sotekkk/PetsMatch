@@ -1166,6 +1166,18 @@ function PatientDetailPageInner() {
   const [panneauRdv, setPanneauRdv] = useState<string | null>(null);
   // Comptes rendus pré / opératoire d'une intervention.
   const [crChir, setCrChir] = useState<{ c: ChirurgieEntry; type: TypeCrChir | 'consignes' } | null>(null);
+  // Depuis le dossier d'un RDV « Intervention » : ?chirDoc=<intervention>:<preop|operatoire|consignes>.
+  const chirDocParam = searchParams.get('chirDoc');
+  const chirDocOuvert = useRef(false);
+  useEffect(() => {
+    if (!chirDocParam || chirDocOuvert.current) return;
+    const [cid, doc] = chirDocParam.split(':');
+    const c = chirurgies.find(x => x.id === cid);
+    if (!c || !['preop', 'operatoire', 'consignes'].includes(doc)) return;
+    chirDocOuvert.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCrChir({ c, type: doc as TypeCrChir | 'consignes' });
+  }, [chirDocParam, chirurgies]);
   const [editeurOrdo, setEditeurOrdo] = useState<{ ordo: Ordonnance | null; remplace?: Ordonnance | null; rdvId?: string | null; fin?: () => void } | null>(null);
   const [formTaille, setFormTaille] = useState('');
   const [savingForm, setSavingForm] = useState(false);
@@ -4732,7 +4744,7 @@ function PatientDetailPageInner() {
             apercu: sections => consignesPdf(crChir.c, sections, true),
             enregistrer: (sections, valider) => enregistrerConsignes(crChir.c, sections, valider),
           }}
-          onClose={() => setCrChir(null)} />
+          onClose={() => { setCrChir(null); if (chirDocParam) allerOuFermer(router, `/mes-patients/${encodeURIComponent(animalId)}`); }} />
       )}
       {editeurOrdo && (() => {
         const { ordo, remplace, rdvId } = editeurOrdo;
