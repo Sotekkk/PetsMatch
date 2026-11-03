@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:printing/printing.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/utils/site_api.dart';
+import 'package:PetsMatch/widgets/pro/lien_securise_sheet.dart';
 
 const _teal = Color(0xFF0C5C6C);
 
@@ -87,6 +88,9 @@ Future<void> transmettreDocument(
   /// Sans adresse connue : propriétaire PetsMatch de cet animal, envoyé à
   /// l'adresse de son compte, résolue par le serveur (jamais affichée).
   String? animalId,
+  /// Lien sécurisé (lot 6) : PDF stocké ([url]) ou produit à la demande
+  /// ([genererUrl], compte rendu [crId]) ; titre affiché au destinataire.
+  ({String? url, Future<String> Function()? genererUrl, String? crId, String titre})? lien,
 }) async {
   final choix = await showModalBottomSheet<String>(
     context: context,
@@ -104,9 +108,18 @@ Future<void> transmettreDocument(
       ListTile(leading: const Icon(Icons.mark_email_read_outlined, color: _teal),
           title: const Text('Envoyer au propriétaire par e-mail', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
           onTap: () => Navigator.pop(ctx, 'email')),
+      if (lien != null && type != 'facture')
+        ListTile(leading: const Icon(Icons.link, color: _teal),
+            title: const Text('Lien sécurisé (sans compte, expirable)', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            onTap: () => Navigator.pop(ctx, 'lien')),
     ])),
   );
   if (choix == null || !context.mounted) return;
+  if (choix == 'lien' && lien != null) {
+    await ouvrirLienSecurise(context, url: lien.url, genererUrl: lien.genererUrl, crId: lien.crId, type: type,
+        titre: lien.titre, animalNom: animalNom, expediteur: expediteur, emailParDefaut: emailParDefaut, destinataireNom: destinataireNom);
+    return;
+  }
   final messenger = ScaffoldMessenger.of(context);
   try {
     if (choix == 'imprimer') {

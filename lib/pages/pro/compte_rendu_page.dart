@@ -2434,6 +2434,21 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       animalNom: i.animal, expediteur: i.clinique,
       emailParDefaut: i.email, destinataireNom: i.proprio,
       animalId: (cr['animal_id'] ?? widget.animalId ?? widget.rdv?['animal_id'])?.toString(),
+      // Lien sécurisé : PDF du compte rendu déposé (privé) au moment du partage s'il n'en a pas.
+      lien: (
+        url: (cr['doc_url'] ?? '').toString().isEmpty ? null : cr['doc_url'].toString(),
+        genererUrl: () async => uploadDocumentBytes(await compteRenduPdfBytes(
+          cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel, cliniqueEmail: i.cliniqueEmail,
+          praticien: i.praticien,
+          animalNom: i.animal, animalEspeceRace: i.especeRace, animalSexe: i.sexe, animalAge: i.age,
+          signature: octetsSignature(_signature),
+          animalIdentification: i.identification,
+          proprietaire: i.proprio, proprietaireCoord: i.proprioCoord, contenu: cr['contenu']?.toString() ?? '',
+          date: DateTime.tryParse(cr['created_at']?.toString() ?? '')?.toLocal(),
+        ), 'liens/${AgendaContexte.moi ?? AgendaContexte.uid}/${DateTime.now().millisecondsSinceEpoch}.pdf'),
+        crId: cr['id']?.toString(),
+        titre: 'Compte rendu de consultation',
+      ),
       pdf: () => compteRenduPdfBytes(
         cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel, cliniqueEmail: i.cliniqueEmail,
         praticien: i.praticien,
@@ -2457,6 +2472,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       animalNom: i.animal, expediteur: i.clinique,
       emailParDefaut: i.email, destinataireNom: i.proprio,
       animalId: (o['animal_id'] ?? widget.animalId ?? widget.rdv?['animal_id'])?.toString(),
+      lien: (url: url, genererUrl: null, crId: null,
+          titre: 'Ordonnance${(o['numero'] ?? '').toString().isNotEmpty ? ' n° ${o['numero']}' : ''}'),
       pdf: () async {
         final lien = await lienDocument(url);
         final res = await http.get(Uri.parse(lien));

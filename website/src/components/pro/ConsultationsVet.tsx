@@ -107,8 +107,8 @@ export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutV
   onFacturer?: (cr: CrVet) => Promise<void>;
   /** CR validé : rouvrir le formulaire du compte rendu pour le compléter (oubli). */
   onModifier?: (cr: CrVet) => void;
-  onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email') => void;
-  onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email') => void;
+  onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email' | 'lien') => void;
+  onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email' | 'lien') => void;
   actionsOrdo?: ActionsOrdo;
 }) {
   const consultations = useMemo(() => regrouperConsultations(crs, ordos), [crs, ordos]);
@@ -215,8 +215,8 @@ function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValide
   onSupprimer?: (cr: CrVet) => Promise<void>;
   onFacturer?: (cr: CrVet) => Promise<void>;
   onModifier?: (cr: CrVet) => void;
-  onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email') => void;
-  onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email') => void;
+  onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email' | 'lien') => void;
+  onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email' | 'lien') => void;
   actionsOrdo?: ActionsOrdo;
   onFermer: () => void;
 }) {
@@ -322,6 +322,7 @@ function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValide
                 <>
                   <button onClick={() => onTransmettreCr(cr, 'imprimer')} className={bouton} style={{ borderColor: TEAL, color: TEAL }}>Imprimer</button>
                   <button onClick={() => onTransmettreCr(cr, 'email')} className={bouton} style={{ borderColor: TEAL, color: TEAL }}>Envoyer au propriétaire</button>
+                  <button onClick={() => onTransmettreCr(cr, 'lien')} className={bouton} style={{ borderColor: TEAL, color: TEAL }}>Lien sécurisé</button>
                 </>
               )}
             </div>
@@ -369,6 +370,7 @@ function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValide
                       <>
                         <button onClick={() => onTransmettreOrdo(o, 'imprimer')} className={bouton} style={{ borderColor: TEAL, color: TEAL }}>Imprimer</button>
                         <button onClick={() => onTransmettreOrdo(o, 'email')} className={bouton} style={{ borderColor: TEAL, color: TEAL }}>Envoyer</button>
+                        <button onClick={() => onTransmettreOrdo(o, 'lien')} className={bouton} style={{ borderColor: TEAL, color: TEAL }}>Lien</button>
                         <LienDocument href={o.doc_url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: TEAL }}>
                           Ouvrir
                         </LienDocument>

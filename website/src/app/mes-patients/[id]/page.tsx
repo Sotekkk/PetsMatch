@@ -37,6 +37,7 @@ import { ordonnancePdfBlob, compteRenduPdfBlob, ageAnimal, sexeAnimal } from '@/
 import OrdonnanceEditeur from '@/components/pro/OrdonnanceEditeur';
 import ChirurgieCrModal from '@/components/pro/ChirurgieCrModal';
 import DocumentsConsultation from '@/components/pro/DocumentsConsultation';
+import LienSecuriseModal, { type DocumentPartage } from '@/components/pro/LienSecuriseModal';
 import { consignesPdfBlob } from '@/lib/consignes-pdf';
 import { prerempliConsignes, type ModeleConsignes, type SectionConsigne } from '@/lib/consignes-postop';
 import { clientDocument } from '@/lib/client-document';
@@ -104,7 +105,7 @@ interface TraitementEntry {
 }
 interface CompteRendu {
   id: string; created_at: string; contenu: string | null; pro_uid: string | null;
-  animal_id?: string | null; rdv_id?: string | null;
+  animal_id?: string | null; rdv_id?: string | null; doc_url?: string | null;
   statut?: 'brouillon' | 'valide' | null;
   brouillon?: unknown;
   // CR structuré (migration_cr_structure.sql) — historique du patient.
@@ -1158,6 +1159,8 @@ function PatientDetailPageInner() {
   const [formPoids, setFormPoids] = useState('');
   // Éditeur d'ordonnance : brouillon (ordo), nouvelle (null), ou version
   // rectificative (remplace) ; fin : reprise du flux du CR à la fermeture.
+  // Lien sécurisé d'un document (lot 6) : fenêtre de création / envoi / révocation.
+  const [partage, setPartage] = useState<DocumentPartage | null>(null);
   // Comptes rendus pré / opératoire d'une intervention.
   const [crChir, setCrChir] = useState<{ c: ChirurgieEntry; type: TypeCrChir | 'consignes' } | null>(null);
   const [editeurOrdo, setEditeurOrdo] = useState<{ ordo: Ordonnance | null; remplace?: Ordonnance | null; rdvId?: string | null; fin?: () => void } | null>(null);
@@ -1906,8 +1909,15 @@ function PatientDetailPageInner() {
 
   /** Document d'intervention validé : imprimer ou envoyer au propriétaire
    *  (adresse de son compte, ou saisie pour un client sans compte). */
-  async function transmettreDocIntervention(doc: 'preop' | 'operatoire' | 'consignes', url: string, action: 'imprimer' | 'email') {
+  async function transmettreDocIntervention(doc: 'preop' | 'operatoire' | 'consignes', url: string, action: 'imprimer' | 'email' | 'lien') {
     try {
+      if (action === 'lien') {
+        const i = await infosDocument();
+        setPartage({ url, type: doc === 'consignes' ? 'consignes' : 'compte_rendu',
+          titre: doc === 'consignes' ? 'Consignes après l’intervention' : doc === 'preop' ? 'Compte rendu préopératoire' : 'Compte rendu opératoire',
+          animalNom: animal?.nom, expediteur: i.clinique, emailParDefaut: i.email, destinataireNom: i.proprio });
+        return;
+      }
       const blob = await pdfDepuisUrl(url);
       if (action === 'imprimer') { imprimerPdf(blob); return; }
       const i = await infosDocument();
@@ -1942,10 +1952,10 @@ function PatientDetailPageInner() {
     };
   }
 
-  async function transmettreCr(c: CompteRendu, action: 'imprimer' | 'email') {
+  async function transmettreCr(c: CompteRendu, action: 'imprimer' | 'email' | 'lien') {
     try {
       const i = await infosDocument();
-      const blob = await compteRenduPdfBlob({
+      const fabriquer = () => compteRenduPdfBlob({
         cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel, cliniqueEmail: i.cliniqueEmail,
         praticien: i.praticien,
         animalNom: animal?.nom ?? 'Animal', animalEspeceRace: [animal?.espece, animal?.race].filter(Boolean).join(' · '),
@@ -1954,15 +1964,34 @@ function PatientDetailPageInner() {
         animalIdentification: animal?.identification ?? '', proprietaire: i.proprio, proprietaireCoord: i.proprioCoord,
         contenu: c.contenu ?? '', date: new Date(c.created_at),
       });
+      if (action === 'lien') {
+        // PDF du compte rendu déposé (privé) au moment du partage s'il n'en a pas.
+        setPartage({ url: c.doc_url ?? null, crId: c.id, type: 'compte_rendu', titre: 'Compte rendu de consultation',
+          animalNom: animal?.nom, expediteur: i.clinique, emailParDefaut: i.email, destinataireNom: i.proprio,
+          genererPdf: async () => {
+            const path = `liens/${user!.uid}/${Date.now()}.pdf`;
+            const { error } = await supabase.storage.from('documents').upload(path, await fabriquer(), { upsert: true, contentType: 'application/pdf' });
+            if (error) throw error;
+            return supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
+          } });
+        return;
+      }
+      const blob = await fabriquer();
       if (action === 'imprimer') imprimerPdf(blob);
       else await envoyerPdfParEmail(blob, { type: 'compte_rendu', emailParDefaut: i.email, destinataireNom: i.proprio,
         expediteur: i.clinique, animalNom: animal?.nom, nomFichier: `Compte-rendu-${animal?.nom ?? 'animal'}.pdf`, animalId });
     } catch (e) { alert(`Impossible : ${(e as Error).message}`); }
   }
 
-  async function transmettreOrdo(o: Ordonnance, action: 'imprimer' | 'email') {
+  async function transmettreOrdo(o: Ordonnance, action: 'imprimer' | 'email' | 'lien') {
     if (!o.doc_url) return;
     try {
+      if (action === 'lien') {
+        const i = await infosDocument();
+        setPartage({ url: o.doc_url, type: 'ordonnance', titre: `Ordonnance${o.numero ? ` n° ${o.numero}` : ''}`,
+          animalNom: animal?.nom, expediteur: i.clinique, emailParDefaut: i.email, destinataireNom: i.proprio });
+        return;
+      }
       const blob = await pdfDepuisUrl(o.doc_url);
       if (action === 'imprimer') { imprimerPdf(blob); return; }
       const i = await infosDocument();
@@ -4658,6 +4687,7 @@ function PatientDetailPageInner() {
       </div>
 
       {/* ── Modales d'ajout ── */}
+      {partage && <LienSecuriseModal doc={partage} onClose={() => setPartage(null)} />}
       {crChir && (
         <ChirurgieCrModal key={crChir.c.id} chirurgie={chirurgies.find(x => x.id === crChir.c.id) ?? crChir.c} typeInitial={crChir.type} poidsFiche={animal?.poids}
           peutValider={peutPrescrire}

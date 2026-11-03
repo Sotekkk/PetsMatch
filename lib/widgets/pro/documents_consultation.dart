@@ -38,6 +38,8 @@ Future<void> transmettreDocIntervention(BuildContext context, {required String a
     type: doc == 'consignes' ? 'consignes' : 'compte_rendu',
     animalNom: nomA, expediteur: (cl?['nom'] ?? '').toString(),
     emailParDefaut: cli?.email, destinataireNom: cli?.nom, animalId: animalId,
+    lien: (url: url, genererUrl: null, crId: null,
+        titre: doc == 'consignes' ? 'Consignes après l’intervention' : doc == 'preop' ? 'Compte rendu préopératoire' : 'Compte rendu opératoire'),
   );
 }
 

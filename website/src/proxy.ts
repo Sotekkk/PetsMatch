@@ -37,6 +37,9 @@ const WHITELISTED_PATHS = [
   '/partage/',
   // Consignes avant un rendez-vous (lien personnel envoyé par e-mail).
   '/consignes/',
+  // Document médical ouvert par lien sécurisé (client sans compte, jeton
+  // individuel, expirable et révocable — lot 6 des documents vétérinaires).
+  '/document/',
   // Pages légales — doivent être accessibles sans connexion ni mot de passe
   // bêta (exigence Google Play/App Store, cf. rejet "Invalid Privacy policy" :
   // le robot de review n'a pas l'accès bêta).

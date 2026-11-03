@@ -27,7 +27,7 @@ export default function DocumentsConsultation({ ordonnances, interventions, onOr
   /** Crée l'intervention puis ouvre le document demandé. */
   onNouvelleIntervention: (intitule: string, doc: DocChir) => Promise<void>;
   /** Document d'intervention validé : imprimer / envoyer au propriétaire (avec ou sans compte). */
-  onTransmettre?: (doc: DocChir, url: string, action: 'imprimer' | 'email') => void;
+  onTransmettre?: (doc: DocChir, url: string, action: 'imprimer' | 'email' | 'lien') => void;
   peutPreparer: boolean;
 }) {
   const [ouvert, setOuvert] = useState(true);
@@ -116,6 +116,7 @@ export default function DocumentsConsultation({ ordonnances, interventions, onOr
                     <>
                       <button type="button" onClick={() => onTransmettre(d, url, 'imprimer')} className="font-semibold hover:underline" style={{ color: TEAL }}>Imprimer</button>
                       <button type="button" onClick={() => onTransmettre(d, url, 'email')} className="font-semibold hover:underline" style={{ color: TEAL }}>Envoyer</button>
+                      <button type="button" onClick={() => onTransmettre(d, url, 'lien')} className="font-semibold hover:underline" style={{ color: TEAL }}>Lien sécurisé</button>
                     </>
                   )}
                 </div>

@@ -29,7 +29,7 @@ export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, p
   /** Ordonnance depuis le dossier opératoire (fenêtre au-dessus, saisie conservée). */
   onOrdonnance?: () => void;
   /** Document validé : imprimer / envoyer au propriétaire (avec ou sans compte). */
-  onTransmettre?: (doc: Onglet, url: string, action: 'imprimer' | 'email') => void;
+  onTransmettre?: (doc: Onglet, url: string, action: 'imprimer' | 'email' | 'lien') => void;
   onClose: () => void;
 }) {
   const [onglet, setOnglet] = useState<Onglet>(typeInitial);
@@ -132,6 +132,7 @@ export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, p
             <>
               <button onClick={() => onTransmettre(onglet, docUrl, 'imprimer')} className="font-semibold hover:underline" style={{ color: TEAL }}>Imprimer</button>
               <button onClick={() => onTransmettre(onglet, docUrl, 'email')} className="font-semibold hover:underline" style={{ color: TEAL }}>Envoyer au propriétaire</button>
+              <button onClick={() => onTransmettre(onglet, docUrl, 'lien')} className="font-semibold hover:underline" style={{ color: TEAL }}>Lien sécurisé</button>
             </>
           )}
           {onOrdonnance && (
