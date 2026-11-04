@@ -218,9 +218,12 @@ export default function InterventionDossier({ rdvId, version, onOuvrirPage, anim
           <span className="text-[11px] text-gray-500">le client est prévenu</span>
         </div>
         {r.animal_id && ligne('Soins après l’intervention', '', GRIS, [
-            ...([['traitement', 'Traitement'], ['vaccin', 'Vaccin'], ['vermifuge', 'Vermifuge'], ['antiparasitaire', 'Antiparasitaire']] as const).map(([t, l]) =>
+            // Traitements : compte rendu du RDV, comme en consultation (posologie par phases —
+            // matin / soir, durée —, administré ou prescrit, rappels, ordonnance préparée).
+            btn('soin-traitement', '+ Traitement (posologie)', () => onOuvrirPage(`/mes-patients/${encodeURIComponent(r.animal_id!)}?crRdv=${encodeURIComponent(r.id)}`, `Soins et traitements — ${animalNom || 'animal'}`)),
+            ...([['vaccin', 'Vaccin'], ['vermifuge', 'Vermifuge'], ['antiparasitaire', 'Antiparasitaire']] as const).map(([t, l]) =>
               btn(`soin-${t}`, `+ ${l}`, () => onOuvrirPage(`/mes-patients/${encodeURIComponent(r.animal_id!)}?ajout=${t}`, `${l} — ${animalNom || 'animal'}`))),
-          ], 'Inscrit au carnet de l’animal (et rappels de prise chez le propriétaire), comme lors d’une consultation.')}
+          ], 'Traitements comme en consultation (posologie matin / soir, durée, administré ou prescrit, ordonnance) ; inscrits au carnet et repris dans le CR opératoire.')}
         {ligne('RDV de contrôle', '', GRIS, [
             btn('controle', 'Planifier le contrôle', () => {
               const motif = `Contrôle — ${r.motif || libelleIntervention(r.intervention_type)}`;

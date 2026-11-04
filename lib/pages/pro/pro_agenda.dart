@@ -6095,8 +6095,11 @@ class _RdvCard extends StatelessWidget {
               ('Modifier', changerRecuperation),
             ]),
             if (inter['animal_id'] != null)
-              etape(ctx, ++n, 'Soins après l’intervention', 'Inscrit au carnet de l’animal (et rappels de prise chez le propriétaire), comme lors d’une consultation.', [
-                for (final (col, l) in const [('traitements', 'Traitement'), ('vaccinations', 'Vaccin'), ('vermifuges', 'Vermifuge'), ('antiparasitaires', 'Antiparasitaire')])
+              etape(ctx, ++n, 'Soins après l’intervention', 'Traitements comme en consultation (posologie matin / soir, durée, administré ou prescrit, ordonnance) ; inscrits au carnet et repris dans le CR opératoire.', [
+                // Traitements : compte rendu du RDV, comme en consultation (posologie par phases,
+                // administré ou prescrit, rappels, ordonnance préparée).
+                if (onCompteRendu != null) ('+ Traitement (posologie)', onCompteRendu!),
+                for (final (col, l) in const [('vaccinations', 'Vaccin'), ('vermifuges', 'Vermifuge'), ('antiparasitaires', 'Antiparasitaire')])
                   ('+ $l', () => saisirAuCarnet(context, animalId: inter!['animal_id'].toString(), collection: col)),
               ]),
             if (onRdvControle != null)
