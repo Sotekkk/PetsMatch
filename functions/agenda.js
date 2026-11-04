@@ -654,7 +654,8 @@ exports.sendChirurgieReminders = functions
                 }
                 // Vétérinaire qui a saisi l'intervention.
                 if (c.vet_id && !destinataires.some((d) => d.uid === c.vet_id)) {
-                    destinataires.push({uid: c.vet_id, profileId: null});
+                    // Profil de l'intervention : sans profil, le rappel s'afficherait dans tous ses profils.
+                    destinataires.push({uid: c.vet_id, profileId: c.pro_profile_id || null});
                 }
 
                 for (const d of destinataires) {
