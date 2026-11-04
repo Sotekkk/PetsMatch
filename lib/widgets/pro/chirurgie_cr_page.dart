@@ -5,6 +5,8 @@
 // archivée par le serveur (migration_chirurgies_cr.sql).
 // Miroir site : website/src/components/pro/ChirurgieCrModal.tsx.
 
+import 'package:PetsMatch/utils/soins_du_jour.dart';
+import 'package:PetsMatch/utils/ordonnance.dart' show ContenuOrdo, LigneOrdo;
 import 'package:PetsMatch/utils/trame_dentaire.dart';
 import 'dart:typed_data';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -57,6 +59,8 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
   late String _type = widget.typeInitial;
   final Map<String, Map<String, TextEditingController>> _ctrl = {};
   final Map<String, bool> _nouvelleVersion = {'preop': false, 'operatoire': false, 'consignes': false};
+  // Traitements prescrits repris du carnet : ordonnance proposée.
+  List<TraitementPrescrit> _prescrits = [];
   bool _peutValider = false;
   bool _peutPreparer = false;
   bool _verifie = false;
@@ -334,6 +338,42 @@ class _ChirurgieCrPageState extends State<_ChirurgieCrPage> {
                     label: const Text('Planifier le RDV de l’intervention (la famille le voit dans son agenda)',
                         style: TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700, fontSize: 12.5)),
                   )),
+                // Soins inscrits au carnet le jour de l'intervention : repris dans le CR,
+                // traitements prescrits → ordonnance (brouillon) et consignes.
+                if (_type == 'operatoire' && !_verrouille && widget.chirurgie['animal_id'] != null)
+                  Padding(padding: const EdgeInsets.only(bottom: 10), child: Wrap(spacing: 8, runSpacing: 6, children: [
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final s = await soinsDuJour(widget.chirurgie['animal_id'].toString(),
+                            (widget.chirurgie['date'] ?? DateTime.now().toIso8601String()).toString());
+                        if (!mounted) return;
+                        if (s.administres.isEmpty && s.prescrits.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Aucun soin inscrit au carnet ce jour-là.')));
+                          return;
+                        }
+                        final soins = _ctrl['operatoire']!['soins']!, trait = _ctrl['operatoire']!['traitements']!;
+                        setState(() {
+                          soins.text = ajouterLignes(soins.text, s.administres);
+                          trait.text = ajouterLignes(trait.text, s.prescrits.map(lignePrescrit).toList());
+                          _prescrits = s.prescrits;
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+                            '${s.administres.length} soin(s) administré(s), ${s.prescrits.length} traitement(s) prescrit(s) repris. '
+                            'Ils figureront aussi dans les consignes au propriétaire.')));
+                      },
+                      icon: const Icon(Icons.playlist_add, size: 18, color: _teal),
+                      label: const Text('Reprendre les soins inscrits au carnet ce jour-là',
+                          style: TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700, fontSize: 12.5)),
+                    ),
+                    if (_prescrits.isNotEmpty)
+                      ElevatedButton.icon(
+                        onPressed: () => ouvrirEditeurOrdonnance(context, animalId: widget.chirurgie['animal_id'].toString(),
+                            prefill: ContenuOrdo(lignes: [for (final t in _prescrits) LigneOrdo(medicament: t.nom, posologie: t.posologie, duree: t.duree)])),
+                        icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                        label: Text('Préparer l’ordonnance (${_prescrits.length})', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12.5)),
+                        style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white),
+                      ),
+                  ])),
                 if (_type == 'operatoire' && !_verrouille)
                   Padding(padding: const EdgeInsets.only(bottom: 10), child: OutlinedButton.icon(
                     onPressed: () async {

@@ -7,6 +7,7 @@
 // archivée par le serveur (migration_chirurgies_cr.sql).
 // Miroir appli : lib/widgets/pro/chirurgie_cr_page.dart.
 
+import { ajouterLignes, lignePrescrit, type SoinsDuJour, type TraitementPrescrit } from '@/lib/soins-du-jour';
 import TrameDentaireModal from '@/components/pro/TrameDentaireModal';
 import { avecLigneDentaire } from '@/lib/trame-dentaire';
 import { useEffect, useMemo, useState } from 'react';
@@ -18,12 +19,16 @@ const TEAL = '#0C5C6C';
 
 type Onglet = TypeCrChir | 'consignes';
 
-export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, espece, peutValider, apercu, enregistrer, consignes, onOrdonnance, onTransmettre, onPlanifierRdv, onClose }: {
+export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, espece, soinsDuJour, onOrdonnancePrescrits, peutValider, apercu, enregistrer, consignes, onOrdonnance, onTransmettre, onPlanifierRdv, onClose }: {
   chirurgie: ChirurgieCr;
   typeInitial: Onglet;
   poidsFiche?: number | string | null;
   /** Espèce de l'animal (schéma dentaire chien / chat). */
   espece?: string | null;
+  /** Soins inscrits au carnet le jour de l'intervention (repris dans le CR opératoire). */
+  soinsDuJour?: () => Promise<SoinsDuJour>;
+  /** Ordonnance préparée (brouillon) depuis les traitements prescrits. */
+  onOrdonnancePrescrits?: (prescrits: TraitementPrescrit[]) => Promise<void>;
   peutValider: boolean;
   apercu: (type: TypeCrChir, champs: Record<string, string>) => Promise<Blob>;
   /** valider : statut « valide » + PDF ; sinon brouillon. */
@@ -49,6 +54,9 @@ export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, e
   const [pdf, setPdf] = useState<{ blob: Blob; url: string } | null>(null);
   const [occupe, setOccupe] = useState<null | 'apercu' | 'brouillon' | 'valider'>(null);
   const [trameDentaire, setTrameDentaire] = useState(false);
+  // Traitements prescrits repris du carnet : ordonnance proposée.
+  const [prescrits, setPrescrits] = useState<TraitementPrescrit[]>([]);
+  const [infoSoins, setInfoSoins] = useState('');
 
   useEffect(() => () => { if (pdf) URL.revokeObjectURL(pdf.url); }, [pdf]);
 
@@ -193,6 +201,28 @@ export default function ChirurgieCrModal({ chirurgie, typeInitial, poidsFiche, e
                 className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: TEAL, color: TEAL }}>
                 Planifier le RDV de l’intervention (la famille le voit dans son agenda)
               </button>
+            )}
+            {type === 'operatoire' && !verrouille && soinsDuJour && (
+              <div className="rounded-xl bg-[#F1F7F8] px-3 py-2 space-y-1.5">
+                <button type="button" disabled={!!occupe} onClick={async () => {
+                  const s = await soinsDuJour();
+                  if (!s.administres.length && !s.prescrits.length) { setInfoSoins('Aucun soin inscrit au carnet ce jour-là.'); return; }
+                  maj('soins', ajouterLignes(c.soins ?? '', s.administres));
+                  maj('traitements', ajouterLignes(c.traitements ?? '', s.prescrits.map(lignePrescrit)));
+                  setPrescrits(s.prescrits);
+                  setInfoSoins(`${s.administres.length} soin(s) administré(s), ${s.prescrits.length} traitement(s) prescrit(s) repris.`);
+                }} className="text-xs font-semibold px-3 py-1.5 rounded-lg border bg-white" style={{ borderColor: TEAL, color: TEAL }}>
+                  Reprendre les soins inscrits au carnet ce jour-là
+                </button>
+                {infoSoins && <p className="text-[11px] text-gray-600">{infoSoins}</p>}
+                {prescrits.length > 0 && onOrdonnancePrescrits && (
+                  <button type="button" onClick={() => onOrdonnancePrescrits(prescrits)}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: TEAL }}>
+                    Préparer l’ordonnance ({prescrits.length} traitement{prescrits.length > 1 ? 's' : ''})
+                  </button>
+                )}
+                <p className="text-[11px] text-gray-500">Les traitements prescrits sont repris dans les consignes au propriétaire (onglet Consignes).</p>
+              </div>
             )}
             {type === 'operatoire' && !verrouille && (
               <button type="button" onClick={() => setTrameDentaire(true)}

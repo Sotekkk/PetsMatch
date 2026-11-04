@@ -1,5 +1,6 @@
 'use client';
 
+import { soinsDuJour } from '@/lib/soins-du-jour';
 import { AideEtapes } from '@/components/animaux/EtapesTraitement';
 import { useEspaceClinique } from '@/lib/espace-clinique';
 import { PlanAlimentationDepuisLigne } from '@/components/alimentation/PlanAlimentationLecture';
@@ -4730,6 +4731,16 @@ function PatientDetailPageInner() {
       {panneauRdv && <PanneauPage url={panneauRdv} titre="RDV de l’intervention" onClose={() => setPanneauRdv(null)} />}
       {crChir && (
         <ChirurgieCrModal key={crChir.c.id} chirurgie={chirurgies.find(x => x.id === crChir.c.id) ?? crChir.c} typeInitial={crChir.type} poidsFiche={animal?.poids} espece={animal?.espece}
+          soinsDuJour={() => soinsDuJour(animalId, crChir.c.date || new Date().toLocaleDateString('sv-SE'))}
+          onOrdonnancePrescrits={async prescrits => {
+            // Brouillon d'ordonnance (médicaments de la pharmacie complétés), à vérifier puis valider.
+            const arts = await chargerArticlesOrdo();
+            const lignes = prescrits.map(t => completerDepuisArticle({ ...ligneVide(), medicament: t.nom, posologie: t.posologie, duree: t.duree }, articleDe(t.nom, arts)));
+            const poids = animal?.poids != null ? String(animal.poids) : '';
+            const brouillon = await creerBrouillonOrdonnance({ lignes, ...(poids ? { poids } : {}) }, crChir.c.date || new Date().toLocaleDateString('sv-SE'), null);
+            if (peutPrescrire) await ouvrirEditeurOrdo({ ordo: brouillon });
+            else alert('Ordonnance préparée en brouillon : un vétérinaire la vérifie et la valide.');
+          }}
           peutValider={peutPrescrire}
           apercu={(t, champs) => crChirPdf(t, crChir.c, champs, true)}
           enregistrer={(t, champs, valider) => enregistrerCrChir(crChir.c, t, champs, valider)}
