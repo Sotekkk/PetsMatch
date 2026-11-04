@@ -196,7 +196,8 @@ export default function InterventionDossier({ rdvId, version, onOuvrirPage, anim
           <select defaultValue={dureeBloc} key={`bdu${dureeBloc}`} id={`blocd-${r.id}`} className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white">
             {[30, 45, 60, 90, 120, 180, 240].map(m => <option key={m} value={m}>{m < 60 ? `${m} min` : m % 60 ? `${Math.floor(m / 60)}h${m % 60}` : `${m / 60} h`}</option>)}
           </select>
-          {btn('bloc', 'Enregistrer', () => changerBloc((document.getElementById(`bloc-${r.id}`) as HTMLInputElement | null)?.value ?? '',
+          {/* Animal déjà récupéré : le temps restant a été libéré, plus de créneau à déplacer. */}
+          {!r.sortie_le && btn('bloc', 'Enregistrer', () => changerBloc((document.getElementById(`bloc-${r.id}`) as HTMLInputElement | null)?.value ?? '',
             Number((document.getElementById(`blocd-${r.id}`) as HTMLSelectElement | null)?.value ?? 60)))}
         </div>
         {ligne('Compte rendu opératoire', eOp, cOp, [btn('operatoire', chir?.operatoire ? 'Ouvrir' : 'Rédiger', () => ouvrirDoc('operatoire', 'Compte rendu opératoire'))],

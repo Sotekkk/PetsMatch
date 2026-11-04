@@ -6083,7 +6083,8 @@ class _RdvCard extends StatelessWidget {
             ]),
             etape(ctx, ++n, 'Créneau d\u2019intervention',
                 inter['bloc_debut'] != null ? '${hmIso(inter['bloc_debut'])}–${hmIso(inter['bloc_fin'])} — salle de bloc / temps du vétérinaire bloqués.' : 'Non fixé', [
-              ('Modifier', changerBloc),
+              // Animal déjà récupéré : le temps restant a été libéré, plus de créneau à déplacer.
+              if (inter['sortie_le'] == null) ('Modifier', changerBloc),
             ]),
             etape(ctx, ++n, 'Compte rendu opératoire', '${etatDoc('operatoire')} — anesthésie, protocole, actes.', [
               (chir?['operatoire'] is Map ? 'Ouvrir' : 'Rédiger', () => ouvrirDocInter('operatoire')),
