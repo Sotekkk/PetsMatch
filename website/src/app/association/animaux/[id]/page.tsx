@@ -6,6 +6,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { poserRappelAgenda } from '@/lib/rappel-agenda';
 import HealthSection, { HealthPanel } from '@/components/animaux/HealthSection';
 import { SANTE_COULEURS } from '@/lib/sante-couleurs';
 import { erreurPoids, poidsKg } from '@/lib/poids';
@@ -236,6 +238,8 @@ function RecordRow({ record, mainKey, dateKey, onDelete }:
 }
 
 function SanteTab({ animalId, espece, dateNaissance }: { animalId: string; espece?: string; dateNaissance?: string | null }) {
+  const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
   const [health, setHealth] = useState<Record<string, HealthRecord[]>>({});
   const [addOpen, setAddOpen] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -282,6 +286,7 @@ function SanteTab({ animalId, espece, dateNaissance }: { animalId: string; espec
       const { data: row } = await supabase.from(table).insert({ ...data, ...extraCols, animal_id: cible }).select().single();
       if (row && cible === animalId) setHealth(prev => ({ ...prev, [table]: [row as HealthRecord, ...(prev[table] ?? [])] }));
     }
+    await poserRappelAgenda({ table, uid: user?.uid, profilActif: activeProfileId, animalId, autres: cibles.slice(1), nom: data.vaccin ?? data.produit, dateRappel: data.date_rappel });
     if (table === 'vermifuges') setOptsVermifuge(optionsVermifugeVides());
     setAddOpen(null);
     setSaving(false);

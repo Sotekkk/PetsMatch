@@ -1,6 +1,7 @@
 'use client';
 
 import { profilPourAnimal } from '@/lib/cloisonnement-profils';
+import { poserRappelAgenda } from '@/lib/rappel-agenda';
 import { bornesNaissanceAnimal, erreurNaissanceAnimal } from '@/lib/ages-plausibles';
 import { erreurPoids, poidsKg } from '@/lib/poids';
 import FormTraitementEtapes, { lignesEtapes, libelleEtape, type Etape } from '@/components/animaux/EtapesTraitement';
@@ -3768,6 +3769,7 @@ function AnimalFichePageInner() {
         if (autre) await writeRegistreActe('vermifuges', recordId, data, autre as { id: string });
       }
     }
+    await poserRappelAgenda({ table: 'vermifuges', uid: user?.uid, profilActif: activeProfileId, animalId: id, autres: optsVermifuge.autres, nom: data.produit, dateRappel: data.date_rappel });
     setOptsVermifuge(optionsVermifugeVides());
     await loadHealth();
     setAddOpen(null);
@@ -3790,6 +3792,7 @@ function AnimalFichePageInner() {
         if (autre) await writeRegistreActe('antiparasitaires', recordId, data, autre as { id: string });
       }
     }
+    await poserRappelAgenda({ table: 'antiparasitaires', uid: user?.uid, profilActif: activeProfileId, animalId: id, autres: optsAntiparasitaire.autres, nom: data.produit, dateRappel: data.date_rappel });
     setOptsAntiparasitaire(optionsVermifugeVides());
     await loadHealth();
     setAddOpen(null);
@@ -3813,6 +3816,7 @@ function AnimalFichePageInner() {
     const recordId = crypto.randomUUID();
     await supabase.from(table).insert({ ...data, animal_id: id, id: recordId });
     await writeRegistreActe(table, recordId, data);
+    await poserRappelAgenda({ table, uid: user?.uid, profilActif: activeProfileId, animalId: id, nom: data.vaccin ?? data.produit, dateRappel: data.date_rappel });
     await loadHealth();
     await rafraichirPoidsFiche(table);
     setAddOpen(null);
@@ -3877,8 +3881,13 @@ function AnimalFichePageInner() {
     if (o.rappel && o.heures.length === 0) { alert('Ajoutez au moins une heure de rappel (ou décochez « Rappel à chaque prise »).'); return false; }
     setSavingHealth(true);
     const maj = { ...data, ...colonnesPrises(o, data.date) };
+    const avantVermifuge = health.vermifuges.find(r => String(r.id) === String(recordId));
     await supabase.from('vermifuges').update(maj).eq('id', recordId);
     await writeRegistreActe('vermifuges', recordId, maj as Record<string, unknown>);
+    // Date de rappel changée : l'ancien événement est retiré côté serveur, le nouveau posé ici.
+    if (id && String(avantVermifuge?.date_rappel ?? '').slice(0, 10) !== (data.date_rappel ?? '').slice(0, 10)) {
+      await poserRappelAgenda({ table: 'vermifuges', uid: user?.uid, profilActif: activeProfileId, animalId: id, nom: data.produit, dateRappel: data.date_rappel });
+    }
     await loadHealth();
     setSavingHealth(false);
     return true;
@@ -3946,8 +3955,13 @@ function AnimalFichePageInner() {
 
   async function updateHealthRecord(table: string, recordId: string, data: Record<string,string>) {
     setSavingHealth(true);
+    const avant = (health[table as keyof typeof health] as HealthRecord[] | undefined)?.find(r => String(r.id) === String(recordId));
     await supabase.from(table).update(data).eq('id', recordId);
     await writeRegistreActe(table, recordId, data);
+    // Date de rappel changée : l'ancien événement est retiré côté serveur, le nouveau posé ici.
+    if (id && 'date_rappel' in data && String(avant?.date_rappel ?? '').slice(0, 10) !== (data.date_rappel ?? '').slice(0, 10)) {
+      await poserRappelAgenda({ table, uid: user?.uid, profilActif: activeProfileId, animalId: id, nom: data.vaccin ?? data.produit, dateRappel: data.date_rappel });
+    }
     await loadHealth();
     await rafraichirPoidsFiche(table);
     setEditPoids(null);

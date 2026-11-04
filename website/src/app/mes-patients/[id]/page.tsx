@@ -19,6 +19,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
+import { poserRappelAgenda } from '@/lib/rappel-agenda';
 import { animauxDetailRdv, type AnimalRdv } from '@/lib/rdv-animaux';
 import { crsDuRdv } from '@/lib/cr-rdv';
 import { maSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
@@ -2483,6 +2484,7 @@ function PatientDetailPageInner() {
     try {
       if (addingType === 'vaccin') {
         await supabase.from('vaccinations').insert({ ...base, vaccin: formNom.trim(), date: formDate, date_rappel: formRappel || null, lot: formLot.trim() || null });
+        await poserRappelAgenda({ table: 'vaccinations', uid: user.uid, profilActif: activeProfileId, animalId, nom: formNom, dateRappel: formRappel });
         const { data } = await supabase.from('vaccinations').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setVaccins((data ?? []) as VaccinEntry[]);
         await notifyOwner('vaccin', vetName);
@@ -2499,11 +2501,13 @@ function PatientDetailPageInner() {
       } else if (addingType === 'vermifuge') {
         await supabase.from('vermifuges').insert({ ...base, produit: formNom.trim(), dosage: formDosage.trim() || null, date: formDate, date_rappel: formRappel || null, frequence: formFrequence.trim() || null, notes: formNotes.trim() || null,
           ...colonnesPrises(optsVerm, formDate) });
+        await poserRappelAgenda({ table: 'vermifuges', uid: user.uid, profilActif: activeProfileId, animalId, nom: formNom, dateRappel: formRappel });
         const { data } = await supabase.from('vermifuges').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setVermifuges((data ?? []) as VermifugeEntry[]);
         await notifyOwner('vermifuge', vetName);
       } else if (addingType === 'antiparasitaire') {
         await supabase.from('antiparasitaires').insert({ ...base, produit: formNom.trim(), type: formSubType.trim() || null, date: formDate, date_rappel: formRappel || null, frequence: formFrequence.trim() || null, notes: formNotes.trim() || null });
+        await poserRappelAgenda({ table: 'antiparasitaires', uid: user.uid, profilActif: activeProfileId, animalId, nom: formNom, dateRappel: formRappel });
         const { data } = await supabase.from('antiparasitaires').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setAntiparasitaires((data ?? []) as AntiparasitaireEntry[]);
         await notifyOwner('antiparasitaire', vetName);
