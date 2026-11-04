@@ -1,9 +1,9 @@
 // Hospitalisés du jour (vétérinaire) : interventions du jour et animaux encore
 // présents à la clinique — état (attendu, déposé, au bloc, en réveil, prêt à
-// partir, récupéré), récupération prévue, actions rapides (déposé, prévenir
-// réveillé / prêt, récupéré à tout moment après le dépôt : le RDV passe alors
-// en « Terminé », trigger trg_rdv_sortie_statut). Vétérinaire ou ASV. Masqué
-// s'il n'y a rien.
+// partir), récupération prévue, actions rapides (déposé, prévenir réveillé /
+// prêt, récupéré à tout moment après le dépôt : l'animal quitte la liste et le
+// RDV passe dans l'historique, trigger trg_rdv_sortie_statut). Vétérinaire ou
+// ASV. Masqué s'il n'y a rien.
 // Miroir site : components/rdv/HospitalisesDuJour.tsx.
 import 'dart:async';
 
@@ -78,7 +78,9 @@ class _HospitalisesDuJourState extends State<HospitalisesDuJour> {
       final debut = DateTime(n.year, n.month, n.day), fin = debut.add(const Duration(days: 1));
       final jour = await _supa.from('rdv').select(_cols).eq('pro_profile_id', widget.profileId)
           .not('intervention_type', 'is', null).gte('date_heure', debut.toUtc().toIso8601String())
-          .lt('date_heure', fin.toUtc().toIso8601String()).not('statut', 'in', '(annule,refuse)');
+          .lt('date_heure', fin.toUtc().toIso8601String()).not('statut', 'in', '(annule,refuse)')
+          // Animal récupéré : retiré de la liste, le RDV est dans l'historique.
+          .isFilter('sortie_le', null);
       final restants = await _supa.from('rdv').select(_cols).eq('pro_profile_id', widget.profileId)
           .not('intervention_type', 'is', null).not('admis_le', 'is', null).isFilter('sortie_le', null)
           .lt('date_heure', debut.toUtc().toIso8601String());
@@ -208,7 +210,8 @@ class _HospitalisesDuJourState extends State<HospitalisesDuJour> {
                   if (e == 'attendu') _btn('$id:admis', 'Animal déposé', () => _maj(id, {'admis_le': DateTime.now().toUtc().toIso8601String()}), plein: true),
                   if (e == 'depose' || e == 'bloc') _btn('$id:reveille', 'Réveillé — prévenir', () => messageIntervention(id, 'reveille')),
                   if (e == 'depose' || e == 'bloc' || e == 'reveil') _btn('$id:pret', 'Prêt — prévenir', () => messageIntervention(id, 'pret'), plein: e == 'reveil'),
-                  if (e != 'attendu' && e != 'rentre') _btn('$id:sortie', 'Récupéré', () => _maj(id, {'sortie_le': DateTime.now().toUtc().toIso8601String()}), plein: e == 'pret'),
+                  if (e != 'attendu' && e != 'rentre') _btn('$id:sortie', 'Récupéré', () async =>
+                      await _maj(id, {'sortie_le': DateTime.now().toUtc().toIso8601String()}) ?? 'Animal récupéré : le RDV est dans l’historique.', plein: e == 'pret'),
                   if (tel.isNotEmpty && h['client_uid'] == null)
                     _btn('$id:tel', 'Appeler', () async { await launchUrl(Uri.parse('tel:$tel')); return null; }),
                 ]),

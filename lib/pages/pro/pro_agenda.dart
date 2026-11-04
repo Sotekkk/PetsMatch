@@ -6119,7 +6119,7 @@ class _RdvCard extends StatelessWidget {
               // Le RDV change de liste (trigger trg_rdv_sortie_statut) : listes rechargées.
               if (inter['sortie_le'] == null && admis) ('Animal récupéré', () async {
                 if (await majRdv({'sortie_le': DateTime.now().toUtc().toIso8601String()})) {
-                  snack('Animal récupéré : le RDV passe dans « Terminé ».');
+                  snack('Animal récupéré : le RDV est dans l’historique.');
                   await onStatutChange?.call();
                 }
               })

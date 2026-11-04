@@ -146,13 +146,14 @@ export function etatHospit(h: Pick<Hospitalise, 'admis_le' | 'reveil_le' | 'pret
   return 'attendu';
 }
 
-/** Interventions du jour de la clinique + animaux encore hospitalisés (déposés avant, pas rentrés). */
+/** Interventions du jour de la clinique + animaux encore hospitalisés (déposés avant).
+ *  Animal récupéré : retiré de la liste, le RDV est dans l'historique. */
 export async function hospitalisesDuJour(proProfileId: string): Promise<Hospitalise[]> {
   const d = new Date(); const debut = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const fin = new Date(debut.getTime() + 86400000);
   const cols = 'id, date_heure, motif, statut, intervention_type, animal_id, animal_nom_manuel, client_uid, client_profile_id, client_nom_manuel, client_telephone_manuel, heure_recuperation, bloc_debut, bloc_fin, admis_le, reveil_le, pret_le, sortie_le';
   const [{ data: jour }, { data: restants }] = await Promise.all([
     supabase.from('rdv').select(cols).eq('pro_profile_id', proProfileId).not('intervention_type', 'is', null)
-      .gte('date_heure', debut.toISOString()).lt('date_heure', fin.toISOString()).not('statut', 'in', '(annule,refuse)'),
+      .gte('date_heure', debut.toISOString()).lt('date_heure', fin.toISOString()).not('statut', 'in', '(annule,refuse)').is('sortie_le', null),
     supabase.from('rdv').select(cols).eq('pro_profile_id', proProfileId).not('intervention_type', 'is', null)
       .not('admis_le', 'is', null).is('sortie_le', null).lt('date_heure', debut.toISOString()),
   ]);

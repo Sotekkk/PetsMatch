@@ -2,10 +2,10 @@
 
 // Hospitalisés du jour (vétérinaire) : interventions du jour et animaux encore
 // présents à la clinique — état (attendu, déposé, au bloc, en réveil, prêt à
-// partir, récupéré), récupération prévue, actions rapides (déposé, prévenir
-// réveillé / prêt, récupéré à tout moment après le dépôt : le RDV passe alors
-// en « Terminé », trigger trg_rdv_sortie_statut) et dossier de la séance.
-// Vétérinaire ou ASV.
+// partir), récupération prévue, actions rapides (déposé, prévenir réveillé /
+// prêt, récupéré à tout moment après le dépôt : l'animal quitte la liste et le
+// RDV passe dans l'historique, trigger trg_rdv_sortie_statut) et dossier de la
+// séance. Vétérinaire ou ASV.
 // Miroir appli : lib/widgets/pro/hospitalises_du_jour.dart.
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -42,6 +42,7 @@ export default function HospitalisesDuJour({ profileId, version, onOuvrirDossier
   const maj = (id: string, champs: Record<string, string | null>) => agir(`${id}:${Object.keys(champs)[0]}`, async () => {
     const { error } = await supabase.from('rdv').update(champs).eq('id', id);
     if (error) return `Non enregistré : ${error.message}`;
+    if (champs.sortie_le) return 'Animal récupéré : le RDV est dans l’historique.';
   });
   const btn = (cle: string, label: string, f: () => void, plein = false) => (
     <button key={cle} type="button" disabled={!!enCours} onClick={f}
