@@ -1071,6 +1071,26 @@ function PatientDetailPageInner() {
   type AddType = null | 'vaccin' | 'visite' | 'traitement' | 'ordonnance' | 'radio' | 'cr' | 'mesure'
     | 'vermifuge' | 'antiparasitaire' | 'chirurgie' | 'allergie';
   const [addingType, setAddingType] = useState<AddType>(null);
+  // Depuis le dossier d'une intervention : ?ajout=traitement|vaccin|vermifuge|antiparasitaire
+  // ouvre le formulaire du carnet ; une fois fermé, retour au dossier (panneau refermé).
+  const ajoutParam = searchParams.get('ajout');
+  const ajoutOuvert = useRef<'non' | 'ouvert' | 'fini'>('non');
+  useEffect(() => {
+    if (!ajoutParam || ajoutOuvert.current !== 'non') return;
+    if (!['traitement', 'vaccin', 'vermifuge', 'antiparasitaire'].includes(ajoutParam)) return;
+    ajoutOuvert.current = 'ouvert';
+    setFormDate(new Date().toLocaleDateString('sv-SE'));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAddingType(ajoutParam as AddType);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ajoutParam]);
+  useEffect(() => {
+    if (ajoutOuvert.current === 'ouvert' && addingType === null) {
+      ajoutOuvert.current = 'fini';
+      allerOuFermer(router, `/mes-patients/${encodeURIComponent(animalId)}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addingType]);
   // Brouillon de compte rendu repris (ligne modifiée au lieu d'en créer une).
   const [brouillonId, setBrouillonId] = useState<string | null>(null);
   // RDV à plusieurs animaux (?crRdv=<id>, « Gérer mes RDV ») : le compte rendu

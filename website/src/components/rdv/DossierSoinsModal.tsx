@@ -105,7 +105,7 @@ export default function DossierSoinsModal({ rdvId, metier, dateHeure, nomClient,
 
         <div className="space-y-3 mt-3">
           {/* RDV « Intervention » : ses étapes propres en tête (rien sinon). */}
-          {veto && <InterventionDossier rdvId={rdvId} version={version} onOuvrirPage={onOuvrirPage} animalNom={animaux[0]?.nom} />}
+          {veto && <InterventionDossier rdvId={rdvId} version={version} onOuvrirPage={onOuvrirPage} animalNom={animaux[0]?.nom} onProgrammerRdv={onProgrammerRdv} />}
           {etape(1, veto ? 'Compte rendu et soins' : 'Séance (compte rendu)', docs.length ? 'Document chargé' : '', docs.length ? VERT : GRIS, (
             <div className="space-y-2">
               <p className="text-xs text-gray-500">

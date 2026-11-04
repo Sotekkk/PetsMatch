@@ -9851,6 +9851,7 @@ Future<void> saisirAuCarnet(BuildContext context, {required String animalId, req
     'allergies' => _AddAllergieDialog(animalId: animalId, source: 'veterinaire', vetId: vid, vetName: vname),
     'chirurgies' => AddChirurgieDialog(animalId: animalId, source: 'veterinaire', vetId: vid, vetName: vname),
     'radios' => _AddRadioDialog(animalId: animalId, vetId: vid, vetName: vname),
+    'traitements' => _AddTraitementDialog(animalId: animalId, source: 'veterinaire', vetId: vid, vetName: vname),
     _ => _AddVaccinDialog(animalId: animalId, espece: espece, source: 'veterinaire', vetId: vid, vetName: vname),
   };
   return showDialog(context: context, builder: (_) => dialogue);

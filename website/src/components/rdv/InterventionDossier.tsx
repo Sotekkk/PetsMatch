@@ -38,9 +38,11 @@ const hm = (d: string | null) => d ? new Date(d).toLocaleTimeString('fr-FR', { h
 const etatDoc = (d: Doc) => d?.statut === 'valide' ? ['Validé', VERT] : d ? ['Brouillon', AMBRE] : ['À faire', GRIS];
 
 /** null : ce RDV n'est pas une intervention (rien n'est affiché). */
-export default function InterventionDossier({ rdvId, version, onOuvrirPage, animalNom }: {
+export default function InterventionDossier({ rdvId, version, onOuvrirPage, animalNom, onProgrammerRdv }: {
   rdvId: string; version: number; animalNom?: string;
   onOuvrirPage: (url: string, titre: string) => void;
+  /** RDV de contrôle : prise de RDV préremplie (agenda du vétérinaire et de la famille). */
+  onProgrammerRdv?: (p: { animalId?: string; motif?: string }) => void;
 }) {
   const [r, setR] = useState<RdvIntervention | null>(null);
   const [chir, setChir] = useState<{ preop: Doc; operatoire: Doc; consignes: Doc } | null>(null);
@@ -215,6 +217,17 @@ export default function InterventionDossier({ rdvId, version, onOuvrirPage, anim
             className="border border-gray-200 rounded-lg px-2 py-1 text-sm" />
           <span className="text-[11px] text-gray-500">le client est prévenu</span>
         </div>
+        {r.animal_id && ligne('Soins après l’intervention', '', GRIS, [
+            ...([['traitement', 'Traitement'], ['vaccin', 'Vaccin'], ['vermifuge', 'Vermifuge'], ['antiparasitaire', 'Antiparasitaire']] as const).map(([t, l]) =>
+              btn(`soin-${t}`, `+ ${l}`, () => onOuvrirPage(`/mes-patients/${encodeURIComponent(r.animal_id!)}?ajout=${t}`, `${l} — ${animalNom || 'animal'}`))),
+          ], 'Inscrit au carnet de l’animal (et rappels de prise chez le propriétaire), comme lors d’une consultation.')}
+        {ligne('RDV de contrôle', '', GRIS, [
+            btn('controle', 'Planifier le contrôle', () => {
+              const motif = `Contrôle — ${r.motif || libelleIntervention(r.intervention_type)}`;
+              if (onProgrammerRdv) onProgrammerRdv({ animalId: r.animal_id ?? undefined, motif });
+              else onOuvrirPage(`/mes-rdv?nouveau=1${r.animal_id ? `&animal=${encodeURIComponent(r.animal_id)}` : ''}&motif=${encodeURIComponent(motif)}`, 'RDV de contrôle');
+            }),
+          ], 'Dans votre agenda et celui du propriétaire (s’il a l’appli), avec rappels.')}
         {ligne('Sortie', r.sortie_le ? `Récupéré à ${hm(r.sortie_le)}` : 'Consignes postopératoires, puis animal récupéré', r.sortie_le ? VERT : GRIS, [
           btn('consignes_post', `Consignes post-op (${eCons.toLowerCase()})`, () => ouvrirDoc('consignes', 'Consignes après l’intervention')),
           r.sortie_le ? btn('sortie_le', 'Annuler', () => maj({ sortie_le: null }))

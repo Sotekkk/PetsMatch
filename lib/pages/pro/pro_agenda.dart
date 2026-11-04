@@ -5689,6 +5689,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 ))));
               }
               : null,
+          onRdvControle: showProTools && rdv['intervention_type'] != null && rdv['statut'] != 'annule' && rdv['statut'] != 'refuse'
+              ? () async {
+                  await _showNouveauRdvDialog(animalInit: hasAnimal ? animalId : null,
+                      motifInit: 'Contrôle — ${(rdv['motif'] ?? '').toString().isNotEmpty ? rdv['motif'] : libelleIntervention(rdv['intervention_type']?.toString())}');
+                }
+              : null,
           onProgrammerRdv: showProTools && rdv['statut'] != 'annule' && rdv['statut'] != 'refuse'
               ? () async {
                   await _showNouveauRdvDialog(animalInit: hasAnimal ? animalId : null, motifInit: rdv['motif']?.toString());
@@ -5809,6 +5815,8 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback? onDevis;
   /// Dossier de la séance : programmer le prochain RDV (facultatif).
   final VoidCallback? onProgrammerRdv;
+  /// Intervention : RDV de contrôle (motif « Contrôle — … » prérempli).
+  final VoidCallback? onRdvControle;
   /// Tous les pros : mon compte rendu / mon contrat (photo ou PDF).
   final void Function(String mode)? onDocumentPro;
 
@@ -5838,6 +5846,7 @@ class _RdvCard extends StatelessWidget {
     this.regrouperEnDossier = false,
     this.onDevis,
     this.onProgrammerRdv,
+    this.onRdvControle,
     this.onHistorique,
     this.onDocumentPro,
   });
@@ -6085,6 +6094,15 @@ class _RdvCard extends StatelessWidget {
                 inter['heure_recuperation'] != null ? 'Prévue ${jourHm(inter['heure_recuperation'])} — le client est prévenu si vous la changez.' : 'Non fixée', [
               ('Modifier', changerRecuperation),
             ]),
+            if (inter['animal_id'] != null)
+              etape(ctx, ++n, 'Soins après l’intervention', 'Inscrit au carnet de l’animal (et rappels de prise chez le propriétaire), comme lors d’une consultation.', [
+                for (final (col, l) in const [('traitements', 'Traitement'), ('vaccinations', 'Vaccin'), ('vermifuges', 'Vermifuge'), ('antiparasitaires', 'Antiparasitaire')])
+                  ('+ $l', () => saisirAuCarnet(context, animalId: inter!['animal_id'].toString(), collection: col)),
+              ]),
+            if (onRdvControle != null)
+              etape(ctx, ++n, 'RDV de contrôle', 'Dans votre agenda et celui du propriétaire (s’il a l’appli), avec rappels.', [
+                ('Planifier le contrôle', onRdvControle!),
+              ]),
             etape(ctx, ++n, 'Sortie', inter['sortie_le'] != null ? 'Récupéré à ${hmIso(inter['sortie_le'])}' : 'Consignes postopératoires (${etatDoc('consignes').toLowerCase()}), puis animal récupéré', [
               ('Consignes post-op', () => ouvrirDocInter('consignes')),
               if (inter['sortie_le'] == null && admis) ('Animal récupéré', () => majRdv({'sortie_le': DateTime.now().toUtc().toIso8601String()}))
