@@ -1,6 +1,7 @@
 'use client';
 import HospitalisesDuJour from '@/components/rdv/HospitalisesDuJour';
 import { SOUS_TYPES_INTERVENTION, CONSIGNES_PREOP_DEFAUT, libelleIntervention, consignesPreopDefaut, lierChirurgieRdv, envoyerConsignesPreop } from '@/lib/intervention';
+import { historiqueTrie, historiqueFiltre, ligneHospitalisation } from '@/lib/historique-rdv';
 import { estDansPanneau, MSG_PANNEAU_FERMER, signalerPanneau } from '@/lib/panneau';
 import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/DossierSeanceModal';
 import { animauxDetailRdv, dureeRdvLabel, ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
@@ -98,6 +99,10 @@ interface Rdv {
   salle_id?: string | null;
   animal_nom_manuel?: string | null;
   termine_at?: string | null;
+  /** RDV « Intervention » : dépôt et récupération réels. */
+  intervention_type?: string | null;
+  admis_le?: string | null;
+  sortie_le?: string | null;
   /** Pet-sitting : série de passages d'une même demande (migration_garde_demande_serie.sql). */
   serie_id?: string | null;
   animaux_ids?: unknown[] | null;
@@ -1543,6 +1548,7 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
             <p className="text-xs text-gray-400">⏱ {rdv.duree_minutes} min</p>
           )}
           {rdv.motif && <p className="text-xs text-gray-400 mt-0.5 truncate">Motif : {rdv.motif}</p>}
+          {ligneHospitalisation(rdv) && <p className="text-xs font-semibold text-[#0C5C6C] mt-0.5">{ligneHospitalisation(rdv)}</p>}
           {rdv.serie && (
             <p className="text-xs font-semibold mt-1 px-2.5 py-1.5 rounded-lg" style={{ background: '#E8F3F1', color: TEAL }}>
               🔁 Série : {resumeSerie(rdv.serie)}
@@ -2102,6 +2108,10 @@ export default function MesRdvPage() {
 
   const [activeTab, setActiveTab] = useState<TabKey>('demandes');
   const [filtrePrestation, setFiltrePrestation] = useState('tous');
+  // Historique : filtre par client / animal, jour, hospitalisations.
+  const [rechercheHistorique, setRechercheHistorique] = useState('');
+  const [jourHistorique, setJourHistorique] = useState('');
+  const [hospitalisationsSeules, setHospitalisationsSeules] = useState(false);
   const [rdvs, setRdvs]           = useState<Rdv[]>([]);
   const [fetching, setFetching]   = useState(true);
   const [catPro, setCatPro]       = useState('');
@@ -2436,10 +2446,11 @@ export default function MesRdvPage() {
   const aVenir     = clotureManuelle
     ? rdvs.filter(r => r.statut === 'confirme').map(r => ({ ...r, retardMin: retards[r.id] }))
     : rdvs.filter(r => r.statut === 'confirme' && new Date(r.date_heure) > now).map(r => ({ ...r, retardMin: retards[r.id] }));
-  const historique = rdvs.filter(r =>
+  // Plus récents en haut.
+  const historique = historiqueTrie(rdvs.filter(r =>
     r.statut !== 'demande' && r.statut !== 'contre_proposition' &&
     !(r.statut === 'confirme' && (clotureManuelle || new Date(r.date_heure) > now))
-  );
+  ));
 
   const TABS: { key: TabKey; label: string; badge: number }[] = [
     // Éducateur : RDV individuels et cours collectifs dans le même calendrier
@@ -2470,8 +2481,14 @@ export default function MesRdvPage() {
   const listeOnglet = activeTab === 'demandes' ? demandesGroupees : activeTab === 'a_venir' ? aVenir : historique;
   // Pet-sitter : filtre par famille de prestation (présentes seulement) — miroir appli.
   const famillesPresentes = catPro === 'garde' ? FAMILLES_GARDE.filter(f => rdvs.some(r => familleGarde(r.motif) === f.key)) : [];
-  const currentList = filtrePrestation === 'tous' || catPro !== 'garde'
+  const listePrestation = filtrePrestation === 'tous' || catPro !== 'garde'
     ? listeOnglet : listeOnglet.filter(r => familleGarde(r.motif) === filtrePrestation);
+  const filtreHistoriqueActif = !!rechercheHistorique.trim() || !!jourHistorique || hospitalisationsSeules;
+  const currentList = activeTab === 'historique'
+    ? historiqueFiltre(listePrestation, { recherche: rechercheHistorique, jour: jourHistorique, hospitalisations: hospitalisationsSeules })
+    : listePrestation;
+  // Vétérinaire : vue « Hospitalisations », proposée dès qu'il y a une intervention.
+  const avecHospitalisations = catPro === 'veterinaire' && historique.some(r => r.intervention_type);
 
   const pageTitle = PRO_TITLE[catPro] ?? 'Mes rendez-vous';
 
@@ -2600,6 +2617,37 @@ export default function MesRdvPage() {
           </div>
         )}
 
+        {/* Historique : recherche par client / animal, jour, hospitalisations. */}
+        {activeTab === 'historique' && historique.length > 0 && (
+          <div className="bg-white rounded-2xl border border-[#E5E8E6] p-3 mb-4 space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <input type="search" value={rechercheHistorique} onChange={e => setRechercheHistorique(e.target.value)}
+                placeholder="Rechercher un client, un animal, un motif" aria-label="Rechercher dans l’historique"
+                className="flex-1 min-w-[180px] border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              <input type="date" value={jourHistorique} onChange={e => setJourHistorique(e.target.value)} aria-label="Date"
+                className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]" />
+            </div>
+            {(avecHospitalisations || filtreHistoriqueActif) && (
+              <div className="flex flex-wrap items-center gap-2">
+                {avecHospitalisations && [{ val: false, label: 'Tous les RDV' }, { val: true, label: 'Hospitalisations' }].map(f => (
+                  <button key={f.label} type="button" onClick={() => setHospitalisationsSeules(f.val)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border"
+                    style={hospitalisationsSeules === f.val ? { background: '#0C5C6C', borderColor: '#0C5C6C', color: 'white' } : { borderColor: '#E4E7E2', color: '#1E2025', background: 'white' }}>
+                    {f.label}
+                  </button>
+                ))}
+                {filtreHistoriqueActif && (
+                  <>
+                    <span className="text-xs text-gray-500">{currentList.length} résultat{currentList.length > 1 ? 's' : ''}</span>
+                    <button type="button" onClick={() => { setRechercheHistorique(''); setJourHistorique(''); setHospitalisationsSeules(false); }}
+                      className="text-xs font-semibold text-[#0C5C6C]">Effacer le filtre</button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Vétérinaire : hospitalisés du jour (interventions) en tête de « À venir ». */}
         {activeTab === 'a_venir' && catPro === 'veterinaire' && activeProfileId && (
           <div className="mb-4">
@@ -2617,7 +2665,7 @@ export default function MesRdvPage() {
             <div className="text-center py-20 text-gray-400">
               <div className="text-5xl mb-4">📅</div>
               <p className="font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
-                {activeTab === 'demandes' ? 'Aucune demande en attente' : activeTab === 'a_venir' ? 'Aucun RDV à venir' : 'Aucun historique'}
+                {activeTab === 'demandes' ? 'Aucune demande en attente' : activeTab === 'a_venir' ? 'Aucun RDV à venir' : filtreHistoriqueActif ? 'Aucun RDV pour ce filtre' : 'Aucun historique'}
               </p>
               {activeTab === 'demandes' && (
                 <p className="text-xs mt-2 text-gray-400">Les clients vous enverront des demandes via votre profil</p>

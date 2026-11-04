@@ -1,5 +1,6 @@
 import 'package:PetsMatch/widgets/pro/chirurgie_cr_page.dart' show ouvrirCrChirurgie;
 import 'package:PetsMatch/utils/intervention.dart';
+import 'package:PetsMatch/utils/historique_rdv.dart';
 import 'package:PetsMatch/utils/prochain_rdv.dart';
 import 'package:PetsMatch/utils/consignes_rdv.dart';
 import 'package:PetsMatch/utils/rdv_animaux.dart';
@@ -150,6 +151,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   bool _filtreVerrouille = false;
   /// Pet-sitter : filtre par famille de prestation (garde, promenade, visite…).
   String _filtrePrestation = 'tous';
+  // Historique : filtre par client / animal, jour, hospitalisations.
+  final _rechercheHistorique = TextEditingController();
+  DateTime? _jourHistorique;
+  bool _hospitalisationsSeules = false;
   bool get _estClinique => AgendaContexte.catPro == 'veterinaire';
   /// Tous les pros (véto, ostéo, pet-sitter, éducateur…) : un RDV confirmé
   /// reste « À venir » tant qu'il n'est pas marqué terminé (badge « À
@@ -595,6 +600,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     if (widget.employeur != null) AgendaContexte.fermer();
     User_Info.profileNotifier.removeListener(_onProfileChange);
     _tabCtrl.dispose();
+    _rechercheHistorique.dispose();
     super.dispose();
   }
 
@@ -1041,7 +1047,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }
   List<Map<String, dynamic>> get _historique {
     final now = DateTime.now();
-    return _rdvsFiltres.where((r) {
+    // Plus récents en haut.
+    return historiqueTrie(_rdvsFiltres.where((r) {
       if (r['statut'] == 'demande') return false;
       if (r['statut'] == 'contre_proposition') return false;
       if (r['statut'] == 'confirme') {
@@ -1050,7 +1057,74 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         return dh != null && dh.isBefore(now);
       }
       return true;
-    }).toList();
+    }));
+  }
+
+  /// Onglet Historique : recherche par client / animal, jour, hospitalisations.
+  Widget _buildHistorique() {
+    final tous = _historique;
+    final liste = historiqueFiltre(tous, recherche: _rechercheHistorique.text, jour: _jourHistorique, hospitalisations: _hospitalisationsSeules);
+    if (tous.isEmpty) return _buildList(tous, showDelete: true);
+    final avecHospit = AgendaContexte.catPro == 'veterinaire' && tous.any((r) => r['intervention_type'] != null);
+    final actif = _rechercheHistorique.text.trim().isNotEmpty || _jourHistorique != null || _hospitalisationsSeules;
+    final j = _jourHistorique;
+    const style = TextStyle(fontFamily: 'Galey', fontSize: 13);
+    Widget puce(bool val, String label) => Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ChoiceChip(
+            label: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600,
+                color: _hospitalisationsSeules == val ? Colors.white : const Color(0xFF1F2A2E))),
+            selected: _hospitalisationsSeules == val, showCheckmark: false,
+            selectedColor: _teal, backgroundColor: const Color(0xFFF1F4F3), side: BorderSide.none,
+            visualDensity: VisualDensity.compact,
+            onSelected: (_) => setState(() => _hospitalisationsSeules = val),
+          ),
+        );
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+        child: Row(children: [
+          Expanded(child: TextField(
+            controller: _rechercheHistorique,
+            onChanged: (_) => setState(() {}),
+            style: style,
+            decoration: InputDecoration(
+              hintText: 'Client, animal, motif', hintStyle: style, isDense: true,
+              prefixIcon: const Icon(Icons.search, size: 18),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            ),
+          )),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final d = await showDatePicker(context: context, initialDate: j ?? DateTime.now(),
+                  firstDate: DateTime(2020), lastDate: DateTime.now().add(const Duration(days: 365)), helpText: 'Date du RDV');
+              if (d != null && mounted) setState(() => _jourHistorique = d);
+            },
+            icon: const Icon(Icons.calendar_today_outlined, size: 15),
+            label: Text(j == null ? 'Date' : '${j.day.toString().padLeft(2, '0')}/${j.month.toString().padLeft(2, '0')}/${j.year}',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+            style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9), visualDensity: VisualDensity.compact),
+          ),
+        ]),
+      ),
+      if (avecHospit || actif)
+        SizedBox(
+          height: 46,
+          child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.fromLTRB(16, 6, 16, 0), children: [
+            if (avecHospit) ...[puce(false, 'Tous les RDV'), puce(true, 'Hospitalisations')],
+            if (actif) TextButton(
+              onPressed: () => setState(() { _rechercheHistorique.clear(); _jourHistorique = null; _hospitalisationsSeules = false; }),
+              style: TextButton.styleFrom(foregroundColor: _teal, visualDensity: VisualDensity.compact),
+              child: Text('${liste.length} résultat${liste.length > 1 ? 's' : ''} · Effacer',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+            ),
+          ]),
+        ),
+      Expanded(child: _buildList(liste, showDelete: true)),
+    ]);
   }
 
   /// Actions sur un RDV depuis le planning de la clinique — mêmes flux que
@@ -4239,7 +4313,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       if (_avecAgendaEducation) EducationPlanningPage(integre: true, onOuvrirDemandes: () => _tabCtrl.animateTo(1)),
                       _buildTabWithCours(_coursDemandes, _demandes, showActions: true),
                       _buildTabWithCours(_coursAvenir, _avenir, showCancel: true),
-                      _buildList(_historique, showDelete: true),
+                      _buildHistorique(),
                       _buildCreneauxTab(),
                     ],
                   ),
@@ -6323,6 +6397,8 @@ class _RdvCard extends StatelessWidget {
               // Motif + lieu + durée
               if (motif.isNotEmpty)
                 Text(motif, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF555F6A))),
+              if (ligneHospitalisation(rdv) != null)
+                Text(ligneHospitalisation(rdv)!, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
               if (gardeBadge != null) ...[
                 const SizedBox(height: 4),
                 Text(gardeBadge!, style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
