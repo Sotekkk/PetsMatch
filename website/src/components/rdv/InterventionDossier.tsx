@@ -151,7 +151,7 @@ export default function InterventionDossier({ rdvId, version, onOuvrirPage, anim
     <div className="border-2 rounded-2xl p-3" style={{ borderColor: `${TEAL}33` }}>
       <p className="text-sm font-bold" style={{ color: TEAL }}>Intervention — {r.motif || libelleIntervention(r.intervention_type)}</p>
       <p className="text-[11px] text-gray-500">
-        {[r.bloc_debut ? `au bloc ${hm(r.bloc_debut)}${r.bloc_fin ? `–${hm(r.bloc_fin)}` : ''}` : '', r.heure_recuperation ? `récupération prévue ${jourHm(r.heure_recuperation, r.date_heure)}` : ''].filter(Boolean).join(' · ')}
+        {[r.bloc_debut ? `au bloc ${hm(r.bloc_debut)}${r.bloc_fin ? `–${hm(r.bloc_fin)}` : ''}` : '', r.sortie_le ? `récupéré ${jourHm(r.sortie_le, r.date_heure)}` : r.heure_recuperation ? `récupération prévue ${jourHm(r.heure_recuperation, r.date_heure)}` : ''].filter(Boolean).join(' · ')}
       </p>
       {message && <p className="text-xs mt-2 rounded-lg px-2 py-1.5 bg-[#E6F2F3]" style={{ color: TEAL }}>{message}</p>}
       <div className="mt-1">
@@ -212,10 +212,17 @@ export default function InterventionDossier({ rdvId, version, onOuvrirPage, anim
           className="w-full -mt-1 mb-2 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#0C5C6C] resize-none" />
         <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
           <p className="flex-1 text-sm font-bold text-[#1F2A2E]">Récupération</p>
-          <input type="datetime-local" step={300} defaultValue={versLocal(r.heure_recuperation)} key={`rc${r.heure_recuperation}`} min={versLocal(r.date_heure)}
-            onBlur={e => { if (e.target.value && e.target.value !== versLocal(r.heure_recuperation)) changerRecuperation(e.target.value); }}
-            className="border border-gray-200 rounded-lg px-2 py-1 text-sm" />
-          <span className="text-[11px] text-gray-500">le client est prévenu</span>
+          {r.sortie_le ? (
+            // Déjà récupéré : l'heure prévue n'a plus lieu d'être modifiée (ni le client prévenu).
+            <span className="text-[11px] font-semibold" style={{ color: VERT }}>Récupéré {jourHm(r.sortie_le, r.date_heure)}</span>
+          ) : (
+            <>
+              <input type="datetime-local" step={300} defaultValue={versLocal(r.heure_recuperation)} key={`rc${r.heure_recuperation}`} min={versLocal(r.date_heure)}
+                onBlur={e => { if (e.target.value && e.target.value !== versLocal(r.heure_recuperation)) changerRecuperation(e.target.value); }}
+                className="border border-gray-200 rounded-lg px-2 py-1 text-sm" />
+              <span className="text-[11px] text-gray-500">le client est prévenu</span>
+            </>
+          )}
         </div>
         {r.animal_id && ligne('Soins après l’intervention', '', GRIS, [
             // Traitements : compte rendu du RDV, comme en consultation (posologie par phases —
@@ -231,7 +238,7 @@ export default function InterventionDossier({ rdvId, version, onOuvrirPage, anim
               else onOuvrirPage(`/mes-rdv?nouveau=1${r.animal_id ? `&animal=${encodeURIComponent(r.animal_id)}` : ''}&motif=${encodeURIComponent(motif)}`, 'RDV de contrôle');
             }),
           ], 'Dans votre agenda et celui du propriétaire (s’il a l’appli), avec rappels.')}
-        {ligne('Sortie', r.sortie_le ? `Récupéré à ${hm(r.sortie_le)}` : 'Consignes postopératoires, puis animal récupéré', r.sortie_le ? VERT : GRIS, [
+        {ligne('Sortie', r.sortie_le ? `Récupéré ${jourHm(r.sortie_le, r.date_heure)} · RDV terminé` : 'Consignes postopératoires, puis animal récupéré', r.sortie_le ? VERT : GRIS, [
           btn('consignes_post', `Consignes post-op (${eCons.toLowerCase()})`, () => ouvrirDoc('consignes', 'Consignes après l’intervention')),
           r.sortie_le ? btn('sortie_le', 'Annuler', () => maj({ sortie_le: null }))
             : r.admis_le ? btn('sortie_le', 'Animal récupéré', () => maj({ sortie_le: new Date().toISOString() }), true)

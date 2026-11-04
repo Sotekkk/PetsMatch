@@ -3050,13 +3050,14 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text('Intervention — dépôt ${DateFormat("HH'h'mm").format(DateTime.parse(_rdv!['date_heure'].toString()).toLocal())}',
                             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal)),
-                        if (_rdv!['heure_recuperation'] != null)
+                        if (_rdv!['heure_recuperation'] != null && _rdv!['sortie_le'] == null)
                           Padding(padding: const EdgeInsets.only(top: 4), child: Text(
                               'Récupération prévue vers ${DateFormat("HH'h'mm").format(DateTime.parse(_rdv!['heure_recuperation'].toString()).toLocal())} — la clinique vous prévient quand votre animal est prêt.',
                               style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
                         if (_rdv!['sortie_le'] != null)
-                          const Padding(padding: EdgeInsets.only(top: 4), child: Text('Votre animal est rentré.',
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF2E7D5E)))),
+                          Padding(padding: const EdgeInsets.only(top: 4), child: Text(
+                              'Votre animal a été récupéré le ${DateFormat("dd/MM 'à' HH'h'mm").format(DateTime.parse(_rdv!['sortie_le'].toString()).toLocal())}.',
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF2E7D5E)))),
                         if ((_rdv!['consignes_preop']?.toString() ?? '').trim().isNotEmpty) ...[
                           const SizedBox(height: 8),
                           const Text('Consignes à respecter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),

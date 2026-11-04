@@ -5706,6 +5706,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               : null,
           regrouperEnDossier: showProTools && const {'veterinaire', 'sante'}.contains(AgendaContexte.catPro)
               && rdv['statut'] != 'annule' && rdv['statut'] != 'refuse',
+          onStatutChange: _loadRdvs,
           onDossier: AgendaContexte.catPro == 'photographe' && rdv['statut'] != 'demande' && rdv['statut'] != 'contre_proposition'
               ? () => showDossierSeance(context, rdv,
                   nomClient: rdv['_client_name']?.toString() ?? 'Client',
@@ -5809,6 +5810,8 @@ class _RdvCard extends StatelessWidget {
   /// Vétérinaire / ostéo : compte rendu, contrat, facture, carnet, historique
   /// et fin de séance regroupés dans un seul bouton « Dossier de la séance ».
   final bool regrouperEnDossier;
+  /// Animal récupéré / sortie annulée : le RDV change de liste (Terminé ↔ À venir).
+  final Future<void> Function()? onStatutChange;
   /// Vétérinaire : historique des consultations du patient.
   final VoidCallback? onHistorique;
   /// Vétérinaire : devis (opération à prévoir) fait avec PetsMatch.
@@ -5844,6 +5847,7 @@ class _RdvCard extends StatelessWidget {
     this.onFiche,
     this.onDossier,
     this.regrouperEnDossier = false,
+    this.onStatutChange,
     this.onDevis,
     this.onProgrammerRdv,
     this.onRdvControle,
@@ -6037,7 +6041,8 @@ class _RdvCard extends StatelessWidget {
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700, color: teal)),
             Padding(padding: const EdgeInsets.only(top: 2, bottom: 12), child: Text([
               if (inter['bloc_debut'] != null) 'au bloc ${hmIso(inter['bloc_debut'])}${inter['bloc_fin'] != null ? '–${hmIso(inter['bloc_fin'])}' : ''}',
-              if (inter['heure_recuperation'] != null) 'récupération prévue ${jourHm(inter['heure_recuperation'])}',
+              if (inter['sortie_le'] != null) 'récupéré ${jourHm(inter['sortie_le'])}'
+              else if (inter['heure_recuperation'] != null) 'récupération prévue ${jourHm(inter['heure_recuperation'])}',
             ].join(' · '), style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600))),
             etape(ctx, ++n, 'Consignes au propriétaire', (inter['consignes_preop'] ?? '').toString().trim().isEmpty ? 'Aucune' : inter['consignes_preop'].toString(), [
               if ((inter['consignes_preop'] ?? '').toString().trim().isNotEmpty)
@@ -6091,8 +6096,10 @@ class _RdvCard extends StatelessWidget {
               ],
             ]),
             etape(ctx, ++n, 'Récupération',
-                inter['heure_recuperation'] != null ? 'Prévue ${jourHm(inter['heure_recuperation'])} — le client est prévenu si vous la changez.' : 'Non fixée', [
-              ('Modifier', changerRecuperation),
+                inter['sortie_le'] != null ? 'Récupéré ${jourHm(inter['sortie_le'])}'
+                    : inter['heure_recuperation'] != null ? 'Prévue ${jourHm(inter['heure_recuperation'])} — le client est prévenu si vous la changez.' : 'Non fixée', [
+              // Déjà récupéré : l'heure prévue n'a plus lieu d'être modifiée (ni le client prévenu).
+              if (inter['sortie_le'] == null) ('Modifier', changerRecuperation),
             ]),
             if (inter['animal_id'] != null)
               etape(ctx, ++n, 'Soins après l’intervention', 'Traitements comme en consultation (posologie matin / soir, durée, administré ou prescrit, ordonnance) ; inscrits au carnet et repris dans le CR opératoire.', [
@@ -6106,10 +6113,18 @@ class _RdvCard extends StatelessWidget {
               etape(ctx, ++n, 'RDV de contrôle', 'Dans votre agenda et celui du propriétaire (s’il a l’appli), avec rappels.', [
                 ('Planifier le contrôle', onRdvControle!),
               ]),
-            etape(ctx, ++n, 'Sortie', inter['sortie_le'] != null ? 'Récupéré à ${hmIso(inter['sortie_le'])}' : 'Consignes postopératoires (${etatDoc('consignes').toLowerCase()}), puis animal récupéré', [
+            etape(ctx, ++n, 'Sortie', inter['sortie_le'] != null ? 'Récupéré ${jourHm(inter['sortie_le'])} · RDV terminé' : 'Consignes postopératoires (${etatDoc('consignes').toLowerCase()}), puis animal récupéré', [
               ('Consignes post-op', () => ouvrirDocInter('consignes')),
-              if (inter['sortie_le'] == null && admis) ('Animal récupéré', () => majRdv({'sortie_le': DateTime.now().toUtc().toIso8601String()}))
-              else if (inter['sortie_le'] != null) ('Annuler la sortie', () => majRdv({'sortie_le': null})),
+              // Le RDV change de liste (trigger trg_rdv_sortie_statut) : listes rechargées.
+              if (inter['sortie_le'] == null && admis) ('Animal récupéré', () async {
+                if (await majRdv({'sortie_le': DateTime.now().toUtc().toIso8601String()})) {
+                  snack('Animal récupéré : le RDV passe dans « Terminé ».');
+                  await onStatutChange?.call();
+                }
+              })
+              else if (inter['sortie_le'] != null) ('Annuler la sortie', () async {
+                if (await majRdv({'sortie_le': null})) await onStatutChange?.call();
+              }),
             ]),
             const Divider(height: 18),
           ],

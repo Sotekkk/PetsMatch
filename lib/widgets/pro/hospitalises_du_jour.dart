@@ -1,7 +1,9 @@
 // Hospitalisés du jour (vétérinaire) : interventions du jour et animaux encore
 // présents à la clinique — état (attendu, déposé, au bloc, en réveil, prêt à
-// partir, rentré), récupération prévue, actions rapides (déposé, prévenir
-// réveillé / prêt, récupéré). Vétérinaire ou ASV. Masqué s'il n'y a rien.
+// partir, récupéré), récupération prévue, actions rapides (déposé, prévenir
+// réveillé / prêt, récupéré à tout moment après le dépôt : le RDV passe alors
+// en « Terminé », trigger trg_rdv_sortie_statut). Vétérinaire ou ASV. Masqué
+// s'il n'y a rien.
 // Miroir site : components/rdv/HospitalisesDuJour.tsx.
 import 'dart:async';
 
@@ -14,7 +16,7 @@ import 'package:PetsMatch/utils/intervention.dart';
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1E2025);
 
-/// État : rentré > prêt à partir > en réveil > au bloc > déposé > attendu.
+/// État : récupéré > prêt à partir > en réveil > au bloc > déposé > attendu.
 String etatHospit(Map<String, dynamic> h, [DateTime? maintenant]) {
   DateTime? d(String k) => DateTime.tryParse(h[k]?.toString() ?? '');
   if (h['sortie_le'] != null) return 'rentre';
@@ -35,14 +37,16 @@ const kEtatsHospit = <String, (String, Color, Color)>{
   'bloc': ('Au bloc', Color(0xFF8A5A00), Color(0xFFFFF4DC)),
   'reveil': ('En réveil', Color(0xFF6D28D9), Color(0xFFF1EAFE)),
   'pret': ('Prêt à partir', Color(0xFF2E7D32), Color(0xFFE8F5E9)),
-  'rentre': ('Rentré', Color(0xFF6B7280), Color(0xFFF1F4F3)),
+  'rentre': ('Récupéré', Color(0xFF6B7280), Color(0xFFF1F4F3)),
 };
 
 class HospitalisesDuJour extends StatefulWidget {
   final String profileId;
   /// Ouvre le RDV (agenda) — optionnel.
   final void Function(String rdvId)? onOuvrir;
-  const HospitalisesDuJour({super.key, required this.profileId, this.onOuvrir});
+  /// Après une action (animal récupéré → RDV terminé) : la page recharge ses listes.
+  final VoidCallback? onChange;
+  const HospitalisesDuJour({super.key, required this.profileId, this.onOuvrir, this.onChange});
   @override
   State<HospitalisesDuJour> createState() => _HospitalisesDuJourState();
 }
@@ -121,6 +125,7 @@ class _HospitalisesDuJourState extends State<HospitalisesDuJour> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m, style: const TextStyle(fontFamily: 'Galey'))));
       }
       await _charger();
+      widget.onChange?.call();
     } finally {
       if (mounted) setState(() => _enCours = '');
     }
@@ -185,7 +190,7 @@ class _HospitalisesDuJourState extends State<HospitalisesDuJour> {
                       h['_client'],
                       avant ? 'depuis le ${depot.day}/${depot.month}' : 'dépôt ${_hm(h['date_heure'])}',
                       if (h['bloc_debut'] != null) 'bloc ${_hm(h['bloc_debut'])}',
-                      if (h['heure_recuperation'] != null) 'récup. ${() {
+                      if (h['heure_recuperation'] != null && h['sortie_le'] == null) 'récup. ${() {
                         final r = DateTime.tryParse(h['heure_recuperation'].toString())?.toLocal();
                         final autreJour = r != null && (r.year != aujourdhui.year || r.month != aujourdhui.month || r.day != aujourdhui.day);
                         return '${autreJour ? 'le ${r.day}/${r.month} ' : ''}${_hm(h['heure_recuperation'])}';
@@ -195,14 +200,15 @@ class _HospitalisesDuJourState extends State<HospitalisesDuJour> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
-                    child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: fg)),
+                    child: Text(h['sortie_le'] != null ? '$label à ${_hm(h['sortie_le'])}' : label,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: fg)),
                   ),
                 ]),
                 Wrap(children: [
                   if (e == 'attendu') _btn('$id:admis', 'Animal déposé', () => _maj(id, {'admis_le': DateTime.now().toUtc().toIso8601String()}), plein: true),
                   if (e == 'depose' || e == 'bloc') _btn('$id:reveille', 'Réveillé — prévenir', () => messageIntervention(id, 'reveille')),
                   if (e == 'depose' || e == 'bloc' || e == 'reveil') _btn('$id:pret', 'Prêt — prévenir', () => messageIntervention(id, 'pret'), plein: e == 'reveil'),
-                  if (e == 'pret' || e == 'reveil') _btn('$id:sortie', 'Récupéré', () => _maj(id, {'sortie_le': DateTime.now().toUtc().toIso8601String()}), plein: e == 'pret'),
+                  if (e != 'attendu' && e != 'rentre') _btn('$id:sortie', 'Récupéré', () => _maj(id, {'sortie_le': DateTime.now().toUtc().toIso8601String()}), plein: e == 'pret'),
                   if (tel.isNotEmpty && h['client_uid'] == null)
                     _btn('$id:tel', 'Appeler', () async { await launchUrl(Uri.parse('tel:$tel')); return null; }),
                 ]),

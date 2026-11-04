@@ -131,7 +131,7 @@ export const ETATS_HOSPIT: Record<EtatHospit, { label: string; fg: string; bg: s
   bloc: { label: 'Au bloc', fg: '#8A5A00', bg: '#FFF4DC' },
   reveil: { label: 'En réveil', fg: '#6D28D9', bg: '#F1EAFE' },
   pret: { label: 'Prêt à partir', fg: '#2E7D32', bg: '#E8F5E9' },
-  rentre: { label: 'Rentré', fg: '#6B7280', bg: '#F1F4F3' },
+  rentre: { label: 'Récupéré', fg: '#6B7280', bg: '#F1F4F3' },
 };
 
 export function etatHospit(h: Pick<Hospitalise, 'admis_le' | 'reveil_le' | 'pret_le' | 'sortie_le' | 'bloc_debut' | 'bloc_fin'>, now = new Date()): EtatHospit {

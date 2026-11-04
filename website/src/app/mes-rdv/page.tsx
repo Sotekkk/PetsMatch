@@ -2603,7 +2603,7 @@ export default function MesRdvPage() {
         {/* Vétérinaire : hospitalisés du jour (interventions) en tête de « À venir ». */}
         {activeTab === 'a_venir' && catPro === 'veterinaire' && activeProfileId && (
           <div className="mb-4">
-            <HospitalisesDuJour profileId={activeProfileId} version={versionDossier} onOuvrirDossier={id => setDossierARouvrir(id)} />
+            <HospitalisesDuJour profileId={activeProfileId} version={versionDossier} onOuvrirDossier={id => setDossierARouvrir(id)} onChange={() => fetchRdvs(true)} />
           </div>
         )}
 
@@ -2680,7 +2680,7 @@ export default function MesRdvPage() {
           <DossierSoinsModal rdvId={dossierSoins.id} metier={catPro} dateHeure={dossierSoins.date_heure}
             nomClient={dossierSoins.clientName ?? dossierSoins.client_nom_manuel ?? 'Client'} animaux={animaux}
             proProfileId={activeProfileId || null} version={versionDossier}
-            onClose={() => setDossierSoins(null)}
+            onClose={() => { setDossierSoins(null); fetchRdvs(true); }}
             onOuvrirPage={(url, titre) => setPanneau({ url, titre })}
             onChargerDoc={mode => setDocPro(mode === 'devis'
               ? { rdv: dossierSoins, mode: 'contrat', titre: `Devis — ${dossierSoins.clientName ?? dossierSoins.client_nom_manuel ?? 'Client'}` }
