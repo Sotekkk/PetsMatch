@@ -1060,11 +1060,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }));
   }
 
-  /// Onglet Historique : recherche par client / animal, jour, hospitalisations.
-  Widget _buildHistorique() {
-    final tous = _historique;
+  /// Onglets À venir et Historique : recherche par client / animal, jour, hospitalisations.
+  Widget _buildAvecFiltreRdv(List<Map<String, dynamic>> tous, Widget Function(List<Map<String, dynamic>>) contenu) {
     final liste = historiqueFiltre(tous, recherche: _rechercheHistorique.text, jour: _jourHistorique, hospitalisations: _hospitalisationsSeules);
-    if (tous.isEmpty) return _buildList(tous, showDelete: true);
+    if (tous.isEmpty) return contenu(tous);
     final avecHospit = AgendaContexte.catPro == 'veterinaire' && tous.any((r) => r['intervention_type'] != null);
     final actif = _rechercheHistorique.text.trim().isNotEmpty || _jourHistorique != null || _hospitalisationsSeules;
     final j = _jourHistorique;
@@ -1123,7 +1122,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             ),
           ]),
         ),
-      Expanded(child: _buildList(liste, showDelete: true)),
+      Expanded(child: contenu(liste)),
     ]);
   }
 
@@ -4312,8 +4311,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     children: [
                       if (_avecAgendaEducation) EducationPlanningPage(integre: true, onOuvrirDemandes: () => _tabCtrl.animateTo(1)),
                       _buildTabWithCours(_coursDemandes, _demandes, showActions: true),
-                      _buildTabWithCours(_coursAvenir, _avenir, showCancel: true),
-                      _buildHistorique(),
+                      _buildAvecFiltreRdv(_avenir, (l) => _buildTabWithCours(_coursAvenir, l, showCancel: true)),
+                      _buildAvecFiltreRdv(_historique, (l) => _buildList(l, showDelete: true)),
                       _buildCreneauxTab(),
                     ],
                   ),

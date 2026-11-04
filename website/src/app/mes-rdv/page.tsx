@@ -2484,11 +2484,12 @@ export default function MesRdvPage() {
   const listePrestation = filtrePrestation === 'tous' || catPro !== 'garde'
     ? listeOnglet : listeOnglet.filter(r => familleGarde(r.motif) === filtrePrestation);
   const filtreHistoriqueActif = !!rechercheHistorique.trim() || !!jourHistorique || hospitalisationsSeules;
-  const currentList = activeTab === 'historique'
+  const avecFiltreRdv = activeTab === 'historique' || activeTab === 'a_venir';
+  const currentList = avecFiltreRdv
     ? historiqueFiltre(listePrestation, { recherche: rechercheHistorique, jour: jourHistorique, hospitalisations: hospitalisationsSeules })
     : listePrestation;
   // Vétérinaire : vue « Hospitalisations », proposée dès qu'il y a une intervention.
-  const avecHospitalisations = catPro === 'veterinaire' && historique.some(r => r.intervention_type);
+  const avecHospitalisations = catPro === 'veterinaire' && listePrestation.some(r => r.intervention_type);
 
   const pageTitle = PRO_TITLE[catPro] ?? 'Mes rendez-vous';
 
@@ -2617,12 +2618,12 @@ export default function MesRdvPage() {
           </div>
         )}
 
-        {/* Historique : recherche par client / animal, jour, hospitalisations. */}
-        {activeTab === 'historique' && historique.length > 0 && (
+        {/* À venir et historique : recherche par client / animal, jour, hospitalisations. */}
+        {avecFiltreRdv && listePrestation.length > 0 && (
           <div className="bg-white rounded-2xl border border-[#E5E8E6] p-3 mb-4 space-y-2">
             <div className="flex flex-wrap gap-2">
               <input type="search" value={rechercheHistorique} onChange={e => setRechercheHistorique(e.target.value)}
-                placeholder="Rechercher un client, un animal, un motif" aria-label="Rechercher dans l’historique"
+                placeholder="Rechercher un client, un animal, un motif" aria-label="Rechercher un rendez-vous"
                 className="flex-1 min-w-[180px] border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
               <input type="date" value={jourHistorique} onChange={e => setJourHistorique(e.target.value)} aria-label="Date"
                 className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]" />
@@ -2665,7 +2666,7 @@ export default function MesRdvPage() {
             <div className="text-center py-20 text-gray-400">
               <div className="text-5xl mb-4">📅</div>
               <p className="font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
-                {activeTab === 'demandes' ? 'Aucune demande en attente' : activeTab === 'a_venir' ? 'Aucun RDV à venir' : filtreHistoriqueActif ? 'Aucun RDV pour ce filtre' : 'Aucun historique'}
+                {activeTab === 'demandes' ? 'Aucune demande en attente' : avecFiltreRdv && filtreHistoriqueActif ? 'Aucun RDV pour ce filtre' : activeTab === 'a_venir' ? 'Aucun RDV à venir' : 'Aucun historique'}
               </p>
               {activeTab === 'demandes' && (
                 <p className="text-xs mt-2 text-gray-400">Les clients vous enverront des demandes via votre profil</p>
