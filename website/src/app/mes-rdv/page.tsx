@@ -460,6 +460,7 @@ function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
       const { data: oc } = await supabase.rpc('pm_plages_occupees', { p_pro_profile_id: rdv.pro_profile_id, p_debut: newDt0.toISOString(), p_fin: fin0.toISOString() });
       const bloque = ((oc ?? []) as { date_heure: string; statut: string; motif: string | null; praticien_profile_id: string | null }[])
         .find(o => (o.statut === 'occupation' || o.statut === 'indisponible') && (o.praticien_profile_id ?? '') === (instructeurProfileId || ''));
+      if (bloque && bloque.statut === 'occupation' && /^Intervention/.test(bloque.motif ?? '')) { alert(`Ce créneau est pris par une intervention (bloc) du vétérinaire (${bloque.motif}). Choisissez un autre horaire.`); return; }
       if (bloque && !window.confirm(`Le vétérinaire est pris à ce moment (${bloque.statut === 'occupation' ? (bloque.motif || 'bloc') : 'indisponible'}, ${new Date(bloque.date_heure).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}). Déplacer quand même ?`)) return;
     }
     setSaving(true);
@@ -934,6 +935,8 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
     {
       const d0 = new Date(`${date}T${heure}:00`), f0 = new Date(d0.getTime() + duree * 60000);
       const bloque = blocsJour.find(b => d0 < new Date(b.debut.getTime() + b.duree * 60000) && f0 > b.debut);
+      // Temps d'intervention : refusé (bloquant aussi en base) ; autre indisponibilité : à confirmer.
+      if (bloque && /^Intervention/.test(bloque.libelle)) { setError(`Ce créneau est pris par une intervention (bloc) du vétérinaire (${bloque.libelle}). Choisissez un autre horaire.`); return; }
       if (bloque && !window.confirm(`Le vétérinaire est pris à ce moment (${bloque.libelle}, ${bloque.debut.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}). Créer quand même ?`)) return;
     }
     // Temps d'intervention : salle de bloc libre, et vétérinaire sans autre RDV.

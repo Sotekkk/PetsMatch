@@ -2075,6 +2075,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             'p_debut': newDh.toUtc().toIso8601String(), 'p_fin': newDh.add(Duration(minutes: duree)).toUtc().toIso8601String()}) as List;
           final bloque = occ.where((o) => (o['statut'] == 'occupation' || o['statut'] == 'indisponible')
               && (o['praticien_profile_id']?.toString() ?? '') == (instructeurProfileId ?? '')).firstOrNull;
+          if (bloque != null && bloque['statut'] == 'occupation' && (bloque['motif'] ?? '').toString().startsWith('Intervention')) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ce créneau est pris par une intervention (bloc) du vétérinaire (${bloque['motif']}). Choisissez un autre horaire.',
+                  style: const TextStyle(fontFamily: 'Galey'))));
+            }
+            return;
+          }
           if (bloque != null && mounted) {
             final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
               content: Text('Le vétérinaire est pris à ce moment (${bloque['statut'] == 'occupation' ? (bloque['motif'] ?? 'bloc') : 'indisponible'}). Déplacer quand même ?',
@@ -3732,6 +3739,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     // Vétérinaire au bloc ou indisponible sur ce créneau (temps d'intervention d'un autre RDV).
                     final finRdv = depot.add(Duration(minutes: duree));
                     final bloque = blocsJour.where((b) => depot.isBefore(b.debut.add(Duration(minutes: b.duree))) && finRdv.isAfter(b.debut)).firstOrNull;
+                    // Temps d'intervention : refusé (bloquant aussi en base) ; autre indisponibilité : à confirmer.
+                    if (bloque != null && bloque.libelle.startsWith('Intervention')) {
+                      setModal(() => error = 'Ce créneau est pris par une intervention (bloc) du vétérinaire (${bloque.libelle}). Choisissez un autre horaire.');
+                      return;
+                    }
                     if (bloque != null && ctx.mounted) {
                       final ok = await showDialog<bool>(context: ctx, builder: (c) => AlertDialog(
                         content: Text('Le vétérinaire est pris à ce moment (${bloque.libelle}, ${hm(TimeOfDay.fromDateTime(bloque.debut))}). Créer quand même ?',
@@ -3805,7 +3817,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       salleInit: salleInit,
                     );
                     if (ok && ctx.mounted) Navigator.pop(ctx);
-                    else setModal(() { saving = false; error = 'Erreur lors de la création du RDV.'; });
+                    else setModal(() { saving = false; error = _erreurCreationRdv ?? 'Erreur lors de la création du RDV.'; });
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _teal, foregroundColor: Colors.white,
@@ -4069,10 +4081,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         } catch (_) {}
       }
       return true;
-    } catch (_) {
+    } catch (e) {
+      // Refus de la base (créneau pris, bloc, salle…) : message affiché tel quel.
+      _erreurCreationRdv = e is PostgrestException && e.code == 'P0001' ? e.message : null;
       return false;
     }
   }
+  String? _erreurCreationRdv;
 
   // ── A60 — Auto-accès carnet santé à la confirmation du RDV ───────────────────
 
