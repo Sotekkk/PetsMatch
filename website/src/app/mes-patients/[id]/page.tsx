@@ -1075,7 +1075,7 @@ function PatientDetailPageInner() {
   // Depuis le dossier d'une intervention : ?ajout=traitement|vaccin|vermifuge|antiparasitaire
   // ouvre le formulaire du carnet ; une fois fermé, retour au dossier (panneau refermé).
   const ajoutParam = searchParams.get('ajout');
-  const ajoutOuvert = useRef<'non' | 'ouvert' | 'fini'>('non');
+  const ajoutOuvert = useRef<'non' | 'ouvert' | 'affiche' | 'fini'>('non');
   useEffect(() => {
     if (!ajoutParam || ajoutOuvert.current !== 'non') return;
     if (!['traitement', 'vaccin', 'vermifuge', 'antiparasitaire'].includes(ajoutParam)) return;
@@ -1086,7 +1086,9 @@ function PatientDetailPageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ajoutParam]);
   useEffect(() => {
-    if (ajoutOuvert.current === 'ouvert' && addingType === null) {
+    // Formulaire réellement affiché, puis refermé (enregistré ou annulé) → retour au dossier.
+    if (ajoutOuvert.current === 'ouvert' && addingType) { ajoutOuvert.current = 'affiche'; return; }
+    if (ajoutOuvert.current === 'affiche' && addingType === null) {
       ajoutOuvert.current = 'fini';
       allerOuFermer(router, `/mes-patients/${encodeURIComponent(animalId)}`);
     }
