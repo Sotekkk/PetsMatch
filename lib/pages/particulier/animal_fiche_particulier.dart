@@ -3510,6 +3510,11 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         pid = (a?['profile_id'] as String?)?.isNotEmpty == true ? a!['profile_id'] as String : null;
       } catch (_) {}
       pid ??= User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      // Même rappel déjà posé ce jour-là : pas de doublon (les rappels à une autre
+      // date sont retirés côté serveur, trigger trg_sante_rappel_a_jour).
+      await _supa.from('agenda_events').delete()
+          .eq('uid', uid).eq('animal_id', _animalId!).eq('titre', titre)
+          .eq('type', 'medication').eq('date_debut', at8.toIso8601String());
       await _supa.from('agenda_events').insert({
         'uid':        uid,
         'titre':      titre,

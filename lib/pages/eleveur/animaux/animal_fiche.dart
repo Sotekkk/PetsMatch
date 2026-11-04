@@ -9891,6 +9891,11 @@ Future<void> _scheduleRappelAgenda({
         proProfileId = row?['id']?.toString() ?? '';
       } catch (_) {}
     }
+    // Même rappel déjà posé ce jour-là : pas de doublon (les rappels à une autre
+    // date sont retirés côté serveur, trigger trg_sante_rappel_a_jour).
+    await Supabase.instance.client.from('agenda_events').delete()
+        .eq('uid', uid).eq('animal_id', animalId).eq('titre', finalTitre)
+        .eq('type', 'medication').eq('date_debut', dateAt8.toIso8601String());
     await Supabase.instance.client.from('agenda_events').insert({
       'uid':            uid,
       'titre':          finalTitre,

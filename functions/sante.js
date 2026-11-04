@@ -99,6 +99,28 @@ async function supabasePatch(path, body) {
     });
 }
 
+// DELETE — path inclut le filtre (ex. "notifications?id=eq.X").
+async function supabaseDelete(path) {
+    return new Promise((resolve, reject) => {
+        const options = {
+            hostname: new URL(SUPABASE_URL).hostname,
+            path: `/rest/v1/${path}`,
+            method: "DELETE",
+            headers: {
+                "Content-Type": "application/json",
+                ...SUPABASE_AUTH_HEADERS,
+                "Prefer": "return=minimal",
+            },
+        };
+        const req = https.request(options, (res) => {
+            res.on("data", () => {});
+            res.on("end", () => resolve(res.statusCode));
+        });
+        req.on("error", reject);
+        req.end();
+    });
+}
+
 // Comme supabaseInsert, mais renvoie la ligne créée (Prefer: return=representation) —
 // nécessaire pour lier une tâche miroir pension à la tâche propriétaire d'origine.
 async function supabaseInsertReturning(table, rows) {
@@ -507,6 +529,21 @@ async function sendOverdueSanteReminders(digest) {
             const dedupKey = `sante_${table}_overdue_${row.id}_${todayStr}`;
             const existing = await supabaseGet(`notifs_sent?key=eq.${encodeURIComponent(dedupKey)}`);
             if (Array.isArray(existing) && existing.length > 0) continue;
+            // Renouvelé sans nouvelle date de rappel (ligne plus récente, sans
+            // date_rappel, écartée par la requête ci-dessus) : plus de relance.
+            if (await dejaRemplace(table, row)) continue;
+
+            // Une seule ligne « en retard » par soin (propriétaire, employés) :
+            // celle du jour remplace la précédente, sinon elles s'empilent
+            // (47 lignes pour l'Effitix de Luna).
+            try {
+                await supabaseDelete(
+                    `notifications?type=eq.sante&data->>recordId=eq.${encodeURIComponent(row.id)}` +
+                    `&data->>table=eq.${table}&data->>overdue=eq.true`,
+                );
+            } catch (e) {
+                console.error(`notifications delete error overdue (${table} ${row.id}):`, e.message);
+            }
 
             const nomAnimal = animal.nom || "Votre animal";
             const produit = row[nomField] || label;
