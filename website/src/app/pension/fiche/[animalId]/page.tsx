@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
+import { soinRemplace } from '@/lib/soin-remplace';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import ProAnimalEntete from '@/components/animaux/ProAnimalEntete';
 import ArriveeDepartModal from '@/components/pension/ArriveeDepartModal';
@@ -612,7 +613,7 @@ function SanteTab({ animalId, allergies, vaccinations, vermifuges, antipara, tra
           <div key={v.id ?? i} style={{ borderBottom: i < vermifuges.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
             <MedRow label={String(v.produit ?? '')} date={fmtDate(v.date as string)}
               extra={v.date_rappel ? `Rappel : ${fmtDate(v.date_rappel as string)}` : undefined}
-              onRappel={peutModifier ? () => { setRenouvellementDe(v); setOpenTraitementForm('vermifuges'); } : undefined} />
+              onRappel={peutModifier && !soinRemplace('vermifuges', v, vermifuges) ? () => { setRenouvellementDe(v); setOpenTraitementForm('vermifuges'); } : undefined} />
           </div>
         ))}
       </div>
@@ -632,7 +633,7 @@ function SanteTab({ animalId, allergies, vaccinations, vermifuges, antipara, tra
           <div key={a.id ?? i} style={{ borderBottom: i < antipara.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
             <MedRow label={String(a.produit ?? '')} sub={String(a.type ?? '')} date={fmtDate(a.date as string)}
               extra={a.date_rappel ? `Rappel : ${fmtDate(a.date_rappel as string)}` : undefined}
-              onRappel={peutModifier ? () => { setRenouvellementDe(a); setOpenTraitementForm('antiparasitaires'); } : undefined} />
+              onRappel={peutModifier && !soinRemplace('antiparasitaires', a, antipara) ? () => { setRenouvellementDe(a); setOpenTraitementForm('antiparasitaires'); } : undefined} />
           </div>
         ))}
       </div>

@@ -2,6 +2,7 @@
 
 import { profilPourAnimal } from '@/lib/cloisonnement-profils';
 import { poserRappelAgenda } from '@/lib/rappel-agenda';
+import { soinRemplace } from '@/lib/soin-remplace';
 import { bornesNaissanceAnimal, erreurNaissanceAnimal } from '@/lib/ages-plausibles';
 import { erreurPoids, poidsKg } from '@/lib/poids';
 import FormTraitementEtapes, { lignesEtapes, libelleEtape, type Etape } from '@/components/animaux/EtapesTraitement';
@@ -476,6 +477,21 @@ const CHAMPS_TRAITEMENT = [
   { key: 'notes', label: 'Commentaires (ex : tolérance au traitement)' },
 ];
 
+/** Modification d'une ligne sans rappel : calculé dès l'ouverture d'après la date et
+ *  la fréquence affichées (1 mois par défaut), toujours modifiable. */
+function avecRappelCalcule(initial: Record<string, string> | undefined, fields: { key: string; type?: string }[]): Record<string, string> {
+  const f = initial ?? {};
+  const jour = (f.date ?? '').slice(0, 10);
+  if (!fields.some(c => c.type === 'frequence') || f.date_rappel || !dateValide(jour)) return f;
+  const m = /^(\d+)\s*(jour|semaine|mois)/i.exec(f.frequence ?? '');
+  const n = m ? parseInt(m[1], 10) : 1;
+  if (!(n > 0)) return f;
+  const unite = (m?.[2] ?? 'mois').toLowerCase();
+  const d = new Date(`${jour}T12:00:00`);
+  d.setDate(d.getDate() + (unite === 'jour' ? n : unite === 'semaine' ? n * 7 : n * 30));
+  return { ...f, date_rappel: d.toISOString().slice(0, 10), frequence: f.frequence || '1 mois' };
+}
+
 function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, existingCategories, extra }:
   { /** passee : date qui ne peut pas être dans le futur (ex. allergie constatée). */
     fields: { key:string; label:string; type?:string; required?:boolean; passee?:boolean; options?:{value:string;label:string}[] }[];
@@ -483,7 +499,7 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
     onCancel:()=>void; saving:boolean; initial?: Record<string,string>; espece?: string; existingCategories?: string[];
     /** Contenu ajouté avant les boutons (ex. options du vermifuge). */
     extra?: React.ReactNode }) {
-  const [form, setForm] = useState<Record<string,string>>(initial ?? {});
+  const [form, setForm] = useState<Record<string,string>>(() => avecRappelCalcule(initial, fields));
   // Erreurs du dernier « Enregistrer », rattachées à leur champ : un message
   // disparaît dès que ce champ est modifié (et revient au prochain essai).
   const [erreurs, setErreurs] = useState<{ cle: string; msg: string }[]>([]);
@@ -5529,7 +5545,7 @@ function AnimalFichePageInner() {
                 champsEdition={[{key:'categorie',label:'Type de vaccin',type:'select',options:categorieOptions(animal.espece)},{key:'vaccin',label:'Vaccin (marque/produit)',required:true},{key:'date',label:'Date',type:'date'},{key:'date_validite_debut',label:'Valide à partir de',type:'date'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'lot',label:'N° de lot'},{key:'veterinaire',label:'Vétérinaire'}]}
                 espece={animal.espece}
                 existingCategories={health.vaccinations.map(v=>String(v.categorie??'')).filter(Boolean)}
-                onRappel={canWriteSante ? ()=>{
+                onRappel={canWriteSante && !soinRemplace('vaccinations', r, health.vaccinations) ? ()=>{
                   setRappelPrefill({ vaccin: String(r.vaccin??''), veterinaire: String(r.veterinaire??''), categorie: String(r.categorie??'') });
                   setAddOpen('vaccinations');
                 } : undefined}
@@ -5558,7 +5574,7 @@ function AnimalFichePageInner() {
                   <EditionVermifuge record={r} champs={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]} saving={savingHealth}
                     onCancel={fermer} onSave={async (d, o) => { if (await updateVermifuge(r.id, d, o)) fermer(); }} />
                 )}
-                onRappel={canWriteSante ? ()=>{
+                onRappel={canWriteSante && !soinRemplace('vermifuges', r, health.vermifuges) ? ()=>{
                   setRappelPrefill({ produit: String(r.produit??''), dosage: String(r.dosage??''), frequence: String(r.frequence??'') });
                   setAddOpen('vermifuges');
                 } : undefined}
@@ -5583,7 +5599,7 @@ function AnimalFichePageInner() {
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('antiparasitaires',r.id)}
                 onSave={d=>updateHealthRecord('antiparasitaires',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
                 champsEdition={[{key:'produit',label:'Produit',required:true},{key:'type',label:'Type (collier, pipette…)'},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'notes',label:'Notes'}]}
-                onRappel={canWriteSante ? ()=>{
+                onRappel={canWriteSante && !soinRemplace('antiparasitaires', r, health.antiparasitaires) ? ()=>{
                   setRappelPrefill({ produit: String(r.produit??''), type: String(r.type??''), frequence: String(r.frequence??'') });
                   setAddOpen('antiparasitaires');
                 } : undefined}

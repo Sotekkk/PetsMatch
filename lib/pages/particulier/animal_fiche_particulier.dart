@@ -48,6 +48,7 @@ import 'package:PetsMatch/utils/sante_couleurs.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
+import 'package:PetsMatch/utils/soin_remplace.dart';
 
 class _ContactUrgenceP {
   final TextEditingController nom;
@@ -2241,7 +2242,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
                 onDelete: () => _deleteRecord('vaccinations', r['id'], _vaccinations),
                   onEdit: r['source'] == 'veterinaire' ? null : () => _showVaccinationSheet(existant: r),
-                onRappel: () => _showVaccinationSheet(rappelDe: r),
+                onRappel: soinRemplace('vaccinations', r, _vaccinations) ? null : () => _showVaccinationSheet(rappelDe: r),
                 onTap: () => _showRecordDetail('Vaccination', r, [
                   ('Vaccin', 'vaccin'), ('Date', 'date'), ('Rappel', 'date_rappel'),
                   ('N° de lot', 'lot'), ('Vétérinaire', 'veterinaire'),
@@ -2260,7 +2261,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
                 onDelete: () => _deleteRecord('vermifuges', r['id'], _vermifuges),
                   onEdit: r['source'] == 'veterinaire' ? null : () => _showVermifugeSheet(existant: r),
-                onRappel: () => _showVermifugeSheet(prefill: r),
+                onRappel: soinRemplace('vermifuges', r, _vermifuges) ? null : () => _showVermifugeSheet(prefill: r),
                 onTap: () => _showRecordDetail('Vermifuge', r, [
                   ('Produit', 'produit'), ('Dosage', 'dosage'), ('Date', 'date'),
                   ('Rappel', 'date_rappel'), ('Notes', 'notes'),
@@ -2279,7 +2280,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
                 onDelete: () => _deleteRecord('antiparasitaires', r['id'], _antiparasitaires),
                   onEdit: r['source'] == 'veterinaire' ? null : () => _showAntiparasitaireSheet(existant: r),
-                onRappel: () => _showAntiparasitaireSheet(prefill: r),
+                onRappel: soinRemplace('antiparasitaires', r, _antiparasitaires) ? null : () => _showAntiparasitaireSheet(prefill: r),
                 onTap: () => _showRecordDetail('Antiparasitaire', r, [
                   ('Produit', 'produit'), ('Type', 'type'), ('Fréquence', 'frequence'),
                   ('Date', 'date'), ('Rappel', 'date_rappel'), ('Notes', 'notes'),
@@ -2889,6 +2890,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       ss(() => dateRappel = date!.add(Duration(days: days)));
     }
 
+    // Ligne sans rappel : calculé dès l'ouverture d'après la date et la fréquence.
+    final nInit = int.tryParse(frequenceValeur.text.trim());
+    if (existant != null && dateRappel == null && date != null && nInit != null && nInit > 0) {
+      dateRappel = date!.add(Duration(days: frequenceUnite == 'jour' ? nInit : frequenceUnite == 'semaine' ? nInit * 7 : nInit * 30));
+    }
+
     _openSheet(existant != null ? 'Modifier le vermifuge' : 'Ajouter un vermifuge', (ss) => [
       _SFld(ctrl: produit, label: 'Produit *', hint: 'Ex: Milbemax, Drontal...'),
       _SFld(ctrl: dosage, label: 'Dosage', hint: 'Ex: 1 comprimé'),
@@ -2966,6 +2973,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       if (n == null || n <= 0) return;
       final days = frequenceUnite == 'jour' ? n : frequenceUnite == 'semaine' ? n * 7 : n * 30;
       ss(() => dateRappel = date!.add(Duration(days: days)));
+    }
+
+    // Ligne sans rappel : calculé dès l'ouverture d'après la date et la fréquence.
+    final nInit = int.tryParse(frequenceValeur.text.trim());
+    if (existant != null && dateRappel == null && date != null && nInit != null && nInit > 0) {
+      dateRappel = date!.add(Duration(days: frequenceUnite == 'jour' ? nInit : frequenceUnite == 'semaine' ? nInit * 7 : nInit * 30));
     }
 
     _openSheet(existant != null ? 'Modifier l\'antiparasitaire' : 'Ajouter un antiparasitaire', (ss) => [

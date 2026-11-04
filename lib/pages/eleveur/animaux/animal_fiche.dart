@@ -68,6 +68,7 @@ import 'package:PetsMatch/utils/sante_couleurs.dart';
 import 'package:PetsMatch/utils/reproducteurs.dart';
 import 'package:PetsMatch/widgets/pro/ordonnance_editeur_page.dart';
 import 'package:PetsMatch/widgets/pro/chirurgie_cr_page.dart';
+import 'package:PetsMatch/utils/soin_remplace.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
 
@@ -6270,14 +6271,16 @@ class _SanteListState extends State<_SanteList> {
                             ? (widget.vetMode && d['vet_id']?.toString() == myUid)
                             : !widget.vetMode);
                         final canEdit = !isVetEntry && !widget.vetMode;
+                        // Soin déjà renouvelé : ni « + Rappel » ni relance à couper sur l'ancienne ligne.
+                        final renouvele = soinRemplace(widget.collection, d, _data);
                         return _SanteCard(
                           title: _title(d), data: d, icon: widget.icon,
                           onDelete: () => _delete(d['id']?.toString() ?? ''),
                           onEdit: canEdit ? () => _edit(d) : null,
-                          onRappel: ((!widget.vetMode || widget.canWrite) && ['vaccinations', 'vermifuges', 'antiparasitaires'].contains(widget.collection))
+                          onRappel: ((!widget.vetMode || widget.canWrite) && !renouvele && ['vaccinations', 'vermifuges', 'antiparasitaires'].contains(widget.collection))
                               ? () => _addRappel(d) : null,
                           // Couper les relances : réservé au propriétaire.
-                          canMute: !widget.vetMode,
+                          canMute: !widget.vetMode && !renouvele,
                           onEtape: (canEdit && widget.canWrite && widget.collection == 'traitements')
                               ? () => _addEtape(d) : null,
                           collection: widget.collection,
@@ -8116,7 +8119,15 @@ class AddVermifugeDialogState extends State<AddVermifugeDialog> {
       _options.dureeJours = int.tryParse('${e['duree_jours'] ?? e['rappel_duree_jours'] ?? ''}') ?? 1;
       _options.rappel = e['rappel_actif'] == true;
       _options.heures.addAll(((e['rappel_heures'] as List?) ?? const []).map((h) => h.toString()));
+      // Ligne sans rappel : calculé dès l'ouverture d'après la date et la fréquence.
+      _dateRappel ??= _rappelCalcule();
     }
+  }
+
+  DateTime? _rappelCalcule() {
+    final n = int.tryParse(_frequenceValeur.text.trim());
+    if (_date == null || n == null || n <= 0) return null;
+    return _date!.add(Duration(days: _frequenceUnite == 'jour' ? n : _frequenceUnite == 'semaine' ? n * 7 : n * 30));
   }
 
   String? get _frequenceLabel {
@@ -8274,6 +8285,11 @@ class AddAntiparasitaireDialogState extends State<AddAntiparasitaireDialog> {
       if (f != null) { _frequenceValeur.text = f.$1; _frequenceUnite = f.$2; }
       _date = DateTime.tryParse(e['date']?.toString() ?? '');
       _dateRappel = DateTime.tryParse(e['date_rappel']?.toString() ?? '');
+      // Ligne sans rappel : calculé dès l'ouverture d'après la date et la fréquence.
+      final n = int.tryParse(_frequenceValeur.text.trim());
+      if (_dateRappel == null && _date != null && n != null && n > 0) {
+        _dateRappel = _date!.add(Duration(days: _frequenceUnite == 'jour' ? n : _frequenceUnite == 'semaine' ? n * 7 : n * 30));
+      }
     }
   }
 

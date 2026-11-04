@@ -12,6 +12,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/sante_couleurs.dart';
 import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
+import 'package:PetsMatch/utils/soin_remplace.dart';
 
 class AnimalFichePensionPage extends StatefulWidget {
   final String animalId;
@@ -860,7 +861,7 @@ class _SanteTab extends StatelessWidget {
             sub: v['dosage']?.toString() ?? v['remarques']?.toString(),
             date: fmtDate(v['date'] as String?),
             extra: v['date_rappel'] != null ? 'Rappel : ${fmtDate(v['date_rappel'] as String?)}' : null,
-            onRappel: onAddVermifuge == null ? null : () => onAddVermifuge!(renouvellementDe: v),
+            onRappel: onAddVermifuge == null || soinRemplace('vermifuges', v, vermifuges) ? null : () => onAddVermifuge!(renouvellementDe: v),
           ),
         ),
         _HealthSection(
@@ -874,7 +875,7 @@ class _SanteTab extends StatelessWidget {
             sub: a['type']?.toString(),
             date: fmtDate(a['date'] as String?),
             extra: a['date_rappel'] != null ? 'Rappel : ${fmtDate(a['date_rappel'] as String?)}' : null,
-            onRappel: onAddAntiparasitaire == null ? null : () => onAddAntiparasitaire!(renouvellementDe: a),
+            onRappel: onAddAntiparasitaire == null || soinRemplace('antiparasitaires', a, antiparasitaires) ? null : () => onAddAntiparasitaire!(renouvellementDe: a),
           ),
         ),
         _HealthSection(
