@@ -75,7 +75,13 @@ export default function DevisPage() {
 }
 
 function DevisPageInner() {
-  const { user, userData, loading } = useAuth();
+  const { user, userData, loading, availableProfiles, activeProfileId: activeProfileIdAuth } = useAuth();
+  // Nom du PROFIL actif (clinique, élevage…), pas celui du compte : un même
+  // compte a plusieurs profils (ex. élevage + vétérinaire).
+  const nomProfilActif = (() => {
+    const p = availableProfiles.find(x => x.id === activeProfileIdAuth);
+    return (p?.nom ?? '').trim() || `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim();
+  })();
   const router = useRouter();
   const activeProfileId = useActiveProfile();
   // Gating Premium/Team demandé pour l'envoi email — seul le plan garde a
@@ -514,7 +520,7 @@ function DevisPageInner() {
         if (errU || !upd) { setError(errU?.message ?? 'Devis déjà signé par le client : modification impossible.'); return; }
         const tok = await syncContratDocument(upd as Devis, statut);
         if (tok) setDocTokens(prev => ({ ...prev, [avant.id]: tok }));
-        if (statut === 'envoye') await signerDevisPro(avant.id, user.uid, userData?.nameElevage || user.displayName || '', maSig).catch(() => false);
+        if (statut === 'envoye') await signerDevisPro(avant.id, user.uid, (nomProfilActif || userData?.nameElevage) || user.displayName || '', maSig).catch(() => false);
         if (envoyer && avant.statut === 'brouillon' && clientUid) {
           await supabase.from('notifications').insert({
             uid: clientUid, type: 'devis_recu', title: 'Vous avez reçu un devis',
@@ -537,7 +543,7 @@ function DevisPageInner() {
 
       const docToken = await syncContratDocument(data as Devis, row.statut);
       if (docToken) setDocTokens(prev => ({ ...prev, [data.id]: docToken }));
-      if (envoyer) await signerDevisPro(data.id, user.uid, userData?.nameElevage || user.displayName || '', maSig).catch(() => false);
+      if (envoyer) await signerDevisPro(data.id, user.uid, (nomProfilActif || userData?.nameElevage) || user.displayName || '', maSig).catch(() => false);
 
       if (envoyer && clientUid) {
         await supabase.from('notifications').insert({
@@ -567,7 +573,7 @@ function DevisPageInner() {
     await supabase.from('devis').update({ statut: 'envoye', updated_at: new Date().toISOString() }).eq('id', d.id);
     const docToken = await syncContratDocument(d, 'envoye');
     if (docToken) setDocTokens(prev => ({ ...prev, [d.id]: docToken }));
-    if (user) await signerDevisPro(d.id, user.uid, userData?.nameElevage || user.displayName || '', maSig).catch(() => false);
+    if (user) await signerDevisPro(d.id, user.uid, (nomProfilActif || userData?.nameElevage) || user.displayName || '', maSig).catch(() => false);
     const signingUrl = docToken ? `/signer-contrat/${docToken}` : `/devis/${d.token_acceptation}`;
     if (d.client_uid) {
       await supabase.from('notifications').insert({
@@ -587,7 +593,7 @@ function DevisPageInner() {
   async function envoyerParEmail(d: Devis) {
     if (!d.email_client) return;
     setSendingEmailId(d.id);
-    const proNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre professionnel';
+    const proNom = (nomProfilActif || userData?.nameElevage) || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre professionnel';
     const token = docTokens[d.id];
     const devisUrl = `${window.location.origin}${token ? `/signer-contrat/${token}` : `/devis/${d.token_acceptation}`}`;
     try {

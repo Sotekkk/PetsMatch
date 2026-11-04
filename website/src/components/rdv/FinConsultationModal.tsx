@@ -35,7 +35,13 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
   metier?: 'veterinaire' | 'sante' | 'toilettage' | 'education';
   onPreparerFacture?: () => void;
 }) {
-  const { user, userData } = useAuth();
+  const { user, userData, availableProfiles, activeProfileId: activeProfileIdAuth } = useAuth();
+  // Nom du PROFIL actif (clinique, élevage…), pas celui du compte : un même
+  // compte a plusieurs profils (ex. élevage + vétérinaire).
+  const nomProfilActif = (() => {
+    const p = availableProfiles.find(x => x.id === activeProfileIdAuth);
+    return (p?.nom ?? '').trim() || `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim();
+  })();
   const router = useRouter();
   const osteo = metier === 'sante';
   const toilettage = metier === 'toilettage';
@@ -270,7 +276,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
           ...((toilettage || education) && docs.animalIdPrincipal ? [nom(docs.animalIdPrincipal)] : [])])];
         const ok = pieces.length === 0 ? true : await envoyerPiecesParEmail(pieces, {
           emailParDefaut: (facture?.email_client as string | null) ?? null, destinataireNom: clientNom,
-          expediteur: userData?.nameElevage || praticien, animalNom: noms.join(', '),
+          expediteur: (nomProfilActif || userData?.nameElevage) || praticien, animalNom: noms.join(', '),
           animalId: docs.animalIdPrincipal ?? docs.crs[0]?.animal_id ?? docs.seances?.find(s => s.animal_id)?.animal_id ?? null,
         });
         if (!ok) return;
@@ -286,7 +292,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
             if (r2?.client_uid) {
               await supabase.from('notifications').insert({
                 uid: r2.client_uid, type: 'contrat_invite', title: 'Contrat de prestation à signer',
-                body: `${userData?.nameElevage || 'Votre professionnel'} vous envoie le contrat — vérifiez et signez`,
+                body: `${(nomProfilActif || userData?.nameElevage) || 'Votre professionnel'} vous envoie le contrat — vérifiez et signez`,
                 ...(r2.client_profile_id ? { profile_id: r2.client_profile_id } : {}),
                 data: { token: c.token, url: `/signer-contrat/${c.token}` }, read: false,
               });
@@ -306,14 +312,14 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
           const { data: cc } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: rdvId });
           const secours = (cc as { email?: string } | null)?.email || (facture?.email_client as string | null) || null;
           for (const d of devisAEnvoyer) {
-            const ok = await envoyerDevisRdv(d, { proNom: userData?.nameElevage || praticien, emailSecours: secours, uid: user.uid });
+            const ok = await envoyerDevisRdv(d, { proNom: (nomProfilActif || userData?.nameElevage) || praticien, emailSecours: secours, uid: user.uid });
             if (!ok && !d.client_uid) alert(`Devis de ${d.total_ttc.toFixed(2)} € : e-mail non envoyé (adresse manquante ou erreur).`);
           }
         }
         // Trace de l'envoi : affichée dans le dossier de la séance.
         await supabase.from('rdv').update({ documents_envoyes_le: new Date().toISOString() }).eq('id', rdvId);
         // Éducateur : la famille est prévenue dans l'appli à l'envoi.
-        if (education) await notifierFamilleSeances(seancesEdu.filter(s => coches[`edu:${s.id}`]), userData?.nameElevage || praticien).catch(() => {});
+        if (education) await notifierFamilleSeances(seancesEdu.filter(s => coches[`edu:${s.id}`]), (nomProfilActif || userData?.nameElevage) || praticien).catch(() => {});
       }
       await onTerminer?.();
       onDone();

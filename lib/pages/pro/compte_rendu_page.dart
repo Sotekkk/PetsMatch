@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/tarif_acte.dart';
 import 'dart:typed_data';
 import 'dart:io';
 import 'package:PetsMatch/utils/devis_rdv.dart';
@@ -611,7 +612,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       if (cr == null) continue;
       final nom = a['nom']?.toString() ?? '';
       final c = await _carnetDuCr(id, cr);
-      final r = await _lignesFacture(animalId: id, prefixe: nom,
+      final r = await _lignesFacture(animalId: id, prefixe: nom, rdvId: rdvId,
           motif: (cr['motif'] ?? a['motif'] ?? '').toString(), poids: (cr['poids'] as num?)?.toDouble(),
           actesRealises: [for (final x in (cr['actes'] as List? ?? const [])) x.toString()],
           vaccins: c.vaccins, traitements: c.traitements,
@@ -1591,7 +1592,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     List<_ProduitCr> produits = const [],
   }) async {
     final (:lignes, :tarifs, :an) = await _lignesFacture(animalId: animalId, motif: motif, poids: poids,
-        actesRealises: actesRealises, vaccins: vaccins, traitements: traitements, produits: produits);
+        actesRealises: actesRealises, vaccins: vaccins, traitements: traitements, produits: produits, rdvId: rdvId);
     await _feuilleFacture(lignes: lignes, tarifs: tarifs, an: an, animalId: animalId, rdvId: rdvId, owner: owner,
         titre: 'Facturer cette consultation ?');
   }
@@ -1602,15 +1603,27 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   Future<({List<FacturePrefillLigne> lignes, Map<String, dynamic> tarifs, Map<String, dynamic>? an})> _lignesFacture({
     required String animalId, required String motif, double? poids, required List<String> actesRealises,
     required List<_VaccinCr> vaccins, required List<_TraitementCr> traitements,
-    List<_ProduitCr> produits = const [], String prefixe = '',
+    List<_ProduitCr> produits = const [], String prefixe = '', String? rdvId,
   }) async {
     // Tarifs du vétérinaire + infos animal pour choisir la bonne ligne.
     Map<String, dynamic> tarifs = {};
     Map<String, dynamic>? an;
+    // « Autres actes » (détartrage…) et RDV « Intervention » (ligne de
+    // l'intervention, frais d'hospitalisation si récupération un autre jour).
+    var extras = <TarifExtra>[];
+    var intervention = false;
+    var jours = 0;
     try {
       if (_profilPro != null) {
-        final t = await _supa.from('user_profiles_complet').select('tarifs_veto').eq('id', _profilPro!).maybeSingle();
+        final t = await _supa.from('user_profiles_complet').select('tarifs_veto, tarifs_veto_extra').eq('id', _profilPro!).maybeSingle();
         if (t?['tarifs_veto'] is Map) tarifs = Map<String, dynamic>.from(t!['tarifs_veto'] as Map);
+        extras = extrasDepuis(t?['tarifs_veto_extra']);
+      }
+      final idRdv = rdvId ?? (widget.rdv?['id'] ?? _rdvSource?['id'])?.toString();
+      if (idRdv != null) {
+        final r = await _supa.from('rdv').select('intervention_type, date_heure, heure_recuperation').eq('id', idRdv).maybeSingle();
+        intervention = r?['intervention_type'] != null;
+        if (intervention) jours = joursHospitalisation(r?['date_heure'], r?['heure_recuperation']);
       }
       an = await _supa.from('animaux').select('nom, espece, sexe, poids, client_clinique_id').eq('id', animalId).maybeSingle();
     } catch (_) {}
@@ -1636,7 +1649,19 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     // 1. Le RDV (consultation / urgence / visite à domicile)
     final m = motif.toLowerCase();
     final cleRdv = m.contains('urgen') ? 'consultation_urgence' : m.contains('domicile') ? 'visite_domicile' : 'consultation';
-    ligne(motif.isEmpty ? 'Consultation' : motif, tarif(cleRdv));
+    // Motif identique à un de « mes autres actes » (détartrage…) : son prix ;
+    // intervention de castration / stérilisation : la grille ; sinon consultation.
+    final prixMotif = prixActeExtra(motif, extras, kg, souple: intervention);
+    final sterilisation = RegExp(r'castr|st[ée]ril').hasMatch(m)
+        ? (espece == 'chat' ? tarif(femelle ? 'sterilisation_chatte' : 'castration_chat')
+            : tarif('${femelle ? 'sterilisation_chienne' : 'castration_chien'}_${tranche()}'))
+        : null;
+    ligne(motif.isEmpty ? 'Consultation' : motif, prixMotif ?? (intervention ? sterilisation : tarif(cleRdv)));
+    if (jours > 0) {
+      final ttc = tarif('hospitalisation_jour') ?? prixActeExtra('Hospitalisation', extras, kg, souple: true);
+      lignes.add(FacturePrefillLigne(designation: '${pre}Frais d’hospitalisation ($jours jour${jours > 1 ? 's' : ''})',
+          prixHT: ttc == null ? 0 : _ht(ttc), quantite: jours.toDouble(), tauxTVA: 20));
+    }
     // 2. Actes réalisés (tarif connu si dans la grille, sinon à compléter)
     for (final a in actesRealises) {
       if (a == 'Examen clinique') continue; // compris dans la consultation
@@ -1648,7 +1673,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         prix = espece == 'chat' ? tarif(femelle ? 'sterilisation_chatte' : 'castration_chat')
             : tarif('${femelle ? 'sterilisation_chienne' : 'castration_chien'}_${tranche()}');
       }
-      ligne(a, prix);
+      ligne(a, prix ?? prixActeExtra(a, extras, kg));
     }
     // 3. Produits : vaccins et traitements (prix de vente de la pharmacie)
     for (final v in vaccins) {
@@ -2894,7 +2919,10 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.isPension ? 'Compte rendu' : 'CR & Ordonnances',
+            Text(widget.isPension ? 'Compte rendu'
+                : (widget.rdv ?? _rdvSource)?['intervention_type'] != null
+                    ? 'Soins et traitements — ${(widget.rdv ?? _rdvSource)?['motif'] ?? 'Intervention'}'
+                    : 'CR & Ordonnances',
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
             if (widget.clientName.isNotEmpty)
               Text(widget.clientName,
@@ -2929,11 +2957,23 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   // ── Onglet Compte rendu ──────────────────────────────────────────────────────
 
   Widget _buildCompteRenduTab() {
+    final intervention = (widget.rdv ?? _rdvSource)?['intervention_type'] != null;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Ouvert depuis une intervention : ce qu'on saisit ici.
+          if (intervention)
+            Container(
+              width: double.infinity, margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: const Color(0xFFF1F7F8), borderRadius: BorderRadius.circular(10)),
+              child: const Text(
+                  'Saisissez ici les traitements (posologie matin / soir, durée, administré ou prescrit), vaccins et soins de '
+                  'l’intervention : ils vont au carnet, l’ordonnance est préparée et la facture reprend l’intervention à votre tarif. '
+                  'Le compte rendu opératoire se rédige à part, dans le dossier de l’intervention (il reprend ces soins).',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF0C5C6C))),
+            ),
           if (_visiteMulti) _barreVisite(),
           _bandeauSignature(),
           if (_saisieActes && _crs.any((c) => c['statut'] == 'valide'))

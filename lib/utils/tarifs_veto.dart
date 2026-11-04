@@ -29,6 +29,9 @@ const kTarifsVetoGroupes = <(String, List<(String, String)>)>[
     ('sterilisation_chienne_45',  '25 à 45 kg'),
     ('sterilisation_chienne_45p', 'Plus de 45 kg'),
   ]),
+  ('Hospitalisation', [
+    ('hospitalisation_jour', 'Hospitalisation (par jour)'),
+  ]),
 ];
 
 /// Libellé complet d'une prestation (« Castration chien — 10 à 25 kg »).

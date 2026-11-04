@@ -28,6 +28,9 @@ export const TARIFS_VETO_GROUPES: { groupe: string; items: { key: string; label:
     { key: 'sterilisation_chienne_45', label: '25 à 45 kg' },
     { key: 'sterilisation_chienne_45p', label: 'Plus de 45 kg' },
   ] },
+  { groupe: 'Hospitalisation', items: [
+    { key: 'hospitalisation_jour', label: 'Hospitalisation (par jour)' },
+  ] },
 ];
 
 /** Libellé complet (« Castration chien — 10 à 25 kg »). */

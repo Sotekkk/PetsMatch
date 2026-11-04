@@ -1,5 +1,6 @@
 'use client';
 
+import { prixActeExtra, extrasDepuis, type TarifExtra } from '@/lib/tarif-acte';
 import { soinsDuJour } from '@/lib/soins-du-jour';
 import { AideEtapes } from '@/components/animaux/EtapesTraitement';
 import { useEspaceClinique } from '@/lib/espace-clinique';
@@ -351,10 +352,22 @@ type LigneFacture = { description: string; quantite: number; prixUnitaire: numbe
  *  modifie (actes déjà inscrits au carnet) — voir modifierCr. */
 const TITRES_CR_CONSERVES = ['Vaccins', 'Vermifuge', 'Antiparasitaire', 'Allergie / pathologie', 'Chirurgie', 'Hospitalisation', 'Examen', 'Traitement', 'Produits délivrés'];
 
-function lignesConsultation({ an, motif, actes, vaccins, traitements, poids, produits, tarif, prixPharma, prefixe = '' }: {
+/** Jours d'hospitalisation d'une intervention : du jour du dépôt au jour de la récupération (0 si le même jour). */
+function joursHospit(r: { date_heure?: string; heure_recuperation?: string | null } | null): number {
+  if (!r?.date_heure || !r.heure_recuperation) return 0;
+  const jour = (d: string) => Date.parse(`${new Date(d).toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' })}T12:00:00`);
+  return Math.max(0, Math.round((jour(r.heure_recuperation) - jour(r.date_heure)) / 86400000));
+}
+function lignesConsultation({ an, motif, actes, vaccins, traitements, poids, produits, tarif, prixPharma, prefixe = '', extras = [], intervention = false, joursHospitalisation = 0 }: {
   an: { espece?: string | null; sexe?: string | null; poids?: number | string | null };
   motif: string; actes: string[]; vaccins: VaccinCr[]; traitements: TraitementCr[]; poids: number | null; produits: ProduitCr[];
   tarif: (k: string) => number | null; prixPharma: (nom: string) => number | null; prefixe?: string;
+  /** « Autres actes » (Mon profil) : prix d'un motif / acte qui y correspond (détartrage…). */
+  extras?: TarifExtra[];
+  /** RDV « Intervention » : la 1re ligne est l'intervention (pas une consultation). */
+  intervention?: boolean;
+  /** Hospitalisation (récupération un autre jour que le dépôt) : jours facturés. */
+  joursHospitalisation?: number;
 }): LigneFacture[] {
   const pre = prefixe ? `${prefixe} — ` : '';
   const espece = (an.espece ?? '').toLowerCase();
@@ -364,7 +377,19 @@ function lignesConsultation({ an, motif, actes, vaccins, traitements, poids, pro
   const lignes: LigneFacture[] = [];
   const ligne = (d: string, ttc: number | null) => lignes.push({ description: pre + d, quantite: 1, prixUnitaire: ttc == null ? 0 : Math.round(ttc / 1.2 * 100) / 100, tva: 20 });
   const m = motif.toLowerCase();
-  ligne(motif || 'Consultation', tarif(m.includes('urgen') ? 'consultation_urgence' : m.includes('domicile') ? 'visite_domicile' : 'consultation'));
+  // Motif qui correspond à un de « mes autres actes » (détartrage…) : son prix ;
+  // intervention de castration / stérilisation : la grille ; sinon consultation.
+  const prixMotif = prixActeExtra(motif, extras, kg, intervention);
+  const sterilisation = /castr|st[ée]ril/.test(m)
+    ? (espece === 'chat' ? tarif(femelle ? 'sterilisation_chatte' : 'castration_chat') : tarif(`${femelle ? 'sterilisation_chienne' : 'castration_chien'}_${tranche}`))
+    : null;
+  ligne(motif || 'Consultation', prixMotif ?? (intervention ? sterilisation
+    : tarif(m.includes('urgen') ? 'consultation_urgence' : m.includes('domicile') ? 'visite_domicile' : 'consultation')));
+  if (joursHospitalisation > 0) {
+    const ttc = tarif('hospitalisation_jour') ?? prixActeExtra('Hospitalisation', extras, kg, true);
+    lignes.push({ description: `${pre}Frais d’hospitalisation (${joursHospitalisation} jour${joursHospitalisation > 1 ? 's' : ''})`,
+      quantite: joursHospitalisation, prixUnitaire: ttc == null ? 0 : Math.round(ttc / 1.2 * 100) / 100, tva: 20 });
+  }
   for (const a of actes) {
     if (a === 'Examen clinique' || (a === 'Vaccination' && vaccins.length)) continue;
     let prix: number | null = null;
@@ -372,7 +397,7 @@ function lignesConsultation({ an, motif, actes, vaccins, traitements, poids, pro
     if (a === 'Pose de puce') prix = tarif('identification');
     if (a === 'Castration / stérilisation') prix = espece === 'chat' ? tarif(femelle ? 'sterilisation_chatte' : 'castration_chat')
       : tarif(`${femelle ? 'sterilisation_chienne' : 'castration_chien'}_${tranche}`);
-    ligne(a, prix);
+    ligne(a, prix ?? prixActeExtra(a, extras, kg));
   }
   for (const v of vaccins) ligne(`Vaccin ${v.nom}${v.lot ? ` (lot ${v.lot})` : ''}`, prixPharma(v.nom) ?? tarif(espece === 'chat' ? 'vaccin_chat' : 'vaccin_chien'));
   for (const tr of traitements) ligne(tr.nom, prixPharma(tr.nom));
@@ -1099,6 +1124,14 @@ function PatientDetailPageInner() {
   // RDV à plusieurs animaux (?crRdv=<id>, « Gérer mes RDV ») : le compte rendu
   // de cet animal est rattaché au RDV (rdv_id) pour la facture de la visite.
   const [crRdvId, setCrRdvId] = useState<string | null>(null);
+  // Compte rendu d'un RDV « Intervention » : soins et traitements de l'intervention
+  // (le CR opératoire se rédige à part, dans le dossier de l'intervention).
+  const [crIntervention, setCrIntervention] = useState<string | null>(null);
+  useEffect(() => {
+    if (!crRdvId) { setCrIntervention(null); return; }
+    supabase.from('rdv').select('intervention_type, motif').eq('id', crRdvId).maybeSingle()
+      .then(({ data }) => { const d = data as { intervention_type?: string | null; motif?: string | null } | null; setCrIntervention(d?.intervention_type ? (d.motif || 'Intervention') : null); });
+  }, [crRdvId]);
   // « Compte rendu fait » depuis un RDV : ce compte rendu, ouvert dans Consultations.
   const [crCible, setCrCible] = useState<string | null>(() => searchParams.get('cr'));
   // Ma signature (signatures_pro), apposée sur les CR et ordonnances.
@@ -2074,10 +2107,15 @@ function PatientDetailPageInner() {
 
   async function proposerFacture(motif: string, actes: string[], vaccins: VaccinCr[], traitements: TraitementCr[], poids: number | null, produits: ProduitCr[] = [], rdvFacture?: string) {
     if (!activeProfileId || !animal) return;
-    const [{ data: t }, { data: ph }] = await Promise.all([
-      supabase.from('user_profiles_complet').select('tarifs_veto').eq('id', activeProfileId).maybeSingle(),
+    const rdvRef = rdvFacture ?? crRdvId;
+    const [{ data: t }, { data: ph }, { data: rv }] = await Promise.all([
+      supabase.from('user_profiles_complet').select('tarifs_veto, tarifs_veto_extra').eq('id', activeProfileId).maybeSingle(),
       supabase.from('inventaire_items').select('nom, prix_vente').eq('eleveur_profile_id', activeProfileId),
+      rdvRef ? supabase.from('rdv').select('intervention_type, date_heure, heure_recuperation').eq('id', rdvRef).maybeSingle() : Promise.resolve({ data: null }),
     ]);
+    const extras = extrasDepuis((t as { tarifs_veto_extra?: unknown } | null)?.tarifs_veto_extra);
+    const intervention = !!(rv as { intervention_type?: string | null } | null)?.intervention_type;
+    const joursHospitalisation = joursHospit(rv as { date_heure?: string; heure_recuperation?: string | null } | null);
     const tarifs = (t?.tarifs_veto ?? {}) as Record<string, unknown>;
     // Aucune grille saisie : les prix seraient à 0 → proposer de la remplir.
     if (Object.values(tarifs).every(v => !(parseFloat(String(v ?? '').replace(',', '.')) > 0))
@@ -2091,7 +2129,7 @@ function PatientDetailPageInner() {
       const o = ((ph ?? []) as { nom: string; prix_vente: number | null }[]).find(x => x.nom.toLowerCase() === nom.toLowerCase());
       return o?.prix_vente ?? null;
     };
-    const lignes = lignesConsultation({ an: animal, motif, actes, vaccins, traitements, poids, produits, tarif, prixPharma });
+    const lignes = lignesConsultation({ an: animal, motif, actes, vaccins, traitements, poids, produits, tarif, prixPharma, extras, intervention, joursHospitalisation });
     const total = lignes.reduce((s, l) => s + l.prixUnitaire * 1.2, 0);
     const aCompleter = lignes.filter(l => l.prixUnitaire === 0).length;
     const recap = lignes.map(l => `• ${l.description} : ${l.prixUnitaire ? `${(l.prixUnitaire * 1.2).toFixed(2)} €` : 'à compléter'}`).join('\n');
@@ -2166,7 +2204,7 @@ function PatientDetailPageInner() {
    *  lignes de chaque animal (son compte rendu validé et ses actes du jour). */
   async function facturerVisite(rdvId: string) {
     if (!activeProfileId || !user) return;
-    const { data: r } = await supabase.from('rdv').select('id, animaux_detail, client_uid, client_profile_id, client_nom_manuel, client_email_manuel, client_telephone_manuel')
+    const { data: r } = await supabase.from('rdv').select('id, animaux_detail, intervention_type, date_heure, heure_recuperation, client_uid, client_profile_id, client_nom_manuel, client_email_manuel, client_telephone_manuel')
       .eq('id', rdvId).maybeSingle();
     const detail = animauxDetailRdv((r ?? {}) as { animaux_detail?: unknown });
     if (!r || detail.length === 0) return;
@@ -2175,7 +2213,7 @@ function PatientDetailPageInner() {
     const [{ data: crsData }, { data: ans }, { data: t }, { data: ph }, { data: deja }] = await Promise.all([
       idsCr.length ? supabase.from('comptes_rendus').select('*').in('id', idsCr).order('created_at') : Promise.resolve({ data: [] }),
       supabase.from('animaux').select('id, nom, espece, sexe, poids, identification').in('id', detail.map(a => a.id)),
-      supabase.from('user_profiles_complet').select('tarifs_veto').eq('id', activeProfileId).maybeSingle(),
+      supabase.from('user_profiles_complet').select('tarifs_veto, tarifs_veto_extra').eq('id', activeProfileId).maybeSingle(),
       supabase.from('inventaire_items').select('nom, prix_vente').eq('eleveur_profile_id', activeProfileId),
       supabase.from('factures').select('id').eq('source_rdv_id', rdvId).limit(1),
     ]);
@@ -2197,7 +2235,9 @@ function PatientDetailPageInner() {
           .map(v => ({ nom: v.vaccin ?? 'Vaccin', lot: v.lot ?? '', date: String(v.date).slice(0, 10), rappel: v.date_rappel ? String(v.date_rappel).slice(0, 10) : null })),
         traitements: [...new Set(((trt ?? []) as { nom: string | null }[]).map(x => x.nom ?? '').filter(Boolean))]
           .map(n => ({ nom: n, type: 'medicament', phases: [], rappels: false, notes: '' })),
-        tarif, prixPharma,
+        tarif, prixPharma, extras: extrasDepuis((t as { tarifs_veto_extra?: unknown } | null)?.tarifs_veto_extra),
+        intervention: !!(r as { intervention_type?: string | null }).intervention_type,
+        joursHospitalisation: joursHospit(r as { date_heure?: string; heure_recuperation?: string | null }),
       }).map(l => ({ ...l, animalId: a.id, animalNom: nom, animalIdentification: an?.identification ?? null })));
       noms.push(nom);
     }
@@ -4805,7 +4845,7 @@ function PatientDetailPageInner() {
           <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-base text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                {addingType === 'cr' && (crEdition ? 'Modifier le compte rendu' : 'Rédiger un compte rendu')}
+                {addingType === 'cr' && (crEdition ? 'Modifier le compte rendu' : crIntervention ? `Soins et traitements — ${crIntervention}` : 'Rédiger un compte rendu')}
                 {addingType === 'vaccin' && '💉 Nouveau vaccin'}
                 {addingType === 'visite' && '🩺 Nouvelle visite'}
                 {addingType === 'traitement' && '💊 Nouveau traitement'}
@@ -4818,6 +4858,13 @@ function PatientDetailPageInner() {
               </h3>
               <button onClick={() => { if (retourCr) revenirAuCr(retourCr); else setAddingType(null); }} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
             </div>
+            {addingType === 'cr' && crIntervention && !crEdition && (
+              <p className="text-xs rounded-xl bg-[#F1F7F8] text-[#0C5C6C] px-3 py-2">
+                Saisissez ici les traitements (posologie matin / soir, durée, administré ou prescrit), vaccins et soins de l’intervention :
+                ils vont au carnet, l’ordonnance est préparée et la facture reprend l’intervention à votre tarif.
+                Le compte rendu opératoire se rédige à part, dans le dossier de l’intervention (il reprend ces soins).
+              </p>
+            )}
 
             {/* Champ date commun (pas pour mesure) */}
             {addingType !== 'mesure' && (

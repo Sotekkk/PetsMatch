@@ -85,7 +85,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const mergedMeta: Record<string, unknown> = { ...meta, [sigField]: signature, [role === 'eleveur' ? 'signe_eleveur_le' : 'signe_acquereur_le']: now };
     if (role === 'eleveur' && actorUid) {
       mergedMeta.signataire_eleveur_uid = actorUid;
-      mergedMeta.signataire_eleveur_nom = actorNom ?? '';
+      // Nom du PROFIL émetteur du document (clinique, élevage…), jamais celui du
+      // compte : un même compte a plusieurs profils (ex. élevage + vétérinaire).
+      let nomProfil = '';
+      // (Cogérant qui signe pour l'élevage : son propre nom, gardé tel quel.)
+      if (doc.pro_profile_id && actorUid === doc.uid_eleveur) {
+        const { data: pp } = await supabase.from('user_profiles_complet').select('nom, firstname, lastname').eq('id', doc.pro_profile_id).maybeSingle();
+        const x = pp as { nom?: string | null; firstname?: string | null; lastname?: string | null } | null;
+        nomProfil = (x?.nom ?? '').trim() || `${x?.firstname ?? ''} ${x?.lastname ?? ''}`.trim();
+      }
+      mergedMeta.signataire_eleveur_nom = nomProfil || actorNom || '';
     }
     const bothSigned = notBlank(mergedMeta.signature_eleveur) && notBlank(mergedMeta.signature_acquereur);
     const newStatut = bothSigned ? 'signe' : (notBlank(mergedMeta.signature_eleveur) || notBlank(mergedMeta.signature_acquereur)) ? 'partiellement_signe' : 'en_attente';
