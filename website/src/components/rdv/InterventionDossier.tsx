@@ -9,7 +9,7 @@
 // Miroir appli : _dossierIntervention (pro_agenda.dart).
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { libelleIntervention, envoyerConsignesPreop, messageIntervention } from '@/lib/intervention';
+import { libelleIntervention, envoyerConsignesPreop, messageIntervention, chirurgiesAnimal, rattacherChirurgie } from '@/lib/intervention';
 
 const TEAL = '#0C5C6C';
 const VERT = '#2E7D32';
@@ -47,6 +47,8 @@ export default function InterventionDossier({ rdvId, version, onOuvrirPage, anim
   const [suivi, setSuivi] = useState('');
   const [message, setMessage] = useState('');
   const [enCours, setEnCours] = useState('');
+  // Choix du CR préopératoire existant (consultation d'un autre jour).
+  const [choixPreop, setChoixPreop] = useState<Awaited<ReturnType<typeof chirurgiesAnimal>> | null>(null);
 
   async function charger() {
     const { data } = await supabase.from('rdv')
@@ -154,8 +156,33 @@ export default function InterventionDossier({ rdvId, version, onOuvrirPage, anim
         {ligne('Consignes au propriétaire', r.consignes_preop ? 'Envoyées à la prise du RDV' : 'Aucune', r.consignes_preop ? VERT : GRIS,
           r.consignes_preop ? [btn('consignes', 'Renvoyer', () => action('consignes', async () => setMessage((await envoyerConsignesPreop(r.id)).message)))] : [],
           r.consignes_preop ?? undefined)}
-        {ligne('Compte rendu préopératoire', ePre, cPre, [btn('preop', chir?.preop ? 'Ouvrir' : 'Rédiger', () => ouvrirDoc('preop', 'Compte rendu préopératoire'))],
+        {ligne('Compte rendu préopératoire', ePre, cPre, [
+            btn('preop', chir?.preop ? 'Ouvrir' : 'Rédiger', () => ouvrirDoc('preop', 'Compte rendu préopératoire')),
+            ...(r.animal_id && !chir?.operatoire ? [btn('choixpreop', 'Choisir un CR pré-op existant', () => action('choixpreop', async () => {
+              const l = (await chirurgiesAnimal(r.animal_id!)).filter(c => c.id !== r.chirurgie_id && c.preop);
+              if (!l.length) setMessage('Aucun autre compte rendu préopératoire pour cet animal.'); else setChoixPreop(l);
+            }))] : []),
+          ],
           !chir?.preop || chir.preop.statut !== 'valide' ? 'À valider avant l’intervention (examen, anesthésie, consentement).' : undefined)}
+        {choixPreop && (
+          <div className="rounded-xl border border-gray-200 p-2 mb-2 space-y-1">
+            <p className="text-[11px] font-semibold text-gray-500">Reprendre pour cette intervention :</p>
+            {choixPreop.map(c => (
+              <button key={c.id} type="button" disabled={!!enCours}
+                onClick={() => action('rattacher', async () => {
+                  const err = await rattacherChirurgie(r, c.id);
+                  setChoixPreop(null);
+                  if (err) setMessage(`Non enregistré : ${err}`); else { await charger(); setMessage('Compte rendu préopératoire repris.'); }
+                })}
+                className="block w-full text-left text-xs px-2 py-1.5 rounded-lg hover:bg-[#F1F7F8]">
+                <span className="font-semibold">{c.intitule || 'Intervention'}</span>
+                {c.date ? ` · ${new Date(`${c.date}T12:00:00`).toLocaleDateString('fr-FR')}` : ''}
+                {` · CR pré-op ${c.preop?.statut === 'valide' ? 'validé' : 'brouillon'}`}
+              </button>
+            ))}
+            <button type="button" onClick={() => setChoixPreop(null)} className="text-[11px] text-gray-500 px-2">Garder un CR neuf</button>
+          </div>
+        )}
         {ligne('Admission', r.admis_le ? `Déposé à ${hm(r.admis_le)}` : 'En attente', r.admis_le ? VERT : GRIS,
           r.admis_le
             ? [btn('admis_le', 'Annuler', () => etapesApres ? setMessage('Réveil, départ ou sortie déjà notés : annulez-les d’abord.') : maj({ admis_le: null }))]

@@ -268,6 +268,14 @@ Future<void> _handleNotifNavigation(Map<String, dynamic> data) async {
     }
   }
 
+  // RDV d'intervention (consignes, réveillé, prêt, heure de récupération) :
+  // l'agenda s'ouvre directement sur la fiche de ce RDV.
+  final rdvIdNotif = (data['rdv_id'] ?? data['rdvId'])?.toString() ?? '';
+  if ((type == 'rdv_consignes_preop' || type == 'intervention_suivi') && rdvIdNotif.isNotEmpty) {
+    ctx.push(MaterialPageRoute(builder: (_) => AgendaPage(ouvrirRdvId: rdvIdNotif)));
+    return;
+  }
+
   // Décision de modération : Paramètres → Connexion et sécurité → Avertissements.
   if (type == 'moderation') {
     ctx.push(MaterialPageRoute(builder: (_) => const AvertissementsPage()));

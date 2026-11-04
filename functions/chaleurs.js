@@ -129,7 +129,7 @@ exports.sendChaleursNotifications = functions
         const animaux = await supabaseSelect("animaux",
             "sexe=eq.femelle" +
             "&sterilise=eq.false" +
-            "&statut=not.in.(sorti,decede)" +
+            "&statut=not.in.(sorti,decede,patient_clinique)" +
             "&select=id,nom,race,espece,uid_eleveur,intervalle_chaleurs_jours,date_naissance," +
             "chaleurs_responsable_uid,chaleurs_responsable_profile_id,profile_id");
 

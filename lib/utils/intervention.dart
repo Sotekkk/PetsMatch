@@ -90,6 +90,37 @@ Future<String> messageIntervention(String rdvId, String message) async {
   }
 }
 
+/// Interventions de l'animal (récentes d'abord) : choisir le CR pré-op à reprendre.
+Future<List<Map<String, dynamic>>> chirurgiesAnimal(String animalId) async {
+  try {
+    return List<Map<String, dynamic>>.from(await Supabase.instance.client.from('chirurgies')
+        .select('id, date, intitule, preop, operatoire').eq('animal_id', animalId).order('date', ascending: false).limit(15));
+  } catch (_) {
+    return [];
+  }
+}
+
+/// Rattache le RDV à une autre intervention (CR pré-op existant), datée du jour
+/// de l'intervention ; l'ancienne, restée vide, est supprimée. null si OK.
+Future<String?> rattacherChirurgie({required String rdvId, required DateTime dateHeure, String? ancienneId, required String chirurgieId}) async {
+  final supa = Supabase.instance.client;
+  final d = dateHeure.toLocal();
+  final jour = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  try {
+    await supa.from('chirurgies').update({'date': jour}).eq('id', chirurgieId);
+    await supa.from('rdv').update({'chirurgie_id': chirurgieId}).eq('id', rdvId);
+    if (ancienneId != null && ancienneId != chirurgieId) {
+      final a = await supa.from('chirurgies').select('preop, operatoire, consignes').eq('id', ancienneId).maybeSingle();
+      if (a != null && a['preop'] == null && a['operatoire'] == null && a['consignes'] == null) {
+        await supa.from('chirurgies').delete().eq('id', ancienneId);
+      }
+    }
+    return null;
+  } catch (e) {
+    return e.toString();
+  }
+}
+
 /// Intervention (chirurgies) du RDV : celle de l'animal ce jour-là (CR pré-op
 /// fait en consultation avec la date prévue), sinon une nouvelle. Renvoie son id.
 Future<String?> lierChirurgieRdv({required String rdvId, required String? animalId, required DateTime dateHeure,
@@ -101,6 +132,19 @@ Future<String?> lierChirurgieRdv({required String rdvId, required String? animal
   try {
     final ex = await supa.from('chirurgies').select('id').eq('animal_id', animalId).eq('date', jour).limit(1).maybeSingle();
     var id = ex?['id']?.toString();
+    // Sinon : CR préopératoire récent de l'animal (consultation des jours
+    // précédents), pas encore opéré — repris et daté du jour de l'intervention.
+    if (id == null) {
+      final depuis = d.subtract(const Duration(days: 60));
+      final recents = await supa.from('chirurgies').select('id, preop, operatoire').eq('animal_id', animalId)
+          .gte('date', '${depuis.year}-${depuis.month.toString().padLeft(2, '0')}-${depuis.day.toString().padLeft(2, '0')}')
+          .order('date', ascending: false).limit(10);
+      final c = (recents as List).where((x) => x['preop'] != null && x['operatoire'] == null).firstOrNull;
+      if (c != null) {
+        id = c['id'].toString();
+        await supa.from('chirurgies').update({'date': jour}).eq('id', id);
+      }
+    }
     if (id == null) {
       id = '${DateTime.now().microsecondsSinceEpoch}';
       await supa.from('chirurgies').insert({

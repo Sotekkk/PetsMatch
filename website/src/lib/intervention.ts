@@ -51,6 +51,29 @@ export async function envoyerConsignesPreop(rdvId: string): Promise<{ ok: boolea
   return { ok: true, message: `Consignes envoyées${j.email_envoye ? ' par e-mail' : ''}${j.notifie ? `${j.email_envoye ? ' et' : ''} dans l’appli du client` : ''}.` };
 }
 
+/** Interventions de l'animal (récentes d'abord) : choisir le CR préopératoire à reprendre. */
+export async function chirurgiesAnimal(animalId: string): Promise<{ id: string; date: string | null; intitule: string | null; preop: { statut?: string } | null; operatoire: unknown }[]> {
+  const { data } = await supabase.from('chirurgies').select('id, date, intitule, preop, operatoire').eq('animal_id', animalId)
+    .order('date', { ascending: false }).limit(15);
+  return (data ?? []) as { id: string; date: string | null; intitule: string | null; preop: { statut?: string } | null; operatoire: unknown }[];
+}
+
+/** Rattache le RDV à une autre intervention (CR pré-op existant), datée du jour
+ *  de l'intervention ; l'ancienne, restée vide, est supprimée. */
+export async function rattacherChirurgie(rdv: { id: string; date_heure: string; chirurgie_id: string | null }, chirurgieId: string): Promise<string | null> {
+  const jour = new Date(rdv.date_heure).toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+  const { error } = await supabase.from('chirurgies').update({ date: jour }).eq('id', chirurgieId);
+  if (error) return error.message;
+  const { error: e2 } = await supabase.from('rdv').update({ chirurgie_id: chirurgieId }).eq('id', rdv.id);
+  if (e2) return e2.message;
+  if (rdv.chirurgie_id && rdv.chirurgie_id !== chirurgieId) {
+    const { data: ancienne } = await supabase.from('chirurgies').select('preop, operatoire, consignes').eq('id', rdv.chirurgie_id).maybeSingle();
+    const a = ancienne as { preop: unknown; operatoire: unknown; consignes: unknown } | null;
+    if (a && !a.preop && !a.operatoire && !a.consignes) await supabase.from('chirurgies').delete().eq('id', rdv.chirurgie_id);
+  }
+  return null;
+}
+
 /** Suivi de la journée au propriétaire : notification (appli), sinon e-mail,
  *  sinon message « appelez-le au … ». */
 export async function messageIntervention(rdvId: string, message: 'reveille' | 'pret' | 'recuperation'): Promise<string> {
@@ -68,6 +91,15 @@ export async function lierChirurgieRdv(rdv: { id: string; animal_id: string | nu
   const jour = new Date(rdv.date_heure).toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
   const { data: ex } = await supabase.from('chirurgies').select('id').eq('animal_id', rdv.animal_id).eq('date', jour).limit(1).maybeSingle();
   let id = (ex as { id?: string } | null)?.id ?? null;
+  // Sinon : CR préopératoire récent de l'animal (consultation des jours
+  // précédents), pas encore opéré — repris et daté du jour de l'intervention.
+  if (!id) {
+    const depuis = new Date(Date.parse(rdv.date_heure) - 60 * 86400000).toISOString().slice(0, 10);
+    const { data: recents } = await supabase.from('chirurgies').select('id, preop, operatoire, date')
+      .eq('animal_id', rdv.animal_id).gte('date', depuis).order('date', { ascending: false }).limit(10);
+    const c = ((recents ?? []) as { id: string; preop: unknown; operatoire: unknown }[]).find(x => x.preop && !x.operatoire);
+    if (c) { id = c.id; await supabase.from('chirurgies').update({ date: jour }).eq('id', id); }
+  }
   if (!id) {
     id = crypto.randomUUID();
     const { error } = await supabase.from('chirurgies').insert({

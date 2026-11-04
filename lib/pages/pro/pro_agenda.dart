@@ -6021,6 +6021,29 @@ class _RdvCard extends StatelessWidget {
             ]),
             etape(ctx, ++n, 'Compte rendu préopératoire', '${etatDoc('preop')} — à valider avant l\u2019intervention.', [
               (chir?['preop'] is Map ? 'Ouvrir' : 'Rédiger', () => ouvrirDocInter('preop')),
+              // CR pré-op fait lors d'une consultation d'un autre jour : le reprendre.
+              if (inter['animal_id'] != null && chir?['operatoire'] == null) ('Choisir un CR pré-op existant', () async {
+                final l = (await chirurgiesAnimal(inter!['animal_id'].toString()))
+                    .where((c) => c['id'].toString() != inter!['chirurgie_id']?.toString() && c['preop'] != null).toList();
+                if (l.isEmpty) { snack('Aucun autre compte rendu préopératoire pour cet animal.'); return; }
+                if (!context.mounted) return;
+                final choisi = await showDialog<String>(context: context, builder: (c) => SimpleDialog(
+                  title: const Text('Reprendre pour cette intervention', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+                  children: [
+                    for (final x in l)
+                      SimpleDialogOption(onPressed: () => Navigator.pop(c, x['id'].toString()), child: Text(
+                          '${x['intitule'] ?? 'Intervention'}${x['date'] != null ? ' · ${x['date'].toString().split('-').reversed.join('/')}' : ''}'
+                          ' · CR pré-op ${(x['preop'] as Map?)?['statut'] == 'valide' ? 'validé' : 'brouillon'}',
+                          style: const TextStyle(fontFamily: 'Galey'))),
+                    SimpleDialogOption(onPressed: () => Navigator.pop(c),
+                        child: const Text('Garder un CR neuf', style: TextStyle(fontFamily: 'Galey', color: Colors.grey))),
+                  ],
+                ));
+                if (choisi == null) return;
+                final err = await rattacherChirurgie(rdvId: rdv['id'].toString(),
+                    dateHeure: DateTime.parse(inter!['date_heure'].toString()), ancienneId: inter!['chirurgie_id']?.toString(), chirurgieId: choisi);
+                snack(err == null ? 'Compte rendu préopératoire repris.' : 'Non enregistré : $err');
+              }),
             ]),
             etape(ctx, ++n, 'Admission', inter['admis_le'] != null ? 'Déposé à ${hmIso(inter['admis_le'])}' : 'En attente', [
               if (inter['admis_le'] == null) ('Animal déposé', () => majRdv({'admis_le': DateTime.now().toUtc().toIso8601String()}))

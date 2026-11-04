@@ -81,7 +81,8 @@ exports.notifyOwnerVetEntry = functions
         let animals;
         try {
             animals = await supabaseGet(
-                `animaux?id=eq.${encodeURIComponent(animalId)}&select=nom,uid_eleveur,uid_proprietaire,profile_id`,
+                `animaux?id=eq.${encodeURIComponent(animalId)}` +
+                "&select=nom,uid_eleveur,uid_proprietaire,profile_id,statut",
             );
         } catch (e) {
             console.error("notifyOwnerVetEntry: fetch animal error", e);
@@ -92,6 +93,9 @@ exports.notifyOwnerVetEntry = functions
         const animal = animals[0];
         const ownerUid = animal.uid_eleveur || animal.uid_proprietaire;
         if (!ownerUid) return {ok: false, reason: "no_owner"};
+        // Patient créé par un pro pour un propriétaire sans compte : le
+        // « propriétaire » technique est le pro lui-même → rien à notifier.
+        if (animal.statut === "patient_clinique") return {ok: true, reason: "patient_clinique"};
 
         // Résolution du profil propriétaire courant (animaux.profile_id n'est pas
         // fiable — voir migration_fix_animaux_proprietes_unique_constraint.sql)

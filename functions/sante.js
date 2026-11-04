@@ -312,7 +312,7 @@ exports.sendSanteReminders = functions
                 // Récupère les rappels du jour avec les infos de l'animal (éleveur ou particulier)
                 const rows = await supabaseGet(
                     `${table}?date_rappel=eq.${targetDate}` +
-                    `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id)`,
+                    `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut)`,
                 );
                 if (!Array.isArray(rows) || rows.length === 0) continue;
 
@@ -324,6 +324,9 @@ exports.sendSanteReminders = functions
                     const animal = row.animaux;
                     const uid = animal?.uid_eleveur || animal?.uid_proprietaire;
                     if (!animal || !uid) continue;
+                    // Patient créé par un pro pour un propriétaire sans compte : pas
+                    // de rappel au pro (ce n'est pas son animal).
+                    if (animal.statut === "patient_clinique") continue;
                     const dedupKey = `sante_${table}_${palierKey}_${row.id}`;
                     const existing = await supabaseGet(
                         `notifs_sent?key=eq.${encodeURIComponent(dedupKey)}`,
@@ -468,7 +471,7 @@ async function sendOverdueSanteReminders(digest) {
         // qu'un enregistrement plus récent a déjà pris le relais de l'ancien.
         const rows = await supabaseGet(
             `${table}?date_rappel=not.is.null` +
-            `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id)`,
+            `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut)`,
         );
         if (!Array.isArray(rows) || rows.length === 0) continue;
 
@@ -493,6 +496,9 @@ async function sendOverdueSanteReminders(digest) {
             const animal = row.animaux;
             const uid = animal?.uid_eleveur || animal?.uid_proprietaire;
             if (!animal || !uid) continue;
+            // Patient créé par un pro pour un propriétaire sans compte : pas
+            // de rappel au pro (ce n'est pas son animal).
+            if (animal.statut === "patient_clinique") continue;
 
             const muteKey = `sante_${table}_muted_${row.id}`;
             const muted = await supabaseGet(`notifs_sent?key=eq.${encodeURIComponent(muteKey)}`);
@@ -641,7 +647,7 @@ exports.sendTraitementReminders = functions
                 const r = await supabaseGet(
                     `${table}?rappel_actif=eq.true` +
                     `&date=lte.${todayStr}&rappel_fin=gte.${todayStr}` +
-                    "&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id)",
+                    "&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut)",
                 );
                 if (Array.isArray(r)) {
                     for (const x of r) {
@@ -664,6 +670,8 @@ exports.sendTraitementReminders = functions
             const animal = row.animaux;
             const uid = animal?.uid_eleveur || animal?.uid_proprietaire;
             if (!animal || !uid || !Array.isArray(row.rappel_heures)) continue;
+            // Patient créé par un pro pour un propriétaire sans compte : pas de rappel au pro.
+            if (animal.statut === "patient_clinique") continue;
 
             const debut = new Date(`${row.date}T00:00:00`);
             const today = new Date(`${todayStr}T00:00:00`);
