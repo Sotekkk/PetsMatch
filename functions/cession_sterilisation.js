@@ -621,7 +621,8 @@ exports.sendDocumentExpiryReminders = functions
         for (let offset = 0; ; offset += 1000) {
             const rows = await supabaseSelect("animaux",
                 "documents=not.is.null&statut=not.in.(decede,patient_clinique)" +
-                "&select=id,nom,documents,uid_proprietaire,uid_eleveur,profile_id,cree_par_pro_profile_id,client_clinique_id" +
+                "&select=id,nom,documents,uid_proprietaire,uid_eleveur,profile_id," +
+                "cree_par_pro_profile_id,client_clinique_id" +
                 `&order=id&limit=1000&offset=${offset}`);
             animaux.push(...rows);
             if (rows.length < 1000) break;

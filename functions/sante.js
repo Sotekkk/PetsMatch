@@ -335,7 +335,8 @@ exports.sendSanteReminders = functions
                 // Récupère les rappels du jour avec les infos de l'animal (éleveur ou particulier)
                 const rows = await supabaseGet(
                     `${table}?date_rappel=eq.${targetDate}` +
-                    `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut,cree_par_pro_profile_id,client_clinique_id)`,
+                    `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut,` +
+                    `cree_par_pro_profile_id,client_clinique_id)`,
                 );
                 if (!Array.isArray(rows) || rows.length === 0) continue;
 
@@ -494,7 +495,8 @@ async function sendOverdueSanteReminders(digest) {
         // qu'un enregistrement plus récent a déjà pris le relais de l'ancien.
         const rows = await supabaseGet(
             `${table}?date_rappel=not.is.null` +
-            `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut,cree_par_pro_profile_id,client_clinique_id)`,
+            `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut,` +
+                    `cree_par_pro_profile_id,client_clinique_id)`,
         );
         if (!Array.isArray(rows) || rows.length === 0) continue;
 
@@ -685,7 +687,8 @@ exports.sendTraitementReminders = functions
                 const r = await supabaseGet(
                     `${table}?rappel_actif=eq.true` +
                     `&date=lte.${todayStr}&rappel_fin=gte.${todayStr}` +
-                    "&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut,cree_par_pro_profile_id,client_clinique_id)",
+                    "&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut," +
+                    "cree_par_pro_profile_id,client_clinique_id)",
                 );
                 if (Array.isArray(r)) {
                     for (const x of r) {
