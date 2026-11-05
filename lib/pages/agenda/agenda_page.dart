@@ -13,6 +13,7 @@ import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart' show AddEmp
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
 import 'package:PetsMatch/widgets/rdv/motif_annulation.dart';
 import 'package:PetsMatch/widgets/rattachement_picker.dart';
+import 'package:PetsMatch/widgets/agenda/rdv_veto_sheets.dart';
 import 'package:PetsMatch/utils/cloisonnement_profils.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 
@@ -679,7 +680,7 @@ class _AgendaPageState extends State<AgendaPage> {
         // elles restent affichées tant qu'elles ne sont pas faites.
         if (widget.isParticulier || User_Info.activeType == 'particulier') {
           var q = _supa.from('taches_elevage')
-              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,eleveur_profile_id')
+              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,animaux_ids,rdv_veto_cabinet,rdv_veto_motif,eleveur_profile_id')
               .eq('uid_eleveur', _uid).eq('profil_source', 'particulier')
               .gte('date', from).lte('date', to);
           if (pid.isNotEmpty) q = q.or('profile_id.eq.$pid,profile_id.is.null');
@@ -690,7 +691,7 @@ class _AgendaPageState extends State<AgendaPage> {
             final ids = await _mesAnimauxParticulier();
             if (ids.isNotEmpty) {
               final partagees = await _supa.from('taches_elevage')
-                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,eleveur_profile_id')
+                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,animaux_ids,rdv_veto_cabinet,rdv_veto_motif,eleveur_profile_id')
                   .eq('profil_source', 'particulier').inFilter('animal_id', ids).neq('uid_eleveur', _uid)
                   .gte('date', from).lte('date', to);
               d1 = [...(d1 as List), ...(partagees as List)];
@@ -702,7 +703,7 @@ class _AgendaPageState extends State<AgendaPage> {
         // cogérant qui emprunte ce profil (elevage_cogerants) a un uid
         // Firebase différent du gérant, cf. commentaire sur agenda_events.
         d1 = await _supa.from('taches_elevage')
-            .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,eleveur_profile_id')
+            .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,animaux_ids,rdv_veto_cabinet,rdv_veto_motif,eleveur_profile_id')
             .gte('date', from).lte('date', to)
             .eq('profile_id', pid);
         // Cloisonnement : une tâche rattachée à un autre profil du compte
@@ -721,22 +722,22 @@ class _AgendaPageState extends State<AgendaPage> {
           final ownerUid = await _effectiveUid();
           d1 = _taskProfilSource == 'eleveur'
               ? await _supa.from('taches_elevage')
-                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
+                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,animaux_ids,rdv_veto_cabinet,rdv_veto_motif')
                   .eq('uid_eleveur', ownerUid).gte('date', from).lte('date', to)
                   .or('profil_source.is.null,profil_source.eq.eleveur')
               : await _supa.from('taches_elevage')
-                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
+                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,animaux_ids,rdv_veto_cabinet,rdv_veto_motif')
                   .eq('uid_eleveur', ownerUid).gte('date', from).lte('date', to)
                   .eq('profil_source', _taskProfilSource);
         }
       } else {
         d1 = _taskProfilSource == 'eleveur'
             ? await _supa.from('taches_elevage')
-                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
+                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,animaux_ids,rdv_veto_cabinet,rdv_veto_motif')
                 .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
                 .or('profil_source.is.null,profil_source.eq.eleveur')
             : await _supa.from('taches_elevage')
-                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
+                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,animaux_ids,rdv_veto_cabinet,rdv_veto_motif')
                 .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
                 .eq('profil_source', _taskProfilSource);
       }
@@ -744,10 +745,10 @@ class _AgendaPageState extends State<AgendaPage> {
       final myProfileId = pid.isNotEmpty ? pid : null;
       final d2 = myProfileId != null
           ? await _supa.from('taches_elevage')
-              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
+              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,animaux_ids,rdv_veto_cabinet,rdv_veto_motif')
               .eq('assigne_profile_id', myProfileId).gte('date', from).lte('date', to)
           : await _supa.from('taches_elevage')
-              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
+              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,animaux_ids,rdv_veto_cabinet,rdv_veto_motif')
               .eq('assigne_a', _uid).gte('date', from).lte('date', to);
       final seen = <dynamic>{};
       final all  = <Map<String, dynamic>>[];
@@ -1155,6 +1156,22 @@ class _AgendaPageState extends State<AgendaPage> {
           else
           GestureDetector(
             onTap: () async {
+              // RDV vétérinaire : récapitulatif (date réelle, animaux vus) avant carnet et registre.
+              if (t['rdv_veto_cabinet'] != null && !isDone) {
+                if (await showValiderRdvVeto(context, t)) _loadTasks();
+                return;
+              }
+              if (t['rdv_veto_cabinet'] != null) {
+                final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+                  title: const Text('Annuler la validation ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  content: const Text('Les visites ajoutées au carnet et au registre pour ce RDV seront retirées.', style: TextStyle(fontFamily: 'Galey')),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Non')),
+                    TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Oui, annuler')),
+                  ],
+                ));
+                if (ok != true) return;
+              }
               final newStatut = isDone ? 'a_faire' : 'fait';
               // Mise à jour optimiste immédiate
               setState(() => t['statut'] = newStatut);
@@ -1299,6 +1316,7 @@ class _AgendaPageState extends State<AgendaPage> {
               ),
               const SizedBox(width: 6),
             ],
+            if (User_Info.activeType == 'eleveur') _boutonRdvVeto(day ?? _selectedDay ?? DateTime.now()),
             GestureDetector(
               onTap: () => _showAddTacheSheet(day ?? _selectedDay ?? DateTime.now()),
               child: Container(
@@ -1521,6 +1539,33 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 
   // ── Add tâche manuelle ─────────────────────────────────────────────────────
+
+  /// Élevage : RDV vétérinaire à venir (carnet et registre remplis à la validation).
+  Widget _boutonRdvVeto(DateTime day) => Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: GestureDetector(
+          onTap: () async {
+            final ownerUid = await _effectiveUid();
+            if (!mounted) return;
+            final ok = await showNouveauRdvVeto(context, uid: ownerUid,
+                profileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null, jour: day);
+            if (ok && mounted) _loadTasks();
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: _kTeal.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _kTeal.withValues(alpha: 0.3)),
+            ),
+            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.add, size: 12, color: _kTeal),
+              SizedBox(width: 3),
+              Text('RDV véto', style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: _kTeal)),
+            ]),
+          ),
+        ),
+      );
 
   Future<void> _showAddTacheSheet(DateTime day) async {
     final ownerUid = await _effectiveUid();
@@ -1947,6 +1992,7 @@ class _AgendaPageState extends State<AgendaPage> {
               const Text('Tâches du jour',
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: _kTeal)),
               const Spacer(),
+              if (User_Info.activeType == 'eleveur') _boutonRdvVeto(day),
               GestureDetector(
                 onTap: () => _showAddTacheSheet(day),
                 child: Container(

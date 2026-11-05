@@ -9,6 +9,7 @@ import { usePlan } from '@/lib/use-plan';
 import { estHorsPriseEnCharge } from '@/lib/protocoles';
 import { sansAutresProfils } from '@/lib/cloisonnement-profils';
 import { AddTacheModal, loadMembres, type AnimalOption, type MembreOption } from '@/components/agenda/AddTacheModal';
+import { NouveauRdvVetoModal, ValiderRdvVetoModal } from '@/components/agenda/RdvVetoModals';
 
 function displayNameFromProfile(
   data: { firstname?: string | null; lastname?: string | null; nom?: string | null; profile_type?: string | null } | null | undefined,
@@ -94,6 +95,10 @@ interface TacheManuelle {
   fait_par?: string | null;
   fait_par_profile_id?: string | null;
   notes?: string | null;
+  /** RDV vétérinaire à venir (lib/rdv-veto.ts) : validé par récapitulatif. */
+  animaux_ids?: string[] | null;
+  rdv_veto_cabinet?: string | null;
+  rdv_veto_motif?: string | null;
 }
 
 interface AgendaEventLite {
@@ -1030,6 +1035,9 @@ export default function AgendaElevagePage() {
   const [editGroupe, setEditGroupe]             = useState<RoutineGroupe | null>(null);
   const [monthDates, setMonthDates]     = useState<Map<string, string[]>>(new Map());
   const [showAddTache, setShowAddTache] = useState(false);
+  // Élevage : RDV vétérinaire à venir, créé ici et validé par récapitulatif.
+  const [showRdvVeto, setShowRdvVeto] = useState(false);
+  const [validationRdvVeto, setValidationRdvVeto] = useState<TacheManuelle | null>(null);
   const [animaux, setAnimaux]           = useState<AnimalOption[]>([]);
   const [membresAssign, setMembresAssign] = useState<MembreOption[]>([]);
 
@@ -1151,7 +1159,7 @@ export default function AgendaElevagePage() {
             .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
             .eq('assigned_to', user.uid).eq('date_prevue', selectedDate),
       withProfileFilter(() => supabase.from('taches_elevage')
-        .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,assigne_a,assignes_a,fait_par,fait_par_profile_id,notes')
+        .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,animaux_ids,rdv_veto_cabinet,rdv_veto_motif,assigne_a,assignes_a,fait_par,fait_par_profile_id,notes')
         .eq('date', selectedDate)),
       // Rappels agenda_events du jour (chaleurs J-7/J-1, mise-bas, RDV...) —
       // absents jusqu'ici de cette page, qui n'affichait que des tâches.
@@ -1182,7 +1190,7 @@ export default function AgendaElevagePage() {
               .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
               .eq('assigned_to', user.uid).neq('statut', 'fait').lt('date_prevue', selectedDate),
         withProfileFilter(() => supabase.from('taches_elevage')
-          .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,assigne_a,assignes_a,fait_par,fait_par_profile_id,notes')
+          .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,animaux_ids,rdv_veto_cabinet,rdv_veto_motif,assigne_a,assignes_a,fait_par,fait_par_profile_id,notes')
           .neq('statut', 'fait').lt('date', selectedDate)),
       ]);
       overdueR = [...(or1.data ?? []), ...(or2.data ?? [])] as Routine[];
@@ -1265,6 +1273,9 @@ export default function AgendaElevagePage() {
   }, [load]);
 
   const toggleManuel = useCallback(async (t: TacheManuelle) => {
+    // RDV vétérinaire : récapitulatif (date réelle, animaux vus) avant carnet et registre.
+    if (t.rdv_veto_cabinet && t.statut !== 'fait') { setValidationRdvVeto(t); return; }
+    if (t.rdv_veto_cabinet && !confirm('Annuler la validation ? Les visites ajoutées au carnet et au registre pour ce RDV seront retirées.')) return;
     const newStatut = t.statut === 'fait' ? 'a_faire' : 'fait';
     const update: Record<string, unknown> = { statut: newStatut };
     if (newStatut === 'fait') {
@@ -1667,6 +1678,12 @@ export default function AgendaElevagePage() {
                 ☑ Sélectionner
               </button>
             ))}
+            {profilSource === 'eleveur' && (
+              <button onClick={() => setShowRdvVeto(true)}
+                className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg px-3 py-1.5 mr-2">
+                <span className="text-base leading-none">+</span> RDV vétérinaire
+              </button>
+            )}
             <button onClick={() => setShowAddTache(true)}
               className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 hover:bg-teal-100 transition-colors">
               <span className="text-base leading-none">+</span> Tâche
@@ -1748,6 +1765,12 @@ export default function AgendaElevagePage() {
 
           {/* Bouton ajout tâche pour le jour sélectionné */}
           <div className="flex justify-end mb-3">
+            {profilSource === 'eleveur' && (
+              <button onClick={() => setShowRdvVeto(true)}
+                className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg px-3 py-1.5 mr-2">
+                <span className="text-base leading-none">+</span> RDV vétérinaire
+              </button>
+            )}
             <button onClick={() => setShowAddTache(true)}
               className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 hover:bg-teal-100 transition-colors">
               <span className="text-base leading-none">+</span> Tâche
@@ -1818,6 +1841,12 @@ export default function AgendaElevagePage() {
 
           {/* Bouton ajout tâche pour le jour sélectionné */}
           <div className="flex justify-end mb-3">
+            {profilSource === 'eleveur' && (
+              <button onClick={() => setShowRdvVeto(true)}
+                className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg px-3 py-1.5 mr-2">
+                <span className="text-base leading-none">+</span> RDV vétérinaire
+              </button>
+            )}
             <button onClick={() => setShowAddTache(true)}
               className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 hover:bg-teal-100 transition-colors">
               <span className="text-base leading-none">+</span> Tâche
@@ -1865,6 +1894,29 @@ export default function AgendaElevagePage() {
 
       {/* ── Modals ──────────────────────────────────────────────────────────── */}
 
+      {showRdvVeto && (
+        <NouveauRdvVetoModal
+          uid={ownerUid ?? user.uid}
+          myUid={user.uid}
+          profileId={activeProfileId}
+          jour={selectedDate}
+          animaux={animaux.filter(a => {
+            const x = a as { statut?: string | null; horsCharge?: boolean };
+            return !x.horsCharge && !estHorsPriseEnCharge(x);
+          })}
+          onClose={() => setShowRdvVeto(false)}
+          onSaved={() => { setShowRdvVeto(false); load(); loadMonth(); }}
+        />
+      )}
+      {validationRdvVeto && (
+        <ValiderRdvVetoModal
+          tache={validationRdvVeto}
+          faitPar={user.uid}
+          faitParProfil={activeProfileId}
+          onClose={() => setValidationRdvVeto(null)}
+          onDone={() => { setValidationRdvVeto(null); load(); loadMonth(); }}
+        />
+      )}
       {showAddTache && (
         <AddTacheModal
           uid={ownerUid ?? user.uid}

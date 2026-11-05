@@ -3,6 +3,8 @@
 import { useCallback, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { erreursDatesSante } from '@/lib/controle-dates';
+import { useAuth } from '@/lib/auth-context';
+import { aujourdhuiLocal, creerRdvVeto } from '@/lib/rdv-veto';
 
 export interface SoinAnimal {
   id: string;
@@ -19,6 +21,7 @@ const ACTE_TYPES = [
   { value: 'antiparasitaire', label: 'Antiparasitaire',     emoji: '🛡️' },
   { value: 'traitement',      label: 'Traitement',          emoji: '💊' },
   { value: 'visite',          label: 'Visite vétérinaire',  emoji: '🏥' },
+  { value: 'rdv_veto',        label: 'RDV vétérinaire à venir', emoji: '📅' },
   { value: 'osteopathie',     label: 'Ostéopathie',         emoji: '🤲' },
   { value: 'chirurgie',       label: 'Chirurgie',           emoji: '🔬' },
   { value: 'autre',           label: 'Autre',               emoji: '📋' },
@@ -33,7 +36,9 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
   activeProfileId: string | null;
   onClose: () => void;
 }) {
+  const { user } = useAuth();
   const [typeActe, setTypeActe]       = useState('vermifuge');
+  const [heure, setHeure]             = useState('');
   const [date, setDate]               = useState(new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState('');
   const [intervenant, setIntervenant] = useState('');
@@ -54,7 +59,18 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!description.trim()) { setError('Le produit / la description est obligatoire.'); return; }
+    // RDV à venir : tâche d'agenda ; carnet et registre à la validation.
+    if (typeActe === 'rdv_veto') {
+      setSaving(true); setError('');
+      const e = await creerRdvVeto({ uid, myUid: user?.uid, profileId: activeProfileId, date, heure, cabinet: intervenant, motif: description, notes,
+        animaux: animals.filter(a => selectedIds.has(a.id)) });
+      setSaving(false);
+      if (e) { setError(e); return; }
+      setSaved(true); setTimeout(onClose, 1200);
+      return;
+    }
+    if (!description.trim()) { setError(typeActe === 'visite' ? 'Le motif est obligatoire.' : 'Le produit / la description est obligatoire.'); return; }
+    if (typeActe === 'visite' && !intervenant.trim()) { setError('Indiquez le nom du cabinet vétérinaire.'); return; }
     if (selectedIds.size === 0) { setError('Sélectionnez au moins un animal.'); return; }
     const erreurs = erreursDatesSante({ date }, [{ key: 'date', label: 'Date', required: true }]);
     if (erreurs.length) { setError(erreurs.join(' ')); return; }
@@ -102,7 +118,8 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
             date: dateIso, source: 'owner',
           });
         }
-        await supabase.from('registre_sanitaire').insert({
+        // Visite, ostéopathie : la ligne visites inscrit déjà le registre (trg_registre_depuis_visite).
+        if (typeActe !== 'visite' && typeActe !== 'osteopathie') await supabase.from('registre_sanitaire').insert({
           id:          `rs_${entryId}`,
           uid_eleveur: uid,
           ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
@@ -124,7 +141,7 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
     setSaving(false);
     if (success > 0) { setSaved(true); setTimeout(onClose, 1200); }
     else setError('Erreur lors de l\'enregistrement. Vérifiez votre connexion.');
-  }, [animals, uid, activeProfileId, typeActe, date, description, dosage, notes, intervenant, ordonnance, onClose, selectedIds]);
+  }, [animals, uid, user?.uid, activeProfileId, typeActe, date, heure, description, dosage, notes, intervenant, ordonnance, onClose, selectedIds]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
@@ -168,21 +185,30 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
                     : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-[#0C5C6C]'
                 }`}
                 style={{ fontFamily: 'Galey, sans-serif' }}
-                onClick={() => { setTypeActe(t.value); setDosage(''); }}>
+                onClick={() => { setTypeActe(t.value); setDosage(''); if (t.value === 'rdv_veto') setDate(''); else if (!date || date > aujourdhuiLocal()) setDate(aujourdhuiLocal()); }}>
                 {t.emoji} {t.label}
               </button>
             ))}
           </div>
 
-          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">Date du soin</p>
+          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">{typeActe === 'rdv_veto' ? 'Date du RDV *' : 'Date du soin'}</p>
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
-            max={new Date().toISOString().slice(0, 10)}
+            {...(typeActe === 'rdv_veto' ? { min: aujourdhuiLocal() } : { max: aujourdhuiLocal() })}
             className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 focus:outline-none focus:border-[#0C5C6C]"
             style={{ fontFamily: 'Galey, sans-serif' }} />
 
-          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">Produit / description *</p>
+          {typeActe === 'rdv_veto' && (
+            <>
+              <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">Heure du RDV *</p>
+              <input type="time" step={300} value={heure} onChange={e => setHeure(e.target.value)} aria-label="Heure du RDV"
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 focus:outline-none focus:border-[#0C5C6C]"
+                style={{ fontFamily: 'Galey, sans-serif' }} />
+            </>
+          )}
+
+          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">{typeActe === 'rdv_veto' ? 'Motif (optionnel)' : typeActe === 'visite' ? 'Motif *' : 'Produit / description *'}</p>
           <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2}
-            placeholder="Ex : Milbemax® 1 comprimé par chiot de 0,5 kg à 10 kg"
+            placeholder={typeActe === 'rdv_veto' || typeActe === 'visite' ? 'Ex : vaccins, contrôle de portée' : 'Ex : Milbemax® 1 comprimé par chiot de 0,5 kg à 10 kg'}
             className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 resize-none focus:outline-none focus:border-[#0C5C6C]"
             style={{ fontFamily: 'Galey, sans-serif' }} />
 
@@ -198,9 +224,9 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
             </>
           )}
 
-          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">Administré par (optionnel)</p>
+          <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">{typeActe === 'visite' || typeActe === 'rdv_veto' ? 'Cabinet vétérinaire *' : 'Administré par (optionnel)'}</p>
           <input value={intervenant} onChange={e => setIntervenant(e.target.value)}
-            placeholder="Éleveur, Dr. Dupont, …"
+            placeholder={typeActe === 'visite' || typeActe === 'rdv_veto' ? 'Nom du cabinet' : 'Éleveur, Dr. Dupont, …'}
             className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 focus:outline-none focus:border-[#0C5C6C]"
             style={{ fontFamily: 'Galey, sans-serif' }} />
 
@@ -217,7 +243,8 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
             style={{ fontFamily: 'Galey, sans-serif' }} />
 
           {error && <p className="text-sm text-red-600 mb-3 bg-red-50 rounded-xl px-3 py-2">{error}</p>}
-          {saved && <p className="text-sm text-[#6E9E57] mb-3 bg-[#EEF5EA] rounded-xl px-3 py-2 font-semibold">✓ {animals.length} enregistrement{animals.length > 1 ? 's' : ''} ajouté{animals.length > 1 ? 's' : ''} au registre</p>}
+          {saved && typeActe === 'rdv_veto' && <p className="text-sm text-[#6E9E57] mb-3 bg-[#EEF5EA] rounded-xl px-3 py-2 font-semibold">✓ RDV ajouté à l’agenda. Validez-le après la visite pour remplir le carnet et le registre.</p>}
+          {saved && typeActe !== 'rdv_veto' && <p className="text-sm text-[#6E9E57] mb-3 bg-[#EEF5EA] rounded-xl px-3 py-2 font-semibold">✓ {animals.length} enregistrement{animals.length > 1 ? 's' : ''} ajouté{animals.length > 1 ? 's' : ''} au registre</p>}
 
           <div className="flex gap-3">
             <button onClick={onClose}
@@ -228,7 +255,7 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
             <button onClick={handleSave} disabled={saving || saved || selectedIds.size === 0}
               className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl text-sm transition-colors"
               style={{ fontFamily: 'Galey, sans-serif' }}>
-              {saving ? 'Enregistrement…' : `Enregistrer pour ${selectedIds.size} ${selectedIds.size > 1 ? 'animaux' : 'animal'}`}
+              {saving ? 'Enregistrement…' : typeActe === 'rdv_veto' ? 'Ajouter à l’agenda' : `Enregistrer pour ${selectedIds.size} ${selectedIds.size > 1 ? 'animaux' : 'animal'}`}
             </button>
           </div>
         </div>

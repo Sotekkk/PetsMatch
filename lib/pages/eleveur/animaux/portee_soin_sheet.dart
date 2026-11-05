@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
+import 'package:PetsMatch/utils/rdv_veto.dart';
+import 'package:PetsMatch/widgets/agenda/rdv_veto_sheets.dart' show ChoixDateHeureRdv;
 
 // Types d'actes (mirror de registre_sanitaire.dart)
 const _kActes = [
@@ -10,6 +14,7 @@ const _kActes = [
   (value: 'antiparasitaire', label: 'Antiparasitaire',      icon: Icons.pest_control_outlined,      color: Color(0xFFFFF3E0)),
   (value: 'traitement',      label: 'Traitement',           icon: Icons.medication_outlined,        color: Color(0xFFE0F2F1)),
   (value: 'visite',          label: 'Visite vétérinaire',   icon: Icons.medical_services_outlined,  color: Color(0xFFE3F2FD)),
+  (value: 'rdv_veto',        label: 'RDV vétérinaire à venir', icon: Icons.event_outlined,          color: Color(0xFFE3F2FD)),
   (value: 'osteopathie',     label: 'Ostéopathie',          icon: Icons.self_improvement_outlined,  color: Color(0xFFF3E5F5)),
   (value: 'chirurgie',       label: 'Chirurgie',            icon: Icons.healing_outlined,           color: Color(0xFFFFEBEE)),
   (value: 'autre',           label: 'Autre',                icon: Icons.more_horiz,                 color: Color(0xFFF5F5F5)),
@@ -19,16 +24,18 @@ typedef _Acte = ({String value, String label, IconData icon, Color color});
 
 class PorteeSoinSheet extends StatefulWidget {
   final List<Map<String, dynamic>> animals;
+  /// Employé : propriétaire de l'élevage (RDV vétérinaire inscrit à son agenda).
+  final String? eleveurUid;
 
-  const PorteeSoinSheet({super.key, required this.animals});
+  const PorteeSoinSheet({super.key, required this.animals, this.eleveurUid});
 
   /// Ouvre le bottom sheet et retourne true si des soins ont été enregistrés.
-  static Future<bool> show(BuildContext context, List<Map<String, dynamic>> animals) async {
+  static Future<bool> show(BuildContext context, List<Map<String, dynamic>> animals, {String? eleveurUid}) async {
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => PorteeSoinSheet(animals: animals),
+      builder: (_) => PorteeSoinSheet(animals: animals, eleveurUid: eleveurUid),
     );
     return result ?? false;
   }
@@ -43,6 +50,11 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
 
   _Acte _selectedActe = _kActes.first; // vermifuge par défaut
   DateTime _date = DateTime.now();
+  // RDV vétérinaire à venir : date et heure dans le futur.
+  DateTime? _dateRdv;
+  TimeOfDay? _heureRdv;
+  bool get _estRdv => _selectedActe.value == 'rdv_veto';
+  bool get _estVisite => _selectedActe.value == 'visite';
   final _intervenantCtrl  = TextEditingController();
   final _descriptionCtrl  = TextEditingController();
   final _dosageCtrl       = TextEditingController();
@@ -85,9 +97,36 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
     if (picked != null) setState(() => _date = picked);
   }
 
+  /// RDV à venir : tâche d'agenda ; carnet et registre à la validation.
+  Future<void> _saveRdv() async {
+    setState(() { _saving = true; _error = null; });
+    final choisis = [for (final a in widget.animals) if (_selectedIds.contains(a['id']?.toString())) a];
+    final premier = choisis.isNotEmpty ? choisis.first : const <String, dynamic>{};
+    final proprio = widget.eleveurUid ?? premier['uid_eleveur']?.toString() ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+    final profil = (premier['profile_id']?.toString() ?? '').isNotEmpty ? premier['profile_id'].toString() : User_Info.activeProfileId;
+    final d = _dateRdv, h = _heureRdv;
+    final err = await creerRdvVeto(
+      uid: proprio, profileId: profil, animaux: choisis, cabinet: _intervenantCtrl.text,
+      motif: _descriptionCtrl.text, notes: _notesCtrl.text,
+      dateHeure: d == null || h == null ? null : DateTime(d.year, d.month, d.day, h.hour, h.minute),
+    );
+    if (!mounted) return;
+    if (err != null) { setState(() { _saving = false; _error = err; }); return; }
+    Navigator.pop(context, true);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text('RDV ajouté à l\u2019agenda. Validez-le après la visite pour remplir le carnet et le registre.', style: TextStyle(fontFamily: 'Galey')),
+      backgroundColor: _green, behavior: SnackBarBehavior.floating,
+    ));
+  }
+
   Future<void> _save() async {
+    if (_estRdv) return _saveRdv();
     if (_descriptionCtrl.text.trim().isEmpty) {
-      setState(() => _error = 'Veuillez renseigner le produit / la description.');
+      setState(() => _error = _estVisite ? 'Veuillez renseigner le motif.' : 'Veuillez renseigner le produit / la description.');
+      return;
+    }
+    if (_estVisite && _intervenantCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'Indiquez le nom du cabinet vétérinaire.');
       return;
     }
     setState(() { _saving = true; _error = null; });
@@ -143,8 +182,8 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
               if (notes.isNotEmpty) 'notes': notes,
             });
         }
-        // Log consolidé dans registre_sanitaire
-        await RegistreHelper.writeActe(
+        // Log consolidé dans registre_sanitaire (ostéopathie : la ligne visites l'inscrit déjà).
+        if (type != 'osteopathie') await RegistreHelper.writeActe(
           animalId:     id,
           typeActe:     type,
           dateActe:     _date,
@@ -278,9 +317,13 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
           const SizedBox(height: 18),
 
           // Date
-          const Text('Date du soin', style: TextStyle(fontFamily: 'Galey',
+          Text(_estRdv ? 'Date et heure du RDV *' : 'Date du soin', style: const TextStyle(fontFamily: 'Galey',
               fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0C5C6C))),
           const SizedBox(height: 6),
+          if (_estRdv)
+            ChoixDateHeureRdv(date: _dateRdv, heure: _heureRdv,
+                onDate: (d) => setState(() => _dateRdv = d), onHeure: (t) => setState(() => _heureRdv = t))
+          else
           GestureDetector(
             onTap: _pickDate,
             child: Container(
@@ -304,7 +347,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
           const SizedBox(height: 14),
 
           // Produit / description
-          const Text('Produit / description *', style: TextStyle(fontFamily: 'Galey',
+          Text(_estRdv ? 'Motif (optionnel)' : _estVisite ? 'Motif *' : 'Produit / description *', style: const TextStyle(fontFamily: 'Galey',
               fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0C5C6C))),
           const SizedBox(height: 6),
           TextField(
@@ -312,7 +355,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
             maxLines: 2,
             style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Ex : Milbemax®, 1 comprimé par chiot',
+              hintText: _estRdv || _estVisite ? 'Ex : vaccins, contrôle de portée' : 'Ex : Milbemax®, 1 comprimé par chiot',
               hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFBDBDBD)),
               filled: true, fillColor: const Color(0xFFF8F8F6),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
@@ -354,14 +397,14 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
           const SizedBox(height: 14),
 
           // Administré par (optionnel)
-          const Text('Administré par (optionnel)', style: TextStyle(fontFamily: 'Galey',
+          Text(_estRdv || _estVisite ? 'Cabinet vétérinaire *' : 'Administré par (optionnel)', style: const TextStyle(fontFamily: 'Galey',
               fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0C5C6C))),
           const SizedBox(height: 6),
           TextField(
             controller: _intervenantCtrl,
             style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Éleveur, Dr. Dupont, …',
+              hintText: _estRdv || _estVisite ? 'Nom du cabinet' : 'Éleveur, Dr. Dupont, …',
               hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFBDBDBD)),
               filled: true, fillColor: const Color(0xFFF8F8F6),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),

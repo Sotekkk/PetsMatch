@@ -4640,7 +4640,7 @@ class _EmployeAnimauxSectionState extends State<_EmployeAnimauxSection> {
   }
 
   Future<void> _openSoin(List<Map<String, dynamic>> members) async {
-    final ok = await PorteeSoinSheet.show(context, members);
+    final ok = await PorteeSoinSheet.show(context, members, eleveurUid: widget.eleveurUid);
     if (ok) widget.onReload();
   }
 
