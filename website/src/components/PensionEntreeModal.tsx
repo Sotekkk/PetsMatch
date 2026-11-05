@@ -139,6 +139,31 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     return counts;
   }, [occupants, form.date_entree, form.date_sortie_prevue, isEdit, entree]);
 
+  // Mes clients (pm_mes_clients, ce profil uniquement) : fiche et coordonnées reprises au choix.
+  type ClientListe = { animal_id: string | null; animal_nom: string; espece: string; identification: string;
+    client_nom: string; telephone: string; email: string; client_uid: string | null; client_profile_id: string | null };
+  const [clients, setClients] = useState<ClientListe[]>([]);
+  const [rechercheClient, setRechercheClient] = useState('');
+  useEffect(() => {
+    if (isEdit || !proProfileId) return;
+    supabase.rpc('pm_mes_clients', { p_profile: proProfileId }).then(({ data }) => setClients((data ?? []) as ClientListe[]));
+  }, [isEdit, proProfileId]);
+  const qClient = rechercheClient.trim().toLowerCase();
+  const clientsTrouves = qClient.length < 2 ? [] : clients.filter(c =>
+    `${c.animal_nom} ${c.client_nom} ${c.telephone} ${c.identification}`.toLowerCase().includes(qClient)).slice(0, 6);
+
+  async function choisirClient(c: ClientListe) {
+    setRechercheClient('');
+    setAnimalId(c.animal_id);
+    const { data } = c.animal_id ? await supabase.from('animaux').select('race').eq('id', c.animal_id).maybeSingle() : { data: null };
+    setForm(f => ({
+      ...f, animal_nom: c.animal_nom || f.animal_nom, espece: c.espece || f.espece,
+      race: (data as { race?: string | null } | null)?.race || f.race, puce: c.identification || f.puce,
+      proprietaire_nom: c.client_nom || f.proprietaire_nom, proprietaire_contact: c.telephone || f.proprietaire_contact,
+      proprietaire_email: c.email || f.proprietaire_email,
+    }));
+  }
+
   async function searchTopChip() {
     if (!topChip.trim()) return;
     setTopSearching(true);
@@ -329,6 +354,26 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
       }
     }
 
+    // Animal inconnu : sa fiche est créée (retrouvable par puce, récupérée par le client
+    // avec l'e-mail du séjour ; le pro n'en reçoit pas les notifications). Miroir appli.
+    let aid = animalId;
+    if (!isEdit && !aid) {
+      if (form.puce.trim()) {
+        const existante = await lookupAnimalByChip(form.puce.trim(), proProfileId).catch(() => null);
+        if (existante?.animal_id) aid = existante.animal_id;
+      }
+      if (!aid) {
+        const nouvelId = String(Date.now());
+        const { error: errFiche } = await supabase.from('animaux').insert({
+          id: nouvelId, uid_eleveur: proUid, nom: form.animal_nom.trim(), espece: form.espece.trim().toLowerCase(),
+          race: form.race.trim(), identification: form.puce.trim(), statut: 'present',
+          ...(proProfileId ? { profile_id: proProfileId, cree_par_pro_profile_id: proProfileId } : {}),
+        });
+        if (errFiche) { setError(`Fiche de l'animal non créée : ${errFiche.message}`); setSaving(false); return; }
+        aid = nouvelId;
+      }
+    }
+
     const payload = {
       pro_uid:              proUid,
       ...(proProfileId ? { pro_profile_id: proProfileId } : {}),
@@ -348,7 +393,7 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
       statut:               form.statut,
       seul_dans_logement:   form.seul_dans_logement,
       logement_id:          logementId,
-      ...(!isEdit && animalId ? { animal_id: animalId } : {}),
+      ...(!isEdit && aid ? { animal_id: aid } : {}),
     };
     const { error: err } = isEdit
       ? await supabase.from('pension_entrees').update(payload).eq('id', entree!.id)
@@ -398,6 +443,28 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
           <button onClick={onClose}
             style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#9ca3af' }}>×</button>
         </div>
+
+        {!isEdit && proProfileId && (
+          <div style={{ marginBottom: 14 }}>
+            <p style={{ margin: '0 0 8px', fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700, color: TEAL }}>
+              CHERCHER DANS MES CLIENTS
+            </p>
+            <input style={{ ...inp, background: 'white' }} placeholder="Nom de l'animal, du client, téléphone ou puce"
+              aria-label="Chercher dans mes clients" value={rechercheClient} onChange={e => setRechercheClient(e.target.value)} />
+            {clientsTrouves.map((c, i) => (
+              <button key={`${c.animal_id ?? c.client_nom}-${i}`} type="button" onClick={() => choisirClient(c)}
+                style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 6, padding: '8px 10px', borderRadius: 8,
+                  border: '1px solid #E5E7EB', background: 'white', fontFamily: 'Galey, sans-serif', fontSize: 13, cursor: 'pointer' }}>
+                <strong>{c.animal_nom || 'Animal'}</strong>{c.client_nom ? ` · ${c.client_nom}` : ''}{c.telephone ? ` · ${c.telephone}` : ''}
+              </button>
+            ))}
+            {qClient.length >= 2 && clientsTrouves.length === 0 && (
+              <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 12, color: '#6b7280' }}>
+                Aucun client trouvé : cherchez par puce ou remplissez le formulaire, la fiche sera créée à l'enregistrement.
+              </p>
+            )}
+          </div>
+        )}
 
         {!isEdit && (
           <div style={{

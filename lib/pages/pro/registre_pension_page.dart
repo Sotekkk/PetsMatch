@@ -1213,6 +1213,8 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
   }
 
   Future<void> _openAjout() async {
+    final prefill = await pickAnimalForAdmission(context);
+    if (prefill == null || !mounted) return;
     final added = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -1220,7 +1222,19 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       enableDrag: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const PensionEntreeSheet(),
+      builder: (_) => PensionEntreeSheet(
+        initialNom: prefill['nom'] as String?,
+        initialEspece: prefill['espece'] as String?,
+        initialRace: prefill['race'] as String?,
+        initialPuce: prefill['puce'] as String?,
+        initialPhotoUrl: prefill['photoUrl'] as String?,
+        initialAnimalId: prefill['animalId'] as String?,
+        initialOwnerUid: prefill['ownerUid'] as String?,
+        initialProprietaireNom: prefill['proprietaireNom'] as String?,
+        initialProprietaireContact: prefill['proprietaireContact'] as String?,
+        initialProprietaireEmail: prefill['proprietaireEmail'] as String?,
+        initialProprietaireAdresse: prefill['proprietaireAdresse'] as String?,
+      ),
     );
     if (added == true) _load();
   }
@@ -2307,6 +2321,75 @@ const _kChipTeal = Color(0xFF0C5C6C);
 /// correspondant en base. Retourne les valeurs à préremplir dans
 /// PensionEntreeSheet (map vide si "sans puce" ou animal non trouvé),
 /// ou null si l'utilisateur annule le choix initial.
+/// Mes clients (pm_mes_clients, profil actif uniquement) : fiche et coordonnées reprises.
+/// Client sans fiche : la fiche sera créée à l'enregistrement du séjour.
+Future<Map<String, dynamic>?> _choisirDansMesClients(BuildContext context) async {
+  var liste = <Map<String, dynamic>>[];
+  final pid = User_Info.activeProfileId;
+  if (pid.isNotEmpty) {
+    try {
+      final rows = await Supabase.instance.client.rpc('pm_mes_clients', params: {'p_profile': pid});
+      liste = [for (final r in rows as List) Map<String, dynamic>.from(r as Map)];
+    } catch (_) {}
+  }
+  if (!context.mounted) return null;
+  var q = '';
+  final choisi = await showModalBottomSheet<Map<String, dynamic>>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) {
+      final trouves = liste.where((c) =>
+          '${c['animal_nom']} ${c['client_nom']} ${c['telephone']} ${c['identification']}'.toLowerCase().contains(q.toLowerCase())).take(30).toList();
+      return Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(ctx).viewInsets.bottom + 12),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            autofocus: true,
+            onChanged: (v) => setSheet(() => q = v.trim()),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              labelText: 'Animal, client, téléphone ou puce',
+              labelStyle: const TextStyle(fontFamily: 'Galey'),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (trouves.isEmpty)
+            const Padding(padding: EdgeInsets.all(16), child: Text('Aucun client trouvé.', style: TextStyle(fontFamily: 'Galey')))
+          else
+            Flexible(child: ListView(shrinkWrap: true, children: [
+              for (final c in trouves) ListTile(
+                title: Text((c['animal_nom'] ?? '').toString().isEmpty ? 'Animal' : c['animal_nom'].toString(),
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                subtitle: Text([c['client_nom'], c['telephone']].where((x) => (x ?? '').toString().isNotEmpty).join(' · '),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                onTap: () => Navigator.pop(ctx, c),
+              ),
+            ])),
+        ]),
+      );
+    }),
+  );
+  if (choisi == null) return null;
+  String? vide(dynamic v) => (v ?? '').toString().isEmpty ? null : v.toString();
+  final animalId = vide(choisi['animal_id']);
+  String? race;
+  if (animalId != null) {
+    try {
+      final a = await Supabase.instance.client.from('animaux').select('race').eq('id', animalId).maybeSingle();
+      race = vide(a?['race']);
+    } catch (_) {}
+  }
+  return {
+    'nom': vide(choisi['animal_nom']), 'espece': vide(choisi['espece']), 'race': race, 'puce': vide(choisi['identification']),
+    'animalId': animalId, 'ownerUid': vide(choisi['client_uid']),
+    'proprietaireNom': vide(choisi['client_nom']), 'proprietaireContact': vide(choisi['telephone']), 'proprietaireEmail': vide(choisi['email']),
+  };
+}
+
 Future<Map<String, dynamic>?> pickAnimalForAdmission(BuildContext context, {bool allowSkip = true}) async {
   final choice = await showModalBottomSheet<String>(
     context: context,
@@ -2319,6 +2402,12 @@ Future<Map<String, dynamic>?> pickAnimalForAdmission(BuildContext context, {bool
           child: Align(alignment: Alignment.centerLeft, child: Text('Identifier l\'animal',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
         ),
+        if (allowSkip)
+          ListTile(
+            leading: const Icon(Icons.people_outline, color: _kChipTeal),
+            title: const Text('Chercher dans mes clients', style: TextStyle(fontFamily: 'Galey')),
+            onTap: () => Navigator.pop(ctx, 'clients'),
+          ),
         ListTile(
           leading: const Icon(Icons.sensors_rounded, color: _kChipTeal),
           title: const Text('Scanner une puce', style: TextStyle(fontFamily: 'Galey')),
@@ -2341,6 +2430,7 @@ Future<Map<String, dynamic>?> pickAnimalForAdmission(BuildContext context, {bool
   );
   if (choice == null) return null;
   if (choice == 'skip') return {};
+  if (choice == 'clients') return context.mounted ? _choisirDansMesClients(context) : null;
 
   String? chip;
   if (choice == 'scan') {
@@ -2826,7 +2916,8 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
           'identification': _puceCtrl.text.trim(),
           if (widget.initialPhotoUrl != null) 'photo_url': widget.initialPhotoUrl,
           'statut': 'present',
-          // Fiche créée par la pension pour un client sans appli.
+          // Fiche créée par la pension pour un client sans appli, sur CE profil.
+          if (pid.isNotEmpty) 'profile_id': pid,
           if (pid.isNotEmpty) 'cree_par_pro_profile_id': pid,
         });
       }
