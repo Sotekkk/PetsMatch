@@ -37,7 +37,25 @@ export function prixActeExtra(libelle: string, extras: TarifExtra[], kg: number 
   return choisi && choisi.prix > 0 ? choisi.prix : null;
 }
 
-/** Autres actes lus depuis le profil (tableau JSON tarifs_veto_extra). */
+/** Ostéo / kiné : prix TTC d'une séance d'après le motif du RDV. D'abord « Autres actes »
+ *  (tarifs_sante_extra), puis la grille : bilan / consultation → « Consultation », séance / suivi
+ *  → « Séance de suivi », autre → « Autre prestation ». Motif sans tarif : grille selon le type de
+ *  séance. Prix absent ou à 0 : null (à compléter sur la facture). */
+export function prixSeanceSante(motif: string | null | undefined, tarifs: Record<string, unknown>, extras: TarifExtra[], kg: number | null, bilan = false): number | null {
+  const grille = (k: string) => { const v = parseFloat(String(tarifs[k] ?? '').replace(',', '.')); return v > 0 ? v : null; };
+  const m = norm(motif ?? '');
+  const parMotif = !m ? null : prixActeExtra(m, extras, kg, true)
+    ?? (/bilan|consultation/.test(m) ? grille('consultation') : /seance|suivi/.test(m) ? grille('seance') : m === 'autre' ? grille('autre') : null);
+  return parMotif ?? grille(bilan ? 'consultation' : 'seance');
+}
+
+/** Ostéo / kiné : supplément déplacement de la grille, sinon de « Autres actes ». */
+export function prixDeplacementSante(tarifs: Record<string, unknown>, extras: TarifExtra[]): number | null {
+  const v = parseFloat(String(tarifs.deplacement ?? '').replace(',', '.'));
+  return v > 0 ? v : prixActeExtra('deplacement', extras, null, true);
+}
+
+/** Autres actes lus depuis le profil (tableau JSON tarifs_veto_extra, tarifs_sante_extra). */
 export const extrasDepuis = (v: unknown): TarifExtra[] => Array.isArray(v)
   ? (v as { label?: unknown; prix?: unknown }[]).map(e => ({ label: String(e.label ?? ''), prix: Number(e.prix ?? 0) })).filter(e => e.label.trim())
   : [];

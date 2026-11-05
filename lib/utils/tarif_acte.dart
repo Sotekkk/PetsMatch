@@ -47,6 +47,31 @@ double? prixActeExtra(String libelle, List<TarifExtra> extras, double? kg, {bool
   return choisi != null && choisi.prix > 0 ? choisi.prix : null;
 }
 
+/// Ostéo / kiné : prix TTC d'une séance d'après le motif du RDV. D'abord « Autres actes »
+/// (tarifs_sante_extra), puis la grille : bilan / consultation → « Consultation », séance / suivi
+/// → « Séance de suivi », autre → « Autre prestation ». Motif sans tarif : grille selon le type de
+/// séance. Prix absent ou à 0 : null (à compléter sur la facture).
+double? prixSeanceSante(String? motif, Map<String, dynamic> tarifs, List<TarifExtra> extras, double? kg, {bool bilan = false}) {
+  double? grille(String k) {
+    final v = double.tryParse('${tarifs[k] ?? ''}'.replaceAll(',', '.'));
+    return v != null && v > 0 ? v : null;
+  }
+  final m = _norm(motif ?? '');
+  double? parMotif;
+  if (m.isNotEmpty) {
+    parMotif = prixActeExtra(m, extras, kg, souple: true)
+        ?? (RegExp('bilan|consultation').hasMatch(m) ? grille('consultation')
+            : RegExp('seance|suivi').hasMatch(m) ? grille('seance') : m == 'autre' ? grille('autre') : null);
+  }
+  return parMotif ?? grille(bilan ? 'consultation' : 'seance');
+}
+
+/// Ostéo / kiné : supplément déplacement de la grille, sinon de « Autres actes ».
+double? prixDeplacementSante(Map<String, dynamic> tarifs, List<TarifExtra> extras) {
+  final v = double.tryParse('${tarifs['deplacement'] ?? ''}'.replaceAll(',', '.'));
+  return v != null && v > 0 ? v : prixActeExtra('deplacement', extras, null, souple: true);
+}
+
 List<TarifExtra> extrasDepuis(dynamic v) => v is List
     ? [for (final e in v) if (e is Map && (e['label']?.toString().trim() ?? '').isNotEmpty)
         (label: e['label'].toString(), prix: double.tryParse('${e['prix'] ?? 0}'.replaceAll(',', '.')) ?? 0)]

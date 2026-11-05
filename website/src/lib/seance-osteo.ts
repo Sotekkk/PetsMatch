@@ -5,6 +5,8 @@
 import { supabase } from '@/lib/supabase';
 import { morphoSuiviPdfBlob } from '@/lib/morpho-pdf';
 import type { MorphoPoint, ExerciceSeance } from '@/lib/morpho';
+import { prixSeanceSante, prixDeplacementSante, extrasDepuis } from '@/lib/tarif-acte';
+import { animauxDetailRdv } from '@/lib/rdv-animaux';
 
 export interface SeanceRdv { id: string; animal_id: string | null; type_suivi: string | null; lieu: string | null; statut: string | null; date: string | null }
 
@@ -61,15 +63,23 @@ export async function pdfSeance(suiviId: string, signature?: string | null): Pro
   return { blob, animalNom: String(animal.nom ?? 'Animal') };
 }
 
-/** Lignes de facture des séances : « Séance » (tarif séance), « Consultation »
- *  pour un bilan, « Supplément déplacement » une fois si à domicile / extérieur ;
- *  nom de l'animal devant chaque ligne s'ils sont plusieurs. Prix TTC de la
- *  grille ostéo (franchise de TVA : TVA 0). */
-export async function lignesFactureOsteo(proProfileId: string, seances: SeanceRdv[], noms: Record<string, string>) {
-  const { data: p } = await supabase.from('user_profiles_complet').select('tarifs_sante, regime_tva_pro').eq('id', proProfileId).maybeSingle();
+/** Lignes de facture des séances : le motif du RDV (celui de chaque animal s'ils
+ *  sont plusieurs) donne l'intitulé et le prix (prixSeanceSante) ; sans motif,
+ *  « Séance » ou « Consultation (bilan) » ; « Supplément déplacement » une fois si
+ *  la séance ou le RDV a lieu à l'extérieur. Nom de l'animal devant chaque ligne
+ *  s'ils sont plusieurs. Prix TTC (franchise de TVA : TVA 0). */
+export async function lignesFactureOsteo(proProfileId: string, seances: SeanceRdv[], noms: Record<string, string>, rdvId?: string) {
+  const [{ data: p }, { data: r }, { data: an }] = await Promise.all([
+    supabase.from('user_profiles_complet').select('tarifs_sante, tarifs_sante_extra, regime_tva_pro').eq('id', proProfileId).maybeSingle(),
+    rdvId ? supabase.from('rdv').select('motif, animaux_detail, lieu, lieu_lat, salle_id').eq('id', rdvId).maybeSingle() : Promise.resolve({ data: null }),
+    supabase.from('animaux').select('id, poids').in('id', [...new Set(seances.map(s => s.animal_id).filter(Boolean) as string[])]),
+  ]);
   const tarifs = (p?.tarifs_sante ?? {}) as Record<string, unknown>;
+  const extras = extrasDepuis(p?.tarifs_sante_extra);
   const franchise = p?.regime_tva_pro === 'franchise';
-  const tarif = (k: string) => { const v = parseFloat(String(tarifs[k] ?? '').replace(',', '.')); return isNaN(v) ? null : v; };
+  const rdv = r as { motif?: string | null; animaux_detail?: unknown; lieu?: string | null; lieu_lat?: number | null; salle_id?: string | null } | null;
+  const detail = rdv ? animauxDetailRdv(rdv) : [];
+  const poids = new Map(((an ?? []) as { id: string; poids: unknown }[]).map(a => [String(a.id), parseFloat(String(a.poids ?? '').replace(',', '.'))]));
   const ligne = (d: string, ttc: number | null) => ({
     description: d, quantite: 1, tva: franchise ? 0 : 20,
     prixUnitaire: ttc == null ? 0 : franchise ? ttc : Math.round(ttc / 1.2 * 100) / 100,
@@ -78,12 +88,16 @@ export async function lignesFactureOsteo(proProfileId: string, seances: SeanceRd
   const lignes = seances.map(s => {
     const bilan = (s.type_suivi ?? '').startsWith('bilan');
     const pre = plusieurs && s.animal_id ? `${noms[s.animal_id] ?? 'Animal'} — ` : '';
-    return { ...ligne(`${plusieurs ? '' : pre}${bilan ? 'Consultation (bilan)' : 'Séance'}`, tarif(bilan ? 'consultation' : 'seance')),
+    const motif = (detail.find(a => a.id === String(s.animal_id))?.motif ?? rdv?.motif ?? '').trim();
+    const kg = s.animal_id ? poids.get(String(s.animal_id)) : undefined;
+    const intitule = motif && motif.toLowerCase() !== 'autre' ? motif : bilan ? 'Consultation (bilan)' : 'Séance';
+    return { ...ligne(`${plusieurs ? '' : pre}${intitule}`, prixSeanceSante(motif, tarifs, extras, kg != null && !isNaN(kg) ? kg : null, bilan)),
       ...(s.animal_id ? { animalId: s.animal_id, animalNom: noms[s.animal_id] ?? null } : {}) };
   });
   // Déplacement : commun à tous les animaux du RDV (compté une fois).
-  if (seances.some(s => s.lieu === 'exterieur' || s.lieu === 'domicile'))
-    lignes.push({ ...ligne('Supplément déplacement', tarif('deplacement')), ...(plusieurs ? { commune: true } : {}) });
+  const rdvExterieur = !!rdv && ((!!rdv.lieu?.trim() && !rdv.salle_id) || rdv.lieu_lat != null);
+  if (rdvExterieur || seances.some(s => s.lieu === 'exterieur' || s.lieu === 'domicile'))
+    lignes.push({ ...ligne('Supplément déplacement', prixDeplacementSante(tarifs, extras)), ...(plusieurs ? { commune: true } : {}) });
   return lignes;
 }
 
@@ -105,7 +119,7 @@ export async function preparerFactureOsteo(rdvId: string, proProfileId: string):
   const ids = [...new Set(seances.map(s => s.animal_id).filter(Boolean) as string[])];
   const { data: an } = ids.length ? await supabase.from('animaux').select('id, nom').in('id', ids) : { data: [] };
   const noms = Object.fromEntries(((an ?? []) as { id: string; nom: string }[]).map(a => [String(a.id), a.nom]));
-  const lignes = await lignesFactureOsteo(proProfileId, seances, noms);
+  const lignes = await lignesFactureOsteo(proProfileId, seances, noms, rdvId);
   const animalRef = ids[0] ?? null;
   const c = { prenom: '', nom: r.client_nom_manuel ?? '', email: r.client_email_manuel ?? '', tel: r.client_telephone_manuel ?? '', rue: '', cp: '', ville: '', pays: '', siret: '', tva: '' };
   if (animalRef) {

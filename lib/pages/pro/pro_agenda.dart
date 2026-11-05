@@ -5,7 +5,7 @@ import 'package:PetsMatch/utils/prochain_rdv.dart';
 import 'package:PetsMatch/utils/consignes_rdv.dart';
 import 'package:PetsMatch/utils/rdv_animaux.dart';
 import 'package:PetsMatch/widgets/rdv/motif_annulation.dart';
-import 'package:PetsMatch/utils/fin_seance_osteo.dart' show finSeanceOsteo;
+import 'package:PetsMatch/utils/fin_seance_osteo.dart' show finSeanceOsteo, facturerRdvOsteo;
 import 'package:PetsMatch/pages/pro/nouveau_patient_clinique_page.dart' show NouveauPatientCliniquePage;
 import 'package:PetsMatch/pages/pro/education_planning_page.dart' show EducationPlanningPage;
 import 'package:PetsMatch/pages/pro/photographe_dossier_seance.dart' show showDossierSeance, genererContratPhoto;
@@ -5718,6 +5718,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       await _facturerPhoto(rdv);
                     case 'garde':
                       await _facturerGarde(rdv);
+                    case 'sante':
+                      // Ostéo / kiné : prix selon le motif du RDV et les tarifs du profil.
+                      await facturerRdvOsteo(context, rdvId: rdv['id'].toString(),
+                          proProfileId: (rdv['pro_profile_id']?.toString() ?? '').isNotEmpty ? rdv['pro_profile_id'].toString() : AgendaContexte.profileId);
                     default:
                       await _facturerConsultation(rdv);
                   }

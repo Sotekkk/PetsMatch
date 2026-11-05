@@ -14,6 +14,8 @@ import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFactur
 import 'package:PetsMatch/pages/pro/transmission_document.dart' show envoyerDocumentsParEmail;
 import 'package:PetsMatch/utils/document_pro.dart' show comptesRendusProDuRdv, lignesCrsPro, ajouterPiecesCrsPro;
 import 'package:PetsMatch/utils/devis_rdv.dart';
+import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv;
+import 'package:PetsMatch/utils/tarif_acte.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
 const _teal = Color(0xFF0C5C6C);
@@ -84,32 +86,107 @@ Future<Uint8List> pdfSeance(Map<String, dynamic> suivi) async {
   );
 }
 
-/// Lignes de facture : « Séance », « Consultation (bilan) », « Supplément
-/// déplacement » une fois si à domicile / extérieur ; nom de l'animal devant
-/// chaque ligne s'ils sont plusieurs. Prix TTC de la grille ostéo.
-Future<List<FacturePrefillLigne>> lignesFactureOsteo(String proProfileId, List<Map<String, dynamic>> seances, Map<String, String> noms) async {
+/// Lignes de facture : le motif du RDV (celui de chaque animal s'ils sont
+/// plusieurs) donne l'intitulé et le prix (prixSeanceSante) ; sans motif,
+/// « Séance » ou « Consultation (bilan) » ; « Supplément déplacement » une fois si
+/// la séance ou le RDV a lieu à l'extérieur. Nom de l'animal devant chaque ligne
+/// s'ils sont plusieurs. Prix TTC.
+Future<List<FacturePrefillLigne>> lignesFactureOsteo(String proProfileId, List<Map<String, dynamic>> seances, Map<String, String> noms, {String? rdvId}) async {
+  final supa = Supabase.instance.client;
   Map<String, dynamic> tarifs = {};
+  List<TarifExtra> extras = const [];
   try {
-    final p = await Supabase.instance.client.from('user_profiles_complet').select('tarifs_sante').eq('id', proProfileId).maybeSingle();
+    final p = await supa.from('user_profiles_complet').select('tarifs_sante, tarifs_sante_extra').eq('id', proProfileId).maybeSingle();
     if (p?['tarifs_sante'] is Map) tarifs = Map<String, dynamic>.from(p!['tarifs_sante'] as Map);
+    extras = extrasDepuis(p?['tarifs_sante_extra']);
   } catch (_) {}
-  double? tarif(String k) => double.tryParse('${tarifs[k] ?? ''}'.replaceAll(',', '.'));
+  Map<String, dynamic>? rdv;
+  if (rdvId != null) {
+    try {
+      rdv = await supa.from('rdv').select('motif, animaux_detail, lieu, lieu_lat, salle_id').eq('id', rdvId).maybeSingle();
+    } catch (_) {}
+  }
+  final detail = rdv == null ? const <Map<String, dynamic>>[] : animauxDetailRdv(rdv);
+  final poids = <String, double?>{};
+  final idsAnimaux = {for (final s in seances) if (s['animal_id'] != null) s['animal_id'].toString()}.toList();
+  if (idsAnimaux.isNotEmpty) {
+    try {
+      for (final a in await supa.from('animaux').select('id, poids').inFilter('id', idsAnimaux) as List) {
+        poids[a['id'].toString()] = double.tryParse('${a['poids'] ?? ''}'.replaceAll(',', '.'));
+      }
+    } catch (_) {}
+  }
   final plusieurs = {for (final s in seances) s['animal_id']}.length > 1;
   final lignes = <FacturePrefillLigne>[
     for (final s in seances)
       () {
         final bilan = (s['type_suivi']?.toString() ?? '').startsWith('bilan');
         final aid = s['animal_id']?.toString();
-        return FacturePrefillLigne(designation: bilan ? 'Consultation (bilan)' : 'Séance',
-            prixTTC: tarif(bilan ? 'consultation' : 'seance'), quantite: 1,
+        final parAnimal = detail.where((a) => a['id'].toString() == aid).firstOrNull;
+        final motif = ((parAnimal?['motif'] ?? rdv?['motif'])?.toString() ?? '').trim();
+        return FacturePrefillLigne(
+            designation: motif.isNotEmpty && motif.toLowerCase() != 'autre' ? motif : bilan ? 'Consultation (bilan)' : 'Séance',
+            prixTTC: prixSeanceSante(motif, tarifs, extras, poids[aid], bilan: bilan), quantite: 1,
             animalId: aid, animalNom: aid == null ? null : noms[aid]);
       }(),
   ];
   // Déplacement : commun à tous les animaux du RDV (compté une fois).
-  if (seances.any((s) => s['lieu'] == 'exterieur' || s['lieu'] == 'domicile')) {
-    lignes.add(FacturePrefillLigne(designation: 'Supplément déplacement', prixTTC: tarif('deplacement'), quantite: 1, commune: plusieurs));
+  final rdvExterieur = rdv != null
+      && (((rdv['lieu']?.toString().trim() ?? '').isNotEmpty && rdv['salle_id'] == null) || rdv['lieu_lat'] != null);
+  if (rdvExterieur || seances.any((s) => s['lieu'] == 'exterieur' || s['lieu'] == 'domicile')) {
+    lignes.add(FacturePrefillLigne(designation: 'Supplément déplacement', prixTTC: prixDeplacementSante(tarifs, extras), quantite: 1, commune: plusieurs));
   }
   return lignes;
+}
+
+/// « Facturer » d'un RDV ostéo : facture préparée depuis ses séances finalisées, à
+/// défaut une ligne par animal du RDV ; client du RDV (coordonnées de facturation).
+Future<void> facturerRdvOsteo(BuildContext context, {required String rdvId, required String proProfileId, List<Map<String, dynamic>>? seancesConnues}) async {
+  final supa = Supabase.instance.client;
+  final r = await supa.from('rdv').select('animal_id, animaux_ids, client_uid, client_profile_id, client_nom_manuel, client_email_manuel, client_telephone_manuel')
+      .eq('id', rdvId).maybeSingle();
+  var seances = seancesConnues ?? await seancesDuRdv(rdvId);
+  if (seances.isEmpty) {
+    // Séance pas encore rédigée : une ligne par animal du RDV.
+    final idsRdv = [
+      for (final x in ((r?['animaux_ids'] is List && (r!['animaux_ids'] as List).isNotEmpty) ? r!['animaux_ids'] as List : [r?['animal_id']]))
+        if (x != null) x.toString(),
+    ];
+    seances = idsRdv.isEmpty ? [<String, dynamic>{'animal_id': null}] : [for (final id in idsRdv) <String, dynamic>{'animal_id': id}];
+  }
+  final ids = {for (final s in seances) if (s['animal_id'] != null) s['animal_id'].toString()}.toList();
+  final noms = <String, String>{};
+  if (ids.isNotEmpty) {
+    for (final a in await supa.from('animaux').select('id, nom').inFilter('id', ids) as List) {
+      noms[a['id'].toString()] = a['nom']?.toString() ?? '';
+    }
+  }
+  final lignes = await lignesFactureOsteo(proProfileId, seances, noms, rdvId: rdvId);
+  final animalRef = ids.isNotEmpty ? ids.first : null;
+  String? vide(dynamic v) => (v?.toString().trim() ?? '').isEmpty ? null : v.toString().trim();
+  String? prenom, nom = vide(r?['client_nom_manuel']), email = vide(r?['client_email_manuel']), tel = vide(r?['client_telephone_manuel']), rue, cp, ville;
+  if (animalRef != null) {
+    try {
+      final j = await supa.rpc('pm_client_facturation', params: {
+        'p_animal_id': animalRef, if (r?['client_profile_id'] != null) 'p_client_profile_id': r!['client_profile_id'],
+      });
+      if (j is Map && (vide(j['nom']) != null || vide(j['prenom']) != null)) {
+        prenom = vide(j['prenom']); nom = vide(j['nom']); email = vide(j['email']); tel = vide(j['telephone']);
+        rue = vide(j['rue']); cp = vide(j['code_postal']); ville = vide(j['ville']);
+      }
+    } catch (_) {}
+  }
+  if (!context.mounted) return;
+  final listeNoms = noms.values.where((n) => n.isNotEmpty).join(', ');
+  await Navigator.push(context, MaterialPageRoute(builder: (_) => CreerFacturePage(
+    clientPrenom: prenom, clientNom: nom, clientEmail: email, clientTel: tel,
+    clientRue: rue, clientCp: cp, clientVille: ville,
+    lignesPrefill: lignes,
+    noteInitiale: 'Séance${seances.length > 1 ? 's' : ''} de ${listeNoms.isEmpty ? 'votre animal' : listeNoms}',
+    sourceRdvId: rdvId, sourceAnimalId: animalRef,
+    envoiEnFinDeSeance: true,
+    clientUid: r?['client_uid']?.toString(), clientProfileId: r?['client_profile_id']?.toString(),
+  )));
 }
 
 /// Fenêtre de fin de séance d'un RDV.
@@ -217,35 +294,8 @@ Future<void> finSeanceOsteo(BuildContext context, {required String rdvId, String
   final messenger = ScaffoldMessenger.of(context);
   try {
     if (choix == 'facture') {
-      // Facture préparée depuis les tarifs ; client du RDV (coordonnées de facturation).
-      final lignes = await lignesFactureOsteo(pro!, seances, noms);
-      final r = await supa.from('rdv').select('client_uid, client_profile_id, client_nom_manuel, client_email_manuel, client_telephone_manuel')
-          .eq('id', rdvId).maybeSingle();
-      final animalRef = ids.isNotEmpty ? ids.first : null;
-      String? vide(dynamic v) => (v?.toString().trim() ?? '').isEmpty ? null : v.toString().trim();
-      String? prenom, nom = vide(r?['client_nom_manuel']), email = vide(r?['client_email_manuel']), tel = vide(r?['client_telephone_manuel']), rue, cp, ville;
-      if (animalRef != null) {
-        try {
-          final j = await supa.rpc('pm_client_facturation', params: {
-            'p_animal_id': animalRef, if (r?['client_profile_id'] != null) 'p_client_profile_id': r!['client_profile_id'],
-          });
-          if (j is Map && (vide(j['nom']) != null || vide(j['prenom']) != null)) {
-            prenom = vide(j['prenom']); nom = vide(j['nom']); email = vide(j['email']); tel = vide(j['telephone']);
-            rue = vide(j['rue']); cp = vide(j['code_postal']); ville = vide(j['ville']);
-          }
-        } catch (_) {}
-      }
-      if (!context.mounted) return;
-      final listeNoms = noms.values.where((n) => n.isNotEmpty).join(', ');
-      await Navigator.push(context, MaterialPageRoute(builder: (_) => CreerFacturePage(
-        clientPrenom: prenom, clientNom: nom, clientEmail: email, clientTel: tel,
-        clientRue: rue, clientCp: cp, clientVille: ville,
-        lignesPrefill: lignes,
-        noteInitiale: 'Séance${seances.length > 1 ? 's' : ''} de ${listeNoms.isEmpty ? 'votre animal' : listeNoms}',
-        sourceRdvId: rdvId, sourceAnimalId: animalRef,
-        envoiEnFinDeSeance: true,
-        clientUid: r?['client_uid']?.toString(), clientProfileId: r?['client_profile_id']?.toString(),
-      )));
+      // Facture préparée depuis les tarifs et le motif du RDV.
+      await facturerRdvOsteo(context, rdvId: rdvId, proProfileId: pro!, seancesConnues: seances);
       // Facture faite : la fin de séance reprend (envoi, acquittée).
       if (context.mounted) await finSeanceOsteo(context, rdvId: rdvId, proProfileId: pro);
       return;
