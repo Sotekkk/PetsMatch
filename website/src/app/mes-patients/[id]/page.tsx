@@ -1366,6 +1366,15 @@ function PatientDetailPageInner() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     chargerGarde();
   }, [chargerGarde]);
+  // Bilan, quel que soit le chemin (dossier de la séance, Documents, type choisi) :
+  // catalogue chargé pour proposer un forfait conseillé.
+  useEffect(() => {
+    if (rapportType !== 'bilan' || forfaitsEdu.length > 0 || !user?.uid) return;
+    supabase.from('forfaits_education').select('id, nom, nb_seances, prix').eq('pro_uid', user.uid).eq('actif', true).order('created_at')
+      .then(({ data }) => setForfaitsEdu((data ?? []) as typeof forfaitsEdu));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rapportType, user?.uid]);
+
   // « Rédiger » depuis le dossier de la séance (?rdv=…) : nouveau compte rendu
   // rattaché au RDV — aussi sur le profil principal (profil actif vide).
   useEffect(() => {
@@ -3024,7 +3033,7 @@ function PatientDetailPageInner() {
     try {
       const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
       const chosen = biblio.filter(b => attrPicker.ids.has(b.id));
-      await supabase.from('exercices_attribues').insert(chosen.map(b => ({
+      const { error: errAttr } = await supabase.from('exercices_attribues').insert(chosen.map(b => ({
         exercice_id: b.id, pro_uid: user.uid, pro_profile_id: activeProfileId || null,
         animal_id: animalId, owner_uid: ownerUid,
         titre_snapshot: b.titre, description_snapshot: b.description, media_snapshot: b.media ?? [],
@@ -3034,6 +3043,7 @@ function PatientDetailPageInner() {
         nb_validations: (b.etapes ?? []).length ? 1 : attrPicker.nbValidations,
         rappels_actifs: attrPicker.rappels,
       })));
+      if (errAttr) { alert(`Exercices non attribués : ${errAttr.message}`); return; }
       if (ownerUid) {
         const proNom = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || 'Votre éducateur';
         const { data: propRow } = await supabase.from('animaux_proprietes')

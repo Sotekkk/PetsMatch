@@ -53,10 +53,28 @@ Future<void> devisDepuisRdv(BuildContext context, Map<String, dynamic> rdv, {Str
   final motif = _v(rdv['motif']);
   // Plusieurs animaux : une ligne par animal (son cours, son prix).
   final detail = animauxDetailRdv(rdv);
+  // Forfait conseillé dans le bilan de ce RDV : proposé dans le devis (miroir site).
+  Map<String, dynamic>? conseil;
+  try {
+    final supa = Supabase.instance.client;
+    final bilan = await supa.from('education_progression').select('bilan_forfait_conseille_id')
+        .eq('rdv_id', rdv['id'].toString()).eq('type', 'bilan').not('bilan_forfait_conseille_id', 'is', null)
+        .order('created_at', ascending: false).limit(1).maybeSingle();
+    final idConseil = bilan?['bilan_forfait_conseille_id'];
+    if (idConseil != null) {
+      conseil = await supa.from('forfaits_education').select('nom, nb_seances, prix').eq('id', idConseil).maybeSingle();
+    }
+  } catch (_) {}
+  if (!context.mounted) return;
   await Navigator.push(context, MaterialPageRoute(builder: (_) => DevisPage(prefill: DevisPrefill(
     animalId: rdv['animal_id']?.toString(), clientUid: rdv['client_uid']?.toString(), clientProfileId: rdv['client_profile_id']?.toString(),
     clientNom: c['nom'], clientPrenom: c['prenom'], clientEmail: c['email'], clientTel: c['tel'], rdvId: rdv['id'].toString(),
-    lignes: detail.isNotEmpty
+    lignes: conseil != null
+        ? [{
+            'description': 'Forfait ${conseil['nom']}${conseil['nb_seances'] != null ? ' (${conseil['nb_seances']} séances)' : ''}',
+            'quantite': 1, 'prix_unitaire': (conseil['prix'] as num?)?.toDouble() ?? 0,
+          }]
+        : detail.isNotEmpty
         ? [for (final a in detail) {
             'description': [_v(a['motif']), _v(a['nom'])].where((x) => x.isNotEmpty).join(' — '),
             'quantite': 1, 'prix_unitaire': (a['prix'] as num?)?.toDouble() ?? 0,

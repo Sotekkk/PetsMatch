@@ -69,6 +69,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   const [crOrphelin, setCrOrphelin] = useState<{ id: string; date_seance: string | null } | null>(null);
   // RDV de bilan (cours de type « Bilan » du catalogue) : bilan comportemental.
   const [estBilan, setEstBilan] = useState(false);
+  const [forfaitConseille, setForfaitConseille] = useState<{ nom: string; nb_seances: number | null; prix: number | null } | null>(null);
   const [devis, setDevis] = useState<{ id: string; statut: string | null; total_ttc: number | null } | null>(null);
   // Prochain rendez-vous (facultatif) : programmé tout de suite ou par le client plus tard.
   const [prochain, setProchain] = useState<ProchainRdv | null>(null);
@@ -95,8 +96,8 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     const [an, pr, dv, fa, cc] = await Promise.all([
       aid ? supabase.from('animaux').select('nom').eq('id', aid).maybeSingle() : Promise.resolve({ data: null }),
       (detail.length > 0 && aid
-        ? supabase.from('education_progression').select('id, statut, type').eq('rdv_id', rdvId).eq('animal_id', aid)
-        : supabase.from('education_progression').select('id, statut, type').eq('rdv_id', rdvId)).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        ? supabase.from('education_progression').select('id, statut, type, bilan_forfait_conseille_id').eq('rdv_id', rdvId).eq('animal_id', aid)
+        : supabase.from('education_progression').select('id, statut, type, bilan_forfait_conseille_id').eq('rdv_id', rdvId)).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('devis').select('id, statut, total_ttc').eq('rdv_id', rdvId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('factures').select('id, statut, total_ttc, numero_affichage').eq('source_rdv_id', rdvId).neq('statut', 'annulee')
         .or('type_facture.is.null,type_facture.not.in.(acompte,avoir)').order('created_at', { ascending: false }).limit(1).maybeSingle(),
@@ -104,6 +105,12 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     ]);
     setAnimalNom((an.data as { nom?: string } | null)?.nom ?? detail.find(a => a.id === aid)?.nom ?? x.animal_nom_manuel ?? '');
     setCr((pr.data as typeof cr) ?? null);
+    // Forfait conseillé dans le bilan de ce RDV : proposé dans le devis.
+    const idConseil = (pr.data as { bilan_forfait_conseille_id?: string | null } | null)?.bilan_forfait_conseille_id;
+    if (idConseil) {
+      const { data: fc } = await supabase.from('forfaits_education').select('nom, nb_seances, prix').eq('id', idConseil).maybeSingle();
+      setForfaitConseille((fc as typeof forfaitConseille) ?? null);
+    } else setForfaitConseille(null);
     if (x.prestation_id) {
       const { data: pe } = await supabase.from('prestations_education').select('bilan_requis').eq('id', x.prestation_id).maybeSingle();
       setEstBilan(!!(pe as { bilan_requis?: boolean } | null)?.bilan_requis);
@@ -161,8 +168,13 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     if (coord.prenom) q.set('prenom', coord.prenom);
     if (coord.email) q.set('email', coord.email);
     if (coord.tel) q.set('tel', coord.tel);
+    if (forfaitConseille) {
+      q.set('ligneDesc', `Forfait ${forfaitConseille.nom}${forfaitConseille.nb_seances ? ` (${forfaitConseille.nb_seances} séances)` : ''}`);
+      q.set('ligneQte', '1');
+      q.set('lignePrix', String(forfaitConseille.prix ?? 0));
+    }
     // Plusieurs animaux : une ligne par animal (son cours, son prix).
-    if (detail.length > 0) q.set('lignes', JSON.stringify(detail.map(a => ({ d: [a.motif?.trim(), a.nom].filter(Boolean).join(' — '), q: 1, p: a.prix ?? 0 }))));
+    else if (detail.length > 0) q.set('lignes', JSON.stringify(detail.map(a => ({ d: [a.motif?.trim(), a.nom].filter(Boolean).join(' — '), q: 1, p: a.prix ?? 0 }))));
     else if (r.motif?.trim()) { q.set('ligneDesc', [r.motif.trim(), animalNom].filter(Boolean).join(' — ')); q.set('ligneQte', '1');
       if (r.prix_calcule != null) q.set('lignePrix', String(r.prix_calcule)); }
     ouvrir(`/education/devis?${q.toString()}`, 'Devis de la séance');
@@ -330,7 +342,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
                 await decompterSeance(t);
               }), btn('Gérer', () => fiche('tab=Programme', 'Forfait'))]
                 : [btn('Attribuer un forfait', () => fiche('tab=Programme&forfait=1', 'Attribuer un forfait'))])}
-          {ligne('Devis', !devis ? 'Aucun' : `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'À envoyer à la fin'} · ${eur(devis.total_ttc)}`,
+          {ligne('Devis', !devis ? (forfaitConseille ? `À proposer : forfait ${forfaitConseille.nom}` : 'Aucun') : `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'À envoyer à la fin'} · ${eur(devis.total_ttc)}`,
             !devis ? GRIS : devis.statut === 'accepte' ? VERT : AMBRE,
             [!devis ? btn('Créer', creerDevis) : devisModifiable(devis.statut) ? btn('Modifier', () => ouvrir(`/education/devis?modifier=${devis.id}`, 'Devis')) : btn('Voir', () => ouvrir('/education/devis', 'Devis'))])}
           {!facture && r.forfait_souscrit_id ? ligne('Facture', 'Couverte par le forfait (payé d’avance)', VERT, [])

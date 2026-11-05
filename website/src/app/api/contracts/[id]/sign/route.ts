@@ -237,7 +237,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             .select('pro_uid, pro_profile_id, client_uid, client_profile_id, animal_id, lignes').eq('id', devisId).maybeSingle();
           if (dv?.pro_uid && Array.isArray(dv.lignes)) {
             const { data: forfaits } = await supabase.from('forfaits_education')
-              .select('id, nom, nb_seances, prix').eq('pro_uid', dv.pro_uid).eq('actif', true);
+              .select('id, nom, nb_seances, prix, type_seances, nb_seances_indiv, nb_seances_coll').eq('pro_uid', dv.pro_uid).eq('actif', true);
             for (const l of dv.lignes as { description?: string }[]) {
               const desc = (l.description ?? '').toLowerCase();
               const match = (forfaits ?? []).find(f => desc.includes((f.nom ?? '').toLowerCase()) && (f.nom ?? '').length > 2);
@@ -250,6 +250,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                     client_uid: dv.client_uid, client_profile_id: dv.client_profile_id, animal_id: dv.animal_id,
                     nom_snapshot: match.nom, nb_seances_total: match.nb_seances ?? 1, prix_snapshot: match.prix,
                     devis_id: devisId,
+                    // Type du forfait du catalogue (sinon « mixte » par défaut, sans répartition).
+                    type_seances: match.type_seances ?? 'mixte',
+                    ...(match.type_seances === 'mixte' ? { nb_indiv_total: match.nb_seances_indiv ?? 0, nb_coll_total: match.nb_seances_coll ?? 0 } : {}),
                   });
                 }
               }
