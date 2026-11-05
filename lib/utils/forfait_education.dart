@@ -58,13 +58,14 @@ int seancesRestantes(Map<String, dynamic> f) {
   return r < 0 ? 0 : r;
 }
 
-/// Décompte la séance du RDV de ce forfait (une seule fois par RDV) et prévient
-/// la famille quand il ne reste qu'une séance ou plus aucune.
-Future<void> decompterSeanceForfait(Map<String, dynamic> f, String rdvId,
-    {required String animalId, required String animalNom, String? ownerUid, String typeCours = 'individuel'}) async {
+List<Map<String, dynamic>> _detailRdv(Map<String, dynamic>? rdv) {
+  final brut = rdv?['animaux_detail'];
+  if (brut is! List || brut.length < 2) return [];
+  return [for (final x in brut) if (x is Map) Map<String, dynamic>.from(x)];
+}
+
+Future<void> _retirerSeance(Map<String, dynamic> f, String typeCours, {required String animalId, required String animalNom, String? ownerUid}) async {
   final supa = Supabase.instance.client;
-  final rdv = await supa.from('rdv').select('forfait_souscrit_id').eq('id', rdvId).maybeSingle();
-  if (rdv?['forfait_souscrit_id'] != null) return;
   final total = (f['nb_seances_total'] as num?)?.toInt() ?? 1;
   final used = ((f['nb_seances_utilisees'] as num?)?.toInt() ?? 0) + 1;
   final termine = used >= total;
@@ -76,7 +77,6 @@ Future<void> decompterSeanceForfait(Map<String, dynamic> f, String rdvId,
     if (termine) 'statut': 'termine',
     if (termine) 'termine_le': DateTime.now().toUtc().toIso8601String(),
   }).eq('id', f['id']);
-  await supa.from('rdv').update({'forfait_souscrit_id': f['id'], 'forfait_type_decompte': reparti ? typeCours : null}).eq('id', rdvId);
   if (ownerUid != null && (used == total - 1 || termine)) {
     await supa.from('notifications').insert({
       'uid': ownerUid, 'type': 'education_forfait_bas',
@@ -89,20 +89,81 @@ Future<void> decompterSeanceForfait(Map<String, dynamic> f, String rdvId,
   }
 }
 
-/// Annule le décompte de la séance du RDV (rend la séance au forfait).
-Future<void> annulerDecompteForfait(String rdvId) async {
+/// Décompte la séance du RDV (une seule fois par RDV) et prévient la famille quand il
+/// ne reste qu'une séance ou plus aucune. Séance à plusieurs chiens : chacun sur son
+/// propre forfait, noté dans rdv.animaux_detail. Renvoie les chiens sans forfait actif.
+Future<List<String>> decompterSeanceForfait(Map<String, dynamic> f, String rdvId,
+    {required String animalId, required String animalNom, String? ownerUid, String typeCours = 'individuel'}) async {
   final supa = Supabase.instance.client;
-  final rdv = await supa.from('rdv').select('forfait_souscrit_id, forfait_type_decompte').eq('id', rdvId).maybeSingle();
-  final fid = rdv?['forfait_souscrit_id'];
-  if (fid == null) return;
+  final rdv = await supa.from('rdv').select('forfait_souscrit_id, animaux_detail, pro_profile_id').eq('id', rdvId).maybeSingle();
+  if (rdv?['forfait_souscrit_id'] != null) return const [];
+  final detail = _detailRdv(rdv);
+  if (detail.isEmpty) {
+    await _retirerSeance(f, typeCours, animalId: animalId, animalNom: animalNom, ownerUid: ownerUid);
+    await supa.from('rdv').update({'forfait_souscrit_id': f['id'], 'forfait_type_decompte': estReparti(f) ? typeCours : null}).eq('id', rdvId);
+    return const [];
+  }
+  final sansForfait = <String>[];
+  Object? premier;
+  for (final a in detail) {
+    final idChien = a['id'].toString();
+    final nomChien = (a['nom'] ?? '').toString();
+    Map<String, dynamic>? fa = idChien == animalId ? f : null;
+    if (fa == null) {
+      var q = supa.from('forfaits_souscrits').select().eq('animal_id', idChien).eq('statut', 'actif');
+      final pid = rdv?['pro_profile_id'];
+      if (pid != null) q = q.eq('pro_profile_id', pid);
+      fa = await q.order('souscrit_le', ascending: false).limit(1).maybeSingle();
+    }
+    if (fa == null) { sansForfait.add(nomChien); continue; }
+    await _retirerSeance(fa, typeCours, animalId: idChien, animalNom: nomChien, ownerUid: ownerUid);
+    a['forfait_souscrit_id'] = fa['id'];
+    a['forfait_type_decompte'] = estReparti(fa) ? typeCours : null;
+    premier ??= fa['id'];
+    // Enregistré chien par chien : une erreur en cours de route ne fausse pas les soldes.
+    await supa.from('rdv').update({
+      'animaux_detail': detail, 'forfait_souscrit_id': premier, 'forfait_type_decompte': a['forfait_type_decompte'],
+    }).eq('id', rdvId);
+  }
+  return sansForfait;
+}
+
+Future<void> _rendreSeance(Object fid, String? type) async {
+  final supa = Supabase.instance.client;
   final f = await supa.from('forfaits_souscrits').select('nb_seances_utilisees, nb_indiv_utilisees, nb_coll_utilisees').eq('id', fid).maybeSingle();
   int moins(String c) { final v = ((f?[c] as num?)?.toInt() ?? 1) - 1; return v < 0 ? 0 : v; }
-  final type = rdv?['forfait_type_decompte']?.toString();
   await supa.from('forfaits_souscrits').update({
     'nb_seances_utilisees': moins('nb_seances_utilisees'),
     if (type == 'collectif') 'nb_coll_utilisees': moins('nb_coll_utilisees'),
     if (type == 'individuel') 'nb_indiv_utilisees': moins('nb_indiv_utilisees'),
     'statut': 'actif', 'termine_le': null,
   }).eq('id', fid);
-  await supa.from('rdv').update({'forfait_souscrit_id': null, 'forfait_type_decompte': null}).eq('id', rdvId);
+}
+
+/// Annule le décompte de la séance du RDV (rend la séance au forfait de chaque chien).
+Future<void> annulerDecompteForfait(String rdvId) async {
+  final supa = Supabase.instance.client;
+  final rdv = await supa.from('rdv').select('forfait_souscrit_id, forfait_type_decompte, animaux_detail').eq('id', rdvId).maybeSingle();
+  final fid = rdv?['forfait_souscrit_id'];
+  if (fid == null) return;
+  final detail = _detailRdv(rdv);
+  final marques = detail.where((a) => a['forfait_souscrit_id'] != null).toList();
+  if (marques.isEmpty) {
+    await _rendreSeance(fid as Object, rdv?['forfait_type_decompte']?.toString());
+    await supa.from('rdv').update({'forfait_souscrit_id': null, 'forfait_type_decompte': null}).eq('id', rdvId);
+    return;
+  }
+  for (final a in marques) {
+    await _rendreSeance(a['forfait_souscrit_id'] as Object, a['forfait_type_decompte']?.toString());
+  }
+  for (final a in detail) { a.remove('forfait_souscrit_id'); a.remove('forfait_type_decompte'); }
+  await supa.from('rdv').update({'animaux_detail': detail, 'forfait_souscrit_id': null, 'forfait_type_decompte': null}).eq('id', rdvId);
+}
+
+/// Séance sans facture : tous les chiens décomptés (RDV ancien sans détail : le forfait du RDV).
+bool seanceCouverte(Map<String, dynamic> rdv) {
+  if (rdv['forfait_souscrit_id'] == null) return false;
+  final detail = _detailRdv(rdv);
+  return !detail.any((a) => a['forfait_souscrit_id'] != null) || detail.every((a) => a['forfait_souscrit_id'] != null);
+
 }

@@ -1290,8 +1290,9 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             chip(Icons.confirmation_number_outlined,
                 'Décompter du forfait (${libelleCompteurs(_forfaitActif!)})', () async {
               final t = await typeSeanceRdv(rdv);
-              await decompterSeanceForfait(_forfaitActif!, rdv['id'].toString(),
+              final sansForfait = await decompterSeanceForfait(_forfaitActif!, rdv['id'].toString(),
                   animalId: widget.animalId, animalNom: widget.animalNom, ownerUid: _ownerUid, typeCours: t);
+              if (sansForfait.isNotEmpty) _snack('${sansForfait.join(', ')} : pas de forfait en cours, séance non décomptée (à facturer).');
               _rdvDossier = null;
             })
           else
@@ -1302,7 +1303,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                 nouveauRdvAnimalId: widget.animalId, nouveauRdvMotif: rdv['motif']?.toString())));
             _rdvDossier = null;
           }),
-          if (rdv['forfait_souscrit_id'] == null)
+          if (!seanceCouverte(rdv))
             chip(Icons.receipt_long_outlined, 'Facture', () => factureDepuisRdv(context, rdv, animalNom: widget.animalNom)),
           chip(Icons.upload_file_outlined, _rdvEstBilan ? 'Charger mon bilan' : 'Charger mon compte rendu', () async {
             await showDocumentProSheet(context, rdv: rdv, mode: 'compte_rendu', clientNom: widget.ownerName,
@@ -1345,8 +1346,9 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                 decompter = choix == 'decompter';
               }
               if (decompter) {
-                await decompterSeanceForfait(f, rdv['id'].toString(),
+                final sansForfait = await decompterSeanceForfait(f, rdv['id'].toString(),
                     animalId: widget.animalId, animalNom: widget.animalNom, ownerUid: _ownerUid, typeCours: typeCours);
+                if (sansForfait.isNotEmpty) _snack('${sansForfait.join(', ')} : pas de forfait en cours, séance non décomptée (à facturer).');
                 cible = {...rdv, 'forfait_souscrit_id': f['id']};
               }
             }

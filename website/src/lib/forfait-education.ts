@@ -4,6 +4,7 @@
 // préparée à l'attribution (payé d'avance). Miroir appli :
 // lib/utils/forfait_education.dart.
 import { supabase } from '@/lib/supabase';
+import { animauxDetailRdv, type AnimalRdv } from '@/lib/rdv-animaux';
 
 export type TypeSeances = 'individuel' | 'collectif' | 'mixte';
 
@@ -62,18 +63,11 @@ export const forfaitCouvre = (f: ForfaitActif, type: 'individuel' | 'collectif')
 
 export const seancesRestantes = (f: ForfaitActif) => Math.max(0, f.nb_seances_total - f.nb_seances_utilisees);
 
-/** Décompte la séance du RDV de ce forfait (une seule fois par RDV) et prévient
- *  la famille quand il ne reste qu'une séance ou plus aucune. */
-export async function decompterSeanceForfait(f: ForfaitActif, rdvId: string, o: {
-  animalId: string; animalNom: string; ownerUid?: string | null;
-  /** Type du cours du RDV : décompté du bon compteur d'un forfait mixte réparti. */
-  typeCours?: 'individuel' | 'collectif';
-}) {
-  const { data: rdv } = await supabase.from('rdv').select('forfait_souscrit_id').eq('id', rdvId).maybeSingle();
-  if ((rdv as { forfait_souscrit_id?: string | null } | null)?.forfait_souscrit_id) return;
+type MarqueForfait = { forfait_souscrit_id?: string | null; forfait_type_decompte?: string | null };
+
+async function retirerSeance(f: ForfaitActif, type: 'individuel' | 'collectif', o: { animalId: string; animalNom: string; ownerUid?: string | null }) {
   const used = f.nb_seances_utilisees + 1;
   const termine = used >= f.nb_seances_total;
-  const type = o.typeCours ?? 'individuel';
   const compteur = estReparti(f) ? (type === 'collectif'
     ? { nb_coll_utilisees: (f.nb_coll_utilisees ?? 0) + 1 } : { nb_indiv_utilisees: (f.nb_indiv_utilisees ?? 0) + 1 }) : {};
   const { error } = await supabase.from('forfaits_souscrits').update({
@@ -81,7 +75,6 @@ export async function decompterSeanceForfait(f: ForfaitActif, rdvId: string, o: 
     ...(termine ? { statut: 'termine', termine_le: new Date().toISOString() } : {}),
   }).eq('id', f.id);
   if (error) throw error;
-  await supabase.from('rdv').update({ forfait_souscrit_id: f.id, forfait_type_decompte: estReparti(f) ? type : null }).eq('id', rdvId);
   if (o.ownerUid && (used === f.nb_seances_total - 1 || termine)) {
     await supabase.from('notifications').insert({
       uid: o.ownerUid, type: 'education_forfait_bas',
@@ -93,20 +86,81 @@ export async function decompterSeanceForfait(f: ForfaitActif, rdvId: string, o: 
   }
 }
 
-/** Annule le décompte de la séance du RDV (rend la séance au forfait). */
-export async function annulerDecompteForfait(rdvId: string) {
-  const { data: rdv } = await supabase.from('rdv').select('forfait_souscrit_id, forfait_type_decompte').eq('id', rdvId).maybeSingle();
-  const r = rdv as { forfait_souscrit_id?: string | null; forfait_type_decompte?: string | null } | null;
-  const fid = r?.forfait_souscrit_id;
-  if (!fid) return;
+/** Décompte la séance du RDV (une seule fois par RDV) et prévient la famille quand il ne
+ *  reste qu'une séance ou plus aucune. Séance à plusieurs chiens : chacun sur son propre
+ *  forfait, noté dans rdv.animaux_detail. Renvoie les chiens sans forfait actif. */
+export async function decompterSeanceForfait(f: ForfaitActif, rdvId: string, o: {
+  animalId: string; animalNom: string; ownerUid?: string | null;
+  /** Type du cours du RDV : décompté du bon compteur d'un forfait mixte réparti. */
+  typeCours?: 'individuel' | 'collectif';
+}): Promise<string[]> {
+  const { data } = await supabase.from('rdv').select('forfait_souscrit_id, animaux_detail, pro_profile_id').eq('id', rdvId).maybeSingle();
+  const rdv = data as { forfait_souscrit_id?: string | null; animaux_detail?: unknown; pro_profile_id?: string | null } | null;
+  if (rdv?.forfait_souscrit_id) return [];
+  const type = o.typeCours ?? 'individuel';
+  const detail = animauxDetailRdv(rdv ?? {}) as (AnimalRdv & MarqueForfait)[];
+  if (detail.length < 2) {
+    await retirerSeance(f, type, o);
+    await supabase.from('rdv').update({ forfait_souscrit_id: f.id, forfait_type_decompte: estReparti(f) ? type : null }).eq('id', rdvId);
+    return [];
+  }
+  const sansForfait: string[] = [];
+  let premier: string | null = null;
+  for (const a of detail) {
+    let fa: ForfaitActif | null = a.id === o.animalId ? f : null;
+    if (!fa) {
+      let q = supabase.from('forfaits_souscrits').select(COLS_FORFAIT_SOUSCRIT).eq('animal_id', a.id).eq('statut', 'actif');
+      if (rdv?.pro_profile_id) q = q.eq('pro_profile_id', rdv.pro_profile_id);
+      const { data: l } = await q.order('souscrit_le', { ascending: false }).limit(1).maybeSingle();
+      fa = (l as ForfaitActif | null) ?? null;
+    }
+    if (!fa) { sansForfait.push(a.nom); continue; }
+    await retirerSeance(fa, type, { animalId: a.id, animalNom: a.nom, ownerUid: o.ownerUid });
+    a.forfait_souscrit_id = fa.id;
+    a.forfait_type_decompte = estReparti(fa) ? type : null;
+    premier = premier ?? fa.id;
+    // Enregistré chien par chien : une erreur en cours de route ne fausse pas les soldes.
+    await supabase.from('rdv').update({
+      animaux_detail: detail, forfait_souscrit_id: premier, forfait_type_decompte: a.forfait_type_decompte,
+    }).eq('id', rdvId);
+  }
+  return sansForfait;
+}
+
+async function rendreSeance(fid: string, type?: string | null) {
   const { data: f } = await supabase.from('forfaits_souscrits').select('nb_seances_utilisees, nb_indiv_utilisees, nb_coll_utilisees').eq('id', fid).maybeSingle();
   const x = f as { nb_seances_utilisees?: number; nb_indiv_utilisees?: number; nb_coll_utilisees?: number } | null;
-  const compteur = r?.forfait_type_decompte === 'collectif' ? { nb_coll_utilisees: Math.max(0, (x?.nb_coll_utilisees ?? 1) - 1) }
-    : r?.forfait_type_decompte === 'individuel' ? { nb_indiv_utilisees: Math.max(0, (x?.nb_indiv_utilisees ?? 1) - 1) } : {};
+  const compteur = type === 'collectif' ? { nb_coll_utilisees: Math.max(0, (x?.nb_coll_utilisees ?? 1) - 1) }
+    : type === 'individuel' ? { nb_indiv_utilisees: Math.max(0, (x?.nb_indiv_utilisees ?? 1) - 1) } : {};
   await supabase.from('forfaits_souscrits').update({
     nb_seances_utilisees: Math.max(0, (x?.nb_seances_utilisees ?? 1) - 1), ...compteur, statut: 'actif', termine_le: null,
   }).eq('id', fid);
-  await supabase.from('rdv').update({ forfait_souscrit_id: null, forfait_type_decompte: null }).eq('id', rdvId);
+}
+
+/** Annule le décompte de la séance du RDV (rend la séance au forfait de chaque chien). */
+export async function annulerDecompteForfait(rdvId: string) {
+  const { data: rdv } = await supabase.from('rdv').select('forfait_souscrit_id, forfait_type_decompte, animaux_detail').eq('id', rdvId).maybeSingle();
+  const r = rdv as { forfait_souscrit_id?: string | null; forfait_type_decompte?: string | null; animaux_detail?: unknown } | null;
+  if (!r?.forfait_souscrit_id) return;
+  const detail = animauxDetailRdv(r) as (AnimalRdv & MarqueForfait)[];
+  const marques = detail.filter(a => a.forfait_souscrit_id);
+  if (marques.length === 0) {
+    await rendreSeance(r.forfait_souscrit_id, r.forfait_type_decompte);
+    await supabase.from('rdv').update({ forfait_souscrit_id: null, forfait_type_decompte: null }).eq('id', rdvId);
+    return;
+  }
+  for (const a of marques) await rendreSeance(a.forfait_souscrit_id!, a.forfait_type_decompte);
+  await supabase.from('rdv').update({
+    animaux_detail: detail.map(({ forfait_souscrit_id: _f, forfait_type_decompte: _t, ...reste }) => reste),
+    forfait_souscrit_id: null, forfait_type_decompte: null,
+  }).eq('id', rdvId);
+}
+
+/** Séance sans facture : tous les chiens décomptés (RDV ancien sans détail : le forfait du RDV). */
+export function seanceCouverte(r: { forfait_souscrit_id?: string | null; animaux_detail?: unknown }): boolean {
+  if (!r.forfait_souscrit_id) return false;
+  const detail = animauxDetailRdv(r) as (AnimalRdv & MarqueForfait)[];
+  return !detail.some(a => a.forfait_souscrit_id) || detail.every(a => a.forfait_souscrit_id);
 }
 
 export interface CoordClient { prenom: string; nom: string; email: string; tel: string; rue: string; cp: string; ville: string }

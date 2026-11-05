@@ -21,6 +21,7 @@ import 'package:PetsMatch/pages/pro/transmission_document.dart' show envoyerDocu
 import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show envoyerContratParEmail;
 import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv;
+import 'package:PetsMatch/utils/forfait_education.dart' show seanceCouverte;
 import 'package:PetsMatch/utils/document_pro.dart' show comptesRendusProDuRdv, lignesCrsPro, ajouterPiecesCrsPro, octetsUrlDocument;
 import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro, octetsSignature;
 import 'package:PetsMatch/widgets/rich_text_view.dart' show richTextToPlain;
@@ -345,7 +346,7 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
                     title: Text(c.titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey)),
                     subtitle: const Text('PDF disponible une fois signé', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
           // Séance décomptée d'un forfait : pas de facture à la séance.
-          if (facture == null && rdv['forfait_souscrit_id'] == null) ...[
+          if (facture == null && !seanceCouverte(rdv)) ...[
             const SizedBox(height: 6),
             SizedBox(width: double.infinity, child: OutlinedButton.icon(
               onPressed: () => Navigator.pop(ctx, 'facture'),

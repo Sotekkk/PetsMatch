@@ -19,7 +19,7 @@ import DocumentProModal from '@/components/pro/DocumentProModal';
 import { animauxDetailRdv } from '@/lib/rdv-animaux';
 import { useEducationPlan } from '@/lib/use-plan';
 import { contratEducationAnimal, creerContratEducation, STATUT_CONTRAT, type ContratEducation } from '@/lib/contrat-education';
-import { annulerDecompteForfait, COLS_FORFAIT_SOUSCRIT, decompterSeanceForfait, estReparti, forfaitCouvre, libelleCompteurs, libelleTypeSeances, seancesRestantes, typeSeanceRdv, type ForfaitActif } from '@/lib/forfait-education';
+import { annulerDecompteForfait, COLS_FORFAIT_SOUSCRIT, decompterSeanceForfait, seanceCouverte, estReparti, forfaitCouvre, libelleCompteurs, libelleTypeSeances, seancesRestantes, typeSeanceRdv, type ForfaitActif } from '@/lib/forfait-education';
 import { tarifSeanceRdv } from '@/lib/prestations-education';
 
 const TEAL = '#0C5C6C';
@@ -142,9 +142,13 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
       const [o, e, f] = await Promise.all([ob, ex, fo.order('souscrit_le', { ascending: false }).limit(1).maybeSingle()]);
       setNbObjectifs(o.count ?? 0); setNbExercices(e.count ?? 0);
       setForfait((f.data as ForfaitActif | null) ?? null);
-      if (x.forfait_souscrit_id) {
+      // Séance à plusieurs : le forfait de ce chien (rien s'il n'a pas été décompté).
+      const marques = detail as { id: string; forfait_souscrit_id?: string | null }[];
+      const fidRdv = marques.some(a => a.forfait_souscrit_id)
+        ? marques.find(a => a.id === aid)?.forfait_souscrit_id : x.forfait_souscrit_id;
+      if (fidRdv) {
         const { data: fr } = await supabase.from('forfaits_souscrits')
-          .select(COLS_FORFAIT_SOUSCRIT).eq('id', x.forfait_souscrit_id).maybeSingle();
+          .select(COLS_FORFAIT_SOUSCRIT).eq('id', fidRdv).maybeSingle();
         setForfaitRdv((fr as ForfaitActif | null) ?? null);
       } else setForfaitRdv(null);
       if (user?.uid) setContrat(await contratEducationAnimal(user.uid, aid).catch(() => null));
@@ -205,7 +209,8 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     setDecompte(true);
     try {
       const type = typeCours ?? await typeSeanceRdv(r.prestation_id);
-      await decompterSeanceForfait(forfait, r.id, { animalId: aidSel, animalNom: animalNom || 'votre animal', ownerUid: r.client_uid, typeCours: type });
+      const sansForfait = await decompterSeanceForfait(forfait, r.id, { animalId: aidSel, animalNom: animalNom || 'votre animal', ownerUid: r.client_uid, typeCours: type });
+      if (sansForfait.length) alert(`${sansForfait.join(', ')} : pas de forfait en cours, séance non décomptée (à facturer).`);
       await charger(); onChanged?.();
     } catch (e) {
       alert(`Décompte impossible : ${(e as Error).message}`);
@@ -375,7 +380,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           {ligne('Devis', !devis ? (forfaitConseille ? `À proposer : forfait ${forfaitConseille.nom}` : 'Aucun') : `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'À envoyer à la fin'} · ${eur(devis.total_ttc)}`,
             !devis ? GRIS : devis.statut === 'accepte' ? VERT : AMBRE,
             [!devis ? btn('Créer', creerDevis) : devisModifiable(devis.statut) ? btn('Modifier', () => ouvrir(`/education/devis?modifier=${devis.id}`, 'Devis')) : btn('Voir', () => ouvrir('/education/devis', 'Devis'))])}
-          {!facture && r.forfait_souscrit_id ? ligne('Facture', 'Couverte par le forfait (payé d’avance)', VERT, [])
+          {!facture && seanceCouverte(r) ? ligne('Facture', 'Couverte par le forfait (payé d’avance)', VERT, [])
             : ligne('Facture', !facture ? 'À émettre' : `${facture.statut === 'payee' ? 'Payée' : 'Émise'} · ${eur(facture.total_ttc)}`,
             !facture ? GRIS : facture.statut === 'payee' ? VERT : AMBRE,
             [!facture ? btn('Facturer', facturer) : btn('Voir', () => ouvrir('/elevage/facturation', 'Factures'))])}
@@ -452,7 +457,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
       )}
       {finSeance && (
         <FinConsultationModal metier="education" rdvId={r.id} proProfileId={pid || null} clientNom={nomClient}
-          onPreparerFacture={r.forfait_souscrit_id ? undefined : () => { setFinSeance(false); facturer(); }}
+          onPreparerFacture={seanceCouverte(r) ? undefined : () => { setFinSeance(false); facturer(); }}
           onClose={() => setFinSeance(false)} onDone={() => { setFinSeance(false); charger(); onChanged?.(); }} />
       )}
       {docPro && (
