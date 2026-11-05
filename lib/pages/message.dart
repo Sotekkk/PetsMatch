@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
+import 'package:PetsMatch/pages/settings/utilisateurs_bloques_page.dart';
 import 'chatScreen.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
 
@@ -521,6 +522,18 @@ class _MessagePageState extends State<MessagePage> {
           const SizedBox(height: 10),
 
           // ── Liste ────────────────────────────────────────────────
+          // Conversations masquées parce que l'autre personne est bloquée : signalées,
+          // sinon elles semblent avoir disparu (ce profil uniquement).
+          if (!_loading && _nbMasquees > 0)
+            TextButton(
+              onPressed: () async {
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => const UtilisatesBloquesPage()));
+                await _loadBlockedUsers();
+                await _loadConversations();
+              },
+              child: Text('$_nbMasquees conversation${_nbMasquees > 1 ? 's' : ''} masquée${_nbMasquees > 1 ? 's' : ''} (utilisateur bloqué) — Gérer',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white70, decoration: TextDecoration.underline, decorationColor: Colors.white70)),
+            ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: _green))
@@ -720,6 +733,13 @@ class _MessagePageState extends State<MessagePage> {
         },
       ),
     );
+  }
+
+  int get _nbMasquees {
+    final uid = _uid;
+    return _convs.where((c) =>
+        (c['deleted_for'] as Map?)?[uid] != true && (c['archived_for'] as Map?)?[uid] != true
+        && (c['participants'] as List? ?? []).any((p) => p != uid && _blockedUsers.contains(p))).length;
   }
 
   Widget _buildList() {
