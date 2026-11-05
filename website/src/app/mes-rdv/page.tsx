@@ -2412,7 +2412,12 @@ export default function MesRdvPage() {
     if (catPro === 'sante') {
       // Ostéo : facture depuis les séances du RDV et les tarifs.
       // Dans le panneau : on revient au dossier de la séance après la facture.
-      (async () => { if (activeProfileId && await preparerFactureOsteo(rdv.id, activeProfileId)) setPanneau({ url: '/elevage/facturation', titre: 'Facture' }); })();
+      (async () => {
+        try {
+          if (activeProfileId && await preparerFactureOsteo(rdv.id, activeProfileId)) setPanneau({ url: '/elevage/facturation', titre: 'Facture' });
+          else alert('Impossible de préparer la facture : RDV ou profil introuvable. Rechargez la page.');
+        } catch (e) { alert(`Impossible de préparer la facture : ${e instanceof Error ? e.message : 'erreur inconnue'}`); }
+      })();
       return;
     }
     setPanneau({ url: `/mes-patients/${encodeURIComponent(String(rdv.animal_id ?? animauxDetailRdv(rdv)[0].id))}?facturerRdv=${encodeURIComponent(rdv.id)}`, titre: 'Facture' });

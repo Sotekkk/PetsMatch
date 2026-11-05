@@ -30,28 +30,32 @@ export default function SiteShell({ children }: { children: React.ReactNode }) {
   }, [panneau, pathname]);
 
   if (bare) return <main className="flex-1">{children}</main>;
-  if (panneau) return <ValidationGuard><main className="flex-1">{children}</main></ValidationGuard>;
 
+  // Même structure avec ou sans panneau : la page garde sa place dans l'arbre. Sinon,
+  // à la détection du panneau, React la recréait : ce qu'elle avait lu une seule fois
+  // au montage (facture préparée dans sessionStorage) était perdu.
   return (
     <>
-      <Header />
-      <Image
-        src="/Banniere_petsmatch_site.png"
-        alt="PetsMatch"
-        width={0}
-        height={0}
-        sizes="100vw"
-        // Accueils (éleveur / pro « / », association « /association ») : hauteur
-        // plafonnée sur très grand écran (bannière entière, centrée)
-        className={pathname === '/' || pathname === '/association' ? 'w-full h-auto max-h-[260px] object-contain object-center block bg-white' : 'w-full h-auto block'}
-        priority
-      />
+      {!panneau && <Header />}
+      {!panneau && (
+        <Image
+          src="/Banniere_petsmatch_site.png"
+          alt="PetsMatch"
+          width={0}
+          height={0}
+          sizes="100vw"
+          // Accueils (éleveur / pro « / », association « /association ») : hauteur
+          // plafonnée sur très grand écran (bannière entière, centrée)
+          className={pathname === '/' || pathname === '/association' ? 'w-full h-auto max-h-[260px] object-contain object-center block bg-white' : 'w-full h-auto block'}
+          priority
+        />
+      )}
       <ValidationGuard>
         <main className="flex-1">{children}</main>
       </ValidationGuard>
-      <Footer />
-      <CookieBanner />
-      <OnboardingGate />
+      {!panneau && <Footer />}
+      {!panneau && <CookieBanner />}
+      {!panneau && <OnboardingGate />}
     </>
   );
 }
