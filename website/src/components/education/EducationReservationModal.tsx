@@ -630,8 +630,11 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                     setDomicile(false);
                     // Collectif : jamais à domicile → pas d'étape de choix.
                     setDomicileChoiceMade(p.type === 'collectif' || !p.domicile_ok);
-                    setDomicileLatLng(null);
-                    setAdresseDomicile('');
+                    // Adresse du compte reprise : « Mon adresse » est présélectionnée (vide,
+                    // « Voir les créneaux » restait grisé et bloquait la réservation à domicile).
+                    setAutreAdresse(false);
+                    setDomicileLatLng(clientAdresseGeo);
+                    setAdresseDomicile(clientAdresseConnue ?? '');
                     setCoursByWeek({});
                   }}
                   className="w-full flex items-center justify-between rounded-2xl border p-4 text-left hover:shadow-sm transition-shadow"

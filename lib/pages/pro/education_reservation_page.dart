@@ -1060,9 +1060,12 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
                   _domicile = false;
                   // Collectif : jamais à domicile → pas d'étape de choix.
                   _domicileChoiceMade = p['type'] == 'collectif' || p['domicile_ok'] != true;
-                  _domicileLat = null;
-                  _domicileLng = null;
-                  _adresseDomicileCtrl.clear();
+                  // Adresse du compte reprise : « Mon adresse » est présélectionnée (vide,
+                  // « Voir les créneaux » restait grisé et bloquait la réservation à domicile).
+                  _autreAdresse = false;
+                  _domicileLat = _adresseConnueLat;
+                  _domicileLng = _adresseConnueLng;
+                  _adresseDomicileCtrl.text = _adresseConnue ?? '';
                   _coursByWeek.clear(); // dépend du cours choisi
                   _probed = false;
                   _probedFirstDate = null;
