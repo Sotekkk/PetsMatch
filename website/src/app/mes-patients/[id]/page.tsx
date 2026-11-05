@@ -1503,7 +1503,10 @@ function PatientDetailPageInner() {
   // Les rapports de séance sont le contenu propre de l'éducateur (ses notes de
   // séance), pas une modification de la fiche du propriétaire — n'importe quel
   // accès accordé (lecture ou écriture) suffit pour les gérer, comme côté app.
-  const hasReportAccess = grant?.statut === 'active' || grant?.statut === 'active_write' || identiteSeule;
+  // Éducateur ouvert depuis le dossier d'un RDV : la séance suffit (un RDV ne crée pas de
+  // partage de fiche) ; la base reste seule juge de ce qui est écrit ou lu.
+  const depuisSeanceEducation = isEducation && !!searchParams.get('retourRdv');
+  const hasReportAccess = grant?.statut === 'active' || grant?.statut === 'active_write' || identiteSeule || depuisSeanceEducation;
 
   // Toiletteur : Synthèse · Prestations · Consignes · Historique (Identité /
   // Santé ouvrables depuis la Synthèse).
@@ -2859,6 +2862,15 @@ function PatientDetailPageInner() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rapports, searchParams, loading, user?.uid]);
+
+  // « Attribuer » depuis le dossier de la séance : choix des exercices ouvert et affiché.
+  const attribuerAuto = useRef(false);
+  useEffect(() => {
+    if (attribuerAuto.current || searchParams.get('attribuer') !== '1' || !user?.uid || loading || catPro !== 'education') return;
+    attribuerAuto.current = true;
+    openAttrPicker().then(() => setTimeout(() => document.getElementById('choix-exercices')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, user?.uid, loading, catPro]);
 
   function startEditRapport(r: { id: string; contenu: string; exercices_conseilles: string | null }) {
     setEditingRapportId(r.id);
@@ -4256,10 +4268,10 @@ function PatientDetailPageInner() {
               </button>
             )}
             {attrPicker && (
-              <div className="border border-[#EF6C00]/30 rounded-2xl p-4 mb-4 bg-[#EF6C00]/5 space-y-2">
+              <div id="choix-exercices" className="border border-[#EF6C00]/30 rounded-2xl p-4 mb-4 bg-[#EF6C00]/5 space-y-2">
                 <p className="text-xs font-semibold text-gray-500">Choisir dans la bibliothèque</p>
                 {biblio.length === 0 ? (
-                  <p className="text-xs text-gray-400">Bibliothèque vide — créez des exercices dans « Bibliothèque d&apos;exercices ».</p>
+                  <p className="text-xs text-gray-500">Bibliothèque vide : <a href="/education/bibliotheque" target="_blank" rel="noreferrer" className="font-semibold underline" style={{ color: TEAL }}>créer des exercices</a>, puis rouvrez ce choix.</p>
                 ) : biblio.map(b => (
                   <label key={b.id} className="flex items-center gap-2 text-sm cursor-pointer">
                     <input type="checkbox" checked={attrPicker.ids.has(b.id)}

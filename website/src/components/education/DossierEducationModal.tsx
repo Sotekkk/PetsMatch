@@ -329,7 +329,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
                 await charger(); onChanged?.();
               })] : [])])}
           {ligne('Exercices', nbExercices ? `${nbExercices} en cours` : 'Aucun en cours', nbExercices ? VERT : GRIS,
-            [btn('Attribuer', () => fiche('tab=Programme', 'Exercices'))])}
+            [btn('Attribuer', () => fiche('tab=Programme&attribuer=1', 'Exercices'))])}
           {ligne('Programme de travail', nbObjectifs ? `${nbObjectifs} objectif${nbObjectifs > 1 ? 's' : ''} en cours` : 'Aucun objectif', nbObjectifs ? VERT : GRIS,
             [btn(nbObjectifs ? 'Voir / ajouter' : 'Définir', () => fiche('tab=Programme', 'Programme de travail'))])}
           {r.forfait_souscrit_id
