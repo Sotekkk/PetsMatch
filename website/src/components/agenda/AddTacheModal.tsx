@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { estHorsPriseEnCharge } from '@/lib/protocoles';
+import { animauxPresentsElevage } from '@/lib/rdv-veto';
 
 export interface AnimalOption { id: string; nom: string; espece?: string | null; portee_id?: string | null; nom_mere?: string | null; }
 export interface MembreOption { uid: string; nom: string; type: 'employe' | 'benevole' | 'moi'; }
@@ -80,12 +81,20 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
   onSaved: () => void;
   onEmployeCreated: () => void;
 }) {
-  const [animauxCharges, setAnimauxCharges] = useState<AnimalOption[] | null>(animaux ?? null);
+  // Élevage : toujours les animaux présents de CE profil (même règle que le RDV vétérinaire),
+  // jamais ceux de l'association du compte ni les fiches clients, quelle que soit la page.
+  const elevage = profilSource === 'eleveur' && !!profileId;
+  const [animauxCharges, setAnimauxCharges] = useState<AnimalOption[] | null>(elevage ? null : animaux ?? null);
   const [chargementAnimaux, setChargementAnimaux] = useState(false);
   const animauxDispo = animauxCharges ?? [];
   async function chargerAnimaux() {
     if (animauxCharges || chargementAnimaux) return;
     setChargementAnimaux(true);
+    if (elevage) {
+      setAnimauxCharges(await animauxPresentsElevage(profileId).catch(() => []));
+      setChargementAnimaux(false);
+      return;
+    }
     // Seuls les animaux encore pris en charge (adoptés, cédés… écartés).
     let q = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere, statut')
       .eq('uid_eleveur', uid);

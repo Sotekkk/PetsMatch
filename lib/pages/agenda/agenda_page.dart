@@ -14,6 +14,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFi
 import 'package:PetsMatch/widgets/rdv/motif_annulation.dart';
 import 'package:PetsMatch/widgets/rattachement_picker.dart';
 import 'package:PetsMatch/widgets/agenda/rdv_veto_sheets.dart';
+import 'package:PetsMatch/utils/rdv_veto.dart' show animauxPresentsElevage;
 import 'package:PetsMatch/utils/cloisonnement_profils.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 
@@ -4001,6 +4002,8 @@ class AddTacheSheetState extends State<AddTacheSheet> {
       }).toList();
     }
     final pid = (widget.profileId ?? User_Info.activeProfileId);
+    // Élevage : animaux présents de CE profil (même règle que le RDV vétérinaire).
+    if (widget.profilSource == 'eleveur' && pid.isNotEmpty) return animauxPresentsElevage(pid);
     return chargerAnimauxRattachement(widget.uid, pid.isNotEmpty ? pid : null);
   }
 
