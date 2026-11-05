@@ -65,6 +65,7 @@ async function supabasePatch(table, query, patch) {
 // ─── FCM helper (partagé) ──────────────────────────────────────────────────────
 
 const {sendPush} = require("./push_helpers");
+const {animalPourRappel} = require("./animal_destinataire");
 
 // ─── Date helpers (heure locale Paris) ────────────────────────────────────────
 
@@ -620,7 +621,7 @@ exports.sendDocumentExpiryReminders = functions
         for (let offset = 0; ; offset += 1000) {
             const rows = await supabaseSelect("animaux",
                 "documents=not.is.null&statut=not.in.(decede,patient_clinique)" +
-                "&select=id,nom,documents,uid_proprietaire,uid_eleveur,profile_id" +
+                "&select=id,nom,documents,uid_proprietaire,uid_eleveur,profile_id,cree_par_pro_profile_id,client_clinique_id" +
                 `&order=id&limit=1000&offset=${offset}`);
             animaux.push(...rows);
             if (rows.length < 1000) break;
@@ -680,7 +681,8 @@ exports.sendDocumentExpiryReminders = functions
             dest = dest.filter((p) => p.uid_proprio && (!p.statut || p.statut === "actif"))
                 .map((p) => ({uid: p.uid_proprio, profileId: p.profile_id_proprio || null}));
             if (!dest.length) {
-                const uid = a.uid_proprietaire || a.uid_eleveur;
+                const reel = animalPourRappel(a);
+                const uid = reel && (reel.uid_proprietaire || reel.uid_eleveur);
                 if (uid) dest = [{uid, profileId: a.profile_id || null}];
             }
 

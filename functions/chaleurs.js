@@ -54,6 +54,7 @@ async function supabaseInsert(table, rows) {
 
 // ─── FCM helper (partagé — préfixe le profil concerné + bascule au tap) ──────
 
+const {animalPourRappel} = require("./animal_destinataire");
 const {employesAbonnes, notifyEmployes, PushDigest} = require("./push_helpers");
 
 // ─── Domaine : chaleurs ───────────────────────────────────────────────────────
@@ -131,7 +132,8 @@ exports.sendChaleursNotifications = functions
             "&sterilise=eq.false" +
             "&statut=not.in.(sorti,decede,patient_clinique)" +
             "&select=id,nom,race,espece,uid_eleveur,intervalle_chaleurs_jours,date_naissance," +
-            "chaleurs_responsable_uid,chaleurs_responsable_profile_id,profile_id");
+            "chaleurs_responsable_uid,chaleurs_responsable_profile_id,profile_id," +
+            "uid_proprietaire,cree_par_pro_profile_id,client_clinique_id");
 
         if (!animaux.length) {
             console.log("sendChaleursNotifications: aucune femelle active.");
@@ -209,7 +211,9 @@ exports.sendChaleursNotifications = functions
         }
 
         // 3. Process each animal
-        for (const animal of animaux) {
+        for (const ligneAnimal of animaux) {
+            const animal = animalPourRappel(ligneAnimal);
+            if (!animal) continue;
             // Retraite : au-delà de l'âge de reproduction, plus de cycle à suivre.
             const naissance = animal.date_naissance ? new Date(animal.date_naissance) : null;
             const ageRetraite = AGES_RETRAITE[(animal.espece || "").toLowerCase()];

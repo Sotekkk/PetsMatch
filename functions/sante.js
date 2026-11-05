@@ -242,6 +242,7 @@ async function notifyAndMirrorPension({
 // Android le système affichait sinon un doublon en plus de l'affichage
 // manuel app — voir push_helpers.js)
 
+const {animalPourRappel} = require("./animal_destinataire");
 const {sendPush, employesAbonnes, notifyEmployes, PushDigest} = require("./push_helpers");
 
 // Catégorie de notifications employé par table de rappel santé
@@ -334,7 +335,7 @@ exports.sendSanteReminders = functions
                 // Récupère les rappels du jour avec les infos de l'animal (éleveur ou particulier)
                 const rows = await supabaseGet(
                     `${table}?date_rappel=eq.${targetDate}` +
-                    `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut)`,
+                    `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut,cree_par_pro_profile_id,client_clinique_id)`,
                 );
                 if (!Array.isArray(rows) || rows.length === 0) continue;
 
@@ -343,7 +344,7 @@ exports.sendSanteReminders = functions
                 // ensemble = UNE notification et UNE tâche listant les animaux.
                 const groupes = new Map();
                 for (const row of rows) {
-                    const animal = row.animaux;
+                    const animal = animalPourRappel(row.animaux);
                     const uid = animal?.uid_eleveur || animal?.uid_proprietaire;
                     if (!animal || !uid) continue;
                     // Patient créé par un pro pour un propriétaire sans compte : pas
@@ -493,7 +494,7 @@ async function sendOverdueSanteReminders(digest) {
         // qu'un enregistrement plus récent a déjà pris le relais de l'ancien.
         const rows = await supabaseGet(
             `${table}?date_rappel=not.is.null` +
-            `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut)`,
+            `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut,cree_par_pro_profile_id,client_clinique_id)`,
         );
         if (!Array.isArray(rows) || rows.length === 0) continue;
 
@@ -515,7 +516,7 @@ async function sendOverdueSanteReminders(digest) {
             // Le dernier enregistrement du groupe n'est plus en retard —
             // rien à signaler pour ce (animal, catégorie).
             if (!(row.date_rappel < todayStr)) continue;
-            const animal = row.animaux;
+            const animal = animalPourRappel(row.animaux);
             const uid = animal?.uid_eleveur || animal?.uid_proprietaire;
             if (!animal || !uid) continue;
             // Patient créé par un pro pour un propriétaire sans compte : pas
@@ -684,7 +685,7 @@ exports.sendTraitementReminders = functions
                 const r = await supabaseGet(
                     `${table}?rappel_actif=eq.true` +
                     `&date=lte.${todayStr}&rappel_fin=gte.${todayStr}` +
-                    "&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut)",
+                    "&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id,statut,cree_par_pro_profile_id,client_clinique_id)",
                 );
                 if (Array.isArray(r)) {
                     for (const x of r) {
@@ -704,7 +705,7 @@ exports.sendTraitementReminders = functions
         // vermifugés ensemble) : UNE notification et UNE tâche.
         const groupes = new Map();
         for (const row of rows) {
-            const animal = row.animaux;
+            const animal = animalPourRappel(row.animaux);
             const uid = animal?.uid_eleveur || animal?.uid_proprietaire;
             if (!animal || !uid || !Array.isArray(row.rappel_heures)) continue;
             // Patient créé par un pro pour un propriétaire sans compte : pas de rappel au pro.

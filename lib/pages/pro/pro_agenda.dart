@@ -4158,14 +4158,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }) async {
     final uid = AgendaContexte.uid;
     if (uid == null) return false;
-    String pid = AgendaContexte.profileId;
-    if (pid.isEmpty && User_Info.availableProfiles.isNotEmpty) {
-      final proProfile = User_Info.availableProfiles.firstWhere(
-        (p) => p['profile_type'] != 'particulier',
-        orElse: () => User_Info.availableProfiles.first,
-      );
-      pid = proProfile['id']?.toString() ?? '';
+    // Toujours le profil actif : jamais de repli sur un autre profil du compte.
+    final pid = AgendaContexte.profileId;
+    if (pid.isEmpty) {
+      _erreurCreationRdv = 'Profil professionnel introuvable : rouvrez la page depuis le bon profil.';
+      return false;
     }
+    _erreurCreationRdv = null;
     final linked = linkedUid != null && linkedUid.isNotEmpty;
     try {
       final dh = DateTime(date.year, date.month, date.day, heure.hour, heure.minute).toUtc();

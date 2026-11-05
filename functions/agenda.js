@@ -118,6 +118,7 @@ async function getUserNom(uid) {
  * @param {object} data - Données supplémentaires FCM.
  * @return {Promise<boolean>}
  */
+const {animalPourRappel, estFichePro} = require("./animal_destinataire");
 const {sendPush, resolveProfileId, employesAbonnes, notifyEmployes} = require("./push_helpers");
 
 /**
@@ -428,7 +429,7 @@ exports.sendMiseBasReminders = functions
 
             for (const g of gestations) {
                 const animals = await supabaseSelect("animaux", `id=eq.${g.animal_id}`);
-                const animal = animals[0];
+                const animal = animalPourRappel(animals[0]);
                 if (!animal || !animal.uid_eleveur) continue;
 
                 // Résolution du profil propriétaire courant (animaux.profile_id n'est pas
@@ -543,7 +544,7 @@ async function sendOverdueMiseBasReminders() {
         if (Array.isArray(existing) && existing.length > 0) continue;
 
         const animals = await supabaseSelect("animaux", `id=eq.${g.animal_id}`);
-        const animal = animals[0];
+        const animal = animalPourRappel(animals[0]);
         if (!animal || !animal.uid_eleveur) continue;
 
         let profileId = null;
@@ -647,7 +648,7 @@ exports.sendChirurgieReminders = functions
                 const destinataires = await getCoproprietaires(c.animal_id, null);
                 if (!destinataires.length) {
                     try {
-                        const a = (await supabaseSelect("animaux", `id=eq.${c.animal_id}`))[0];
+                        const a = animalPourRappel((await supabaseSelect("animaux", `id=eq.${c.animal_id}`))[0]);
                         const uid = a && (a.uid_proprietaire || a.uid_eleveur);
                         if (uid) destinataires.push({uid, profileId: a.profile_id || null});
                     } catch (_) {/* pas bloquant */}
@@ -717,8 +718,12 @@ exports.sendExerciceReminders = functions
             const animals = await supabaseSelect("animaux", `id=eq.${ex.animal_id}`);
             if (animals[0]) {
                 animalNom = animals[0].nom;
+                // Fiche créée par un pro : jamais le pro, même sur un exercice déjà
+                // enregistré à son nom (owner_uid = uid_eleveur avant ce correctif).
+                if (estFichePro(animals[0]) && ownerUid === animals[0].uid_eleveur) ownerUid = null;
                 if (!ownerUid) {
-                    ownerUid = animals[0].uid_proprietaire || animals[0].uid_eleveur;
+                    const reel = animalPourRappel(animals[0]);
+                    ownerUid = reel && (reel.uid_proprietaire || reel.uid_eleveur);
                 }
             }
             if (!ownerUid) continue;

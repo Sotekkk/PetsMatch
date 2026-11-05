@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/exercices_progression.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contrat_education.dart';
+import 'package:PetsMatch/utils/animal_proprietaire.dart';
 import 'package:PetsMatch/utils/forfait_education.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/pages/pro/education_shared.dart';
@@ -124,7 +125,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             .order('ordre', ascending: true).order('created_at', ascending: true),
         _supa.from('education_progression').select().eq('animal_id', widget.animalId)
             .order('date_seance', ascending: false),
-        _supa.from('animaux').select('uid_proprietaire, uid_eleveur')
+        _supa.from('animaux').select('uid_proprietaire, uid_eleveur, cree_par_pro_profile_id, client_clinique_id')
             .eq('id', widget.animalId).maybeSingle(),
         _supa.from('exercices_attribues').select().eq('animal_id', widget.animalId)
             .order('assigned_at', ascending: false),
@@ -135,7 +136,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             .order('souscrit_le', ascending: false),
       ]);
       final animal = results[2] as Map<String, dynamic>?;
-      final ownerUid = animal?['uid_proprietaire']?.toString() ?? animal?['uid_eleveur']?.toString();
+      final ownerUid = proprietaireFiche(animal);
       if (ownerUid != null) {
         try {
           _ownerInfo = await _supa.from('user_profiles_complet')
@@ -177,8 +178,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           _exercices = exos;
           _forfaits = List<Map<String, dynamic>>.from(results[4] as List);
           _souscrits = List<Map<String, dynamic>>.from(results[5] as List);
-          _ownerUid = animal?['uid_proprietaire']?.toString() ??
-              animal?['uid_eleveur']?.toString();
+          _ownerUid = proprietaireFiche(animal);
           _loading = false;
         });
       }

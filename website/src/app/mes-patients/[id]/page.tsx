@@ -23,6 +23,7 @@ import { poserRappelAgenda } from '@/lib/rappel-agenda';
 import { animauxDetailRdv, type AnimalRdv } from '@/lib/rdv-animaux';
 import { crsDuRdv } from '@/lib/cr-rdv';
 import { maSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
+import { proprietaireFiche } from '@/lib/animal-proprietaire';
 import SignatureProModal from '@/components/signature/SignatureProModal';
 import { useAuth } from '@/lib/auth-context';
 import { RichText, RichTextEditor, richTextIsEmpty, richTextToPlain } from '@/lib/rich-text';
@@ -63,6 +64,7 @@ interface Animal {
   photo_url: string | null; sterilise: boolean | null;
   poids: number | null; taille: number | null; notes: string | null;
   uid_proprietaire: string | null; uid_eleveur: string | null;
+  cree_par_pro_profile_id?: string | null; client_clinique_id?: string | null;
 }
 interface Owner {
   uid: string; firstname: string | null; lastname: string | null;
@@ -1559,7 +1561,7 @@ function PatientDetailPageInner() {
         setClientClinique(cc as typeof clientClinique);
       }
 
-      const ownerUid = a.uid_proprietaire ?? a.uid_eleveur;
+      const ownerUid = proprietaireFiche(a);
       const isFemelle = a.sexe?.toLowerCase() === 'femelle';
 
       const results = await Promise.allSettled([
@@ -1829,7 +1831,7 @@ function PatientDetailPageInner() {
    *  Version rectificative : rattachée à l'ordonnance corrigée (même RDV,
    *  même propriétaire). */
   async function creerBrouillonOrdonnance(contenu: ContenuOrdo, date: string, rdvId?: string | null, remplace?: Ordonnance | null): Promise<Ordonnance> {
-    const ownerUid = remplace ? remplace.owner_uid ?? null : animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+    const ownerUid = remplace ? remplace.owner_uid ?? null : proprietaireFiche(animal);
     const ownerProfileId = remplace ? remplace.owner_profile_id ?? null : await profilProprietaire(ownerUid);
     const pid = activeProfileId || null;
     const rdv = remplace ? remplace.rdv_id ?? null : rdvId ?? null;
@@ -2552,7 +2554,7 @@ function PatientDetailPageInner() {
         const { data } = await supabase.from('radios').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setRadios((data ?? []) as RadioEntry[]);
       } else if (addingType === 'cr') {
-        const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+        const ownerUid = proprietaireFiche(animal);
         const poidsCr = formPoids.trim() ? parseFloat(formPoids.replace(',', '.')) : null;
         // Actes du CR + actes déjà inscrits au carnet aujourd'hui (Synthèse, Santé).
         const duCarnet = (t: ActeCarnet['type']) => carnetJour.filter(a => a.type === t).map(a => a.libelle);
@@ -2717,7 +2719,7 @@ function PatientDetailPageInner() {
 
   // Notification à la famille — uniquement pour un compte rendu finalisé.
   async function notifierRapportEdu(isBilan: boolean) {
-    const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+    const ownerUid = proprietaireFiche(animal);
     if (!ownerUid || !animalId) return;
     const proNom = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || 'Votre éducateur';
     const { data: propRow } = await supabase.from('animaux_proprietes')
@@ -2737,7 +2739,7 @@ function PatientDetailPageInner() {
     if (!user?.uid || !animalId || richTextIsEmpty(rapportContenu)) return;
     setSavingRapport(true);
     try {
-      const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+      const ownerUid = proprietaireFiche(animal);
       const isBilan = rapportType === 'bilan';
       const extra: Record<string, unknown> = {
         statut: finalise ? 'finalise' : 'brouillon',
@@ -2938,7 +2940,7 @@ function PatientDetailPageInner() {
     if (!libelle || !user?.uid || !animalId) return;
     setAjoutObjSeance(true);
     try {
-      const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+      const ownerUid = proprietaireFiche(animal);
       const { data, error } = await supabase.from('education_objectifs').insert({
         libelle, statut: 'a_travailler', pro_uid: user.uid, pro_profile_id: activeProfileId || null,
         animal_id: animalId, owner_uid: ownerUid, ordre: objectifs.length,
@@ -2967,7 +2969,7 @@ function PatientDetailPageInner() {
   }
 
   async function notifyOwnerObjectif(libelle: string) {
-    const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+    const ownerUid = proprietaireFiche(animal);
     if (!ownerUid) return;
     const proNom = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || 'Votre éducateur';
     const { data: propRow } = await supabase.from('animaux_proprietes')
@@ -2998,7 +3000,7 @@ function PatientDetailPageInner() {
       const extra = { prioritaire: !!objForm.prioritaire, difficultes: objForm.difficultes?.trim() || null };
       const ecrire = async (champs: Record<string, unknown>) => {
         if (objForm.id) return supabase.from('education_objectifs').update(champs).eq('id', objForm.id);
-        const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+        const ownerUid = proprietaireFiche(animal);
         return supabase.from('education_objectifs').insert({
           ...champs, pro_uid: user.uid, pro_profile_id: activeProfileId || null,
           animal_id: animalId, owner_uid: ownerUid, ordre: objectifs.length,
@@ -3043,7 +3045,7 @@ function PatientDetailPageInner() {
     if (!attrPicker || attrPicker.ids.size === 0 || !user?.uid) return;
     setSavingAttr(true);
     try {
-      const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+      const ownerUid = proprietaireFiche(animal);
       const chosen = biblio.filter(b => attrPicker.ids.has(b.id));
       const { error: errAttr } = await supabase.from('exercices_attribues').insert(chosen.map(b => ({
         exercice_id: b.id, pro_uid: user.uid, pro_profile_id: activeProfileId || null,
@@ -3093,7 +3095,7 @@ function PatientDetailPageInner() {
   async function registerForfaitSous(nom: string, nb: number, prix: number | null, forfaitId: string | null, type: TypeSeances = 'mixte',
     indiv: number | null = null, coll: number | null = null) {
     if (!nom.trim() || !user?.uid) return;
-    const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+    const ownerUid = proprietaireFiche(animal);
     const ligne = {
       ...(forfaitId ? { forfait_id: forfaitId } : {}),
       pro_uid: user.uid, pro_profile_id: activeProfileId || null,
@@ -3133,7 +3135,7 @@ function PatientDetailPageInner() {
       ...(termine ? { statut: 'termine', termine_le: new Date().toISOString() } : {}),
     }).eq('id', f.id);
     if (used === f.nb_seances_total - 1 || termine) {
-      const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+      const ownerUid = proprietaireFiche(animal);
       if (ownerUid) {
         await supabase.from('notifications').insert({
           uid: ownerUid, type: 'education_forfait_bas',
@@ -3191,7 +3193,7 @@ function PatientDetailPageInner() {
       const { error } = await supabase.storage.from('documents').upload(path, blob, { upsert: true, contentType: 'application/pdf' });
       if (error) throw error;
       const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
-      const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+      const ownerUid = proprietaireFiche(animal);
       await supabase.from('education_attestations').insert({
         animal_id: animalId, pro_uid: user.uid, pro_profile_id: activeProfileId || null,
         owner_uid: ownerUid, pdf_url: pub.publicUrl,
@@ -3283,7 +3285,7 @@ function PatientDetailPageInner() {
       attribution_id: attributionId, author_uid: user.uid, author_profile_id: activeProfileId || null,
       note: replyNote.trim(), from_pro: true, vu_par_pro: true,
     });
-    const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+    const ownerUid = proprietaireFiche(animal);
     if (ownerUid) {
       await supabase.from('notifications').insert({
         uid: ownerUid, type: 'education_rapport',
@@ -3306,7 +3308,7 @@ function PatientDetailPageInner() {
     setRequestingWrite(true);
     await supabase.from('animal_access').update({ statut: 'write_requested' }).eq('id', grant.id);
     setGrant(g => g ? { ...g, statut: 'write_requested' } : g);
-    const ownerUid = animal.uid_proprietaire ?? animal.uid_eleveur;
+    const ownerUid = proprietaireFiche(animal);
     if (ownerUid) {
       const { data: propRow } = await supabase.from('animaux_proprietes')
         .select('profile_id_proprio').eq('animal_id', animalId).is('date_fin', null)
@@ -3348,7 +3350,7 @@ function PatientDetailPageInner() {
             <OwnerContactButton
               animalId={animalId}
               animalNom={animal.nom ?? 'Animal'}
-              ownerUid={animal.uid_proprietaire ?? animal.uid_eleveur ?? null}
+              ownerUid={proprietaireFiche(animal)}
               myUid={user.uid}
               myProfileId={activeProfileId ?? null}
               className="bg-white/10 hover:bg-white/20 !text-white"

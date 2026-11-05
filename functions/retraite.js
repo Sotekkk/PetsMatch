@@ -81,6 +81,7 @@ async function supabaseInsert(table, rows) {
 // ─── FCM helper (partagé) ──────────────────────────────────────────────────────
 
 const {sendPush} = require("./push_helpers");
+const {animalPourRappel} = require("./animal_destinataire");
 
 // ─── Fonction principale ──────────────────────────────────────────────────────
 
@@ -106,7 +107,7 @@ exports.sendRetraiteReminders = functions
         const animaux = await supabaseSelect("animaux",
             "sexe=eq.femelle" +
             "&sterilise=eq.false" +
-            "&statut=not.in.(sorti,decede)" +
+            "&statut=not.in.(sorti,decede,patient_clinique)" +
             "&date_naissance=not.is.null");
 
         // Résolution du profil propriétaire courant (animaux.profile_id n'est pas fiable —
@@ -125,8 +126,9 @@ exports.sendRetraiteReminders = functions
             if (!profileIdByAnimal[a.id] && a.profile_id) profileIdByAnimal[a.id] = a.profile_id;
         }
 
-        for (const animal of animaux) {
-            if (!animal.uid_eleveur || !animal.date_naissance) continue;
+        for (const ligneAnimal of animaux) {
+            const animal = animalPourRappel(ligneAnimal);
+            if (!animal || !animal.uid_eleveur || !animal.date_naissance) continue;
 
             const ageRetraite = AGES_RETRAITE[(animal.espece || "").toLowerCase()];
             if (!ageRetraite) continue;
