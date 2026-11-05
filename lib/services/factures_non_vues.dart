@@ -16,8 +16,14 @@ class FacturesNonVues {
   static const _fenetre = Duration(days: 30);
 
   static String? get _uid => FirebaseAuth.instance.currentUser?.uid;
-  static String _cle(String uid) =>
-      User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : uid;
+  /// Profil principal = une seule clé (uid), que le profil actif soit renseigné
+  /// ou vide, sur le site comme dans l'appli ; profil secondaire = son identifiant.
+  static String _cle(String uid) {
+    final actif = User_Info.activeProfileId;
+    if (actif.isEmpty) return uid;
+    final principal = User_Info.availableProfiles.any((p) => p['id']?.toString() == actif && p['is_main'] == true);
+    return principal ? uid : actif;
+  }
 
   /// Date de la dernière ouverture de « Mes Factures » (UTC ISO), sinon la
   /// limite des 30 jours.

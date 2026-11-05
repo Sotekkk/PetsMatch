@@ -118,7 +118,15 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
 
     {
       var userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      // updateUserInfo remet le profil actif à vide : on le conserve.
+      final profilActif = User_Info.activeProfileId;
+      final typeActif = User_Info.activeType;
       User_Info.updateUserInfo(userDoc.data() as Map<String, dynamic>);
+      if (profilActif.isNotEmpty) {
+        User_Info.activeProfileId = profilActif;
+        User_Info.activeType = typeActif;
+        User_Info.profileNotifier.value = profilActif;
+      }
       _firstnameController.text = User_Info.firstname;
       _lastnameController.text = User_Info.lastname;
       _dobController.text = User_Info.dateofbirth;

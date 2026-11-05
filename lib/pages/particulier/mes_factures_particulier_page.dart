@@ -26,6 +26,8 @@ class _MesFacturesParticulierPageState extends State<MesFacturesParticulierPage>
   late Future<List<Map<String, dynamic>>> _future;
   /// Dernière ouverture avant celle-ci : les factures plus récentes sont « nouvelles ».
   String? _vuAvant;
+  /// Factures ouvertes pendant cette visite : plus « nouvelles » au retour.
+  final _ouvertes = <String>{};
 
   @override
   void initState() {
@@ -121,7 +123,8 @@ class _MesFacturesParticulierPageState extends State<MesFacturesParticulierPage>
   bool _estNouvelle(Map<String, dynamic> d) {
     final cree = DateTime.tryParse(d['createdAt']?.toString() ?? '');
     final vu = DateTime.tryParse(_vuAvant ?? '');
-    return cree != null && vu != null && d['statut'] != 'annulee' && cree.isAfter(vu);
+    return cree != null && vu != null && d['statut'] != 'annulee' && cree.isAfter(vu)
+        && !_ouvertes.contains(d['id'].toString());
   }
 
   @override
@@ -165,6 +168,7 @@ class _MesFacturesParticulierPageState extends State<MesFacturesParticulierPage>
                 final total = (d['totalTTC'] ?? 0.0).toStringAsFixed(2);
                 return GestureDetector(
                   onTap: () async {
+                    _ouvertes.add(d['id'].toString());
                     await Navigator.push(context, MaterialPageRoute(
                       builder: (_) => FactureDetailPage(data: d, docId: d['id'].toString(), readOnly: true),
                     ));

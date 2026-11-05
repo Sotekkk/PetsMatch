@@ -9,7 +9,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { marquerFacturesVues } from '@/lib/factures-non-vues';
+import { derniereVueFactures, marquerFacturesVues } from '@/lib/factures-non-vues';
 
 interface FactureRow {
   id: string;
@@ -48,8 +48,7 @@ export default function MesFacturesPage() {
     const uid = user.uid;
     const cols = 'id, token, numero_facture, numero_affichage, date_facture, total_ttc, nom_emetteur, statut, created_at';
     (async () => {
-      const { data: vu } = await supabase.from('factures_vues').select('vu_le').eq('cle', activePid || uid).maybeSingle();
-      setVuAvant((vu as { vu_le: string } | null)?.vu_le ?? null);
+      setVuAvant(await derniereVueFactures(uid, activePid).catch(() => null));
       const q = supabase.from('factures').select(cols);
       const { data } = await (activePid ? q.eq('client_profile_id', activePid) : q.eq('client_uid', uid))
         .order('created_at', { ascending: false });

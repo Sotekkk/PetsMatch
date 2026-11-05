@@ -426,6 +426,8 @@ class _AgendaPageState extends State<AgendaPage> {
     final to   = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0, 23, 59, 59).toUtc();
 
     final pid = User_Info.activeProfileId;
+    final principalVide = pid.isNotEmpty ? '' : User_Info.availableProfiles
+        .firstWhere((p) => p['is_main'] == true, orElse: () => const {})['id']?.toString() ?? '';
     print('[AGENDA _load] isParticulier=${widget.isParticulier} isAssociation=${widget.isAssociation} activeType=${User_Info.activeType} pid=$pid uid=$_uid');
 
     try {
@@ -449,11 +451,14 @@ class _AgendaPageState extends State<AgendaPage> {
             .lte('date_debut', to.toIso8601String())
             .order('date_debut');
       } else {
+        // Profil actif vide = profil principal : ses événements portent souvent son
+        // identifiant (RDV client : pro_profile_id = client_profile_id), à ne pas masquer.
+        final principal = principalVide;
         data = await _supa
             .from('agenda_events')
             .select()
             .eq('uid', _uid)
-            .or('pro_profile_id.eq.$pid,pro_profile_id.eq.')
+            .or('pro_profile_id.is.null,pro_profile_id.eq.${principal.isNotEmpty ? ',pro_profile_id.eq.$principal' : ''}')
             .gte('date_debut', from.toIso8601String())
             .lte('date_debut', to.toIso8601String())
             .order('date_debut');
@@ -462,7 +467,7 @@ class _AgendaPageState extends State<AgendaPage> {
       final filtered = (data as List).where((e) {
         final epid = (e['pro_profile_id'] as String?) ?? '';
         if (pid.isNotEmpty) return epid == pid;
-        return epid.isEmpty;
+        return epid.isEmpty || epid == principalVide;
       }).toList();
 
       // Dé-duplication par RDV : un même rendez-vous peut avoir 2 lignes
