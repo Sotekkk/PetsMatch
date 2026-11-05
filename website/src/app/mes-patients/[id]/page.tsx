@@ -1372,22 +1372,27 @@ function PatientDetailPageInner() {
     if (catPro !== 'education' || !animalId) return;
     const rdvId = searchParams.get('rdv');
     if (!rdvId) return;
+    // Formulaire ouvert tout de suite : ne dépend pas de la relecture du RDV ci-dessous
+    // (dans le panneau, la connexion peut ne pas être encore prête).
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setSeanceRdvId(rdvId);
+    // RDV de bilan (dossier de la séance) : compte rendu de type bilan.
+    if (searchParams.get('bilan') === '1') setRapportType('bilan');
+    setShowAddRapport(true);
+    setTab('Séances');
+    /* eslint-enable react-hooks/set-state-in-effect */
+    if (!user?.uid) return;
     let annule = false;
     (async () => {
       const { data: r } = await supabase.from('rdv').select('id, lieu, duree_minutes').eq('id', rdvId).maybeSingle();
       if (!r || annule) return;
       const rr = r as { id: string; lieu: string | null; duree_minutes: number | null };
-      setSeanceRdvId(rr.id);
-      // RDV de bilan (dossier de la séance) : compte rendu de type bilan.
-      if (searchParams.get('bilan') === '1') setRapportType('bilan');
       if (rr.lieu) { setSeanceLieu(rr.lieu); setSeanceType('domicile'); }
       if (rr.duree_minutes) setSeanceDuree(String(rr.duree_minutes));
-      setShowAddRapport(true);
-      setTab('Séances');
     })();
     return () => { annule = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catPro, animalId, searchParams]);
+  }, [catPro, animalId, searchParams, user?.uid]);
   useEffect(() => {
     if (catPro !== 'education' || !animalId || !activeProfileId) return;
     let annule = false;
@@ -2824,15 +2829,27 @@ function PatientDetailPageInner() {
   const editCrFait = useRef(false);
   useEffect(() => {
     const id = searchParams.get('editCr');
-    if (!id || editCrFait.current || rapports.length === 0) return;
-    const r = rapports.find(x => x.id === id);
-    if (!r) return;
-    editCrFait.current = true;
-    startEditRapport(r);
+    if (!id || editCrFait.current) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTab('Séances');
+    const r = rapports.find(x => x.id === id);
+    if (r) {
+      editCrFait.current = true;
+      startEditRapport(r);
+      return;
+    }
+    // Absent de la liste de la fiche une fois chargée : relu directement, sinon on le dit.
+    if (loading || !user?.uid) return;
+    editCrFait.current = true;
+    (async () => {
+      const { data } = await supabase.from('education_progression').select('*').eq('id', id).maybeSingle();
+      if (!data) { alert('Compte rendu introuvable sur cette fiche : vérifiez le chien sélectionné dans le dossier de la séance.'); return; }
+      const ligne = data as RapportEduP;
+      setRapports(prev => prev.some(x => x.id === ligne.id) ? prev : [ligne, ...prev]);
+      startEditRapport(ligne);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rapports, searchParams]);
+  }, [rapports, searchParams, loading, user?.uid]);
 
   function startEditRapport(r: { id: string; contenu: string; exercices_conseilles: string | null }) {
     setEditingRapportId(r.id);
