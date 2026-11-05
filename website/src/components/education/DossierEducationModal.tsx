@@ -18,6 +18,8 @@ import FinConsultationModal from '@/components/rdv/FinConsultationModal';
 import DocumentProModal from '@/components/pro/DocumentProModal';
 import { animauxDetailRdv } from '@/lib/rdv-animaux';
 import { useEducationPlan } from '@/lib/use-plan';
+import { signerContratAvecSignaturePro } from '@/lib/signature-pro';
+import { envoyerContratParEmail } from '@/lib/contrat-email';
 import { contratEducationAnimal, creerContratEducation, STATUT_CONTRAT, type ContratEducation } from '@/lib/contrat-education';
 import { annulerDecompteForfait, COLS_FORFAIT_SOUSCRIT, decompterSeanceForfait, seanceCouverte, estReparti, forfaitCouvre, libelleCompteurs, libelleTypeSeances, seancesRestantes, typeSeanceRdv, type ForfaitActif } from '@/lib/forfait-education';
 import { tarifSeanceRdv } from '@/lib/prestations-education';
@@ -266,7 +268,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     if (!r || !user?.uid || !formContrat) return;
     setCreationContrat(true);
     try {
-      const token = await creerContratEducation({
+      const cree = await creerContratEducation({
         proUid: user.uid, proProfileId: pid || null, animalId: aidSel ?? null,
         clientNom: [coord.prenom, coord.nom].filter(Boolean).join(' ') || nomClient,
         clientEmail: coord.email || null, clientTel: coord.tel || null,
@@ -276,9 +278,27 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
         animauxIds: detail.length > 1 ? detail.map(a => a.id) : undefined,
       });
       setFormContrat(null);
-      if (!token) { alert('Création du contrat impossible, réessayez.'); return; }
-      ouvrir(`/signer-contrat/${token}`, 'Contrat de prestation');
-      charger();
+      if (!cree) { alert('Création du contrat impossible, réessayez.'); return; }
+      // Ma signature enregistrée apposée d'office, sans prévenir le client ; sans signature : je la dessine.
+      const signe = await signerContratAvecSignaturePro(cree.id, user.uid, user.displayName ?? '', null, true).catch(() => false);
+      if (!signe) {
+        ouvrir(`/signer-contrat/${cree.token}`, 'Contrat de prestation');
+        charger();
+        return;
+      }
+      await charger(); onChanged?.();
+      const nomContrat = [coord.prenom, coord.nom].filter(Boolean).join(' ') || nomClient;
+      if (!confirm(`Contrat signé de votre côté. L'envoyer à ${nomContrat} maintenant ?\n\nSinon, il partira avec « Terminer et envoyer au client ».`)) return;
+      if (r.client_uid) {
+        await supabase.from('notifications').insert({
+          uid: r.client_uid, type: 'contrat_invite', title: 'Contrat de prestation à signer',
+          body: `${user.displayName || 'Votre professionnel'} vous envoie le contrat — vérifiez et signez`,
+          ...(r.client_profile_id ? { profile_id: r.client_profile_id } : {}),
+          data: { token: cree.token, url: `/signer-contrat/${cree.token}` }, read: false,
+        });
+      }
+      const parEmail = coord.email ? await envoyerContratParEmail({ email: coord.email, clientNom: nomContrat, proProfileId: pid || null, token: cree.token }).catch(() => false) : false;
+      if (!parEmail && !r.client_uid) alert('Contrat non envoyé : aucune adresse e-mail pour ce client. Il reste disponible avec le bouton « Voir ».');
     } finally {
       setCreationContrat(false);
     }

@@ -217,7 +217,7 @@ export async function creerContratEducation(o: {
   montant?: number | null; forfait?: string | null;
   /** Séance à plusieurs chiens : un seul contrat, retrouvé depuis chacun d'eux. */
   animauxIds?: string[];
-}): Promise<string | null> {
+}): Promise<{ id: string; token: string } | null> {
   const libelle = o.forfait?.trim() || o.prestation?.trim() || 'Prestation d\'éducation canine';
   const lignes = o.montant != null && o.montant > 0
     ? [{ description: libelle, quantite: 1, prix_unitaire: o.montant, total: o.montant }] : undefined;
@@ -239,6 +239,6 @@ export async function creerContratEducation(o: {
       ...(o.rdvId ? { rdv_id: o.rdvId } : {}),
       ...(o.animauxIds?.length ? { animaux_ids: o.animauxIds } : {}),
     },
-  }).select('token').single();
-  return (data?.token as string | undefined) ?? null;
+  }).select('id, token').single();
+  return data?.token ? { id: String(data.id), token: String(data.token) } : null;
 }

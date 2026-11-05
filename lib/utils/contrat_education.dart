@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
@@ -6,10 +9,30 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/utils/fin_seance_education.dart' show clientDuRdv;
 import 'package:PetsMatch/utils/prestations_education.dart' show tarifSeanceRdv;
 import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv;
+import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
+import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show envoyerContratParEmail;
+import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro;
+import 'package:PetsMatch/utils/site_api.dart';
 
 // Éducateur : contrat de prestation généré par PetsMatch (documents_animaux
 // type contrat_education, signé en ligne) — depuis « Mes Contrats » ou le
 // dossier de la séance. Formule Premium. Miroir site : lib/contrat-education.ts.
+
+/// Ma signature enregistrée apposée d'office, sans prévenir le client. Faux si aucune / échec.
+Future<bool> _apposerMaSignature(String docId) async {
+  final sig = await maSignaturePro();
+  if (sig == null) return false;
+  try {
+    final r = await http.post(Uri.parse('$kSiteBaseUrl/api/contracts/$docId/sign'),
+        headers: {...await siteApiHeaders(), 'Content-Type': 'application/json'},
+        body: jsonEncode({'role': 'eleveur', 'signature': sig, 'actorUid': User_Info.uid,
+            'actorNom': '${User_Info.firstname} ${User_Info.lastname}'.trim(), 'sansNotification': true}));
+    return r.statusCode == 200;
+  } catch (_) {
+    return false;
+  }
+}
 
 /// Ouvre le contrat PetsMatch de l'animal (le crée s'il n'existe pas).
 Future<void> ouvrirContratEducation(BuildContext context, {
@@ -115,8 +138,36 @@ Future<void> ouvrirContratEducation(BuildContext context, {
           'rdv_id': rdv['id'],
           if (chiens.length > 1) 'animaux_ids': [for (final a in chiens) a['id']],
         },
-      }).select('token').single();
+      }).select('id, token').single();
       token = row['token']?.toString();
+      // Ma signature apposée d'office ; sans signature enregistrée : page de signature, comme avant.
+      if (token != null && await _apposerMaSignature(row['id'].toString())) {
+        if (!context.mounted) return;
+        final nomContrat = nomClient.isNotEmpty ? nomClient : clientNom;
+        final envoyer = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+          title: const Text('Contrat signé de votre côté', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          content: Text("L'envoyer à $nomContrat maintenant ? Sinon, il partira avec « Terminer et envoyer au client ».",
+              style: const TextStyle(fontFamily: 'Galey')),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Plus tard')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Envoyer')),
+          ],
+        ));
+        if (envoyer != true) return;
+        final clientUid = rdv['client_uid']?.toString() ?? '';
+        if (clientUid.isNotEmpty) {
+          await supa.from('notifications').insert({
+            'uid': clientUid, 'type': 'contrat_invite', 'title': 'Contrat de prestation à signer',
+            'body': '${User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : 'Votre professionnel'} vous envoie le contrat — vérifiez et signez',
+            if (rdv['client_profile_id'] != null) 'profile_id': rdv['client_profile_id'],
+            'data': {'token': token, 'url': '/signer-contrat/$token'}, 'read': false,
+          });
+        }
+        final parEmail = await envoyerContratParEmail(rdv, token, nomClient: nomContrat);
+        dire(parEmail || clientUid.isNotEmpty ? 'Contrat envoyé à $nomContrat.'
+            : 'Contrat non envoyé : aucune adresse e-mail pour ce client.');
+        return;
+      }
     }
     if (token == null || !context.mounted) return;
     await Navigator.push(context, MaterialPageRoute(builder: (_) => ContratSignaturePage(token: token!)));
