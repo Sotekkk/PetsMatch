@@ -721,6 +721,7 @@ class _GardeDashboardState extends State<GardeDashboard> {
           crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: cols == 4 ? 3.0 : 2.9,
           children: [
             tuile(Icons.add_circle_outline, 'Nouveau RDV', () => _go(const ProAgendaPage(initialTabIndex: 1, nouveauRdv: true))),
+            tuile(Icons.night_shelter_outlined, 'Ajouter un animal en garde', () => _go(const ProAgendaPage(initialTabIndex: 1, nouveauRdv: true, nouveauSejourGarde: true))),
             tuile(Icons.route_outlined, 'Ma tournée', () => _go(const TourneePage())),
             tuile(Icons.checklist_outlined, 'Registre', () => _go(const RegistreVisitesPage())),
             tuile(Icons.vpn_key_outlined, 'Gestion des clés', () => _go(const ClesClientsPage())),

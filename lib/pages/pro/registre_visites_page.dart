@@ -9,6 +9,7 @@ import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 import 'package:PetsMatch/pages/pro/garde_facture_helper.dart';
 import 'package:PetsMatch/pages/pro/garde_sejour_helper.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart' show ProAgendaPage;
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
@@ -139,17 +140,18 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
       String clientName(Map<String, dynamic> r) {
         final cp = r['client_profile_id']?.toString() ?? '';
         if (cp.isNotEmpty && nameByPid[cp] != null) return nameByPid[cp]!;
-        return nameByUid[r['client_uid']?.toString() ?? ''] ?? 'Client';
+        // Client sans compte : nom et coordonnées saisis par le pro.
+        return nameByUid[r['client_uid']?.toString() ?? ''] ?? r['client_nom_manuel']?.toString() ?? 'Client';
       }
       String clientEmail(Map<String, dynamic> r) {
         final cp = r['client_profile_id']?.toString() ?? '';
         if (cp.isNotEmpty && (emailByPid[cp] ?? '').isNotEmpty) return emailByPid[cp]!;
-        return emailByUid[r['client_uid']?.toString() ?? ''] ?? '';
+        return emailByUid[r['client_uid']?.toString() ?? ''] ?? r['client_email_manuel']?.toString() ?? '';
       }
       String clientTel(Map<String, dynamic> r) {
         final cp = r['client_profile_id']?.toString() ?? '';
         if (cp.isNotEmpty && (telByPid[cp] ?? '').isNotEmpty) return telByPid[cp]!;
-        return telByUid[r['client_uid']?.toString() ?? ''] ?? '';
+        return telByUid[r['client_uid']?.toString() ?? ''] ?? r['client_telephone_manuel']?.toString() ?? '';
       }
 
       final clients = <String, Map<String, dynamic>>{};
@@ -162,7 +164,7 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
         r['_client_email'] = clientEmail(r);
         r['_client_tel'] = clientTel(r);
         final info = animalInfo[r['animal_id']?.toString()];
-        r['_animal_nom'] = animalNames[r['animal_id']?.toString()] ?? '';
+        r['_animal_nom'] = animalNames[r['animal_id']?.toString()] ?? r['animal_nom_manuel']?.toString() ?? '';
         r['_animal_espece'] = info?['espece'] ?? '';
         r['_animal_race'] = info?['race'] ?? '';
         r['_animal_puce'] = info?['puce'] ?? '';
@@ -540,6 +542,17 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
         title: const Text('Registre visites',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Ajouter un animal en garde',
+            icon: const Icon(Icons.add_circle_outline),
+            onPressed: () async {
+              await Navigator.push(context, MaterialPageRoute(builder: (_) =>
+                  const ProAgendaPage(initialTabIndex: 1, nouveauRdv: true, nouveauSejourGarde: true)));
+              if (mounted) _load();
+            },
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
           child: Container(

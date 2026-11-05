@@ -11,6 +11,9 @@ export interface GardeRdvRow {
   animal_id: string | null;
   client_uid: string | null;
   client_profile_id?: string | null;
+  /** Client / animal sans compte : noms saisis par le pro. */
+  client_nom_manuel?: string | null;
+  animal_nom_manuel?: string | null;
   date_heure: string;
   motif?: string | null;
   statut?: string;
@@ -88,18 +91,21 @@ export function groupeGardeSejours(rdvRows: GardeRdvRow[]): GardeSejour[] {
     if (isNaN(date.getTime())) continue;
     const jourSeul = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
+    // Sans compte : le nom saisi distingue les clients (sinon deux séjours fusionnés).
+    const cleClient = r.client_uid ?? r.client_nom_manuel ?? null;
+    const cleAnimal = r.animal_id ?? r.animal_nom_manuel ?? null;
     const memeChaine =
       courant.length > 0 &&
-      r.client_uid === courantClient &&
-      r.animal_id === courantAnimal &&
+      cleClient === courantClient &&
+      cleAnimal === courantAnimal &&
       dernierJourDate !== null &&
       Math.round((jourSeul.getTime() - dernierJourDate.getTime()) / 86400000) <= 1;
 
     if (!memeChaine) {
       cloture();
       courant = [];
-      courantClient = r.client_uid;
-      courantAnimal = r.animal_id;
+      courantClient = cleClient;
+      courantAnimal = cleAnimal;
     }
     courant.push(r);
     dernierJourDate = jourSeul;

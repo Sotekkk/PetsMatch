@@ -67,8 +67,8 @@ List<GardeSejour> groupeGardeSejours(List<Map<String, dynamic>> rdvRows) {
   void cloture() {
     if (courant.isNotEmpty) {
       sejours.add(GardeSejour(
-        animalId: courantAnimal,
-        clientUid: courantClient,
+        animalId: courant.first['animal_id']?.toString(),
+        clientUid: courant.first['client_uid']?.toString(),
         clientProfileId: courant.first['client_profile_id']?.toString(),
         jours: courant,
       ));
@@ -76,8 +76,9 @@ List<GardeSejour> groupeGardeSejours(List<Map<String, dynamic>> rdvRows) {
   }
 
   for (final r in joursGarde) {
-    final clientUid = r['client_uid']?.toString();
-    final animalId = r['animal_id']?.toString();
+    // Sans compte : le nom saisi distingue les clients (sinon deux séjours fusionnés).
+    final clientUid = (r['client_uid'] ?? r['client_nom_manuel'])?.toString();
+    final animalId = (r['animal_id'] ?? r['animal_nom_manuel'])?.toString();
     final date = DateTime.tryParse(r['date_heure']?.toString() ?? '')?.toLocal();
     if (date == null) continue;
     final jourSeul = DateTime(date.year, date.month, date.day);

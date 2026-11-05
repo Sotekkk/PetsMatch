@@ -61,7 +61,7 @@ export default function RegistreVisitesPage() {
     if (!user) return;
     setLoading(true);
     let q = supabase.from('rdv')
-      .select('id, animal_id, client_uid, client_profile_id, date_heure, motif, statut, arrivee_validee_le, depart_valide_le, facture_id')
+      .select('id, animal_id, client_uid, client_profile_id, client_nom_manuel, client_telephone_manuel, client_email_manuel, animal_nom_manuel, date_heure, motif, statut, arrivee_validee_le, depart_valide_le, facture_id')
       .eq('pro_uid', user.uid);
     if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId) as typeof q;
     const { data } = await q.in('statut', ['confirme', 'termine']).order('date_heure', { ascending: true });
@@ -96,15 +96,17 @@ export default function RegistreVisitesPage() {
     const telByUid = new Map((byUid ?? []).map(c => [c.uid, c.phone_number ?? '']));
     const animalById = new Map((animaux ?? []).map(a => [a.id, a]));
 
-    const rowsEnriched = rows.map(r => {
+    const rowsEnriched = rows.map(r0 => {
+      // Client sans compte : noms et coordonnées saisis par le pro.
+      const r = r0 as Rdv & { client_nom_manuel?: string | null; client_telephone_manuel?: string | null; client_email_manuel?: string | null; animal_nom_manuel?: string | null };
       const pid = r.client_profile_id ?? null;
       const a = r.animal_id ? animalById.get(r.animal_id) : undefined;
       return {
         ...r,
-        _client_nom: (pid && nameByPid.get(pid)) || nameByUid.get(r.client_uid ?? '') || 'Client',
-        _client_email: (pid && emailByPid.get(pid)) || emailByUid.get(r.client_uid ?? '') || '',
-        _client_tel: (pid && telByPid.get(pid)) || telByUid.get(r.client_uid ?? '') || '',
-        _animal_nom: a?.nom ?? '',
+        _client_nom: (pid && nameByPid.get(pid)) || nameByUid.get(r.client_uid ?? '') || r.client_nom_manuel || 'Client',
+        _client_email: (pid && emailByPid.get(pid)) || emailByUid.get(r.client_uid ?? '') || r.client_email_manuel || '',
+        _client_tel: (pid && telByPid.get(pid)) || telByUid.get(r.client_uid ?? '') || r.client_telephone_manuel || '',
+        _animal_nom: a?.nom ?? r.animal_nom_manuel ?? '',
         _animal_espece: a?.espece ?? '',
         _animal_race: a?.race ?? '',
         _animal_puce: a?.identification ?? '',
@@ -226,7 +228,13 @@ export default function RegistreVisitesPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold font-galey mb-6" style={{ color: TEAL }}>Registre visites</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h1 className="text-2xl font-bold font-galey" style={{ color: TEAL }}>Registre visites</h1>
+        <button type="button" onClick={() => router.push('/mes-rdv?nouveau=1&sejour=1')}
+          className="px-3 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: TEAL }}>
+          Ajouter un animal en garde
+        </button>
+      </div>
 
       <div className="flex bg-gray-100 rounded-xl p-1 mb-6 max-w-lg overflow-x-auto">
         {([

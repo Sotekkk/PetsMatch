@@ -350,6 +350,7 @@ export default function GardeDashboard({ nom, avatar }: { nom: string; avatar: s
             {/* Accès rapides : seulement l'utile au quotidien (le reste est dans le menu) */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Tuile href="/mes-rdv?onglet=a_venir" icone="plus" label="Nouveau RDV" />
+              <Tuile href="/mes-rdv?nouveau=1&sejour=1" icone="plus" label="Ajouter un animal en garde" />
               <Tuile href="/garde/registre" icone="livre" label="Registre" />
               <Tuile href="/garde/cles" icone="cle" label="Gestion des clés" teinte={OR} />
               <Tuile href="/mes-patients" icone="patte" label="Mes animaux en garde" teinte={VERT} />

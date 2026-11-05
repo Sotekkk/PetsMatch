@@ -657,6 +657,11 @@ function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
 // PetsMatch s'il en a un, sinon e-mail de confirmation + invitation.
 
 const DUREES_MANUEL = [15, 30, 45, 60, 90];
+// Garde sur plusieurs jours : une ligne rdv par jour (comme la réservation en ligne), regroupées
+// en séjour dans le registre (lib/garde-sejours.ts). Miroir appli : _creerSejourGarde.
+const MOTIF_GARDE_JOUR = 'Garde à domicile (journée)';
+const DUREE_GARDE_JOUR = 480;
+const MAX_JOURS_SEJOUR = 92;
 
 /** Ligne de pm_mes_clients : animal (null = client de RDV sans fiche) et
  *  client — compte PetsMatch (clientUid) ou coordonnées saisies par le pro. */
@@ -669,7 +674,7 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
   proUid: string; profileId: string; proName: string; catPro: string;
   /** Depuis le planning : date-heure, praticien ('' = titulaire) et salle ;
    *  depuis la fiche d'un patient : animal (propriétaire pré-rempli) et motif. */
-  initial?: { date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string; intervention?: string };
+  initial?: { date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string; intervention?: string; sejour?: boolean };
   onClose: () => void; onDone: () => void;
 }) {
   const d0 = initial?.date ?? new Date();
@@ -704,6 +709,8 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
   const [clientEmail, setClientEmail] = useState('');
   const [animalNom, setAnimalNom] = useState('');
   const [motif, setMotif] = useState(initial?.motif ?? '');
+  const [sejour, setSejour] = useState(catPro === 'garde' && !!initial?.sejour);
+  const [dateFinSejour, setDateFinSejour] = useState('');
   const [notes, setNotes] = useState('');
   const [date, setDate] = useState(toDateStr(d0));
   const [heure, setHeure] = useState(`${String(d0.getHours()).padStart(2, '0')}:${String(Math.floor(d0.getMinutes() / 15) * 15).padStart(2, '0')}`);
@@ -919,11 +926,68 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
     } finally { setSearching(false); setSearched(true); }
   }
 
+  async function creerSejour() {
+    // Fiche obligatoire : retrouvable par puce par les autres pros, récupérée par le client à son inscription.
+    if (!patientId) { setError('Une garde se rattache à la fiche de l’animal : choisissez-le (liste de clients ou puce) ou créez sa fiche avec « Nouveau client (sans appli) ».'); return; }
+    if (!date || !dateFinSejour || !/^\d{2}:\d{2}$/.test(heure)) { setError('Date d’arrivée, date de départ et heure obligatoires.'); return; }
+    if (dateFinSejour < date) { setError('Le départ ne peut pas être avant l’arrivée.'); return; }
+    const jours: Date[] = [];
+    for (const d = new Date(`${date}T${heure}:00`); toDateStr(d) <= dateFinSejour; d.setDate(d.getDate() + 1)) jours.push(new Date(d));
+    if (jours.length > MAX_JOURS_SEJOUR) { setError(`Séjour limité à ${MAX_JOURS_SEJOUR} jours : créez-en un autre à la suite.`); return; }
+    setSaving(true); setError(null);
+    try {
+      const { data: lignes, error: e } = await supabase.from('rdv').insert(jours.map(d => ({
+        pro_uid: proUid, pro_profile_id: profileId,
+        ...(linked ? { client_uid: linked.uid, client_profile_id: linked.profileId } : {
+          client_nom_manuel: clientNom.trim(), client_telephone_manuel: clientTel.trim() || null, client_email_manuel: clientEmail.trim() || null,
+        }),
+        ...(animalNom.trim() ? { animal_nom_manuel: animalNom.trim() } : {}),
+        ...(patientId ? { animal_id: patientId } : {}),
+        cree_par_pro: true, date_heure: d.toISOString(), motif: MOTIF_GARDE_JOUR, duree_minutes: DUREE_GARDE_JOUR,
+        ...(notes.trim() ? { notes_client: notes.trim() } : {}),
+        statut: 'confirme',
+      }))).select('id, date_heure');
+      if (e || !lignes?.length) throw e ?? new Error('insert');
+      const nomClient = linked?.nom || clientNom.trim() || 'Client';
+      const fr = (d: Date) => d.toLocaleDateString('fr-FR');
+      const periode = jours.length > 1 ? `du ${fr(jours[0])} au ${fr(jours[jours.length - 1])}` : `le ${fr(jours[0])}`;
+      const rows = lignes as { id: string; date_heure: string }[];
+      await supabase.from('agenda_events').insert(rows.map(l => ({
+        uid: proUid, titre: `Garde avec ${nomClient}${animalNom.trim() ? ` — ${animalNom.trim()}` : ''}`,
+        type: typeFromMotif(MOTIF_GARDE_JOUR), date_debut: l.date_heure, duree_minutes: DUREE_GARDE_JOUR,
+        notes: MOTIF_GARDE_JOUR, couleur: `rdv:${l.id}`, pro_profile_id: profileId,
+      })));
+      if (linked) {
+        await supabase.from('agenda_events').upsert(rows.map(l => ({
+          uid: linked.uid, titre: `Garde — ${proName}`, type: typeFromMotif(MOTIF_GARDE_JOUR),
+          date_debut: l.date_heure, duree_minutes: DUREE_GARDE_JOUR, notes: proName, rdv_id: l.id, pro_profile_id: linked.profileId,
+        })), { onConflict: 'rdv_id' });
+        // Une seule notification pour tout le séjour.
+        await supabase.from('notifications').insert({
+          uid: linked.uid, type: 'rdv_confirme', title: `Garde confirmée par ${proName}`,
+          body: `Garde${animalNom.trim() ? ` de ${animalNom.trim()}` : ''} confirmée ${periode}`,
+          profile_id: linked.profileId, data: { rdv_id: rows[0].id, ...(patientId ? { animal_id: patientId } : {}) }, read: false,
+        });
+      } else if (clientEmail.trim()) {
+        await apiFetch('/api/rdv/notify-email', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: clientEmail.trim(), client_nom: clientNom.trim(), pro_nom: proName,
+            date_heure: rows[0].date_heure, motif: `Garde à domicile ${periode}`, duree_minutes: DUREE_GARDE_JOUR }),
+        }).catch(() => {});
+      }
+      onDone();
+    } catch (e) {
+      setError((e as { message?: string })?.message || 'Erreur lors de la création de la garde.');
+      setSaving(false);
+    }
+  }
+
   async function creer() {
     if (!linked) {
       const manque = [!clientNom.trim() && 'nom', !clientTel.trim() && 'téléphone', !clientEmail.trim() && 'email'].filter(Boolean);
       if (manque.length) { setError(`Champs requis : ${manque.join(', ')}.`); return; }
     }
+    if (sejour) { await creerSejour(); return; }
     if (intervention && !patientId) { setError('Une intervention se rattache à la fiche de l’animal : choisissez le patient.'); return; }
     if (!date || !/^\d{2}:\d{2}$/.test(heure)) { setError('Date et heure du rendez-vous obligatoires.'); return; }
     if (intervention) {
@@ -1210,15 +1274,30 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
               {SOUS_TYPES_INTERVENTION.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select></div>
         )}
-        <div><label className={label}>Motif</label>
+        {catPro === 'garde' && (
+          <div className="flex gap-2">
+            {([[false, 'Visite / promenade'], [true, 'Garde sur plusieurs jours']] as const).map(([v, l]) => (
+              <button key={l} type="button" aria-pressed={sejour === v} onClick={() => setSejour(v)}
+                className="flex-1 px-3 py-2 rounded-xl text-xs font-semibold border"
+                style={sejour === v ? { background: TEAL, borderColor: TEAL, color: 'white' } : { borderColor: TEAL, color: TEAL }}>
+                {l}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className={sejour ? 'hidden' : ''}><label className={label}>Motif</label>
           <input value={motif} onChange={e => setMotif(e.target.value)} className={champ} /></div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div><label className={label}>Date</label>
+          <div><label className={label}>{sejour ? 'Arrivée' : 'Date'}</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className={champ} /></div>
-          <div><label className={label}>{intervention ? 'Heure de dépôt' : 'Heure'}</label>
+          <div><label className={label}>{intervention ? 'Heure de dépôt' : sejour ? 'Heure d’arrivée' : 'Heure'}</label>
             <input type="time" step={300} value={heure} onChange={e => setHeure(e.target.value)} className={champ} /></div>
         </div>
+        {sejour && (
+          <div><label className={label}>Départ prévu</label>
+            <input type="date" min={date} value={dateFinSejour} onChange={e => setDateFinSejour(e.target.value)} className={champ} /></div>
+        )}
         {/* Créneaux libres du jour (créneaux ouverts moins RDV pris), puis planning du jour pour vérifier. */}
         {libres.length > 0 && (
           <div>
@@ -1247,7 +1326,7 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
             </ul>
           )}
         </div>
-        <div>
+        <div className={sejour ? 'hidden' : ''}>
           <label className={label}>{intervention ? 'Durée du dépôt' : 'Durée'}</label>
           <div className="flex flex-wrap gap-2 mt-1">
             {DUREES_MANUEL.map(d => (
@@ -1321,7 +1400,7 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
           </button>
           <button onClick={creer} disabled={saving}
             className="flex-1 py-2.5 rounded-xl text-sm text-white font-semibold disabled:opacity-50" style={{ background: TEAL }}>
-            {saving ? '…' : 'Créer le RDV'}
+            {saving ? '…' : sejour ? 'Ajouter la garde' : 'Créer le RDV'}
           </button>
         </div>
       </div>
@@ -2164,7 +2243,7 @@ export default function MesRdvPage() {
   const [dossierToilettage, setDossierToilettage] = useState<Rdv | null>(null);
   // Éducateur : dossier de la séance (rouvert au retour d'une action : ?rdv=…&dossier=1).
   const [dossierEducation, setDossierEducation] = useState<{ id: string; nomClient: string } | null>(null);
-  const [modalNouveau, setModalNouveau]   = useState<{ date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string } | null>(null);
+  const [modalNouveau, setModalNouveau]   = useState<{ date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string; sejour?: boolean } | null>(null);
   // Ouvert depuis la fiche d'un patient : retour à la fiche une fois fini.
   const [retourFiche, setRetourFiche] = useState<string | null>(null);
   const [modifierFocus, setModifierFocus] = useState(false);
@@ -2230,7 +2309,7 @@ export default function MesRdvPage() {
     // Accès rapide « Nouveau RDV » de l'accueil, ou depuis la fiche d'un patient.
     if (q.get('nouveau') === '1') {
       const d = q.get('date') ? new Date(q.get('date')!) : null;
-      setModalNouveau({ animalId: q.get('animal') ?? undefined, motif: q.get('motif') ?? undefined, ...(d && !isNaN(d.getTime()) ? { date: d } : {}) });
+      setModalNouveau({ animalId: q.get('animal') ?? undefined, motif: q.get('motif') ?? undefined, sejour: q.get('sejour') === '1', ...(d && !isNaN(d.getTime()) ? { date: d } : {}) });
     }
   }, [catPro]);
 

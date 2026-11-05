@@ -49,6 +49,8 @@ import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
 import 'package:PetsMatch/utils/document_pro.dart' show showDocumentProSheet;
 
+const _kMaxJoursSejour = 92;
+
 /// Déduit la catégorie d'agenda (agenda_page.dart _kTypeColor) à partir du
 /// motif texte saisi par le client à la réservation (ex. "Promenade 1h",
 /// "Visite à domicile", "Cours individuel") — pour que les points RDV créés
@@ -85,12 +87,14 @@ class ProAgendaPage extends StatefulWidget {
   /// pré-remplis, retour à la fiche une fois le formulaire fermé.
   final String? nouveauRdvAnimalId;
   final String? nouveauRdvMotif;
+  /// Garde : « Nouveau RDV » ouvert en « garde sur plusieurs jours ».
+  final bool nouveauSejourGarde;
   /// RDV de l'intervention (CR préopératoire) : date prévue.
   final DateTime? nouveauRdvDate;
   /// Avec [focusRdvId] : ouvre directement « Modifier » puis revient en arrière.
   final bool modifierFocus;
   const ProAgendaPage({super.key, this.initialTabIndex, this.ongletAgenda = false, this.employeur, this.focusRdvId, this.nouveauRdv = false,
-      this.nouveauRdvAnimalId, this.nouveauRdvMotif, this.nouveauRdvDate, this.modifierFocus = false});
+      this.nouveauRdvAnimalId, this.nouveauRdvMotif, this.nouveauRdvDate, this.modifierFocus = false, this.nouveauSejourGarde = false});
 
   @override
   State<ProAgendaPage> createState() => _ProAgendaPageState();
@@ -464,8 +468,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     if (widget.nouveauRdv) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
-        await _showNouveauRdvDialog(animalInit: widget.nouveauRdvAnimalId, motifInit: widget.nouveauRdvMotif, dateInit: widget.nouveauRdvDate);
-        if (mounted && widget.nouveauRdvAnimalId != null) Navigator.pop(context);
+        await _showNouveauRdvDialog(animalInit: widget.nouveauRdvAnimalId, motifInit: widget.nouveauRdvMotif, dateInit: widget.nouveauRdvDate, sejourInit: widget.nouveauSejourGarde);
+        if (mounted && (widget.nouveauRdvAnimalId != null || widget.nouveauSejourGarde)) Navigator.pop(context);
       });
     }
     User_Info.profileNotifier.addListener(_onProfileChange);
@@ -3046,7 +3050,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   /// [praticienInit] '' = titulaire ; [dateInit] / [salleInit] : depuis le
   /// planning de la clinique (créneau touché).
   Future<void> _showNouveauRdvDialog({DateTime? dateInit, String? praticienInit, String? salleInit,
-      String? animalInit, String? motifInit}) async {
+      String? animalInit, String? motifInit, bool sejourInit = false}) async {
     final clientNomCtrl = TextEditingController();
     final clientTelCtrl = TextEditingController();
     final clientEmailCtrl = TextEditingController();
@@ -3056,6 +3060,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     DateTime date = dateInit ?? DateTime.now();
     TimeOfDay heure = dateInit != null ? TimeOfDay.fromDateTime(dateInit) : TimeOfDay.now();
     int duree = 30;
+    // Garde sur plusieurs jours : une ligne rdv par jour (miroir site : creerSejour).
+    final estGarde = AgendaContexte.catPro == 'garde';
+    bool sejour = estGarde && sejourInit;
+    DateTime? dateFinSejour;
     // Vétérinaire : RDV « Intervention » (détartrage, stérilisation…) — dépôt,
     // temps d'intervention, récupération prévue, consignes au propriétaire.
     final estVeto = AgendaContexte.catPro == 'veterinaire';
@@ -3543,7 +3551,43 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 ],
               ],
               const SizedBox(height: 10),
-              TextField(
+              if (estGarde) ...[
+                Row(children: [
+                  for (final o in const [(false, 'Visite / promenade'), (true, 'Garde sur plusieurs jours')]) Expanded(child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: OutlinedButton(
+                      onPressed: () => setModal(() => sejour = o.$1),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: sejour == o.$1 ? _teal : Colors.white,
+                        foregroundColor: sejour == o.$1 ? Colors.white : _teal,
+                        side: const BorderSide(color: _teal),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                      ),
+                      child: Text(o.$2, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                    ),
+                  )),
+                ]),
+                const SizedBox(height: 10),
+              ],
+              if (sejour) ...[
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showDatePicker(context: ctx, initialDate: dateFinSejour ?? date, firstDate: date,
+                        lastDate: date.add(const Duration(days: _kMaxJoursSejour - 1)));
+                    if (picked != null) setModal(() => dateFinSejour = picked);
+                  },
+                  icon: const Icon(Icons.event_outlined, size: 16),
+                  label: Text(dateFinSejour == null ? 'Départ prévu : choisir la date'
+                      : 'Départ prévu : ${dateFinSejour!.day.toString().padLeft(2, '0')}/${dateFinSejour!.month.toString().padLeft(2, '0')}/${dateFinSejour!.year}',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                  style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Text('Ci-dessous : date et heure d\u2019arrivée.', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6B7280))),
+                ),
+              ],
+              if (!sejour) TextField(
                 controller: motifCtrl,
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
                 onChanged: (v) {
@@ -3650,7 +3694,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 ]);
               }),
               const SizedBox(height: 10),
-              Row(children: [
+              if (!sejour) Row(children: [
                 Text(intervention.isNotEmpty ? 'Dépôt' : 'Durée',
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
                 const SizedBox(width: 12),
@@ -3799,6 +3843,23 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       setModal(() => error = 'Une intervention se rattache à la fiche de l\u2019animal : choisissez le patient.');
                       return;
                     }
+                    if (sejour) {
+                      final fin = dateFinSejour;
+                      // Fiche obligatoire : retrouvable par puce par les autres pros, récupérée par le client à son inscription.
+                      final msg = patientAnimalId == null ? 'Une garde se rattache à la fiche de l\u2019animal : choisissez-le (liste de clients ou puce) ou créez sa fiche avec « Nouveau client (sans appli) ».'
+                          : fin == null ? 'Indiquez la date de départ prévue.'
+                          : DateTime(fin.year, fin.month, fin.day).isBefore(DateTime(date.year, date.month, date.day)) ? 'Le départ ne peut pas être avant l\u2019arrivée.' : null;
+                      if (msg != null) { setModal(() => error = msg); return; }
+                      setModal(() { saving = true; error = null; });
+                      final ok = await _creerSejourGarde(
+                        clientNom: clientNomCtrl.text.trim(), clientTel: clientTelCtrl.text.trim(), clientEmail: clientEmailCtrl.text.trim(),
+                        animalNom: animalNomCtrl.text.trim(), notes: notesCtrl.text.trim(), debut: date, fin: fin!, heure: heure,
+                        linkedUid: linkedUid, linkedProfileId: linkedProfileId, patientAnimalId: patientAnimalId,
+                      );
+                      if (ok && ctx.mounted) Navigator.pop(ctx);
+                      else setModal(() { saving = false; error = _erreurCreationRdv ?? 'Erreur lors de la création de la garde.'; });
+                      return;
+                    }
                     DateTime? at(TimeOfDay? t) => t == null ? null : DateTime(date.year, date.month, date.day, t.hour, t.minute);
                     final depot = at(heure)!;
                     if (intervention.isNotEmpty) {
@@ -3901,8 +3962,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   child: saving
                       ? const SizedBox(height: 20, width: 20,
                           child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text('Créer le RDV',
-                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                      : Text(sejour ? 'Ajouter la garde' : 'Créer le RDV',
+                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
                 ),
               ),
             ]),
@@ -3989,6 +4050,93 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         );
       }),
     );
+  }
+
+  /// Garde sur plusieurs jours : une ligne rdv par jour (comme la réservation en ligne),
+  /// regroupées en séjour dans le registre. Une seule notification / un seul e-mail.
+  Future<bool> _creerSejourGarde({
+    required String clientNom, required String clientTel, required String clientEmail,
+    required String animalNom, required String notes,
+    required DateTime debut, required DateTime fin, required TimeOfDay heure,
+    String? linkedUid, String? linkedProfileId, String? patientAnimalId,
+  }) async {
+    _erreurCreationRdv = null;
+    final uid = AgendaContexte.uid;
+    if (uid == null) return false;
+    // Toujours le profil actif : jamais de repli sur un autre profil du compte.
+    final pid = AgendaContexte.profileId;
+    if (pid.isEmpty) {
+      _erreurCreationRdv = 'Profil de garde introuvable : rouvrez la page depuis votre profil Pet Sitter.';
+      return false;
+    }
+    final linked = linkedUid != null && linkedUid.isNotEmpty;
+    final supa = Supabase.instance.client;
+    const motif = 'Garde à domicile (journée)';
+    const duree = 480;
+    try {
+      final jours = <DateTime>[];
+      for (var d = DateTime(debut.year, debut.month, debut.day, heure.hour, heure.minute);
+          !DateTime(d.year, d.month, d.day).isAfter(DateTime(fin.year, fin.month, fin.day));
+          d = DateTime(d.year, d.month, d.day + 1, heure.hour, heure.minute)) {
+        jours.add(d);
+      }
+      final rows = List<Map<String, dynamic>>.from(await supa.from('rdv').insert([
+        for (final d in jours) {
+          'pro_uid': uid,
+          'pro_profile_id': pid,
+          if (linked) 'client_uid': linkedUid,
+          if (linked && (linkedProfileId ?? '').isNotEmpty) 'client_profile_id': linkedProfileId,
+          if (!linked) 'client_nom_manuel': clientNom,
+          if (!linked && clientTel.isNotEmpty) 'client_telephone_manuel': clientTel,
+          if (!linked && clientEmail.isNotEmpty) 'client_email_manuel': clientEmail,
+          if (animalNom.isNotEmpty) 'animal_nom_manuel': animalNom,
+          if (patientAnimalId != null) 'animal_id': patientAnimalId,
+          'cree_par_pro': true, 'date_heure': d.toUtc().toIso8601String(), 'motif': motif, 'duree_minutes': duree,
+          if (notes.isNotEmpty) 'notes_client': notes,
+          'statut': 'confirme',
+        },
+      ]).select('id, date_heure'));
+      if (mounted) await Future.wait([_loadRdvs(), _loadAujourdhui()]);
+      String fr(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+      final periode = jours.length > 1 ? 'du ${fr(jours.first)} au ${fr(jours.last)}' : 'le ${fr(jours.first)}';
+      final proNom = User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : 'votre professionnel';
+      if (linked) {
+        // Agenda client + pro et accès au carnet, jour par jour ; une seule notification.
+        for (final r in rows) {
+          await _updateStatut(r['id'].toString(), 'confirme', dureeMinutes: duree);
+        }
+        try {
+          await supa.from('notifications').insert({
+            'uid': linkedUid, 'type': 'rdv_confirme', 'title': 'Garde confirmée par $proNom',
+            'body': 'Garde${animalNom.isNotEmpty ? ' de $animalNom' : ''} confirmée $periode',
+            if ((linkedProfileId ?? '').isNotEmpty) 'profile_id': linkedProfileId,
+            'data': {'rdv_id': rows.first['id'].toString(), if (patientAnimalId != null) 'animal_id': patientAnimalId},
+            'read': false,
+          });
+        } catch (_) {}
+      } else {
+        try {
+          await supa.from('agenda_events').insert([
+            for (final r in rows) {
+              'uid': uid, 'titre': 'Garde avec ${clientNom.isNotEmpty ? clientNom : 'Client'}${animalNom.isNotEmpty ? ' — $animalNom' : ''}',
+              'type': _typeFromMotif(motif), 'date_debut': r['date_heure'], 'notes': motif, 'duree_minutes': duree,
+              'couleur': 'rdv:${r['id']}', 'pro_profile_id': pid,
+            },
+          ]);
+        } catch (_) {}
+        if (clientEmail.isNotEmpty) {
+          try {
+            await http.post(Uri.parse('$kSiteBaseUrl/api/rdv/notify-email'), headers: await siteApiHeaders(),
+                body: jsonEncode({'email': clientEmail, 'client_nom': clientNom, 'pro_nom': proNom,
+                  'date_heure': rows.first['date_heure'], 'motif': 'Garde à domicile $periode', 'duree_minutes': duree}));
+          } catch (_) {}
+        }
+      }
+      return true;
+    } catch (e) {
+      _erreurCreationRdv = e is PostgrestException ? e.message : null;
+      return false;
+    }
   }
 
   Future<bool> _creerRdvManuel({
