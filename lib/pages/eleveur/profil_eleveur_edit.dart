@@ -443,8 +443,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       if (uid == null) return;
 
       // Le compte peut avoir un autre profil principal (particulier) : on écrit toujours
-      // sur la ligne du profil ÉLEVAGE, et sa photo a son propre fichier (photo.jpg
-      // est celle du profil principal : la remplacer changerait aussi la sienne).
+      // sur la ligne du profil ÉLEVAGE, et sa photo a son propre fichier.
       Map<String, dynamic>? ligneElevage;
       try {
         ligneElevage = await Supabase.instance.client.from('user_profiles_complet')
@@ -453,8 +452,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       final elevagePrincipal = ligneElevage == null || ligneElevage['is_main'] == true;
       String? photoUrl = _photoUrl;
       if (_photoFile != null) {
-        photoUrl = await uploadPhoto(_photoFile!,
-            elevagePrincipal ? 'profiles/$uid/photo.jpg' : 'profiles/$uid/elevage_${ligneElevage['id']}.jpg');
+        photoUrl = await uploadPhoto(_photoFile!, cheminPhotoProfil(uid, ligneElevage?['id']?.toString()));
       }
 
       String? bannerUrl = _bannerUrl;
@@ -595,8 +593,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           if (_profileLat != null) 'lat_pro': _profileLat,
           if (_profileLng != null) 'lng_pro': _profileLng,
           if (photoUrl != null) 'profile_picture_url_pro': photoUrl,
-          // Élevage secondaire : sa photo affichée est avatar_url (User_Info.applyProfile).
-          if (photoUrl != null && !elevagePrincipal) 'avatar_url': photoUrl,
+          // Sa photo : aussi dans avatar_url, lu par la liste des profils (site et appli).
+          if (photoUrl != null) 'avatar_url': photoUrl,
           if (bannerUrl != null) 'banner_url': bannerUrl,
           'siret':          _siretCtrl.text.trim(),
           'numero_tva':     _tvaCtrl.text.trim(),

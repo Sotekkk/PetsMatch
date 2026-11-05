@@ -9,7 +9,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { uploadPhoto } from '@/lib/upload-media';
+import { uploadPhoto, cheminPhotoProfil } from '@/lib/upload-media';
 import ReactCrop, { type Crop, type PixelCrop, centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
@@ -577,14 +577,22 @@ export default function EleveurProfilEditPage() {
         );
       }
 
+      // Le compte peut avoir un autre profil principal (particulier) : tout s'écrit sur la
+      // ligne du profil ÉLEVAGE, et sa photo a son propre fichier.
+      const { data: ligneElevage } = await supabase.from('user_profiles_complet')
+        .select('id, is_main').eq('uid', user!.uid).eq('profile_type', 'eleveur').maybeSingle();
+      const elevagePrincipal = !ligneElevage || ligneElevage.is_main === true;
+
       // Upload avatar
+      let avatarUrl: string | null = null;
       if (avatarFile) {
-        const avatarUrl = await uploadPhoto(
+        avatarUrl = await uploadPhoto(
           avatarFile,
-          `profiles/${user!.uid}/photo.jpg`,
+          cheminPhotoProfil(user!.uid, ligneElevage?.id as string | undefined),
           { maxDim: 800, quality: 0.85 },
         );
-        payload.profile_picture_url = avatarUrl;
+        // Photo du compte : seulement si l'élevage est le profil principal.
+        if (elevagePrincipal) payload.profile_picture_url = avatarUrl;
         payload.profile_picture_url_elevage = avatarUrl;
       }
 
@@ -623,7 +631,7 @@ export default function EleveurProfilEditPage() {
         site_web: siteWeb.trim(),
       };
       if (payload.banner_url) profileUpdate.banner_url = payload.banner_url;
-      if (payload.profile_picture_url) profileUpdate.avatar_url = payload.profile_picture_url;
+      if (avatarUrl) profileUpdate.avatar_url = avatarUrl;
       if (payload.profile_picture_url_elevage) profileUpdate.profile_picture_url_pro = payload.profile_picture_url_elevage;
       if (payload.kbis_url) profileUpdate.kbis_url = payload.kbis_url;
       if (payload.acaced_doc_url) profileUpdate.acaced_doc_url = payload.acaced_doc_url;
@@ -633,7 +641,7 @@ export default function EleveurProfilEditPage() {
       await supabase.from('user_profiles')
         .update(profileUpdate)
         .eq('uid', user!.uid)
-        .eq('is_main', true);
+        .eq('profile_type', 'eleveur');
 
       // Identité publique + vitrine reproducteurs — TOUJOURS sur le profil
       // ÉLEVEUR du compte (is_main peut pointer ailleurs). desc_entreprise =
@@ -677,7 +685,7 @@ export default function EleveurProfilEditPage() {
       } catch { /* doc may not exist yet */ }
 
       try {
-        await updateProfile(user!, { displayName: nameElevage });
+        if (elevagePrincipal) await updateProfile(user!, { displayName: nameElevage });
       } catch { /* non bloquant */ }
 
       await refreshUserData();

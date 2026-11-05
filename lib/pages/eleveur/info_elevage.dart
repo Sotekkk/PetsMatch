@@ -278,7 +278,7 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
       } else {
         if (_imageFile != null) {
           User_Info.profilePictureUrlElevage =
-              await uploadPhoto(_imageFile!, 'profiles/$uid/photo.jpg');
+              await uploadPhoto(_imageFile!, 'profiles/$uid/photo_elevage.jpg');
         }
         if (_bannerFile != null) {
           User_Info.bannerUrl =

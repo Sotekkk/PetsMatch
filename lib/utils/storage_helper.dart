@@ -36,6 +36,12 @@ String cheminStockage(String chemin) {
 
 /// Compress [file] then upload to Supabase Storage at [storagePath].
 /// Returns the public URL.
+/// Fichier de la photo d'un profil : un par profil, jamais partagé (photo.jpg commun :
+/// en changer écrasait la photo des autres profils du compte). Miroir site : upload-media.ts.
+String cheminPhotoProfil(String uid, String? profileId) => (profileId ?? '').isEmpty
+    ? 'profiles/$uid/photo.jpg'
+    : 'profiles/$uid/profil_$profileId.jpg';
+
 Future<String> uploadPhoto(
   File file,
   String storagePath, {

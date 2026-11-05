@@ -787,7 +787,15 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       // (sinon tous les profils du compte partagent profiles/$uid/photo.jpg
       // et changer la photo de l'un écrase celle des autres).
       final sid = widget.secondaryProfileId;
-      final photoPath  = sid != null ? 'profiles/$uid/pro_$sid.jpg'         : 'profiles/$uid/photo.jpg';
+      // Profil principal : son fichier aussi (jamais le photo.jpg commun).
+      String? idPrincipal;
+      if (sid == null && _photoFile != null) {
+        try {
+          idPrincipal = (await _supa.from('user_profiles_complet').select('id')
+              .eq('uid', User_Info.uid).eq('is_main', true).maybeSingle())?['id']?.toString();
+        } catch (_) {}
+      }
+      final photoPath  = sid != null ? 'profiles/$uid/pro_$sid.jpg' : cheminPhotoProfil(uid, idPrincipal);
       final bannerPath = sid != null ? 'profiles/$uid/pro_${sid}_banner.jpg' : 'profiles/$uid/banner.jpg';
       final acacedPath = sid != null ? 'profiles/$uid/pro_${sid}_acaced.jpg' : 'profiles/$uid/acaced.jpg';
       final cacheBust = '?v=${DateTime.now().millisecondsSinceEpoch}';

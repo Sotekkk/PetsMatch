@@ -511,10 +511,7 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
   Future<void> _uploadProfilePic() async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
     await _loadActiveProfileRow('id');
-    final path = _profileRowIsMain
-        ? 'profiles/$uid/photo.jpg'
-        : 'profiles/$uid/particulier_${_profileRowId ?? uid}.jpg';
-    final url = await uploadPhoto(_imageFile!, path);
+    final url = await uploadPhoto(_imageFile!, cheminPhotoProfil(uid, _profileRowId));
     setState(() => _profilePicUrl = url);
 
     // Source de vérité : user_profiles.avatar_url du profil actif.

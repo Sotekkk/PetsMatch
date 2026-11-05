@@ -17,7 +17,7 @@ import { supabase } from '@/lib/supabase';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { useAuth } from '@/lib/auth-context';
 import { apiFetch } from '@/lib/api-fetch';
-import { uploadPhoto } from '@/lib/upload-media';
+import { uploadPhoto, cheminPhotoProfil } from '@/lib/upload-media';
 import ReactCrop, { type Crop, type PixelCrop, centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
@@ -2732,20 +2732,14 @@ export default function ProfilPage() {
         }
       }
 
-      // Profil secondaire (ex. élevage ajouté à un compte particulier) : sa photo a son
-      // propre fichier et ne remplace pas celle du compte, sinon le profil principal,
-      // qui pointe vers le même fichier, afficherait la photo de l'élevage.
+      // Chaque profil a sa photo, dans son fichier. Celle d'un profil secondaire (ex.
+      // élevage ajouté à un compte particulier) ne remplace pas celle du compte.
       const profilSecondaire = !!activeProfileId && availableProfiles.find(p => p.id === activeProfileId)?.is_main === false;
       let avatarUrl: string | null = null;
       if (avatarFile) {
-        const avatarPath = secondaryParticulier
-          ? `profiles/${user!.uid}/particulier_${activeProfileId}.jpg`
-          : profilSecondaire
-            ? `profiles/${user!.uid}/profil_${activeProfileId}.jpg`
-            : `profiles/${user!.uid}/photo.jpg`;
         avatarUrl = await uploadPhoto(
           avatarFile,
-          avatarPath,
+          cheminPhotoProfil(user!.uid, activeProfileId),
           { maxDim: 800, quality: 0.85 },
         );
         if (!profilSecondaire) payload.profile_picture_url = avatarUrl;

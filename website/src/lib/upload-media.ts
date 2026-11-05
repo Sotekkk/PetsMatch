@@ -7,6 +7,11 @@ const BUCKET = 'media';
  * Compress a File then upload to Supabase Storage.
  * Returns the public URL.
  */
+/** Fichier de la photo d'un profil : un par profil, jamais partagé (photo.jpg commun :
+ *  en changer écrasait la photo des autres profils du compte). Miroir appli : storage_helper.dart. */
+export const cheminPhotoProfil = (uid: string, profileId?: string | null) =>
+  profileId ? `profiles/${uid}/profil_${profileId}.jpg` : `profiles/${uid}/photo.jpg`;
+
 export async function uploadPhoto(
   file: File,
   storagePath: string,

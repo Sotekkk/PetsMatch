@@ -261,10 +261,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     String? avatarUrl;
     if (_photoFile != null) {
       try {
-        final path = _rowIsMain
-            ? 'profiles/$uid/photo.jpg'
-            : 'profiles/$uid/particulier_${_rowId ?? uid}.jpg';
-        avatarUrl = await uploadPhoto(_photoFile!, path);
+        avatarUrl = await uploadPhoto(_photoFile!, cheminPhotoProfil(uid, _rowId));
       } catch (_) {}
     }
 
