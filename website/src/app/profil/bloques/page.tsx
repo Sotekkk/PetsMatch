@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { debloquer, mesBloques } from '@/lib/blocages';
 import { useAuth } from '@/lib/auth-context';
 
@@ -31,17 +30,25 @@ export default function BloquesPage() {
       // Blocages de la messagerie (Supabase) + ancienne liste du fil (Firestore).
       const ids = await mesBloques(user.uid);
       const list: BlockedUser[] = [];
+      type Profil = { nom: string | null; firstname: string | null; lastname: string | null; avatar_url: string | null; profile_type: string | null };
+      const cols = 'nom, firstname, lastname, avatar_url, profile_type';
       for (const id of ids) {
-        const usnap = await getDoc(doc(db, 'users', id));
-        // Compte introuvable : affiché quand même, pour pouvoir le débloquer.
-        if (!usnap.exists()) { list.push({ id, name: 'Utilisateur' }); continue; }
-        const d = usnap.data();
-        const isElevage = d.isElevage === true;
-        const name = isElevage
-          ? (d.nameElevage ?? 'Élevage')
-          : `${d.firstname ?? ''} ${d.lastname ?? ''}`.trim() || 'Utilisateur';
-        const rawUrl = isElevage ? d.profilePictureUrlElevage : d.profilePictureUrl;
-        list.push({ id, name, avatar: rawUrl?.startsWith('http') ? rawUrl : undefined });
+        // Le profil de la dernière conversation avec cette personne, sinon son profil
+        // principal. Compte introuvable : affiché quand même, pour pouvoir le débloquer.
+        const { data: conv } = await supabase.from('conversations').select('pro_profile_id, consumer_profile_id')
+          .contains('participants', [user.uid, id]).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+        const c = conv as { pro_profile_id?: string | null; consumer_profile_id?: string | null } | null;
+        const pids = [c?.pro_profile_id, c?.consumer_profile_id].filter((x): x is string => !!x);
+        const { data: duConv } = pids.length
+          ? await supabase.from('user_profiles_complet').select(cols).in('id', pids).eq('uid', id).limit(1).maybeSingle()
+          : { data: null };
+        const { data: principal } = duConv ? { data: null }
+          : await supabase.from('user_profiles_complet').select(cols).eq('uid', id).eq('is_main', true).limit(1).maybeSingle();
+        const p = (duConv ?? principal) as Profil | null;
+        const personne = `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim();
+        const structure = p?.profile_type && p.profile_type !== 'particulier' ? p.nom?.trim() : '';
+        const avatar = p?.avatar_url ?? '';
+        list.push({ id, name: structure || personne || p?.nom?.trim() || 'Utilisateur', avatar: avatar.startsWith('http') ? avatar : undefined });
       }
       setUsers(list);
       setFetching(false);

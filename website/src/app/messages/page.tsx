@@ -612,6 +612,12 @@ function MessagesPageInner() {
     : null;
   const theme = themeById(themeId);
 
+  // Conversations masquées parce que l'autre personne est bloquée : signalées, sinon
+  // elles semblent avoir disparu. Mêmes exclusions que la liste, ce profil uniquement.
+  const nbMasquees = conversations.filter(conv => !conv.deleted_for?.[user.uid] && conv.archived_for?.[user.uid] !== true
+    && conversationVisible(conv, activeProfileId, mesProfils)
+    && conv.participants.some(p => p !== user.uid && blockedUsers.includes(p))).length;
+
   const filteredConvs = conversations
     .filter(conv => {
       if (conv.deleted_for?.[user.uid]) return false;
@@ -708,6 +714,12 @@ function MessagesPageInner() {
           </div>
         </div>
 
+        {nbMasquees > 0 && (
+          <button type="button" onClick={() => router.push('/profil/bloques')}
+            className="px-4 py-2 text-left text-xs text-gray-500 border-b border-gray-100 hover:bg-gray-50">
+            {nbMasquees} conversation{nbMasquees > 1 ? 's' : ''} masquée{nbMasquees > 1 ? 's' : ''} (utilisateur bloqué) — <span className="font-semibold underline">Gérer</span>
+          </button>
+        )}
         <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
           {filteredConvs.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-center px-6">

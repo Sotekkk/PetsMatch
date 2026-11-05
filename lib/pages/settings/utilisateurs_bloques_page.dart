@@ -1,7 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/services/blocages_service.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 const _teal = Color(0xFF0C5C6C);
 
@@ -27,20 +29,27 @@ class _UtilisatesBloquesPageState extends State<UtilisatesBloquesPage> {
     final ids = (await Blocages.mesBloques()).toList();
 
     final users = <_BlockedUser>[];
+    final supa = Supabase.instance.client;
+    final moi = FirebaseAuth.instance.currentUser?.uid ?? '';
     for (final id in ids) {
-      final userSnap = await FirebaseFirestore.instance.collection('users').doc(id).get();
-      if (!userSnap.exists) {
-        // Compte introuvable : affiché quand même, pour pouvoir le débloquer.
-        users.add(_BlockedUser(id: id, name: 'Utilisateur', photo: null));
-        continue;
-      }
-      final d = userSnap.data()!;
-      final isElevage = d['isElevage'] == true;
-      final name = isElevage
-          ? (d['nameElevage'] ?? 'Élevage') as String
-          : '${d['firstname'] ?? ''} ${d['lastname'] ?? ''}'.trim();
-      final rawUrl = isElevage ? d['profilePictureUrlElevage'] : d['profilePictureUrl'];
-      final photo = (rawUrl is String && rawUrl.startsWith('http')) ? rawUrl : null;
+      // Le profil de la dernière conversation avec cette personne, sinon son profil
+      // principal. Compte introuvable : affiché quand même, pour pouvoir le débloquer.
+      var name = '';
+      String? photo;
+      try {
+        String? profil;
+        final conv = await supa.from('conversations').select('pro_profile_id, consumer_profile_id')
+            .filter('participants', 'cs', '["$moi","$id"]').order('updated_at', ascending: false).limit(1).maybeSingle();
+        final pids = [conv?['pro_profile_id'], conv?['consumer_profile_id']].where((x) => x != null).map((x) => x.toString()).toList();
+        if (pids.isNotEmpty) {
+          final p = await supa.from('user_profiles_complet').select('id').inFilter('id', pids).eq('uid', id).limit(1).maybeSingle();
+          profil = p?['id']?.toString();
+        }
+        final d = await MessagingHelper.getDisplayInfo(id, profileId: profil);
+        name = d['name']?.toString() ?? '';
+        final url = d['photo'];
+        photo = (url is String && url.startsWith('http')) ? url : null;
+      } catch (_) {}
       users.add(_BlockedUser(id: id, name: name.isEmpty ? 'Utilisateur' : name, photo: photo));
     }
 
