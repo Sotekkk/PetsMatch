@@ -7,11 +7,17 @@ import { emailProprietaire } from '@/lib/email-proprietaire';
 // compris s'il n'a pas PetsMatch (patient créé par la clinique). Appelant
 // authentifié ; textes nettoyés ; pièce jointe PDF uniquement, taille limitée.
 const MAX_OCTETS = 10 * 1024 * 1024;
+// Gmail : 25 Mo par message une fois encodé, soit environ 18 Mo de pièces jointes.
+const MAX_TOTAL_OCTETS = 18 * 1024 * 1024;
+const TROP_LOURD = 'Documents trop lourds pour un seul e-mail (18 Mo maximum) : décochez ou allégez un document.';
 
 export async function POST(req: NextRequest) {
   const auth = await requireUser(req);
   if (auth instanceof NextResponse) return auth;
-  const clean = sanitizeEmailBody(await req.json().catch(() => ({})), [], req);
+  // Corps illisible = requête coupée car trop lourde : ne pas conclure à une adresse invalide.
+  const corps = await req.json().catch(() => null);
+  if (corps === null) return NextResponse.json({ error: TROP_LOURD, code: 'trop_lourd' }, { status: 413 });
+  const clean = sanitizeEmailBody(corps, [], req);
   if (clean instanceof NextResponse) return clean;
   const { animal_id, expediteur_nom, document_type, animal_nom, fichier_nom, pdf_base64, pieces } = clean as {
     email?: string; destinataire_nom?: string; expediteur_nom?: string; document_type?: string;
@@ -49,6 +55,9 @@ export async function POST(req: NextRequest) {
       filename: String(d.fichier_nom || `${libelle(d.document_type)[1].toLowerCase().replace(' ', '-')}.pdf`).replace(/[^\w.\-À-ÿ ]/g, '_'),
       content: contenu, contentType: 'application/pdf',
     });
+  }
+  if (jointes.reduce((t, j) => t + j.content.length, 0) > MAX_TOTAL_OCTETS) {
+    return NextResponse.json({ error: TROP_LOURD, code: 'trop_lourd' }, { status: 413 });
   }
   const plusieurs = jointes.length > 1;
   // Facture : numéro (repris du nom du fichier « Facture-<n°>[-acquittee].pdf »).

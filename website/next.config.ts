@@ -5,6 +5,11 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  experimental: {
+    // Le proxy coupe par défaut les requêtes à 10 Mo : plusieurs PDF d'une fin de séance (en
+    // base64) arrivaient tronqués. 26 Mo couvre le maximum d'un e-mail Gmail (25 Mo encodé).
+    proxyClientMaxBodySize: '26mb',
+  },
   turbopack: {
     root: path.resolve(__dirname),
   },

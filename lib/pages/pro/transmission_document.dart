@@ -18,6 +18,10 @@ const _teal = Color(0xFF0C5C6C);
 /// dans un seul e-mail. Sans adresse connue et avec [animalId] : adresse du
 /// compte PetsMatch du propriétaire (résolue par le serveur), sinon saisie.
 /// Renvoie true si l'e-mail est parti.
+String _echecEnvoi(int code) => code == 413
+    ? 'Documents trop lourds pour un seul e-mail (18 Mo maximum) : décochez ou allégez un document.'
+    : "L'envoi a échoué ($code).";
+
 Future<bool> envoyerDocumentsParEmail(
   BuildContext context, {
   required List<({String type, String nomFichier, Uint8List bytes})> pieces,
@@ -46,7 +50,7 @@ Future<bool> envoyerDocumentsParEmail(
         return true;
       }
       if (res.statusCode != 404) {
-        messenger.showSnackBar(SnackBar(content: Text("L'envoi a échoué (${res.statusCode}).", style: const TextStyle(fontFamily: 'Galey')),
+        messenger.showSnackBar(SnackBar(content: Text(_echecEnvoi(res.statusCode), style: const TextStyle(fontFamily: 'Galey')),
             behavior: SnackBarBehavior.floating));
         return false;
       }
@@ -65,7 +69,7 @@ Future<bool> envoyerDocumentsParEmail(
     if (email == null || email.isEmpty) return false;
     final res = await poster({'email': email});
     messenger.showSnackBar(SnackBar(
-      content: Text(res.statusCode == 200 ? 'Envoyé à $email.' : "L'envoi a échoué (${res.statusCode}).", style: const TextStyle(fontFamily: 'Galey')),
+      content: Text(res.statusCode == 200 ? 'Envoyé à $email.' : _echecEnvoi(res.statusCode), style: const TextStyle(fontFamily: 'Galey')),
       behavior: SnackBarBehavior.floating,
     ));
     return res.statusCode == 200;
@@ -161,7 +165,7 @@ Future<void> transmettreDocument(
         }
         if (res.statusCode != 404) {
           messenger.showSnackBar(SnackBar(
-            content: Text("L'envoi a échoué (${res.statusCode}).", style: const TextStyle(fontFamily: 'Galey')),
+            content: Text(_echecEnvoi(res.statusCode), style: const TextStyle(fontFamily: 'Galey')),
             behavior: SnackBarBehavior.floating,
           ));
           return;
@@ -191,7 +195,7 @@ Future<void> transmettreDocument(
         }),
       );
       messenger.showSnackBar(SnackBar(
-        content: Text(res.statusCode == 200 ? 'Envoyé à $email.' : "L'envoi a échoué (${res.statusCode}).",
+        content: Text(res.statusCode == 200 ? 'Envoyé à $email.' : _echecEnvoi(res.statusCode),
             style: const TextStyle(fontFamily: 'Galey')),
         behavior: SnackBarBehavior.floating,
       ));
