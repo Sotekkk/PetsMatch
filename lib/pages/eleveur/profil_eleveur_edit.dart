@@ -118,7 +118,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     if (bannerFromFirestore == null || bannerFromFirestore.isEmpty) {
       try {
         final row = await Supabase.instance.client
-            .from('user_profiles_complet').select('banner_url').eq('uid', uid).eq('is_main', true).maybeSingle();
+            .from('user_profiles_complet').select('banner_url').eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
         final url = row?['banner_url'] as String?;
         if (url != null && url.isNotEmpty) bannerFromFirestore = url;
       } catch (_) {}
@@ -131,7 +131,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     try {
       elevRow = await Supabase.instance.client
           .from('user_profiles_complet')
-          .select('montre_reproducteurs, desc_entreprise, description, '
+          .select('id, is_main, avatar_url, profile_picture_url_pro, montre_reproducteurs, desc_entreprise, description, '
               'instagram, facebook, site_web, numero_elevage, phone_number, email_contact')
           .eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
       montreRepro = elevRow?['montre_reproducteurs'] == true;
@@ -158,7 +158,15 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       _villeCtrl.text      = d['villeElevage']     ?? User_Info.villeElevage;
       _paysCtrl.text       = (d['paysElevage'] ?? User_Info.paysElevage).isNotEmpty
           ? (d['paysElevage'] ?? User_Info.paysElevage) : 'France';
-      _photoUrl   = d['profilePictureUrlElevage'] ?? User_Info.profilePictureUrlElevage;
+      // Photo du profil ÉLEVAGE. Élevage secondaire : jamais celle du compte (profil
+      // principal), que le document Firestore partagé peut contenir.
+      final elevagePrincipal = elevRow == null || elevRow['is_main'] == true;
+      final photoElevage = elevagePrincipal
+          ? elev('profile_picture_url_pro', elev('avatar_url'))
+          : elev('avatar_url', elev('profile_picture_url_pro'));
+      _photoUrl = photoElevage.isNotEmpty
+          ? photoElevage
+          : (elevagePrincipal ? d['profilePictureUrlElevage'] ?? User_Info.profilePictureUrlElevage : null);
       _bannerUrl  = bannerFromFirestore;
       _siretCtrl.text    = d['siret']      ?? User_Info.siret;
       _tvaCtrl.text      = d['numeroTVA'] ?? User_Info.numeroTVA;
@@ -434,9 +442,19 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) return;
 
+      // Le compte peut avoir un autre profil principal (particulier) : on écrit toujours
+      // sur la ligne du profil ÉLEVAGE, et sa photo a son propre fichier (photo.jpg
+      // est celle du profil principal : la remplacer changerait aussi la sienne).
+      Map<String, dynamic>? ligneElevage;
+      try {
+        ligneElevage = await Supabase.instance.client.from('user_profiles_complet')
+            .select('id, is_main').eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
+      } catch (_) {}
+      final elevagePrincipal = ligneElevage == null || ligneElevage['is_main'] == true;
       String? photoUrl = _photoUrl;
       if (_photoFile != null) {
-        photoUrl = await uploadPhoto(_photoFile!, 'profiles/$uid/photo.jpg');
+        photoUrl = await uploadPhoto(_photoFile!,
+            elevagePrincipal ? 'profiles/$uid/photo.jpg' : 'profiles/$uid/elevage_${ligneElevage['id']}.jpg');
       }
 
       String? bannerUrl = _bannerUrl;
@@ -526,7 +544,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       User_Info.catBreeds = isCat ? _racesFor('chat')  : [];
       if (photoUrl != null) {
         User_Info.profilePictureUrlElevage = photoUrl;
-        User_Info.primaryAvatar = photoUrl;
+        if (elevagePrincipal) User_Info.primaryAvatar = photoUrl;
         // Force le rechargement du cache profils (bandeau du menu, switcher).
         User_Info.availableProfiles = [];
       }
@@ -577,6 +595,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           if (_profileLat != null) 'lat_pro': _profileLat,
           if (_profileLng != null) 'lng_pro': _profileLng,
           if (photoUrl != null) 'profile_picture_url_pro': photoUrl,
+          // Élevage secondaire : sa photo affichée est avatar_url (User_Info.applyProfile).
+          if (photoUrl != null && !elevagePrincipal) 'avatar_url': photoUrl,
           if (bannerUrl != null) 'banner_url': bannerUrl,
           'siret':          _siretCtrl.text.trim(),
           'numero_tva':     _tvaCtrl.text.trim(),
@@ -590,13 +610,13 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           'desc_entreprise': _descCtrl.text.trim(),
           if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
           if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
-        }).eq('uid', uid).eq('is_main', true);
+        }).eq('uid', uid).eq('profile_type', 'eleveur');
       } catch (_) {}
 
       // Identité publique + vitrine reproducteurs — TOUJOURS sur le profil
       // ÉLEVEUR (le compte peut avoir d'autres profils sur le même uid ;
       // is_main peut pointer ailleurs). Source de vérité : desc_entreprise.
-      // try isolé : ne doit pas être sauté si l'update is_main échoue.
+      // try isolé : ne doit pas être sauté si l'update ci-dessus échoue.
       try {
         await Supabase.instance.client.from('user_profiles').update({
           'montre_reproducteurs': _montreRepro,

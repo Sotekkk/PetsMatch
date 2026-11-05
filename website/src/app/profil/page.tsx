@@ -2732,16 +2732,23 @@ export default function ProfilPage() {
         }
       }
 
+      // Profil secondaire (ex. élevage ajouté à un compte particulier) : sa photo a son
+      // propre fichier et ne remplace pas celle du compte, sinon le profil principal,
+      // qui pointe vers le même fichier, afficherait la photo de l'élevage.
+      const profilSecondaire = !!activeProfileId && availableProfiles.find(p => p.id === activeProfileId)?.is_main === false;
+      let avatarUrl: string | null = null;
       if (avatarFile) {
         const avatarPath = secondaryParticulier
           ? `profiles/${user!.uid}/particulier_${activeProfileId}.jpg`
-          : `profiles/${user!.uid}/photo.jpg`;
-        const avatarUrl = await uploadPhoto(
+          : profilSecondaire
+            ? `profiles/${user!.uid}/profil_${activeProfileId}.jpg`
+            : `profiles/${user!.uid}/photo.jpg`;
+        avatarUrl = await uploadPhoto(
           avatarFile,
           avatarPath,
           { maxDim: 800, quality: 0.85 },
         );
-        payload.profile_picture_url = avatarUrl;
+        if (!profilSecondaire) payload.profile_picture_url = avatarUrl;
         if (isEleveur) payload.profile_picture_url_elevage = avatarUrl;
       }
 
@@ -2771,7 +2778,7 @@ export default function ProfilPage() {
         profileUpdate.adresse = [rueParticulier, [cpParticulier, ville].filter(Boolean).join(' ')]
           .filter(Boolean).join(', ');
       }
-      if (payload.profile_picture_url) profileUpdate.avatar_url = payload.profile_picture_url;
+      if (avatarUrl) profileUpdate.avatar_url = avatarUrl;
       if (editingParticulier) {
         profileUpdate.description = presentation.trim() || null;
         profileUpdate.projet_adoption = projetAdoption.trim() || null;
@@ -2834,12 +2841,12 @@ export default function ProfilPage() {
         if (payload.banner_url) firestoreUpdate.bannerUrl = payload.banner_url as string;
         await updateDoc(doc(db, 'users', user!.uid), firestoreUpdate);
       } catch { /* doc may not exist yet, ignore */ }
-      if (!secondaryParticulier) try {
+      if (!secondaryParticulier && !profilSecondaire) try {
         await updateProfile(user!, {
           displayName: isEleveur ? nameElevage : `${firstname} ${lastname}`.trim(),
         });
       } catch { /* non bloquant — App Check ou réseau */ }
-      if (payload.profile_picture_url) setParticulierAvatar(payload.profile_picture_url as string);
+      if (avatarUrl) setParticulierAvatar(avatarUrl);
       setAvatarFile(null);
       setAvatarPreview(null);
       // Rafraîchit availableProfiles / userData (bandeau + switcher du Header).

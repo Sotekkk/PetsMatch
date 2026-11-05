@@ -170,6 +170,9 @@ function mapProfile(d: Record<string, unknown>, fallback?: Record<string, unknow
     ? [...new Set(especesElevees.flatMap(e => e.races ?? []))]
     : [...new Set([...dogBreeds, ...catBreeds])];
 
+  // Profil explicitement secondaire : pas de repli sur la photo du compte.
+  const principal = d.is_main !== false;
+
   // nom = colonne renommée depuis name_elevage en V2
   const nameElevage = (d.nom as string | undefined)
     ?? (d.name_elevage as string | undefined);
@@ -202,8 +205,13 @@ function mapProfile(d: Record<string, unknown>, fallback?: Record<string, unknow
     paysElevage:           (d.pays_pro as string | undefined) ?? (d.pays as string | undefined),
     adressElevage:         (d.rue_pro as string | undefined) ?? (d.rue as string | undefined),
     rueElevage:            (d.rue_pro as string | undefined) ?? (d.rue as string | undefined),
-    profilePictureUrl:     pick(d.avatar_url, f.profile_picture_url),
-    profilePictureUrlElevage: pick(d.profile_picture_url_pro, f.profile_picture_url_elevage) ?? pick(d.avatar_url, f.profile_picture_url),
+    // Chaque profil a SA photo : un profil secondaire sans photo n'affiche pas celle du
+    // compte (celle du profil principal). Son logo est dans avatar_url ; son
+    // profile_picture_url_pro peut être une copie. Miroir appli : User_Info.applyProfile.
+    profilePictureUrl:     principal ? pick(d.avatar_url, f.profile_picture_url) : pick(d.avatar_url, undefined),
+    profilePictureUrlElevage: principal
+      ? pick(d.profile_picture_url_pro, f.profile_picture_url_elevage) ?? pick(d.avatar_url, f.profile_picture_url)
+      : pick(d.avatar_url, d.profile_picture_url_pro),
     descriptionElevage:    pick(d.description, pick(d.desc_entreprise, f.bio)),
     descEntreprise:        pick(d.description, pick(d.desc_entreprise, f.bio)),
     phone:                 pickPhone(d.phone_number, f.phone_number),
