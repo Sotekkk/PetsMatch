@@ -23,6 +23,17 @@ export default function SiteShell({ children }: { children: React.ReactNode }) {
     setPanneau(true);
     signalerPanneau(MSG_PANNEAU_PRET);
   }, []);
+  // Molette sur un champ numérique en cours de saisie : le navigateur change sa valeur
+  // sans qu'on le voie (prix de 90 € enregistré à 88 €). On quitte le champ : la valeur
+  // reste telle quelle et la page défile normalement.
+  useEffect(() => {
+    const surMolette = (e: WheelEvent) => {
+      const champ = e.target;
+      if (champ instanceof HTMLInputElement && champ.type === 'number' && document.activeElement === champ) champ.blur();
+    };
+    document.addEventListener('wheel', surMolette, { capture: true, passive: true });
+    return () => document.removeEventListener('wheel', surMolette, { capture: true });
+  }, []);
   // En panneau, une page qui revient vers Gérer mes RDV (retour après une
   // action) referme le panneau au lieu de s'y afficher.
   useEffect(() => {
