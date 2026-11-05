@@ -4,7 +4,7 @@
 // (date réelle, animaux réellement vus). Miroir appli : widgets/agenda/rdv_veto_sheets.dart.
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { aujourdhuiLocal, creerRdvVeto, validerRdvVeto, type TacheRdvVeto } from '@/lib/rdv-veto';
+import { animauxPresentsElevage, aujourdhuiLocal, creerRdvVeto, porteesElevage, validerRdvVeto, type AnimalElevage, type TacheRdvVeto } from '@/lib/rdv-veto';
 
 const TEAL = '#0C5C6C';
 const champ = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]';
@@ -25,9 +25,8 @@ function Cadre({ titre, onClose, children }: { titre: string; onClose: () => voi
   );
 }
 
-export function NouveauRdvVetoModal({ uid, myUid, profileId, animaux, jour, onClose, onSaved }: {
+export function NouveauRdvVetoModal({ uid, myUid, profileId, jour, onClose, onSaved }: {
   uid: string; myUid: string; profileId: string | null;
-  animaux: { id: string; nom: string; espece?: string | null }[];
   /** Jour affiché dans l'agenda (repris s'il est à venir). */
   jour?: string; onClose: () => void; onSaved: () => void;
 }) {
@@ -40,11 +39,14 @@ export function NouveauRdvVetoModal({ uid, myUid, profileId, animaux, jour, onCl
   const [ids, setIds] = useState<Set<string>>(new Set());
   const [erreur, setErreur] = useState('');
   const [enCours, setEnCours] = useState(false);
-  const visibles = useMemo(() => animaux.filter(a => a.nom.toLowerCase().includes(recherche.trim().toLowerCase())), [animaux, recherche]);
+  const [animaux, setAnimaux] = useState<AnimalElevage[] | null>(null);
+  useEffect(() => { animauxPresentsElevage(profileId).then(setAnimaux).catch(() => setAnimaux([])); }, [profileId]);
+  const visibles = useMemo(() => (animaux ?? []).filter(a => a.nom.toLowerCase().includes(recherche.trim().toLowerCase())), [animaux, recherche]);
+  const portees = useMemo(() => porteesElevage(animaux ?? []), [animaux]);
 
   async function enregistrer() {
     setEnCours(true); setErreur('');
-    const e = await creerRdvVeto({ uid, myUid, profileId, date, heure, cabinet, motif, notes, animaux: animaux.filter(a => ids.has(a.id)) });
+    const e = await creerRdvVeto({ uid, myUid, profileId, date, heure, cabinet, motif, notes, animaux: (animaux ?? []).filter(a => ids.has(a.id)) });
     setEnCours(false);
     if (e) setErreur(e); else onSaved();
   }
@@ -76,9 +78,25 @@ export function NouveauRdvVetoModal({ uid, myUid, profileId, animaux, jour, onCl
             <button type="button" onClick={() => setIds(new Set(visibles.map(a => a.id)))} className="text-xs font-semibold text-[#0C5C6C]">Tout cocher</button>
             <button type="button" onClick={() => setIds(new Set())} className="text-xs font-semibold text-gray-500">Aucun</button>
           </div>
+          {/* Portée entière : coche ou décoche tous ses membres présents. */}
+          {portees.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {portees.map(p => {
+                const toute = p.ids.every(id => ids.has(id));
+                return (
+                  <button key={p.id} type="button" aria-pressed={toute}
+                    onClick={() => setIds(prev => { const n = new Set(prev); for (const id of p.ids) { if (toute) n.delete(id); else n.add(id); } return n; })}
+                    className="px-2.5 py-1 rounded-lg text-xs font-semibold border"
+                    style={toute ? { background: TEAL, borderColor: TEAL, color: 'white' } : { borderColor: TEAL, color: TEAL }}>
+                    {p.label} ({p.ids.length})
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <input type="search" value={recherche} onChange={e => setRecherche(e.target.value)} placeholder="Rechercher un animal" aria-label="Rechercher un animal" className={`${champ} mb-1`} />
           <div className="border border-gray-100 rounded-xl max-h-44 overflow-y-auto p-1">
-            {visibles.length === 0 ? <p className="text-xs text-gray-400 p-2">Aucun animal.</p> : visibles.map(a => (
+            {animaux === null ? <p className="text-xs text-gray-400 p-2">Chargement…</p> : visibles.length === 0 ? <p className="text-xs text-gray-400 p-2">Aucun animal présent dans cet élevage.</p> : visibles.map(a => (
               <label key={a.id} className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg hover:bg-gray-50 cursor-pointer">
                 <input type="checkbox" checked={ids.has(a.id)} onChange={() => setIds(p => { const n = new Set(p); if (n.has(a.id)) n.delete(a.id); else n.add(a.id); return n; })} />
                 <span className="flex-1 truncate">{a.nom}</span>

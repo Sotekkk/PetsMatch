@@ -1900,10 +1900,6 @@ export default function AgendaElevagePage() {
           myUid={user.uid}
           profileId={activeProfileId}
           jour={selectedDate}
-          animaux={animaux.filter(a => {
-            const x = a as { statut?: string | null; horsCharge?: boolean };
-            return !x.horsCharge && !estHorsPriseEnCharge(x);
-          })}
           onClose={() => setShowRdvVeto(false)}
           onSaved={() => { setShowRdvVeto(false); load(); loadMonth(); }}
         />

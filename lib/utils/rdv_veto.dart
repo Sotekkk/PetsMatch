@@ -6,7 +6,34 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:PetsMatch/utils/protocoles.dart' show estHorsPriseEnCharge;
+
 String titreRdvVeto(String cabinet) => 'RDV vétérinaire — ${cabinet.trim()}';
+
+/// Animaux présents de CE profil élevage : propriété en cours (animaux_proprietes), ou fiche
+/// de ce profil sans propriété close ; ni adopté / cédé / décédé / sorti, ni fiche client d'un
+/// pro, ni animal d'un autre profil du compte (association…). Miroir site : lib/rdv-veto.ts.
+Future<List<Map<String, dynamic>>> animauxPresentsElevage(String? profileId) async {
+  if ((profileId ?? '').isEmpty) return [];
+  final supa = Supabase.instance.client;
+  const cols = 'id, nom, espece, race, portee_id, nom_mere, statut, uid_eleveur';
+  final props = await supa.from('animaux_proprietes').select('animal_id, date_fin, statut').eq('profile_id_proprio', profileId!) as List;
+  final ouverts = {for (final p in props) if (p['date_fin'] == null && p['statut'] == 'actif') p['animal_id'].toString()};
+  final clos = {for (final p in props) if (p['date_fin'] != null) p['animal_id'].toString()};
+  final liste = <String, Map<String, dynamic>>{};
+  for (final a in await supa.from('animaux').select(cols).eq('profile_id', profileId) as List) {
+    final id = a['id'].toString();
+    if (ouverts.contains(id) || !clos.contains(id)) liste[id] = Map<String, dynamic>.from(a as Map);
+  }
+  final manquants = ouverts.where((id) => !liste.containsKey(id)).toList();
+  if (manquants.isNotEmpty) {
+    for (final a in await supa.from('animaux').select(cols).inFilter('id', manquants) as List) {
+      liste[a['id'].toString()] = Map<String, dynamic>.from(a as Map);
+    }
+  }
+  return liste.values.where((a) => !estHorsPriseEnCharge(a) && a['statut'] != 'patient_clinique').toList()
+    ..sort((a, b) => (a['nom'] ?? '').toString().toLowerCase().compareTo((b['nom'] ?? '').toString().toLowerCase()));
+}
 
 /// Message d'erreur, ou null si tout est prêt.
 String? erreurRdvVeto({required List<Map<String, dynamic>> animaux, required DateTime? dateHeure, required String cabinet}) {

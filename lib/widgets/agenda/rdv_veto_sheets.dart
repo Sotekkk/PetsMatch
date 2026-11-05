@@ -89,7 +89,7 @@ class _NouveauRdvVetoState extends State<_NouveauRdvVeto> {
     super.initState();
     final n = DateTime.now();
     if (widget.jour != null && widget.jour!.isAfter(DateTime(n.year, n.month, n.day, 23, 59))) _date = widget.jour;
-    chargerAnimauxRattachement(widget.uid, widget.profileId).then((l) { if (mounted) setState(() => _dispo = l); })
+    animauxPresentsElevage(widget.profileId).then((l) { if (mounted) setState(() => _dispo = l); })
         .catchError((_) { if (mounted) setState(() => _dispo = []); });
   }
 
@@ -105,6 +105,27 @@ class _NouveauRdvVetoState extends State<_NouveauRdvVeto> {
               detail: (a['race'] ?? a['espece'])?.toString())],
         initial: _ids);
     if (res != null && mounted) setState(() => _ids = res);
+  }
+
+  /// Portées : cocher une portée sélectionne tous ses membres présents.
+  Future<void> _choisirPortees() async {
+    final portees = porteesDepuis(_dispo ?? const []);
+    final dejaEntieres = [for (final p in portees) if (p.membres.every((a) => _ids.contains(a['id'].toString()))) p.id];
+    final res = await showRattachementSheet(context,
+        titre: 'Portées concernées', recherche: 'Rechercher une portée (nom de la mère)…',
+        items: [for (final p in portees)
+          ItemRattachement(p.id, p.label, (p.membres.first['espece'] ?? '').toString().isEmpty ? 'Autre' : p.membres.first['espece'].toString(),
+              detail: '${p.membres.length} ${p.membres.length > 1 ? 'petits' : 'petit'} présent${p.membres.length > 1 ? 's' : ''}')],
+        initial: dejaEntieres);
+    if (res == null || !mounted) return;
+    setState(() {
+      final ids = {..._ids};
+      for (final p in portees) {
+        final membres = p.membres.map((a) => a['id'].toString());
+        if (res.contains(p.id)) { ids.addAll(membres); } else if (dejaEntieres.contains(p.id)) { ids.removeAll(membres); }
+      }
+      _ids = ids.toList();
+    });
   }
 
   Future<void> _enregistrer() async {
@@ -139,11 +160,28 @@ class _NouveauRdvVetoState extends State<_NouveauRdvVeto> {
           const SizedBox(height: 12),
           const Text('Animaux concernés *', style: _label),
           const SizedBox(height: 6),
-          OutlinedButton(
-            onPressed: _dispo == null ? null : _choisirAnimaux,
-            style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
-            child: Text(_dispo == null ? 'Chargement…' : _ids.isEmpty ? 'Choisir les animaux' : '${_ids.length} animal${_ids.length > 1 ? 'x' : ''} sélectionné${_ids.length > 1 ? 's' : ''}'
-                .replaceFirst('animalx', 'animaux'), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          Row(children: [
+            Expanded(child: OutlinedButton(
+              onPressed: _dispo == null ? null : _choisirAnimaux,
+              style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
+              child: Text(_dispo == null ? 'Chargement…' : 'Choisir des animaux', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            )),
+            if (porteesDepuis(_dispo ?? const []).isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Expanded(child: OutlinedButton(
+                onPressed: _choisirPortees,
+                style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
+                child: const Text('Choisir une portée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              )),
+            ],
+          ]),
+          if (_dispo != null) Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              _dispo!.isEmpty ? 'Aucun animal présent dans cet élevage.'
+                  : _ids.isEmpty ? 'Aucun animal sélectionné.'
+                  : '${_ids.length} ${_ids.length > 1 ? 'animaux sélectionnés' : 'animal sélectionné'}',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
           ),
           const SizedBox(height: 12),
           const Text('Notes', style: _label),

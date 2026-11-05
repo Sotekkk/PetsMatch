@@ -3,8 +3,49 @@
 // par animal et la ligne du registre (migration_rdv_veto_taches.sql).
 // Miroir appli : lib/utils/rdv_veto.dart.
 import { supabase } from '@/lib/supabase';
+import { estHorsPriseEnCharge } from '@/lib/protocoles';
 
 export const titreRdvVeto = (cabinet: string) => `RDV vétérinaire — ${cabinet.trim()}`;
+
+export interface AnimalElevage { id: string; nom: string; espece?: string | null; portee_id?: string | null; nom_mere?: string | null }
+export interface PorteeElevage { id: string; label: string; ids: string[] }
+
+/** Animaux présents de CE profil élevage : propriété en cours (animaux_proprietes), ou fiche
+ *  de ce profil sans propriété close ; ni adopté / cédé / décédé / sorti, ni fiche client d'un
+ *  pro, ni animal d'un autre profil du compte (association…). Miroir appli : utils/rdv_veto.dart. */
+export async function animauxPresentsElevage(profileId: string | null | undefined): Promise<AnimalElevage[]> {
+  if (!profileId) return [];
+  const cols = 'id, nom, espece, portee_id, nom_mere, statut';
+  const [{ data: props }, { data: fiches }] = await Promise.all([
+    supabase.from('animaux_proprietes').select('animal_id, date_fin, statut').eq('profile_id_proprio', profileId),
+    supabase.from('animaux').select(cols).eq('profile_id', profileId),
+  ]);
+  const lignes = (props ?? []) as { animal_id: string; date_fin: string | null; statut: string | null }[];
+  const ouverts = new Set(lignes.filter(p => !p.date_fin && p.statut === 'actif').map(p => String(p.animal_id)));
+  const clos = new Set(lignes.filter(p => !!p.date_fin).map(p => String(p.animal_id)));
+  type Ligne = AnimalElevage & { statut?: string | null };
+  const liste = new Map<string, Ligne>();
+  for (const a of (fiches ?? []) as Ligne[]) if (ouverts.has(String(a.id)) || !clos.has(String(a.id))) liste.set(String(a.id), a);
+  const manquants = [...ouverts].filter(id => !liste.has(id));
+  if (manquants.length) {
+    const { data } = await supabase.from('animaux').select(cols).in('id', manquants);
+    for (const a of (data ?? []) as Ligne[]) liste.set(String(a.id), a);
+  }
+  return [...liste.values()]
+    .filter(a => !estHorsPriseEnCharge(a) && a.statut !== 'patient_clinique')
+    .map(a => ({ ...a, id: String(a.id), nom: a.nom ?? 'Animal' }))
+    .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+}
+
+/** Portées parmi ces animaux (seulement leurs membres présents). */
+export function porteesElevage(animaux: AnimalElevage[]): PorteeElevage[] {
+  const parPortee = new Map<string, AnimalElevage[]>();
+  for (const a of animaux) if (a.portee_id) parPortee.set(a.portee_id, [...(parPortee.get(a.portee_id) ?? []), a]);
+  return [...parPortee.entries()].map(([id, m]) => {
+    const mere = m.map(a => a.nom_mere).find(n => !!n);
+    return { id, label: mere ? `Portée de ${mere}` : 'Portée', ids: m.map(a => a.id) };
+  }).sort((a, b) => a.label.localeCompare(b.label, 'fr'));
+}
 
 /** Aujourd'hui, AAAA-MM-JJ en heure locale. */
 export const aujourdhuiLocal = () => new Date().toLocaleDateString('sv-SE');
