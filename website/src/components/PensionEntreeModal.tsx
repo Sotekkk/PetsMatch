@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { proprietaireFiche } from '@/lib/animal-proprietaire';
 import { lookupAnimalByChip, requestAnimalAccess } from '@/lib/pension-chip-lookup';
 import { especeMatchesLogement, pensionAlimentationSejourApplicable, type AlimentationSejour } from '@/lib/pension-especes';
 import { LOGEMENT_TYPE_LABEL } from '@/lib/pension-logements';
@@ -330,6 +331,26 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     if (!form.animal_nom.trim()) { setError('Le nom est obligatoire.'); return; }
     setSaving(true);
     setError('');
+    // Nouveau séjour : e-mail obligatoire, sauf propriétaire déjà sur PetsMatch (ses
+    // coordonnées restent privées). C'est lui qui permet au client de récupérer la fiche.
+    if (!isEdit) {
+      const courriel = form.proprietaire_email.trim();
+      if (courriel && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(courriel)) {
+        setError('Adresse e-mail du propriétaire invalide.'); setSaving(false); return;
+      }
+      if (!courriel) {
+        const parPuce = !animalId && form.puce.trim() ? await lookupAnimalByChip(form.puce.trim(), proProfileId).catch(() => null) : null;
+        const idFiche = animalId || parPuce?.animal_id || null;
+        const { data: fiche } = idFiche
+          ? await supabase.from('animaux').select('uid_proprietaire, uid_eleveur, cree_par_pro_profile_id, client_clinique_id').eq('id', idFiche).maybeSingle()
+          : { data: null };
+        if (!(fiche ? proprietaireFiche(fiche) : parPuce?.owner_uid)) {
+          setError('E-mail du propriétaire obligatoire : il lui permettra de récupérer la fiche en créant son compte.');
+          setSaving(false);
+          return;
+        }
+      }
+    }
 
     // Un animal identifié (fiche rattachée) ne peut pas avoir deux séjours
     // en_pension aux dates qui se chevauchent — même pension (double
@@ -621,7 +642,7 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
                 onChange={e => set('proprietaire_contact', e.target.value)} />
             </div>
             <div>
-              <label style={lbl}>Email</label>
+              <label style={lbl}>{isEdit ? 'Email' : 'Email (obligatoire sans compte PetsMatch)'}</label>
               <input style={inp} placeholder="adresse@email.com" type="email"
                 value={form.proprietaire_email}
                 onChange={e => set('proprietaire_email', e.target.value)} />

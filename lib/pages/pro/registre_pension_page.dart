@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/animal_proprietaire.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -2390,6 +2391,14 @@ Future<Map<String, dynamic>?> _choisirDansMesClients(BuildContext context) async
   };
 }
 
+/// Saisie à corriger avant d'enregistrer un séjour (message affiché tel quel).
+class _SaisieSejour implements Exception {
+  final String message;
+  const _SaisieSejour(this.message);
+  @override
+  String toString() => message;
+}
+
 Future<Map<String, dynamic>?> pickAnimalForAdmission(BuildContext context, {bool allowSkip = true}) async {
   final choice = await showModalBottomSheet<String>(
     context: context,
@@ -2891,6 +2900,21 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
       final pid = User_Info.activeProfileId;
       final hit = await puceExistante(_puceCtrl.text.trim());
       if (hit != null) animalId ??= hit['animal_id']?.toString();
+      // Nouveau séjour : e-mail obligatoire, sauf propriétaire déjà sur PetsMatch (ses
+      // coordonnées restent privées). C'est lui qui permet au client de récupérer la fiche.
+      final courriel = _emailCtrl.text.trim();
+      if (courriel.isNotEmpty && !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(courriel)) {
+        throw const _SaisieSejour('Adresse e-mail du propriétaire invalide.');
+      }
+      if (courriel.isEmpty) {
+        final fiche = animalId == null ? null : await _supa.from('animaux')
+            .select('uid_proprietaire, uid_eleveur, cree_par_pro_profile_id, client_clinique_id').eq('id', animalId).maybeSingle();
+        final compte = fiche != null ? proprietaireFiche(fiche)
+            : (hit?['owner_uid']?.toString() ?? widget.initialOwnerUid);
+        if ((compte ?? '').isEmpty) {
+          throw const _SaisieSejour('E-mail du propriétaire obligatoire : il lui permettra de récupérer la fiche en créant son compte.');
+        }
+      }
       final detenteur = hit?['detenteur']?.toString();
       final dejaSuivi = hit?['a_vous'] == true || hit?['deja_lie'] == true;
       if (hit != null && detenteur == 'pro' && !dejaSuivi && pid.isNotEmpty) {
@@ -2997,7 +3021,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Erreur : $e')));
+            .showSnackBar(SnackBar(content: Text(e is _SaisieSejour ? e.message : 'Erreur : $e')));
       }
     }
   }
@@ -3132,7 +3156,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
               keyboardType: TextInputType.phone),
           const SizedBox(height: 10),
           _lbl('Email'),
-          TextFormField(controller: _emailCtrl, decoration: _dec('adresse@email.com'),
+          TextFormField(controller: _emailCtrl, decoration: _dec('E-mail (obligatoire sans compte PetsMatch)'),
               keyboardType: TextInputType.emailAddress),
           const SizedBox(height: 10),
           _lbl('Adresse'),
