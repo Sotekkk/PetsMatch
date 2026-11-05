@@ -238,16 +238,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           if (dv?.pro_uid && Array.isArray(dv.lignes)) {
             const { data: forfaits } = await supabase.from('forfaits_education')
               .select('id, nom, nb_seances, prix, type_seances, nb_seances_indiv, nb_seances_coll').eq('pro_uid', dv.pro_uid).eq('actif', true);
-            for (const l of dv.lignes as { description?: string }[]) {
+            for (const l of dv.lignes as { description?: string; animal_id?: string | null }[]) {
               const desc = (l.description ?? '').toLowerCase();
               const match = (forfaits ?? []).find(f => desc.includes((f.nom ?? '').toLowerCase()) && (f.nom ?? '').length > 2);
               if (match) {
-                const { data: exists } = await supabase.from('forfaits_souscrits')
-                  .select('id').eq('devis_id', devisId).eq('forfait_id', match.id).maybeSingle();
+                // Forfait par chien : la ligne désigne le chien ; sinon celui du devis.
+                const animalLigne = l.animal_id || dv.animal_id;
+                let dejaQ = supabase.from('forfaits_souscrits').select('id').eq('devis_id', devisId).eq('forfait_id', match.id);
+                dejaQ = animalLigne ? dejaQ.eq('animal_id', animalLigne) : dejaQ.is('animal_id', null);
+                const { data: exists } = await dejaQ.limit(1).maybeSingle();
                 if (!exists) {
                   await supabase.from('forfaits_souscrits').insert({
                     forfait_id: match.id, pro_uid: dv.pro_uid, pro_profile_id: dv.pro_profile_id,
-                    client_uid: dv.client_uid, client_profile_id: dv.client_profile_id, animal_id: dv.animal_id,
+                    client_uid: dv.client_uid, client_profile_id: dv.client_profile_id, animal_id: animalLigne,
                     nom_snapshot: match.nom, nb_seances_total: match.nb_seances ?? 1, prix_snapshot: match.prix,
                     devis_id: devisId,
                     // Type du forfait du catalogue (sinon « mixte » par défaut, sans répartition).

@@ -200,7 +200,13 @@ export async function contratEducationAnimal(proUid: string, animalId: string): 
     // Un devis envoyé est aussi un document à signer : ce n'est pas le contrat.
     .is('metadata->>devis_id', null)
     .not('statut', 'in', '(annule,refuse)').order('created_at', { ascending: false }).limit(1).maybeSingle();
-  return (data as ContratEducation | null) ?? null;
+  if (data) return data as ContratEducation;
+  // Contrat commun d'une séance à plusieurs chiens : rattaché à un seul, valable pour tous.
+  const { data: commun } = await supabase.from('documents_animaux').select('id, token, statut')
+    .eq('uid_eleveur', proUid).eq('type', 'contrat_education').contains('metadata', { animaux_ids: [animalId] })
+    .is('metadata->>devis_id', null)
+    .not('statut', 'in', '(annule,refuse)').order('created_at', { ascending: false }).limit(1).maybeSingle();
+  return (commun as ContratEducation | null) ?? null;
 }
 
 export async function creerContratEducation(o: {
@@ -209,6 +215,8 @@ export async function creerContratEducation(o: {
   clientTel?: string | null; clientAdresse?: string | null;
   /** Montant convenu (séance ou forfait complet) et intitulé du forfait. */
   montant?: number | null; forfait?: string | null;
+  /** Séance à plusieurs chiens : un seul contrat, retrouvé depuis chacun d'eux. */
+  animauxIds?: string[];
 }): Promise<string | null> {
   const libelle = o.forfait?.trim() || o.prestation?.trim() || 'Prestation d\'éducation canine';
   const lignes = o.montant != null && o.montant > 0
@@ -229,6 +237,7 @@ export async function creerContratEducation(o: {
       ...(o.forfait ? { forfait: o.forfait } : {}),
       ...(lignes ? { lignes, total_ttc: o.montant } : {}),
       ...(o.rdvId ? { rdv_id: o.rdvId } : {}),
+      ...(o.animauxIds?.length ? { animaux_ids: o.animauxIds } : {}),
     },
   }).select('token').single();
   return (data?.token as string | undefined) ?? null;

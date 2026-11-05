@@ -39,6 +39,9 @@ interface RdvRow {
 /** Lien de retour vers ce dossier (après une action dans une autre page). */
 export const retourDossierEducation = (rdvId: string) => `/mes-rdv?rdv=${encodeURIComponent(rdvId)}&dossier=1`;
 
+type ForfaitConseille = { nom: string; nb_seances: number | null; prix: number | null };
+const libelleForfait = (f: ForfaitConseille) => `Forfait ${f.nom}${f.nb_seances ? ` (${f.nb_seances} séances)` : ''}`;
+
 export default function DossierEducationModal({ rdvId, nomClient, onClose, onChanged, onOuvrirPage, version, onProgrammerRdv }: {
   /** Prise de RDV ouverte sur la page hôte (Gérer mes RDV) : un panneau sur /mes-rdv se refermerait aussitôt. */
   onProgrammerRdv?: (p: { animalId?: string; motif?: string }) => void;
@@ -69,7 +72,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   const [crOrphelin, setCrOrphelin] = useState<{ id: string; date_seance: string | null } | null>(null);
   // RDV de bilan (cours de type « Bilan » du catalogue) : bilan comportemental.
   const [estBilan, setEstBilan] = useState(false);
-  const [forfaitConseille, setForfaitConseille] = useState<{ nom: string; nb_seances: number | null; prix: number | null } | null>(null);
+  const [conseils, setConseils] = useState<Record<string, ForfaitConseille>>({});
   const [devis, setDevis] = useState<{ id: string; statut: string | null; total_ttc: number | null } | null>(null);
   // Prochain rendez-vous (facultatif) : programmé tout de suite ou par le client plus tard.
   const [prochain, setProchain] = useState<ProchainRdv | null>(null);
@@ -96,8 +99,8 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     const [an, pr, dv, fa, cc] = await Promise.all([
       aid ? supabase.from('animaux').select('nom').eq('id', aid).maybeSingle() : Promise.resolve({ data: null }),
       (detail.length > 0 && aid
-        ? supabase.from('education_progression').select('id, statut, type, bilan_forfait_conseille_id').eq('rdv_id', rdvId).eq('animal_id', aid)
-        : supabase.from('education_progression').select('id, statut, type, bilan_forfait_conseille_id').eq('rdv_id', rdvId)).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        ? supabase.from('education_progression').select('id, statut, type').eq('rdv_id', rdvId).eq('animal_id', aid)
+        : supabase.from('education_progression').select('id, statut, type').eq('rdv_id', rdvId)).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('devis').select('id, statut, total_ttc').eq('rdv_id', rdvId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('factures').select('id, statut, total_ttc, numero_affichage').eq('source_rdv_id', rdvId).neq('statut', 'annulee')
         .or('type_facture.is.null,type_facture.not.in.(acompte,avoir)').order('created_at', { ascending: false }).limit(1).maybeSingle(),
@@ -105,12 +108,18 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     ]);
     setAnimalNom((an.data as { nom?: string } | null)?.nom ?? detail.find(a => a.id === aid)?.nom ?? x.animal_nom_manuel ?? '');
     setCr((pr.data as typeof cr) ?? null);
-    // Forfait conseillé dans le bilan de ce RDV : proposé dans le devis.
-    const idConseil = (pr.data as { bilan_forfait_conseille_id?: string | null } | null)?.bilan_forfait_conseille_id;
-    if (idConseil) {
-      const { data: fc } = await supabase.from('forfaits_education').select('nom, nb_seances, prix').eq('id', idConseil).maybeSingle();
-      setForfaitConseille((fc as typeof forfaitConseille) ?? null);
-    } else setForfaitConseille(null);
+    // Forfaits conseillés dans les bilans de ce RDV (par chien) : proposés dans le devis.
+    const { data: bilans } = await supabase.from('education_progression').select('animal_id, bilan_forfait_conseille_id')
+      .eq('rdv_id', rdvId).not('bilan_forfait_conseille_id', 'is', null);
+    const lignesBilan = (bilans ?? []) as { animal_id: string; bilan_forfait_conseille_id: string }[];
+    const parForfait = new Map<string, ForfaitConseille>();
+    if (lignesBilan.length) {
+      const { data: fcs } = await supabase.from('forfaits_education').select('id, nom, nb_seances, prix')
+        .in('id', [...new Set(lignesBilan.map(b => b.bilan_forfait_conseille_id))]);
+      for (const f of (fcs ?? []) as (ForfaitConseille & { id: string })[]) parForfait.set(f.id, f);
+    }
+    setConseils(Object.fromEntries(lignesBilan.filter(b => parForfait.has(b.bilan_forfait_conseille_id))
+      .map(b => [String(b.animal_id), parForfait.get(b.bilan_forfait_conseille_id)!])));
     if (x.prestation_id) {
       const { data: pe } = await supabase.from('prestations_education').select('bilan_requis').eq('id', x.prestation_id).maybeSingle();
       setEstBilan(!!(pe as { bilan_requis?: boolean } | null)?.bilan_requis);
@@ -155,6 +164,8 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   const devisEnAttente = !!devis && devis.statut !== 'accepte' && devis.statut !== 'refuse';
   const detail = animauxDetailRdv(r);
   const aidSel = (detail.length > 0 && animalChoisi && detail.some(a => a.id === animalChoisi)) ? animalChoisi : r.animal_id;
+  // Forfait conseillé du chien sélectionné, sinon celui d'un autre chien du RDV.
+  const forfaitConseille = (aidSel && conseils[aidSel]) || Object.values(conseils)[0] || null;
   const ouvrir = (url: string, titre: string) => onOuvrirPage ? onOuvrirPage(url, titre) : router.push(url);
   const fiche = (suite: string, titre: string) => aidSel
     ? ouvrir(`/mes-patients/${encodeURIComponent(aidSel)}?${suite}&retourRdv=${encodeURIComponent(r.id)}`, `${titre} — ${animalNom || 'animal'}`)
@@ -170,13 +181,20 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     if (coord.prenom) q.set('prenom', coord.prenom);
     if (coord.email) q.set('email', coord.email);
     if (coord.tel) q.set('tel', coord.tel);
-    if (forfaitConseille) {
-      q.set('ligneDesc', `Forfait ${forfaitConseille.nom}${forfaitConseille.nb_seances ? ` (${forfaitConseille.nb_seances} séances)` : ''}`);
+    // Séance à plusieurs : une ligne par chien, chacun aura son forfait à la signature.
+    if (detail.length > 0) q.set('animaux', JSON.stringify(detail.map(a => ({ id: a.id, nom: a.nom }))));
+    if (forfaitConseille && detail.length > 0) {
+      q.set('lignes', JSON.stringify(detail.map(a => {
+        const f = conseils[a.id] ?? forfaitConseille;
+        return { d: `${libelleForfait(f)} — ${a.nom}`, q: 1, p: f.prix ?? 0, a: a.id };
+      })));
+    } else if (forfaitConseille) {
+      q.set('ligneDesc', libelleForfait(forfaitConseille));
       q.set('ligneQte', '1');
       q.set('lignePrix', String(forfaitConseille.prix ?? 0));
     }
     // Plusieurs animaux : une ligne par animal (son cours, son prix).
-    else if (detail.length > 0) q.set('lignes', JSON.stringify(detail.map(a => ({ d: [a.motif?.trim(), a.nom].filter(Boolean).join(' — '), q: 1, p: a.prix ?? 0 }))));
+    else if (detail.length > 0) q.set('lignes', JSON.stringify(detail.map(a => ({ d: [a.motif?.trim(), a.nom].filter(Boolean).join(' — '), q: 1, p: a.prix ?? 0, a: a.id }))));
     else if (r.motif?.trim()) { q.set('ligneDesc', [r.motif.trim(), animalNom].filter(Boolean).join(' — ')); q.set('ligneQte', '1');
       if (r.prix_calcule != null) q.set('lignePrix', String(r.prix_calcule)); }
     ouvrir(`/education/devis?${q.toString()}`, 'Devis de la séance');
@@ -221,6 +239,14 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     // Forfait en cours : contrat du forfait au prix de la formule complète ;
     // sinon la séance à son tarif.
     const f = forfaitRdv ?? forfait;
+    // Séance à plusieurs, devis accepté : un seul contrat pour tous les chiens, au total du devis.
+    if (detail.length > 1 && devis?.statut === 'accepte') {
+      const noms = detail.map(a => a.nom).filter(Boolean).join(', ');
+      const base = f?.nom_snapshot ?? (r.motif?.trim() || 'Séance d’éducation');
+      setFormContrat({ forfait: f ? `${base} — ${noms}` : '', prestation: `${base} — ${noms}`,
+        montant: devis.total_ttc ? String(devis.total_ttc) : '' });
+      return;
+    }
     if (f) {
       setFormContrat({ forfait: `${f.nom_snapshot} (${f.nb_seances_total} séance${f.nb_seances_total > 1 ? 's' : ''})`,
         prestation: f.nom_snapshot, montant: f.prix_snapshot != null ? String(f.prix_snapshot) : '' });
@@ -242,6 +268,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
         clientAdresse: [coord.rue, [coord.cp, coord.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ') || null,
         prestation: formContrat.prestation, forfait: formContrat.forfait.trim() || null,
         montant: formContrat.montant.trim() ? Number(formContrat.montant.replace(',', '.')) : null, rdvId: r.id,
+        animauxIds: detail.length > 1 ? detail.map(a => a.id) : undefined,
       });
       setFormContrat(null);
       if (!token) { alert('Création du contrat impossible, réessayez.'); return; }

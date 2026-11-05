@@ -16,7 +16,8 @@ import { maSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
 import { signerDevisPro, devisModifiable } from '@/lib/devis-rdv';
 import SignatureProModal from '@/components/signature/SignatureProModal';
 
-interface Ligne { description: string; quantite: number; prix_unitaire: number; total: number; }
+/** animal_id : chien concerné (séance à plusieurs) ; son forfait est activé à la signature. */
+interface Ligne { description: string; quantite: number; prix_unitaire: number; total: number; animal_id?: string | null; }
 
 interface Devis {
   id: string;
@@ -116,6 +117,8 @@ function DevisPageInner() {
   const [note, setNote] = useState('');
   // Séance (rdv) à laquelle le devis est rattaché (?rdv=, photographe…).
   const [rdvId, setRdvId] = useState<string | null>(null);
+  // Chiens du RDV (séance à plusieurs) : un forfait ajouté crée une ligne par chien.
+  const [animauxRdv, setAnimauxRdv] = useState<{ id: string; nom: string }[]>([]);
   const [lignes, setLignes] = useState<Ligne[]>([{ description: '', quantite: 1, prix_unitaire: 0, total: 0 }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -305,16 +308,20 @@ function DevisPageInner() {
     setTelClient(searchParams.get('tel') ?? '');
     setNote(searchParams.get('note') ?? '');
     setRdvId(searchParams.get('rdv') || null);
+    try {
+      const ar = JSON.parse(searchParams.get('animaux') ?? '[]');
+      if (Array.isArray(ar)) setAnimauxRdv(ar as { id: string; nom: string }[]);
+    } catch { /* ignoré */ }
     // Coordonnées du client : recherchées une fois la connexion prête (sans
     // elle, seuls les champs publics revenaient — la ville, jamais l'e-mail).
     setClientARecuperer({ rdv: searchParams.get('rdv'), profil: searchParams.get('clientProfileId'),
       uidClient: searchParams.get('clientUid'), animalId: animalId ?? null });
     const ld = searchParams.get('ligneDesc');
     // Plusieurs animaux sur la séance : une ligne par animal (JSON [{d, q, p}]).
-    let lj: { d: string; q?: number; p?: number }[] = [];
+    let lj: { d: string; q?: number; p?: number; a?: string }[] = [];
     try { lj = JSON.parse(searchParams.get('lignes') ?? '[]'); } catch { /* ignoré */ }
     if (Array.isArray(lj) && lj.length > 0) {
-      setLignes(lj.map(l => ({ description: l.d, quantite: l.q ?? 1, prix_unitaire: l.p ?? 0, total: (l.q ?? 1) * (l.p ?? 0) })));
+      setLignes(lj.map(l => ({ description: l.d, quantite: l.q ?? 1, prix_unitaire: l.p ?? 0, total: (l.q ?? 1) * (l.p ?? 0), ...(l.a ? { animal_id: l.a } : {}) })));
     } else if (ld) {
       const q = Number(searchParams.get('ligneQte') ?? 1) || 1;
       const p = Number(searchParams.get('lignePrix') ?? 0) || 0;
@@ -390,6 +397,12 @@ function DevisPageInner() {
       merged.total = Math.round(merged.quantite * merged.prix_unitaire * 100) / 100;
       return merged;
     }));
+  }
+
+  function addForfait(nom: string, prix: number) {
+    if (animauxRdv.length < 2) { addLigne(nom, prix); return; }
+    setLignes(prev => [...prev.filter(l => l.description.trim()),
+      ...animauxRdv.map(a => ({ description: `${nom} — ${a.nom}`, quantite: 1, prix_unitaire: prix, total: prix, animal_id: a.id }))]);
   }
 
   function addLigne(description: string, prix: number) {
@@ -764,7 +777,7 @@ function DevisPageInner() {
                       </button>
                     )}
                     {forfaits.map(f => (
-                      <button key={f.id} onClick={() => addLigne(f.nom, f.prix)}
+                      <button key={f.id} onClick={() => addForfait(f.nom, f.prix)}
                         className="text-xs border border-[#7B5EA7]/30 text-[#7B5EA7] px-2.5 py-1 rounded-lg hover:bg-[#7B5EA7]/10">
                         + {f.nom} ({f.prix} €)
                       </button>

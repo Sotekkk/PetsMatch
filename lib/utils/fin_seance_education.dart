@@ -53,31 +53,48 @@ Future<void> devisDepuisRdv(BuildContext context, Map<String, dynamic> rdv, {Str
   final motif = _v(rdv['motif']);
   // Plusieurs animaux : une ligne par animal (son cours, son prix).
   final detail = animauxDetailRdv(rdv);
-  // Forfait conseillé dans le bilan de ce RDV : proposé dans le devis (miroir site).
-  Map<String, dynamic>? conseil;
+  // Forfaits conseillés dans les bilans de ce RDV, par chien : proposés dans le devis (miroir site).
+  final conseils = <String, Map<String, dynamic>>{};
   try {
     final supa = Supabase.instance.client;
-    final bilan = await supa.from('education_progression').select('bilan_forfait_conseille_id')
-        .eq('rdv_id', rdv['id'].toString()).eq('type', 'bilan').not('bilan_forfait_conseille_id', 'is', null)
-        .order('created_at', ascending: false).limit(1).maybeSingle();
-    final idConseil = bilan?['bilan_forfait_conseille_id'];
-    if (idConseil != null) {
-      conseil = await supa.from('forfaits_education').select('nom, nb_seances, prix').eq('id', idConseil).maybeSingle();
+    final bilans = await supa.from('education_progression').select('animal_id, bilan_forfait_conseille_id')
+        .eq('rdv_id', rdv['id'].toString()).not('bilan_forfait_conseille_id', 'is', null) as List;
+    if (bilans.isNotEmpty) {
+      final rows = await supa.from('forfaits_education').select('id, nom, nb_seances, prix')
+          .inFilter('id', bilans.map((b) => b['bilan_forfait_conseille_id'].toString()).toSet().toList()) as List;
+      final parId = {for (final f in rows) f['id'].toString(): Map<String, dynamic>.from(f as Map)};
+      for (final b in bilans) {
+        final f = parId[b['bilan_forfait_conseille_id'].toString()];
+        if (f != null) conseils[b['animal_id'].toString()] = f;
+      }
     }
   } catch (_) {}
   if (!context.mounted) return;
+  final conseil = conseils.isEmpty ? null : conseils[rdv['animal_id']?.toString()] ?? conseils.values.first;
+  String libelleForfait(Map<String, dynamic> f) =>
+      'Forfait ${f['nom']}${f['nb_seances'] != null ? ' (${f['nb_seances']} séances)' : ''}';
   await Navigator.push(context, MaterialPageRoute(builder: (_) => DevisPage(prefill: DevisPrefill(
     animalId: rdv['animal_id']?.toString(), clientUid: rdv['client_uid']?.toString(), clientProfileId: rdv['client_profile_id']?.toString(),
     clientNom: c['nom'], clientPrenom: c['prenom'], clientEmail: c['email'], clientTel: c['tel'], rdvId: rdv['id'].toString(),
-    lignes: conseil != null
+    // Séance à plusieurs : une ligne par chien, chacun aura son forfait à la signature.
+    animauxRdv: [for (final a in detail) {'id': a['id'], 'nom': a['nom']}],
+    lignes: conseil != null && detail.isNotEmpty
+        ? [for (final a in detail) () {
+            final f = conseils[a['id']?.toString()] ?? conseil;
+            return <String, dynamic>{
+              'description': '${libelleForfait(f)} — ${_v(a['nom'])}',
+              'quantite': 1, 'prix_unitaire': (f['prix'] as num?)?.toDouble() ?? 0, 'animal_id': a['id'],
+            };
+          }()]
+        : conseil != null
         ? [{
-            'description': 'Forfait ${conseil['nom']}${conseil['nb_seances'] != null ? ' (${conseil['nb_seances']} séances)' : ''}',
+            'description': libelleForfait(conseil),
             'quantite': 1, 'prix_unitaire': (conseil['prix'] as num?)?.toDouble() ?? 0,
           }]
         : detail.isNotEmpty
         ? [for (final a in detail) {
             'description': [_v(a['motif']), _v(a['nom'])].where((x) => x.isNotEmpty).join(' — '),
-            'quantite': 1, 'prix_unitaire': (a['prix'] as num?)?.toDouble() ?? 0,
+            'quantite': 1, 'prix_unitaire': (a['prix'] as num?)?.toDouble() ?? 0, 'animal_id': a['id'],
           }]
         : motif.isEmpty ? const [] : [{
       'description': [motif, animalNom].where((x) => x.isNotEmpty).join(' — '),

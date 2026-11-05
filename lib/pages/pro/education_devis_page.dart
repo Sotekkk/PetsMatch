@@ -161,14 +161,16 @@ class DevisPrefill {
   final String? clientEmail;
   final String? clientTel;
   final String? clientAdresse;
-  final List<Map<String, dynamic>> lignes; // {description, quantite, prix_unitaire}
+  final List<Map<String, dynamic>> lignes; // {description, quantite, prix_unitaire, animal_id?}
+  /// Chiens du RDV (séance à plusieurs) : un forfait ajouté crée une ligne par chien.
+  final List<Map<String, dynamic>> animauxRdv; // {id, nom}
   final String? note;
   /// Séance (rdv) à laquelle le devis est rattaché (photographe…).
   final String? rdvId;
   const DevisPrefill({
     this.animalId, this.clientUid, this.clientProfileId,
     this.clientNom, this.clientPrenom, this.clientEmail, this.clientTel, this.clientAdresse,
-    this.lignes = const [], this.note, this.rdvId,
+    this.lignes = const [], this.animauxRdv = const [], this.note, this.rdvId,
   });
 }
 
@@ -422,10 +424,12 @@ class _Ligne {
   String description;
   int quantite;
   double prixUnitaire;
+  /// Chien concerné (séance à plusieurs) : son forfait est activé à la signature.
+  final String? animalId;
   final TextEditingController descCtrl;
   final TextEditingController qtyCtrl;
   final TextEditingController prixCtrl;
-  _Ligne({this.description = '', this.quantite = 1, this.prixUnitaire = 0})
+  _Ligne({this.description = '', this.quantite = 1, this.prixUnitaire = 0, this.animalId})
       : descCtrl = TextEditingController(text: description),
         qtyCtrl = TextEditingController(text: quantite.toString()),
         prixCtrl = TextEditingController(text: prixUnitaire == 0 ? '' : prixUnitaire.toString());
@@ -433,6 +437,7 @@ class _Ligne {
   Map<String, dynamic> toMap() => {
         'description': description, 'quantite': quantite,
         'prix_unitaire': prixUnitaire, 'total': total,
+        if (animalId != null) 'animal_id': animalId,
       };
   void dispose() { descCtrl.dispose(); qtyCtrl.dispose(); prixCtrl.dispose(); }
 }
@@ -506,6 +511,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
             description: l['description']?.toString() ?? '',
             quantite: (l['quantite'] as num?)?.toInt() ?? 1,
             prixUnitaire: (l['prix_unitaire'] as num?)?.toDouble() ?? 0,
+            animalId: l['animal_id']?.toString(),
           ));
         }
       }
@@ -686,6 +692,16 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
   }
 
   void _addLigne(String description, num prix) {
+    final chiens = widget.prefill?.animauxRdv ?? const <Map<String, dynamic>>[];
+    if (chiens.length > 1 && _forfaits.any((f) => f['nom']?.toString() == description)) {
+      setState(() {
+        _lignes.removeWhere((l) => l.description.trim().isEmpty);
+        for (final a in chiens) {
+          _lignes.add(_Ligne(description: '$description — ${a['nom'] ?? ''}', prixUnitaire: prix.toDouble(), animalId: a['id']?.toString()));
+        }
+      });
+      return;
+    }
     setState(() => _lignes.add(_Ligne(description: description, prixUnitaire: prix.toDouble())));
   }
 

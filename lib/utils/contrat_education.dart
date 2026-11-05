@@ -5,6 +5,7 @@ import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/utils/fin_seance_education.dart' show clientDuRdv;
 import 'package:PetsMatch/utils/prestations_education.dart' show tarifSeanceRdv;
+import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv;
 
 // Éducateur : contrat de prestation généré par PetsMatch (documents_animaux
 // type contrat_education, signé en ligne) — depuis « Mes Contrats » ou le
@@ -31,6 +32,14 @@ Future<void> ouvrirContratEducation(BuildContext context, {
           .isFilter('metadata->>devis_id', null)
           .not('statut', 'in', '(annule,refuse)').order('created_at', ascending: false).limit(1).maybeSingle();
       token = existant?['token']?.toString();
+      // Contrat commun d'une séance à plusieurs chiens : rattaché à un seul, valable pour tous.
+      if (token == null) {
+        final commun = await supa.from('documents_animaux').select('token')
+            .eq('uid_eleveur', uid).eq('type', 'contrat_education')
+            .contains('metadata', {'animaux_ids': [animalId]}).isFilter('metadata->>devis_id', null)
+            .not('statut', 'in', '(annule,refuse)').order('created_at', ascending: false).limit(1).maybeSingle();
+        token = commun?['token']?.toString();
+      }
     }
     if (token == null) {
       // Devis en cours sur ce RDV : le contrat attend la réponse du client (miroir site).
@@ -48,12 +57,18 @@ Future<void> ouvrirContratEducation(BuildContext context, {
       final motif = rdv['motif']?.toString().trim() ?? '';
       // Intitulé et montant, modifiables : forfait (formule complète) ou séance.
       final nbF = (forfait?['nb_seances_total'] as num?)?.toInt() ?? 0;
-      final libelleCtrl = TextEditingController(text: forfait != null
+      final libelleBase = forfait != null
           ? '${forfait['nom_snapshot'] ?? 'Forfait'} ($nbF séance${nbF > 1 ? 's' : ''})'
-          : (motif.isNotEmpty ? motif : 'Séance d\'éducation'));
+          : (motif.isNotEmpty ? motif : 'Séance d\'éducation');
+      // Séance à plusieurs, devis accepté : un seul contrat pour tous les chiens, au total du devis.
+      final chiens = animauxDetailRdv(rdv);
+      final tousLesChiens = chiens.length > 1 && statutDevis == 'accepte';
+      final nomsChiens = chiens.map((a) => a['nom']?.toString() ?? '').where((n) => n.isNotEmpty).join(', ');
+      final libelleCtrl = TextEditingController(text: tousLesChiens ? '$libelleBase — $nomsChiens' : libelleBase);
       // Devis accepté sans forfait : le montant accepté par le client.
       final totalDevis = statutDevis == 'accepte' ? (devis?['total_ttc'] as num?)?.toDouble() ?? 0 : 0.0;
-      final prixDefaut = forfait != null ? ((forfait['prix_snapshot'] as num?)?.toDouble() ?? 0)
+      final prixDefaut = tousLesChiens && totalDevis > 0 ? totalDevis
+          : forfait != null ? ((forfait['prix_snapshot'] as num?)?.toDouble() ?? 0)
           : totalDevis > 0 ? totalDevis : await tarifSeanceRdv(rdv);
       final montantCtrl = TextEditingController(text: prixDefaut > 0 ? prixDefaut.toStringAsFixed(prixDefaut == prixDefaut.roundToDouble() ? 0 : 2) : '');
       if (!context.mounted) return;
@@ -98,6 +113,7 @@ Future<void> ouvrirContratEducation(BuildContext context, {
           ],
           if (montant != null && montant > 0) 'total_ttc': montant,
           'rdv_id': rdv['id'],
+          if (chiens.length > 1) 'animaux_ids': [for (final a in chiens) a['id']],
         },
       }).select('token').single();
       token = row['token']?.toString();
