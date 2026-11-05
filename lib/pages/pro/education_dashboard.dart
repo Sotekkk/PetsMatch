@@ -40,7 +40,7 @@ class _EducationDashboardState extends State<EducationDashboard> {
   List<Map<String, dynamic>> _seances = [];
   List<Map<String, dynamic>> _forfaits = [];
   /// Demandes à traiter : RDV (statut « demande ») et inscriptions aux cours collectifs.
-  int _demandesRdv = 0;
+  List<Map<String, dynamic>> _demandesRdv = [];
   int _demandesCours = 0;
   /// Animaux de « Mes animaux suivis » (même source que ProClientsPage :
   /// accès accordés à ce profil + animaux vus en RDV avec ce profil).
@@ -116,7 +116,8 @@ class _EducationDashboardState extends State<EducationDashboard> {
       };
     } catch (_) { _animauxSuivis = {}; }
     try {
-      _demandesRdv = (await _supa.from('rdv').select('id').eq('pro_profile_id', pid).inFilter('statut', ['demande', 'contre_proposition']) as List).length;
+      _demandesRdv = _liste(await _supa.from('rdv').select().eq('pro_profile_id', pid)
+          .inFilter('statut', ['demande', 'contre_proposition']).order('created_at', ascending: false));
       _demandesCours = (await _supa.from('cours_collectifs_participants').select('id, cours_collectifs!inner(pro_uid)')
           .eq('statut', 'demande').eq('cours_collectifs.pro_uid', uid) as List).length;
     } catch (_) {}
@@ -125,9 +126,9 @@ class _EducationDashboardState extends State<EducationDashboard> {
   }
 
   Future<void> _chargerNoms() async {
-    final profils = {for (final r in _rdvs) if (r['client_profile_id'] != null) r['client_profile_id'].toString()};
+    final profils = {for (final r in [..._rdvs, ..._demandesRdv]) if (r['client_profile_id'] != null) r['client_profile_id'].toString()};
     final animaux = {
-      for (final r in _rdvs) if (r['animal_id'] != null) r['animal_id'].toString(),
+      for (final r in [..._rdvs, ..._demandesRdv]) if (r['animal_id'] != null) r['animal_id'].toString(),
       for (final id in _suivisIds) id,
     };
     try {
@@ -314,6 +315,8 @@ class _EducationDashboardState extends State<EducationDashboard> {
       final large = c.maxWidth >= 860;
       final planning = DashCarte(key: _planningKey, child: _planningSection(duJour, now));
       final colonne = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _demandesSection(),
+        const SizedBox(height: 16),
         _suivisSection(suivis, now),
         const SizedBox(height: 16),
         _clotureSection(),
@@ -326,7 +329,6 @@ class _EducationDashboardState extends State<EducationDashboard> {
       ]);
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         for (final (n, texte, page) in [
-          (_demandesRdv, 'demande${_demandesRdv > 1 ? 's' : ''} de rendez-vous à traiter', const ProAgendaPage(initialTabIndex: 0) as Widget),
           (_demandesCours, "demande${_demandesCours > 1 ? 's' : ''} d'inscription à un cours collectif", const ProAgendaPage(ongletAgenda: true) as Widget),
         ])
           if (n > 0) Padding(
@@ -349,7 +351,7 @@ class _EducationDashboardState extends State<EducationDashboard> {
             ),
           ),
         GridView.count(
-          crossAxisCount: large ? 4 : 2,
+          crossAxisCount: large ? 5 : 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           crossAxisSpacing: 12, mainAxisSpacing: 12,
@@ -362,6 +364,9 @@ class _EducationDashboardState extends State<EducationDashboard> {
                 }),
             // Même décompte que la page ouverte (avant : seulement les animaux
             // avec un objectif en cours / un forfait → 0 alors que la liste en montrait 2).
+            DashKpi(valeur: _demandesRdv.length + _demandesCours, label: 'Demandes en attente', icon: Icons.schedule_outlined, teinte: _ambre,
+                actif: _demandesRdv.isNotEmpty || _demandesCours > 0,
+                onTap: () => _go(const ProAgendaPage(initialTabIndex: 0))),
             DashKpi(valeur: _animauxSuivis.length, label: 'Animaux suivis', icon: Icons.pets_outlined, teinte: _vert,
                 onTap: () => _go(const ProClientsPage())),
             DashKpi(valeur: deplacements.length, label: 'À domicile (7 jours)', icon: Icons.home_work_outlined,
@@ -522,6 +527,42 @@ class _EducationDashboardState extends State<EducationDashboard> {
   }
 
   // Séances à clôturer (passées, pas encore « Terminé ») ---------------------
+
+  // Demandes à valider (comme les accueils véto / ostéo).
+  Widget _demandesSection() {
+    final items = _demandesRdv;
+    return DashCarte(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      DashTitre('Demandes en attente', icone: Icons.notifications_none, compteur: items.length,
+          trailing: items.isEmpty ? null : DashLien('Voir toutes', onTap: () => _go(const ProAgendaPage(initialTabIndex: 0)))),
+      const SizedBox(height: 6),
+      if (items.isEmpty)
+        const Padding(padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('Aucune demande de rendez-vous à traiter.', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted))),
+      for (final r in items.take(5))
+        InkWell(
+          onTap: () => _go(ProAgendaPage(initialTabIndex: 0, focusRdvId: r['id']?.toString())),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            child: Row(children: [
+              DashPhotoAnimal(url: _animaux[r['animal_id']?.toString()]?['photo_url']?.toString(), taille: 32),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${_nomAnimal(r)} · ${_nomClient(r)}', maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _ink)),
+                Text([
+                  (r['motif']?.toString() ?? '').trim().isEmpty ? 'Rendez-vous' : r['motif'].toString().trim(),
+                  'pour le ${_jm(_debut(r))} ${_hm(_debut(r))}',
+                  if (_domicile(r)) 'à domicile',
+                ].join(' · '), maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _muted)),
+              ])),
+              const SizedBox(width: 6),
+              const Text('Valider', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _teal)),
+            ]),
+          ),
+        ),
+    ]));
+  }
 
   Widget _clotureSection() {
     final now = DateTime.now();

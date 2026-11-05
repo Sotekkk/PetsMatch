@@ -60,11 +60,14 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
   const planningRef = useRef<HTMLDivElement>(null);
   const crRef = useRef<HTMLDivElement>(null);
 
+  const [demandes, setDemandes] = useState<(Rdv & { created_at?: string | null })[]>([]);
+  const [demandesCours, setDemandesCours] = useState(0);
+
   const charger = useCallback(async () => {
     if (!pid || !uid) return;
     const t = new Date();
     const jour = new Date(t.getFullYear(), t.getMonth(), t.getDate());
-    const [rRes, cRes, oRes, sRes, fRes, accRes, rdvAnimRes] = await Promise.all([
+    const [rRes, cRes, oRes, sRes, fRes, accRes, rdvAnimRes, demRes, demCoursRes] = await Promise.all([
       supabase.from('rdv').select('*').eq('pro_profile_id', pid).in('statut', ['confirme', 'termine'])
         .gte('date_heure', new Date(jour.getTime() - 60 * 86400000).toISOString())
         .lte('date_heure', new Date(jour.getTime() + 31 * 86400000).toISOString()).order('date_heure'),
@@ -75,7 +78,13 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
       supabase.from('forfaits_souscrits').select('*').eq('pro_uid', uid).eq('statut', 'actif'),
       supabase.from('animal_access').select('animal_id').eq('pro_profile_id', pid).in('statut', ['active', 'write_requested', 'active_write']),
       supabase.from('rdv').select('animal_id').eq('pro_uid', uid).eq('pro_profile_id', pid).in('statut', ['confirme', 'termine']),
+      // Demandes à valider (comme les accueils véto / ostéo) ; inscriptions aux cours collectifs.
+      supabase.from('rdv').select('*').eq('pro_profile_id', pid).in('statut', ['demande', 'contre_proposition'])
+        .order('created_at', { ascending: false }),
+      supabase.from('cours_collectifs_participants').select('id, cours_collectifs!inner(pro_uid)', { count: 'exact', head: true })
+        .eq('statut', 'demande').eq('cours_collectifs.pro_uid', uid),
     ]);
+    const lesDemandes = (demRes.data ?? []) as (Rdv & { created_at?: string | null })[];
     setNbAnimauxSuivis(new Set([...(accRes.data ?? []), ...(rdvAnimRes.data ?? [])]
       .map(x => (x as { animal_id: string | null }).animal_id).filter(Boolean)).size);
     const liste = (rRes.data ?? []) as Rdv[];
@@ -86,8 +95,8 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
     const forf = duProfil((fRes.data ?? []) as { animal_id: string | null; pro_profile_id?: string | null }[])
       .map(f => f.animal_id).filter(Boolean) as string[];
     const suivis = new Set([...objs.filter(o => o.statut !== 'acquis').map(o => String(o.animal_id)), ...forf]);
-    const profils = [...new Set(liste.map(r => r.client_profile_id).filter(Boolean) as string[])];
-    const ids = [...new Set([...liste.map(r => r.animal_id).filter(Boolean) as string[], ...suivis])];
+    const profils = [...new Set([...liste, ...lesDemandes].map(r => r.client_profile_id).filter(Boolean) as string[])];
+    const ids = [...new Set([...[...liste, ...lesDemandes].map(r => r.animal_id).filter(Boolean) as string[], ...suivis])];
     const [pRes, aRes] = await Promise.all([
       profils.length ? supabase.from('user_profiles_complet').select('id, firstname, lastname, nom, profile_type').in('id', profils) : Promise.resolve({ data: [] }),
       ids.length ? supabase.from('animaux').select('id, nom, photo_url').in('id', ids) : Promise.resolve({ data: [] }),
@@ -100,6 +109,7 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
     }
     const an: Record<string, Animal> = {};
     for (const a of (aRes.data ?? []) as Animal[]) an[String(a.id)] = a;
+    setDemandes(lesDemandes); setDemandesCours(demCoursRes.count ?? 0);
     setRdvs(liste); setCours(duProfil((cRes.data ?? []) as Cours[])); setObjectifs(objs); setSeances(ses);
     setForfaitsAnimaux(forf); setClients(cl); setAnimaux(an); setNow(new Date()); setLoading(false);
   }, [pid, uid]);
@@ -169,9 +179,10 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
           <div className="flex justify-center py-20"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>
         ) : (
           <>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               <Kpi valeur={duJour.length + cours.length} label="Rendez-vous aujourd'hui" icone="calendrier"
                 onClick={() => planningRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
+              <Kpi valeur={demandes.length + demandesCours} label="Demandes en attente" icone="cloche" teinte={AMBRE} actif={demandes.length + demandesCours > 0} href="/mes-rdv?onglet=demandes" />
               <Kpi valeur={nbAnimauxSuivis} label="Animaux suivis" icone="patte" teinte={VERT} href="/mes-patients" />
               <Kpi valeur={deplacements.length} label="À domicile (7 jours)" icone="maison" teinte={VIOLET} href="/mes-rdv?onglet=a_venir" />
               <Kpi valeur={aFinaliser.length} label="Comptes rendus à finaliser" icone="crayon" teinte={AMBRE} actif={aFinaliser.length > 0}
@@ -224,6 +235,31 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
               </div>
 
               <div className="space-y-5">
+                <Section titre="Demandes en attente" icone={<Icone nom="cloche" taille={18} />} compteur={demandes.length + demandesCours}
+                  action={demandes.length ? <Link href="/mes-rdv?onglet=demandes" className="text-sm font-bold text-[#0C5C6C]">Voir toutes</Link> : undefined}>
+                  {demandes.length + demandesCours === 0 ? <p className="text-sm text-gray-400">Aucune demande à traiter.</p> : (
+                    <div className="space-y-1">
+                      {demandes.slice(0, 5).map(r => (
+                        <Link key={r.id} href={`/mes-rdv?onglet=demandes&rdv=${encodeURIComponent(r.id)}`} className="flex items-center gap-2 py-1.5 hover:bg-gray-50 rounded-lg">
+                          <PhotoAnimal url={r.animal_id ? animaux[r.animal_id]?.photo_url : null} taille={32} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] font-bold text-[#1E2025] truncate">{nomAnimal(r)} · {nomClient(r)}</p>
+                            <p className="text-[11.5px] text-gray-500 truncate">{[r.motif?.trim() || 'Rendez-vous', `pour le ${jm(debut(r))} ${hm(debut(r))}`, domicile(r) ? 'à domicile' : null].filter(Boolean).join(' · ')}</p>
+                          </div>
+                          <span className="text-xs font-bold text-[#0C5C6C]">Valider</span>
+                        </Link>
+                      ))}
+                      {demandesCours > 0 && (
+                        <Link href="/mes-rdv?onglet=agenda" className="flex items-center gap-2 py-1.5 hover:bg-gray-50 rounded-lg">
+                          <span className="text-[#D97706]"><Icone nom="cloche" taille={18} /></span>
+                          <span className="flex-1 text-sm text-[#1E2025]">{demandesCours} demande{demandesCours > 1 ? 's' : ''} d&apos;inscription à un cours collectif</span>
+                          <span className="text-xs font-bold text-[#0C5C6C]">Voir</span>
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </Section>
+
                 <Section titre="Suivis éducatifs en cours" icone={<Icone nom="suivi" taille={18} />} compteur={lignesSuivis.length}
                   action={lignesSuivis.length > 0 ? <Link href="/mes-patients" className="text-sm font-semibold text-[#0C5C6C] hover:underline">Tous →</Link> : undefined}>
                   {lignesSuivis.length === 0 ? <p className="text-sm text-gray-400">Aucun suivi en cours.</p> : (
