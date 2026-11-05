@@ -151,6 +151,8 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   const debut = new Date(r.date_heure);
   const pid = r.pro_profile_id || pidActif;
   const retour = retourDossierEducation(r.id);
+  // Devis en cours (ni accepté, ni refusé) : le contrat attend la réponse du client.
+  const devisEnAttente = !!devis && devis.statut !== 'accepte' && devis.statut !== 'refuse';
   const detail = animauxDetailRdv(r);
   const aidSel = (detail.length > 0 && animalChoisi && detail.some(a => a.id === animalChoisi)) ? animalChoisi : r.animal_id;
   const ouvrir = (url: string, titre: string) => onOuvrirPage ? onOuvrirPage(url, titre) : router.push(url);
@@ -223,7 +225,8 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
       setFormContrat({ forfait: `${f.nom_snapshot} (${f.nb_seances_total} séance${f.nb_seances_total > 1 ? 's' : ''})`,
         prestation: f.nom_snapshot, montant: f.prix_snapshot != null ? String(f.prix_snapshot) : '' });
     } else {
-      const prix = await tarifSeanceRdv(r);
+      // Devis accepté sans forfait : le montant accepté par le client.
+      const prix = devis?.statut === 'accepte' && devis.total_ttc ? Number(devis.total_ttc) : await tarifSeanceRdv(r);
       setFormContrat({ forfait: '', prestation: r.motif?.trim() || 'Séance d’éducation', montant: prix > 0 ? String(prix) : '' });
     }
   }
@@ -352,10 +355,13 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           {prochain && ligne('Prochain RDV', libelleProchainRdv(prochain), prochain.date ? VERT : GRIS,
             [btn(prochain.date ? 'Programmer un autre' : 'Programmer', () => onProgrammerRdv ? onProgrammerRdv({ animalId: prochain.animalId, motif: prochain.motif }) : ouvrir(prochain.chemin, 'Nouveau rendez-vous'))])}
           {ligne('Contrat',
-            contrat ? `Contrat PetsMatch · ${STATUT_CONTRAT[contrat.statut] ?? contrat.statut}` : 'Générer avec PetsMatch ou charger le vôtre (photo ou PDF)',
-            !contrat ? GRIS : contrat.statut === 'signe' ? VERT : AMBRE,
-            [contrat?.token ? btn('Voir', () => ouvrir(`/signer-contrat/${contrat.token}`, 'Contrat de prestation'))
-              : btn(creationContrat ? 'Création…' : 'Générer', genererContrat),
+            contrat ? `Contrat PetsMatch · ${STATUT_CONTRAT[contrat.statut] ?? contrat.statut}`
+              : devisEnAttente ? 'À générer une fois le devis accepté'
+              : devis?.statut === 'accepte' ? 'Devis accepté : générez le contrat'
+              : 'Générer avec PetsMatch ou charger le vôtre (photo ou PDF)',
+            !contrat ? (devis?.statut === 'accepte' ? AMBRE : GRIS) : contrat.statut === 'signe' ? VERT : AMBRE,
+            [...(contrat?.token ? [btn('Voir', () => ouvrir(`/signer-contrat/${contrat.token}`, 'Contrat de prestation'))]
+              : devisEnAttente ? [] : [btn(creationContrat ? 'Création…' : 'Générer', genererContrat)]),
               btn('Charger le mien', () => setDocPro('contrat'))])}
         </div>
 

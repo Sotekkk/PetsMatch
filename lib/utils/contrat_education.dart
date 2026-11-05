@@ -27,10 +27,20 @@ Future<void> ouvrirContratEducation(BuildContext context, {
     if (animalId != null) {
       final existant = await supa.from('documents_animaux').select('token, statut')
           .eq('uid_eleveur', uid).eq('type', 'contrat_education').eq('animal_id', animalId)
+          // Un devis envoyé est aussi un document à signer : ce n'est pas le contrat.
+          .isFilter('metadata->>devis_id', null)
           .not('statut', 'in', '(annule,refuse)').order('created_at', ascending: false).limit(1).maybeSingle();
       token = existant?['token']?.toString();
     }
     if (token == null) {
+      // Devis en cours sur ce RDV : le contrat attend la réponse du client (miroir site).
+      final devis = await supa.from('devis').select('statut, total_ttc').eq('rdv_id', rdv['id'].toString())
+          .order('created_at', ascending: false).limit(1).maybeSingle();
+      final statutDevis = devis?['statut']?.toString();
+      if (statutDevis != null && statutDevis != 'accepte' && statutDevis != 'refuse') {
+        dire('Contrat à générer une fois le devis accepté. Vous pouvez aussi charger votre propre contrat.');
+        return;
+      }
       if (await PlanService.getEducationPlanCode(uid) != 'premium') {
         dire('Le contrat PetsMatch signé en ligne est inclus dans la formule Premium. Vous pouvez charger votre propre contrat.');
         return;
@@ -41,7 +51,10 @@ Future<void> ouvrirContratEducation(BuildContext context, {
       final libelleCtrl = TextEditingController(text: forfait != null
           ? '${forfait['nom_snapshot'] ?? 'Forfait'} ($nbF séance${nbF > 1 ? 's' : ''})'
           : (motif.isNotEmpty ? motif : 'Séance d\'éducation'));
-      final prixDefaut = forfait != null ? ((forfait['prix_snapshot'] as num?)?.toDouble() ?? 0) : await tarifSeanceRdv(rdv);
+      // Devis accepté sans forfait : le montant accepté par le client.
+      final totalDevis = statutDevis == 'accepte' ? (devis?['total_ttc'] as num?)?.toDouble() ?? 0 : 0.0;
+      final prixDefaut = forfait != null ? ((forfait['prix_snapshot'] as num?)?.toDouble() ?? 0)
+          : totalDevis > 0 ? totalDevis : await tarifSeanceRdv(rdv);
       final montantCtrl = TextEditingController(text: prixDefaut > 0 ? prixDefaut.toStringAsFixed(prixDefaut == prixDefaut.roundToDouble() ? 0 : 2) : '');
       if (!context.mounted) return;
       final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(

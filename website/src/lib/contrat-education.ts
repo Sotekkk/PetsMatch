@@ -197,6 +197,8 @@ export const STATUT_CONTRAT: Record<string, string> = {
 export async function contratEducationAnimal(proUid: string, animalId: string): Promise<ContratEducation | null> {
   const { data } = await supabase.from('documents_animaux').select('id, token, statut')
     .eq('uid_eleveur', proUid).eq('type', 'contrat_education').eq('animal_id', animalId)
+    // Un devis envoyé est aussi un document à signer : ce n'est pas le contrat.
+    .is('metadata->>devis_id', null)
     .not('statut', 'in', '(annule,refuse)').order('created_at', { ascending: false }).limit(1).maybeSingle();
   return (data as ContratEducation | null) ?? null;
 }
