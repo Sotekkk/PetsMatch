@@ -60,14 +60,14 @@ function statut(r: Rdv, now: Date): { label: string; fg: string; bg: string } {
     case 'confirme':
       if (now < debutDe(r)) return { label: 'À venir', fg: '#1D4ED8', bg: '#E8F0FE' };
       if (now < finDe(r)) return { label: 'En cours', fg: TEAL, bg: '#E6F2F3' };
-      return { label: 'Confirmé', fg: VERT, bg: '#E8F5EE' };
+      return { label: 'À clôturer', fg: AMBRE, bg: '#FFF4DC' };
   }
   return { label: r.statut, fg: '#6B7280', bg: '#F1F2F4' };
 }
 
 function lienRdv(r: Rdv) {
-  const futur = debutDe(r) > new Date();
-  const onglet = r.statut === 'demande' || r.statut === 'contre_proposition' ? 'demandes' : r.statut === 'confirme' && futur ? 'a_venir' : 'historique';
+  // Un RDV confirmé reste dans « À venir » jusqu'à « Terminé », même une fois passé.
+  const onglet = r.statut === 'demande' || r.statut === 'contre_proposition' ? 'demandes' : r.statut === 'confirme' ? 'a_venir' : 'historique';
   return `/mes-rdv?onglet=${onglet}&rdv=${r.id}`;
 }
 
@@ -196,6 +196,9 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
   const aujourdhui = duJour(now).filter(actif);
   const demandes = rdvs.filter(r => r.statut === 'demande' || r.statut === 'contre_proposition')
     .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+  // Visites passées pas encore marquées « Terminé », les plus récentes d'abord.
+  const aCloturer = rdvs.filter(r => r.statut === 'confirme' && finDe(r) <= now)
+    .sort((a, b) => b.date_heure.localeCompare(a.date_heure));
 
   // Prochain déplacement : prochain RDV extérieur confirmé + les autres RDV
   // du même jour à la même adresse (chaque animal garde son RDV / dossier).
@@ -250,13 +253,14 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
           <div className="flex justify-center py-20"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>
         ) : (
           <>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               <Kpi valeur={aujourdhui.length} label="Rendez-vous aujourd'hui" icone={I.cal} href="/mes-rdv?onglet=a_venir" />
               <Kpi valeur={aujourdhui.filter(estExterieur).length} label="Visites à domicile" icone={I.maison} teinte={VERT}
                 actif={filtreLieu === 'domicile' && estAujourdhui}
                 onClick={() => { setJour(new Date()); setFiltreLieu('domicile'); planningRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} />
               <Kpi valeur={suivis.length} label="Suivis à prévoir" icone={I.suivi} teinte={VIOLET} href="/sante/suivis" />
               <Kpi valeur={demandes.length} label="Demandes en attente" icone={I.horloge} teinte={AMBRE} href="/mes-rdv?onglet=demandes" />
+              <Kpi valeur={aCloturer.length} label="Visites à clôturer" icone={I.suivi} teinte={AMBRE} href="/mes-rdv?onglet=a_venir" />
             </div>
 
             <div className="grid lg:grid-cols-3 gap-5 items-start">
@@ -368,6 +372,22 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
                       </Link>
                     );
                   })}
+                </Section>
+
+                {/* Visites à clôturer */}
+                <Section titre="Visites à clôturer" icone={I.suivi} compteur={aCloturer.length}
+                  action={aCloturer.length > 5 ? <Link href="/mes-rdv?onglet=a_venir" className="text-sm font-bold" style={{ color: TEAL }}>Voir toutes</Link> : undefined}>
+                  {aCloturer.length === 0 ? <p className="text-sm text-gray-400">Toutes les visites passées sont clôturées.</p> : aCloturer.slice(0, 5).map(r => (
+                    <Link key={r.id} href={lienRdv(r)} className="flex items-center gap-2 py-1.5 hover:bg-gray-50 rounded-lg">
+                      <PhotoAnimal url={photo(r)} taille={32} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-bold text-[#1E2025] truncate">{nomAnimal(r)} · {nomClient(r)}</p>
+                        <p className="text-[11.5px] text-gray-500 truncate">{[r.motif?.trim() || 'Rendez-vous', `le ${jm(debutDe(r))} à ${hm(debutDe(r))}`].join(' · ')}</p>
+                      </div>
+                      <span className="text-[11.5px] font-bold whitespace-nowrap" style={{ color: TEAL }}>Clôturer</span>
+                      <span className="text-gray-400">›</span>
+                    </Link>
+                  ))}
                 </Section>
 
                 {/* Suivis à prévoir */}

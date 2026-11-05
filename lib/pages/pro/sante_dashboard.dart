@@ -35,7 +35,7 @@ const _ambre = Color(0xFFD97706);
 bool estExterieur(Map<String, dynamic> r) =>
     ((r['lieu']?.toString().trim() ?? '').isNotEmpty && r['salle_id'] == null) || r['lieu_lat'] != null;
 
-/// Statut affiché : « En cours » / « À venir » / « Confirmé » (passé) calculés.
+/// Statut affiché : « En cours » / « À venir » / « À clôturer » (passé) calculés.
 ({String label, Color fg, Color bg}) statutRdvSante(Map<String, dynamic> r, DateTime now) {
   final s = r['statut']?.toString() ?? '';
   final debut = DateTime.tryParse(r['date_heure']?.toString() ?? '')?.toLocal() ?? now;
@@ -52,7 +52,7 @@ bool estExterieur(Map<String, dynamic> r) =>
     case 'confirme':
       if (now.isBefore(debut)) return (label: 'À venir', fg: const Color(0xFF1D4ED8), bg: const Color(0xFFE8F0FE));
       if (now.isBefore(fin)) return (label: 'En cours', fg: _teal, bg: const Color(0xFFE6F2F3));
-      return (label: 'Confirmé', fg: const Color(0xFF2E7D5E), bg: const Color(0xFFE8F5EE));
+      return (label: 'À clôturer', fg: const Color(0xFFD97706), bg: const Color(0xFFFFF4DC));
   }
   return (label: s, fg: _muted, bg: const Color(0xFFF1F2F4));
 }
@@ -210,6 +210,11 @@ class _SanteDashboardState extends State<SanteDashboard> {
       _rdvs.where((r) => r['statut'] == 'demande' || r['statut'] == 'contre_proposition').toList()
         ..sort((a, b) => (b['created_at']?.toString() ?? '').compareTo(a['created_at']?.toString() ?? ''));
 
+  /// Visites passées pas encore marquées « Terminé », les plus récentes d'abord.
+  List<Map<String, dynamic>> _aCloturer(DateTime now) => _rdvs.where((r) => r['statut'] == 'confirme'
+      && !_debut(r).add(Duration(minutes: (r['duree_minutes'] as num?)?.toInt() ?? 45)).isAfter(now)).toList()
+    ..sort((a, b) => _debut(b).compareTo(_debut(a)));
+
   String _nomClient(Map<String, dynamic> r) {
     final n = _clients[r['client_profile_id']?.toString() ?? ''];
     if (n != null && n.isNotEmpty) return n;
@@ -276,8 +281,8 @@ class _SanteDashboardState extends State<SanteDashboard> {
 
   void _ouvrirRdv(Map<String, dynamic> r) {
     final s = r['statut'];
-    final futur = _debut(r).isAfter(DateTime.now());
-    final onglet = (s == 'demande' || s == 'contre_proposition') ? 0 : (s == 'confirme' && futur ? 1 : 2);
+    // Un RDV confirmé reste dans « À venir » jusqu'à « Terminé », même une fois passé.
+    final onglet = (s == 'demande' || s == 'contre_proposition') ? 0 : (s == 'confirme' ? 1 : 2);
     _go(ProAgendaPage(initialTabIndex: onglet, focusRdvId: r['id']?.toString()));
   }
 
@@ -361,11 +366,13 @@ class _SanteDashboardState extends State<SanteDashboard> {
         const SizedBox(height: 16),
         _demandesSection(now),
         const SizedBox(height: 16),
+        _clotureSection(now),
+        const SizedBox(height: 16),
         _suivisSection(now),
       ]);
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         GridView.count(
-          crossAxisCount: large ? 4 : 2,
+          crossAxisCount: large ? 5 : 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           crossAxisSpacing: 12, mainAxisSpacing: 12,
@@ -384,6 +391,8 @@ class _SanteDashboardState extends State<SanteDashboard> {
                 teinte: _violetSuivi, onTap: () => _go(const SanteSuivisMorphoPage())),
             DashKpi(valeur: _demandes.length, label: 'Demandes en attente', icon: Icons.schedule_outlined,
                 teinte: _ambre, onTap: () => _go(const ProAgendaPage(initialTabIndex: 0))),
+            DashKpi(valeur: _aCloturer(now).length, label: 'Visites à clôturer', icon: Icons.assignment_late_outlined,
+                teinte: _ambre, onTap: () => _go(const ProAgendaPage(initialTabIndex: 1))),
           ],
         ),
         const SizedBox(height: 16),
@@ -615,6 +624,31 @@ class _SanteDashboardState extends State<SanteDashboard> {
               if (estExterieur(r)) _lieuCourt(r),
             ].join(' · '),
             droite: _quand(r['created_at']?.toString(), now), droiteCouleur: const Color(0xFFDC2626),
+            onTap: () => _ouvrirRdv(r),
+          ),
+    ]));
+  }
+
+  // Visites à clôturer ----------------------------------------------------
+
+  Widget _clotureSection(DateTime now) {
+    final l = _aCloturer(now);
+    return DashCarte(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      DashTitre('Visites à clôturer', icone: Icons.assignment_late_outlined, compteur: l.length,
+          trailing: l.length > 5 ? DashLien('Voir toutes', onTap: () => _go(const ProAgendaPage(initialTabIndex: 1))) : null),
+      const SizedBox(height: 6),
+      if (l.isEmpty)
+        const Padding(padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('Toutes les visites passées sont clôturées.', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)))
+      else
+        for (final r in l.take(5))
+          _ligneMini(
+            photo: _photo(r), titre: '${_nomAnimal(r)} · ${_nomClient(r)}',
+            detail: [
+              (r['motif']?.toString() ?? '').trim().isEmpty ? 'Rendez-vous' : r['motif'].toString().trim(),
+              'le ${_jm(_debut(r))} à ${_hm(_debut(r))}',
+            ].join(' · '),
+            droite: 'Clôturer', droiteCouleur: _teal,
             onTap: () => _ouvrirRdv(r),
           ),
     ]));
