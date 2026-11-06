@@ -78,10 +78,12 @@ async function animauxDuProfil(ownerUid: string, activeProfileId: string): Promi
   return [...new Set((data ?? []).map((r: { animal_id: unknown }) => String(r.animal_id)).filter(Boolean))];
 }
 
-// Rappel déjà renouvelé : MÊME règle que les relances (functions/sante.js,
-// cleTraitement + dejaRemplace) — vermifuge / antiparasitaire : toute ligne plus
-// récente du même animal, quel que soit le nom saisi (« Effitix Virbac » puis
-// « Virbac Effitix ») ; vaccin : même type (catégorie, sinon nom du vaccin).
+// Rappel déjà renouvelé : un soin SAISI PLUS TARD pour le même animal (ou le
+// même jour avec un rappel plus lointain) — vermifuge / antiparasitaire : quel
+// que soit le nom saisi (« Effitix Virbac » puis « Virbac Effitix »), comme
+// functions/sante.js ; vaccin : même type (catégorie, sinon nom du vaccin).
+// Un soin plus ANCIEN à rappel lointain (ex. 19/05, rappel en 2027) ne masque
+// pas le rappel d'un soin plus récent (cas de Tokyo, 06/11/2026).
 const normTB = (v: unknown) => String(v ?? '').trim().toLowerCase();
 const typeVaccinTB = (r: Record<string, unknown>) => {
   const c = normTB(r.categorie);
@@ -93,8 +95,9 @@ function rappelRemplace(table: string, r: Record<string, unknown>, lignes: Recor
     if (String(x.id) === String(r.id)) return false;
     if (table === 'vaccinations' && typeVaccinTB(x) !== typeVaccinTB(r)
       && !(normTB(r.vaccin) && normTB(x.vaccin) === normTB(r.vaccin))) return false;
-    return (!!jour(x.date) && !!jour(r.date) && jour(x.date) > jour(r.date))
-      || (!!jour(x.date_rappel) && !!jour(r.date_rappel) && jour(x.date_rappel) > jour(r.date_rappel));
+    const dx = jour(x.date), dr = jour(r.date);
+    if (!dx || !dr) return false;
+    return dx > dr || (dx === dr && !!jour(x.date_rappel) && !!jour(r.date_rappel) && jour(x.date_rappel) > jour(r.date_rappel));
   });
 }
 

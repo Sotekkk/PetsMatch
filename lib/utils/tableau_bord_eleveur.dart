@@ -286,10 +286,11 @@ const _carnet = [
   (table: 'antiparasitaires', acte: 'antiparasitaire', libelle: 'Rappel antiparasitaire', nom: 'produit', cols: 'id,animal_id,date,date_rappel,produit'),
 ];
 
-// Rappel déjà renouvelé : MÊME règle que les relances (functions/sante.js,
-// cleTraitement + dejaRemplace) — vermifuge / antiparasitaire : toute ligne plus
-// récente du même animal, quel que soit le nom saisi ; vaccin : même type
-// (catégorie, sinon nom du vaccin).
+// Rappel déjà renouvelé : un soin SAISI PLUS TARD pour le même animal (ou le
+// même jour avec un rappel plus lointain) — vermifuge / antiparasitaire : quel
+// que soit le nom saisi, comme functions/sante.js ; vaccin : même type
+// (catégorie, sinon nom du vaccin). Un soin plus ANCIEN à rappel lointain ne
+// masque pas le rappel d'un soin plus récent. Miroir site.
 String _normTB(Object? v) => (v ?? '').toString().trim().toLowerCase();
 String _typeVaccinTB(Map r) {
   final c = _normTB(r['categorie']);
@@ -301,8 +302,8 @@ bool _rappelRemplace(String table, Map r, List<Map> lignes) => lignes.any((x) {
       if (table == 'vaccinations' && _typeVaccinTB(x) != _typeVaccinTB(r)
           && !(_normTB(r['vaccin']).isNotEmpty && _normTB(x['vaccin']) == _normTB(r['vaccin']))) { return false; }
       final dx = _j10(x['date']), dr = _j10(r['date']), rx = _j10(x['date_rappel']), rr = _j10(r['date_rappel']);
-      return (dx.isNotEmpty && dr.isNotEmpty && dx.compareTo(dr) > 0)
-          || (rx.isNotEmpty && rr.isNotEmpty && rx.compareTo(rr) > 0);
+      if (dx.isEmpty || dr.isEmpty) return false;
+      return dx.compareTo(dr) > 0 || (dx == dr && rx.isNotEmpty && rr.isNotEmpty && rx.compareTo(rr) > 0);
     });
 
 /// Même rappel le même jour pour plusieurs animaux : une ligne (comme les notifications groupées).
