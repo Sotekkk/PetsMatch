@@ -7,8 +7,10 @@ import { PENSION_ESPECES, pensionGroupe, pensionTarifKeyForEspece } from '@/lib/
 // Plusieurs animaux : une demande (pension_demandes) par animal, mêmes dates,
 // même client — la pension les voit regroupées et les accepte en une fois.
 //  GET  ?pensionProfileId=&animalId= | &animalIds=a,b (client) → infos pension
-//       (essai exigé, tarifs publics), premier séjour de chaque animal chez
-//       elle ; avec &arrivee=&depart=&nb= → places libres (`dispo`).
+//       (essai exigé, tarifs publics, espèces acceptées), premier séjour de
+//       chaque animal chez elle ; avec &arrivee=&depart=&nb= (ou &especes=chien,chat
+//       pour un visiteur sans compte) → places libres (`dispo`). Sans animal,
+//       pas besoin d'être connecté.
 //  POST { pensionProfileId, animalIds | animalId, dateArrivee, dateDepart,
 //         dejaVenus?: { [animalId]: bool } | dejaVenu?, essaiDate?, message?, profileId? }
 //       (client) → une demande par animal + accès à la fiche pour la pension.
@@ -27,8 +29,8 @@ const fr = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('fr-FR', 
 const liste = (noms: string[]) => noms.length <= 1 ? (noms[0] ?? '') : `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}`;
 
 async function pension(pid: string) {
-  const { data } = await admin.from('user_profiles').select('id, uid, nom, profile_type, pension_essai_requis, pension_essai_info, tarifs_pension').eq('id', pid).maybeSingle();
-  const p = data as { id: string; uid: string; nom: string | null; profile_type: string | null; pension_essai_requis?: boolean; pension_essai_info?: string | null; tarifs_pension?: Record<string, unknown> | null } | null;
+  const { data } = await admin.from('user_profiles').select('id, uid, nom, profile_type, pension_essai_requis, pension_essai_info, tarifs_pension, especes_acceptees').eq('id', pid).maybeSingle();
+  const p = data as { id: string; uid: string; nom: string | null; profile_type: string | null; pension_essai_requis?: boolean; pension_essai_info?: string | null; tarifs_pension?: Record<string, unknown> | null; especes_acceptees?: string[] | null } | null;
   return p && p.profile_type === 'pension' ? p : null;
 }
 
@@ -153,13 +155,18 @@ async function estGestionnaire(proUid: string, uid: string) {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = await requireUser(req);
-  if (auth instanceof NextResponse) return auth;
   const sp = req.nextUrl.searchParams;
-  const p = await pension(sp.get('pensionProfileId') ?? '');
-  if (!p) return NextResponse.json({ error: 'Pension introuvable' }, { status: 404 });
   const animalId = sp.get('animalId');
   const animalIds = [...new Set((sp.get('animalIds') ?? '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 20);
+  // Visiteur sans compte : infos publiques seulement (espèces acceptées,
+  // essai, tarifs publics, places libres pour `especes`). Les animaux d'un
+  // compte exigent la connexion.
+  if (animalId || animalIds.length) {
+    const auth = await requireUser(req);
+    if (auth instanceof NextResponse) return auth;
+  }
+  const p = await pension(sp.get('pensionProfileId') ?? '');
+  if (!p) return NextResponse.json({ error: 'Pension introuvable' }, { status: 404 });
   const tarifs = p.tarifs_pension && (p.tarifs_pension as { afficher_public?: boolean }).afficher_public ? p.tarifs_pension : null;
   const premiers: Record<string, boolean> = {};
   for (const id of animalIds) premiers[id] = await premierSejour(p.uid, id);
@@ -170,6 +177,8 @@ export async function GET(req: NextRequest) {
     const nb = Math.max(1, Math.min(20, Number(sp.get('nb')) || 1));
     // Espèces des animaux choisis (places comptées par espèce).
     let especes: string[] = Array(nb).fill('');
+    const especesParam = (sp.get('especes') ?? '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 20);
+    if (especesParam.length) especes = especesParam.map(cleEsp);
     if (animalIds.length) {
       const { data: an } = await admin.from('animaux').select('id, espece').in('id', animalIds);
       especes = ((an ?? []) as { espece: string | null }[]).map(a => cleEsp(a.espece));
@@ -178,7 +187,9 @@ export async function GET(req: NextRequest) {
     dispo = { capacite, complets: complets.map(c => ({ jour: c.jour, restantes: c.restantes })), message: complets.length ? texteComplet(capacite, complets, nb) : null };
   }
   return NextResponse.json({
-    pension: { nom: p.nom ?? 'Pension', essai_requis: !!p.pension_essai_requis, essai_info: p.pension_essai_info ?? null, tarifs },
+    // Espèces acceptées (vide = toutes) : le client ne voit que ses animaux concernés.
+    pension: { nom: p.nom ?? 'Pension', essai_requis: !!p.pension_essai_requis, essai_info: p.pension_essai_info ?? null, tarifs,
+      especes: Array.isArray(p.especes_acceptees) ? p.especes_acceptees : [] },
     premier_sejour: animalId ? await premierSejour(p.uid, animalId) : null,
     premiers, dispo,
   }, { headers: { 'Cache-Control': 'private, no-store' } });
@@ -319,8 +330,18 @@ export async function POST(req: NextRequest) {
   }
   const aujourdhui = maintenant.slice(0, 10);
   if ((b.dateArrivee as string) < aujourdhui) return NextResponse.json({ error: 'La date d\'arrivée est passée.' }, { status: 400 });
+  // Dates aberrantes (année mal saisie…).
+  const ecart = (a: string, z: string) => Math.round((Date.parse(`${z}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86400000);
+  if (ecart(aujourdhui, b.dateArrivee as string) > 366) return NextResponse.json({ error: 'La date d\'arrivée est à plus d\'un an : vérifiez l\'année.' }, { status: 400 });
+  if (ecart(b.dateArrivee as string, b.dateDepart as string) > 180) return NextResponse.json({ error: 'Séjour de plus de 6 mois : vérifiez les dates ou contactez directement la pension.' }, { status: 400 });
   const { data: ans } = await admin.from('animaux').select('id, nom, espece').in('id', animalIds);
   const infosAnimal = new Map(((ans ?? []) as { id: string; nom: string | null; espece: string | null }[]).map(a => [String(a.id), a]));
+  // Espèces acceptées par la pension (vide = toutes).
+  const especesPension = Array.isArray(p.especes_acceptees) ? p.especes_acceptees : [];
+  const refuse = animalIds.map(id => infosAnimal.get(id)).find(a => a && !accepte(especesPension, cleEsp(a.espece)));
+  if (refuse) {
+    return NextResponse.json({ error: `Cette pension n'accueille pas les animaux de l'espèce de ${refuse.nom ?? 'votre animal'} (${refuse.espece ?? 'espèce inconnue'}).` }, { status: 400 });
+  }
   // Nouveau pensionnaire ? (null = historique connu chez la pension)
   const nouveaux = new Map<string, boolean | null>();
   for (const id of animalIds) {

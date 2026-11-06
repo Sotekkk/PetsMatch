@@ -12,10 +12,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/site_api.dart';
-import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionTarifKeyForEspece, pensionTarifPourKey, pensionTarifEquin, pensionPrixNuit;
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionTarifKeyForEspece, pensionTarifPourKey, pensionTarifEquin, pensionPrixNuit, pensionGroupe;
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
-import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
-import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 
 const _ink = Color(0xFF1F2A2E);
 
@@ -80,12 +78,32 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
     if (mounted) setState(() => _loading = false);
   }
 
-  /// Fiche animal créée depuis la réservation, puis liste rechargée.
-  Future<void> _ajouterAnimal() async {
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => const AnimalFicheParticulierPage()));
-    if (!mounted) return;
-    setState(() => _loading = true);
-    await _charger();
+  /// L'espèce de l'animal fait partie de celles acceptées par la pension
+  /// (aucune renseignée = toutes ; « NAC » accepte un lapin, « Équidés » un
+  /// âne). Miroir serveur : api/pension/sejour accepte().
+  bool _especeAcceptee(String? espece) {
+    final acceptees = [for (final e in (_pension?['especes'] as List?) ?? const []) e.toString()];
+    if (acceptees.isEmpty) return true;
+    String cle(String? e) => pensionTarifKeyForEspece(e) ?? (e ?? '').trim().toLowerCase();
+    final k = cle(espece);
+    if (k.isEmpty) return true;
+    return acceptees.any((x) { final c = cle(x); return c == k || pensionGroupe(c) == pensionGroupe(k); });
+  }
+
+  /// Seuls les animaux d'une espèce acceptée par la pension sont proposés.
+  List<Map<String, dynamic>> get _proposes => [for (final a in _animaux) if (_especeAcceptee(a['espece']?.toString())) a];
+
+  Future<void> _basculer(Map<String, dynamic> a) async {
+    final id = a['id'].toString();
+    setState(() {
+      if (_choisis.any((x) => x['id'].toString() == id)) {
+        _choisis = [for (final x in _choisis) if (x['id'].toString() != id) x];
+      } else {
+        _choisis = [..._choisis, a];
+      }
+      _hebergement = null;
+    });
+    await _actualiser();
   }
 
   /// Infos de la pension, premier séjour de chaque animal et places libres
@@ -143,13 +161,6 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
         '${_choisis.length > 1 ? ' (${_choisis.length} animaux)' : ''} = ${(nuits * total).toStringAsFixed(0)} € environ (hors réductions et options)';
   }
 
-  Future<void> _choisirAnimaux() async {
-    final res = await AnimalPickerSheet.pickMany(context, preloaded: _animaux, current: _choisis, accentColor: _c, showPortees: false);
-    if (res == null || !mounted) return;
-    setState(() { _choisis = res; _hebergement = null; });
-    await _actualiser();
-  }
-
   Future<void> _choisirDates() async {
     final now = DateTime.now();
     final r = await showDateRangePicker(
@@ -175,6 +186,11 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
 
   Future<void> _envoyer() async {
     if (_choisis.isEmpty || _dates == null) return;
+    // Dates aberrantes (même contrôle que le site et le serveur).
+    if (_dates!.end.difference(_dates!.start).inDays > 180) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Séjour de plus de 6 mois : vérifiez les dates ou contactez directement la pension.')));
+      return;
+    }
     if (_complet != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_complet!)));
       return;
@@ -255,34 +271,34 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
           ? Center(child: CircularProgressIndicator(color: _c))
           : ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 32), children: [
               Text(widget.proName, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
-              _titre('Animaux'),
-              if (_animaux.isEmpty)
-                Text("Créez d'abord la fiche de votre animal : la pension y trouvera sa santé et son alimentation.",
+              _titre('Animaux à mettre en pension'),
+              if (_proposes.isEmpty)
+                Text(_animaux.isEmpty ? 'Aucune fiche animal sur votre profil.'
+                    : "Aucun de vos animaux n'est d'une espèce accueillie par cette pension.",
                     style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade600))
               else
-                InkWell(
-                  onTap: _choisirAnimaux,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)),
-                    child: Row(children: [
-                      if (_choisis.isEmpty) ...[
-                        Icon(Icons.pets_outlined, color: Colors.grey.shade400, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(child: Text('Choisir un ou plusieurs animaux…',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500))),
-                      ] else ...[
-                        for (final a in _choisis.take(4)) Padding(padding: const EdgeInsets.only(right: 4), child: _vignette(a)),
-                        const SizedBox(width: 6),
-                        Expanded(child: Text(_choisis.map((a) => a['nom']?.toString() ?? 'Animal').join(' + '),
-                            maxLines: 1, overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: _c))),
-                      ],
-                      Icon(Icons.expand_more, color: Colors.grey.shade500, size: 20),
-                    ]),
-                  ),
+                Container(
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)),
+                  child: Column(children: [
+                    for (final (i, a) in _proposes.indexed) ...[
+                      if (i > 0) Divider(height: 1, color: Colors.grey.shade200),
+                      CheckboxListTile(
+                        value: _choisis.any((x) => x['id'].toString() == a['id'].toString()),
+                        onChanged: (_) => _basculer(a),
+                        activeColor: _c, dense: true, controlAffinity: ListTileControlAffinity.leading,
+                        secondary: _vignette(a),
+                        title: Text(a['nom']?.toString() ?? 'Animal',
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: _ink)),
+                        subtitle: Text([a['espece'], a['race']].where((v) => (v?.toString() ?? '').isNotEmpty).join(' · '),
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                      ),
+                    ],
+                  ]),
                 ),
+              if (_proposes.isNotEmpty && _proposes.length < _animaux.length)
+                Padding(padding: const EdgeInsets.only(top: 6), child: Text(
+                    '${_animaux.length - _proposes.length} animal${_animaux.length - _proposes.length > 1 ? 'aux non proposés' : ' non proposé'} : espèce non accueillie par cette pension.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500))),
               if (_choisis.length > 1)
                 Padding(padding: const EdgeInsets.only(top: 6), child: Text('${_choisis.length} animaux pour ce séjour.',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _c))),
@@ -308,13 +324,9 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
                     ),
                 ]),
               ],
-              Align(alignment: Alignment.centerLeft, child: TextButton.icon(
-                onPressed: _ajouterAnimal,
-                icon: const Icon(Icons.add, size: 18),
-                label: Text(_animaux.isEmpty ? 'Créer la fiche de mon animal' : 'Ajouter un autre animal',
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                style: TextButton.styleFrom(foregroundColor: _c, padding: EdgeInsets.zero),
-              )),
+              Padding(padding: const EdgeInsets.only(top: 8), child: Text(
+                  "Votre animal n'est pas dans la liste ? Créez d'abord sa fiche dans « Mes animaux », puis revenez réserver.",
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600))),
               _titre('Dates du séjour'),
               OutlinedButton.icon(
                 onPressed: _choisirDates,

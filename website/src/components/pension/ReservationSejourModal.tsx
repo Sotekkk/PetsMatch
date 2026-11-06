@@ -9,11 +9,21 @@ import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { AnimalMultiPickerField } from '@/components/AnimalPickerField';
-import { pensionPrixNuit, pensionTarifEquin, pensionTarifKeyForEspece, pensionTarifPourKey, type EspeceTarif } from '@/lib/pension-especes';
+import { pensionGroupe, pensionPrixNuit, pensionTarifEquin, pensionTarifKeyForEspece, pensionTarifPourKey, type EspeceTarif } from '@/lib/pension-especes';
 
 interface Animal { id: string; nom: string | null; espece: string | null; race?: string | null; photo_url?: string | null }
-interface InfosPension { nom: string; essai_requis: boolean; essai_info: string | null; tarifs: { especes?: EspeceTarif[] } | null }
+interface InfosPension { nom: string; essai_requis: boolean; essai_info: string | null; tarifs: { especes?: EspeceTarif[] } | null; especes?: string[] }
+
+/** L'espèce de l'animal fait partie de celles acceptées par la pension
+ *  (aucune renseignée = toutes ; « NAC » accepte un lapin, « Équidés » un âne).
+ *  Miroir serveur : api/pension/sejour accepte(). */
+function especeAcceptee(acceptees: string[] | undefined, espece: string | null) {
+  if (!acceptees?.length) return true;
+  const cle = (e: string | null | undefined) => pensionTarifKeyForEspece(e) ?? (e ?? '').trim().toLowerCase();
+  const k = cle(espece);
+  if (!k) return true;
+  return acceptees.some(x => { const c = cle(x); return c === k || pensionGroupe(c) === pensionGroupe(k); });
+}
 
 export default function ReservationSejourModal({ pensionProfileId, pensionNom, couleur, onClose, onVisite }: {
   pensionProfileId: string; pensionNom: string; couleur: string; onClose: () => void; onVisite?: () => void;
@@ -79,7 +89,11 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
       .catch(() => {});
   }, [user, pensionProfileId, animalIds, arrivee, depart, datesOk]);
 
-  const choisis = animaux.filter(a => animalIds.includes(a.id));
+  // Seuls les animaux d'une espèce acceptée par la pension sont proposés.
+  const proposes = animaux.filter(a => especeAcceptee(infos?.especes, a.espece));
+  const nonProposes = animaux.length - proposes.length;
+  const choisis = proposes.filter(a => animalIds.includes(a.id));
+  const basculer = (id: string) => { setAnimalIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]); setHebergement(null); };
   // Animaux sans historique chez cette pension : « déjà venu ? » pour chacun.
   const aQuestionner = choisis.filter(a => premiers[a.id] === true);
   const nouveaux = aQuestionner.filter(a => dejaVenus[a.id] === false);
@@ -99,8 +113,12 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
 
   async function envoyer() {
     setErreur('');
-    if (!animalIds.length || !arrivee || !depart) { setErreur('Choisissez les animaux et les dates du séjour.'); return; }
+    if (!choisis.length || !arrivee || !depart) { setErreur('Cochez les animaux et choisissez les dates du séjour.'); return; }
     if (depart < arrivee) { setErreur('La date de départ doit suivre l\'arrivée.'); return; }
+    if (arrivee < aujourdhui) { setErreur('La date d\'arrivée est passée.'); return; }
+    const jours = (a: string, b: string) => Math.round((new Date(`${b}T12:00:00`).getTime() - new Date(`${a}T12:00:00`).getTime()) / 86400000);
+    if (jours(aujourdhui, arrivee) > 365) { setErreur('La date d\'arrivée est à plus d\'un an : vérifiez l\'année.'); return; }
+    if (jours(arrivee, depart) > 180) { setErreur('Séjour de plus de 6 mois : vérifiez les dates ou contactez directement la pension.'); return; }
     if (complet) { setErreur(complet); return; }
     const sansReponse = aQuestionner.find(a => typeof dejaVenus[a.id] !== 'boolean');
     if (sansReponse) { setErreur(`Indiquez si ${sansReponse.nom ?? 'votre animal'} est déjà venu dans cette pension.`); return; }
@@ -108,7 +126,7 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
     setEtat('envoi');
     const r = await apiFetch('/api/pension/sejour', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pensionProfileId, animalIds, animalId: animalIds[0], dateArrivee: arrivee, dateDepart: depart,
+      body: JSON.stringify({ pensionProfileId, animalIds: choisis.map(a => a.id), animalId: choisis[0]?.id, dateArrivee: arrivee, dateDepart: depart,
         ...(aQuestionner.length ? { dejaVenus: Object.fromEntries(aQuestionner.map(a => [a.id, dejaVenus[a.id]])) } : {}),
         ...(equin && hebergement ? { hebergement } : {}), ...(essaiRequis ? { essaiDate: essai } : {}),
         message, ...(pid ? { profileId: pid } : {}) }),
@@ -135,14 +153,36 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
         ) : (
           <>
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Animaux</label>
-              {animaux.length === 0 ? <p className="text-sm text-gray-500">Créez d&apos;abord la fiche de votre animal : la pension y trouvera sa santé et son alimentation.</p> : (
-                <AnimalMultiPickerField accentColor={couleur}
-                  animaux={animaux.map(a => ({ id: a.id, nom: a.nom ?? 'Animal', espece: a.espece ?? '', race: a.race ?? null, photo_url: a.photo_url ?? null }))}
-                  selectedIds={animalIds}
-                  onChange={ids => { setAnimalIds(ids.map(String)); setHebergement(null); }} />
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Animaux à mettre en pension</label>
+              {proposes.length === 0 ? (
+                <p className="text-sm text-gray-500">{animaux.length === 0
+                  ? 'Aucune fiche animal sur votre profil.'
+                  : 'Aucun de vos animaux n\'est d\'une espèce accueillie par cette pension.'}</p>
+              ) : (
+                <div className="border border-gray-200 rounded-xl divide-y divide-gray-100">
+                  {proposes.map(a => {
+                    const coche = animalIds.includes(a.id);
+                    return (
+                      <label key={a.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer">
+                        <input type="checkbox" checked={coche} onChange={() => basculer(a.id)} className="w-4 h-4" style={{ accentColor: couleur }} />
+                        {a.photo_url
+                          // eslint-disable-next-line @next/next/no-img-element
+                          ? <img src={a.photo_url} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+                          : <span className="w-9 h-9 rounded-lg bg-[#EEF5EA] flex-shrink-0" />}
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm font-semibold text-[#1F2A2E] truncate">{a.nom ?? 'Animal'}</span>
+                          <span className="block text-xs text-gray-500 truncate">{[a.espece, a.race].filter(Boolean).join(' · ')}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {nonProposes > 0 && proposes.length > 0 && (
+                <p className="text-xs text-gray-400 mt-1">{nonProposes} animal{nonProposes > 1 ? 'aux' : ''} non proposé{nonProposes > 1 ? 's' : ''} : espèce non accueillie par cette pension.</p>
               )}
               {choisis.length > 1 && <p className="text-xs mt-1" style={{ color: couleur }}>{choisis.length} animaux pour ce séjour.</p>}
+              <p className="text-xs text-gray-500 mt-1.5">Votre animal n&apos;est pas dans la liste ? Créez d&apos;abord sa fiche dans « Mes animaux », puis revenez réserver.</p>
             </div>
             {aQuestionner.map(a => (
               <div key={a.id}>
@@ -172,9 +212,6 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
                 </div>
               </div>
             )}
-            <a href="/mes-animaux/ajouter" target="_blank" rel="noopener" className="inline-block text-sm font-semibold" style={{ color: couleur }}>
-              + {animaux.length === 0 ? 'Créer la fiche de mon animal' : 'Ajouter un autre animal'}
-            </a>
             <div className="grid grid-cols-2 gap-2">
               <div><label className="block text-xs font-semibold text-gray-600 mb-1">Arrivée</label>
                 <input type="date" min={aujourdhui} value={arrivee} onChange={e => setArrivee(e.target.value)} className={champ} /></div>
@@ -196,7 +233,7 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
             </div>
             <p className="text-[11px] text-gray-400">La pension aura accès à la fiche de votre animal (santé, alimentation) pour préparer le séjour.</p>
             {erreur && <p className="text-sm text-[#B3261E]">{erreur}</p>}
-            <button onClick={envoyer} disabled={etat === 'envoi' || !animaux.length || !!complet} className="w-full py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: couleur }}>
+            <button onClick={envoyer} disabled={etat === 'envoi' || !choisis.length || !!complet} className="w-full py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: couleur }}>
               {etat === 'envoi' ? 'Envoi…' : 'Envoyer la demande de séjour'}
             </button>
             {onVisite && <button onClick={onVisite} className="w-full text-sm font-semibold" style={{ color: couleur }}>Demander plutôt une visite de la pension</button>}

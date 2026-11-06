@@ -17,6 +17,7 @@ import { PENSION_ESPECES, PENSION_ESPECE_FERME_LEGACY, pensionTarifEquin } from 
 import { gardeMotifLabel, ACCES_LOGEMENT, accesLogementLabel } from '@/lib/garde-labels';
 import EducationReservationModal from '@/components/education/EducationReservationModal';
 import ReservationSejourModal from '@/components/pension/ReservationSejourModal';
+import ReservationSejourInvite from '@/components/pension/ReservationSejourInvite';
 import AvisPro from '@/components/AvisPro';
 import ContactModal from '@/components/ContactModal';
 import { geocodeAddress, distanceKm } from '@/lib/geocoding';
@@ -217,6 +218,8 @@ function ProDetailContent() {
   const [showEducationReservation, setShowEducationReservation] = useState(false);
   // Pension : réservation d'un séjour (dates) au lieu d'un rendez-vous.
   const [showSejour, setShowSejour] = useState(false);
+  // Pension, visiteur sans compte : demande saisie puis reprise une fois connecté.
+  const [sejourInvite, setSejourInvite] = useState<'invite' | 'reprise' | null>(null);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   // Plages occupées + clinique vétérinaire (praticiens, salles) — miroir appli.
@@ -921,6 +924,14 @@ function ProDetailContent() {
     } catch { /* stockage indisponible : l'utilisateur reprendra sa sélection */ }
   }
 
+  // Pension : retour d'inscription / connexion → finaliser la demande de séjour.
+  useEffect(() => {
+    if (!user || !pro || pro.cat_pro !== 'pension') return;
+    if (new URLSearchParams(window.location.search).get('sejour') !== 'reprise') return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSejourInvite('reprise');
+  }, [user, pro]);
+
   useEffect(() => {
     if (!user || !pro || showRdv) return;
     if (new URLSearchParams(window.location.search).get('rdv') !== 'reprise') return;
@@ -1615,7 +1626,7 @@ function ProDetailContent() {
             Contacter
           </button>
           <button
-            onClick={() => { if (pro.cat_pro === 'education' || (pro.cat_pro === 'pension' && pro.profileTableId)) { if (!user) { router.push('/connexion'); return; } if (pro.cat_pro === 'pension') setShowSejour(true); else setShowEducationReservation(true); } else { openRdv(); } }}
+            onClick={() => { if (pro.cat_pro === 'education' || (pro.cat_pro === 'pension' && pro.profileTableId)) { if (!user) { if (pro.cat_pro === 'pension') { setSejourInvite('invite'); return; } router.push('/connexion'); return; } if (pro.cat_pro === 'pension') setShowSejour(true); else setShowEducationReservation(true); } else { openRdv(); } }}
             disabled={!pro.accept_new_clients}
             className="flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold text-white transition-colors disabled:opacity-50"
             style={{ backgroundColor: catColor, fontFamily: 'Galey, sans-serif' }}>
@@ -1924,6 +1935,11 @@ function ProDetailContent() {
       </div>
 
       {/* ── Modal RDV ── */}
+      {sejourInvite && pro.profileTableId && (
+        <ReservationSejourInvite mode={sejourInvite} pensionProfileId={pro.profileTableId} pensionNom={pro.name} couleur={catColor}
+          telephone={pro.phone || null} onClose={() => setSejourInvite(null)}
+          suite={`/services/pro/${uid}?profileId=${encodeURIComponent(pro.profileTableId)}&sejour=reprise`} />
+      )}
       {showSejour && pro.profileTableId && (
         <ReservationSejourModal pensionProfileId={pro.profileTableId} pensionNom={pro.name} couleur={catColor}
           onClose={() => setShowSejour(false)} onVisite={() => { setShowSejour(false); openRdv(); }} />
