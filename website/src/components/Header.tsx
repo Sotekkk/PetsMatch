@@ -158,7 +158,9 @@ const NAV_ELEVEUR_GROUPES: GroupeNav[] = [
   { label: 'Mon espace pro', href: '/' },
   { label: 'Communauté', href: '/communaute' },
   { label: 'Annonces', liens: NAV_PARTICULIER_GROUPES.find(g => g.label === 'Annonces')!.liens },
-  { label: 'Annuaire des professionnels', liens: NAV_PARTICULIER_GROUPES.find(g => g.label === 'Services')!.liens },
+  // Libellé court : la barre ne défile pas (menus déroulants), un libellé long
+  // la faisait déborder sur le logo. Le menu s'ouvre sur « Tout l'annuaire ».
+  { label: 'Annuaire', liens: NAV_PARTICULIER_GROUPES.find(g => g.label === 'Services')!.liens },
 ];
 
 const NAV_ASSOCIATION = [

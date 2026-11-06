@@ -3,11 +3,13 @@
 // Chaque élément n'apparaît que dans un bloc :
 //   • À faire   : tâches manuelles (taches_elevage) + tâches de protocole qui
 //                 ne sont pas des soins (plan_taches hors ACTES_CARNET) ;
-//   • Soins     : soins des protocoles (plan_taches, type_acte sanitaire),
-//                 tâches « Vaccin — … » posées par les rappels du carnet
-//                 (functions/sante.js) et rappels du carnet dans l'agenda
-//                 (agenda_events « Rappel vaccin — … », lib/rappel-agenda.ts) ;
-//                 le rappel d'agenda est masqué s'il double une tâche du jour ;
+//   • Soins     : rappels du CARNET (vaccinations / vermifuges / antiparasitaires,
+//                 date_rappel de la dernière ligne de chaque soin, soinRemplace :
+//                 même règle que functions/sante.js), soins des protocoles
+//                 (plan_taches, type_acte sanitaire) et tâches « Vaccin — … »
+//                 posées par les rappels (masquées quand le rappel du carnet
+//                 du même jour est déjà listé). Les événements d'agenda
+//                 « Rappel vaccin — … » (copies du carnet) ne sont pas repris ;
 //   • Agenda    : autres événements de l'agenda + RDV vétérinaires à venir
 //                 (taches_elevage.rdv_veto_cabinet) ;
 //   • Activité  : contrats à envoyer / à signer, demandes de récupération.
@@ -17,6 +19,7 @@ import { supabase } from '@/lib/supabase';
 import { ACTES_CARNET } from '@/lib/carnet-depuis-tache';
 import { sansAutresProfils } from '@/lib/cloisonnement-profils';
 import { loadMembres } from '@/components/agenda/AddTacheModal';
+import { soinRemplace } from '@/lib/soin-remplace';
 
 export const HORIZON_JOURS = 7;
 
@@ -34,6 +37,8 @@ export interface LigneTB {
   /** Pastille de catégorie (couleur de l'agenda). */
   couleur?: string;
   sousTitre?: string | null;
+  /** Rappel du carnet : jour|acte|animal (pour masquer la tâche du même rappel). */
+  cleSoin?: string;
   /** Coche directe possible (tâches simples uniquement). */
   cochable?: { table: 'taches_elevage'; ligne: TacheBrute } | { table: 'plan_taches'; ligne: RoutineBrute };
 }
@@ -50,7 +55,64 @@ export interface RoutineBrute {
   animal_nom?: string | null; assigned_to?: string | null;
 }
 interface EvenementBrut {
-  id: number | string; titre: string; date_debut: string; type?: string | null; animal_id?: unknown; lieu?: string | null;
+  id: number | string; titre: string; date_debut: string; type?: string | null; animal_id?: unknown;
+}
+
+// Tables du carnet avec date de rappel (functions/sante.js, TABLES).
+const CARNET: { table: string; acte: string; libelle: string; nom: string; cols: string }[] = [
+  { table: 'vaccinations', acte: 'vaccin', libelle: 'Rappel vaccin', nom: 'vaccin', cols: 'id,animal_id,date,date_rappel,vaccin,categorie' },
+  { table: 'vermifuges', acte: 'vermifuge', libelle: 'Rappel vermifuge', nom: 'produit', cols: 'id,animal_id,date,date_rappel,produit' },
+  { table: 'antiparasitaires', acte: 'antiparasitaire', libelle: 'Rappel antiparasitaire', nom: 'produit', cols: 'id,animal_id,date,date_rappel,produit' },
+];
+
+/** Animaux présents du profil actif — même calcul que le compteur « Animaux » de l'accueil. */
+async function animauxDuProfil(ownerUid: string, activeProfileId: string): Promise<string[]> {
+  let q = supabase.from('animaux_proprietes').select('animal_id').eq('uid_proprio', ownerUid).is('date_fin', null);
+  if (activeProfileId) {
+    const { data: check } = await supabase.from('animaux_proprietes').select('animal_id')
+      .eq('uid_proprio', ownerUid).not('profile_id_proprio', 'is', null).limit(1);
+    if ((check ?? []).length > 0) q = q.eq('profile_id_proprio', activeProfileId);
+  }
+  const { data } = await q.limit(2000);
+  return [...new Set((data ?? []).map((r: { animal_id: unknown }) => String(r.animal_id)).filter(Boolean))];
+}
+
+/** Rappels du carnet à faire (en retard ou dans l'horizon) pour ces animaux. */
+async function rappelsCarnet(ids: string[], end: string, today: string): Promise<LigneTB[]> {
+  if (!ids.length) return [];
+  const morceaux: string[][] = [];
+  for (let i = 0; i < ids.length; i += 100) morceaux.push(ids.slice(i, i + 100));
+  const noms = new Map<string, string>();
+  const lignes: LigneTB[] = [];
+  await Promise.all(morceaux.map(async m => {
+    const { data } = await supabase.from('animaux').select('id, nom').in('id', m);
+    (data ?? []).forEach((a: { id: string | number; nom?: string | null }) => noms.set(String(a.id), a.nom ?? ''));
+  }));
+  await Promise.all(CARNET.map(async c => {
+    const rows: Record<string, unknown>[] = [];
+    await Promise.all(morceaux.map(async m => {
+      const { data, error } = await supabase.from(c.table).select(c.cols).in('animal_id', m).limit(5000);
+      if (error) console.error(`tableau de bord, ${c.table}:`, error.message);
+      rows.push(...((data ?? []) as unknown as Record<string, unknown>[]));
+    }));
+    const parAnimal = new Map<string, Record<string, unknown>[]>();
+    rows.forEach(r => { const k = String(r.animal_id); parAnimal.set(k, [...(parAnimal.get(k) ?? []), r]); });
+    for (const r of rows) {
+      const rappel = String(r.date_rappel ?? '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(rappel) || rappel > end) continue;
+      // Soin déjà renouvelé (ligne plus récente du même produit) : plus rien à faire.
+      if (soinRemplace(c.table, r, parAnimal.get(String(r.animal_id)) ?? [])) continue;
+      const produit = String(r[c.nom] ?? '').trim();
+      const animalId = String(r.animal_id);
+      lignes.push({
+        cle: `c_${c.table}_${r.id}`, titre: produit ? `${c.libelle} — ${produit}` : c.libelle,
+        date: rappel, animal: noms.get(animalId) || null, fait: false, retard: rappel < today,
+        lien: `/mes-animaux/${animalId}?tab=sante&cat=${c.table}`, sousTitre: 'Carnet de santé',
+        cleSoin: `${rappel}|${c.acte}|${animalId}`,
+      });
+    }
+  }));
+  return lignes;
 }
 export interface ContratTB { id: string; titre: string; statut: string; animal_nom?: string | null; date: string }
 export interface RecuperationTB { id: string; animal_nom: string; date: string }
@@ -90,7 +152,6 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
   const today = ymd(auj);
   const fin = new Date(auj); fin.setDate(fin.getDate() + HORIZON_JOURS);
   const end = ymd(fin);
-  const debutRetard = new Date(auj); debutRetard.setDate(debutRetard.getDate() - 90);
 
   // Même règle que l'agenda de l'élevage : profile_id strict, sinon repli
   // uid_eleveur + profil_source (tâches automatiques sans profile_id).
@@ -112,6 +173,8 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
     ? supabase.from('taches_elevage').select(colsT).eq('assigne_profile_id', activeProfileId)
     : supabase.from('taches_elevage').select(colsT).eq('assigne_a', userUid);
 
+  const carnetP = animauxDuProfil(ownerUid, activeProfileId).then(ids => rappelsCarnet(ids, end, today)).catch(() => [] as LigneTB[]);
+
   const [rVenir, rRetard, rMoi, rMoiRetard, tVenir, tRetard, tMoi, tMoiRetard, ev, membres, contrats, recups] = await Promise.all([
     avecProfil(() => supabase.from('plan_taches').select(colsR).gte('date_prevue', today).lte('date_prevue', end).limit(300)),
     avecProfil(() => supabase.from('plan_taches').select(colsR).neq('statut', 'fait').lt('date_prevue', today).order('date_prevue', { ascending: false }).limit(200)),
@@ -123,9 +186,9 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
     tachesAMoi().gte('date', today).lte('date', end).limit(300),
     tachesAMoi().neq('statut', 'fait').lt('date', today).limit(200),
     (activeProfileId
-      ? supabase.from('agenda_events').select('id,titre,date_debut,type,animal_id,lieu').eq('pro_profile_id', activeProfileId)
-      : supabase.from('agenda_events').select('id,titre,date_debut,type,animal_id,lieu').eq('uid', userUid).or('pro_profile_id.is.null,pro_profile_id.eq.'))
-      .gte('date_debut', debutRetard.toISOString()).lte('date_debut', `${end}T23:59:59`).order('date_debut').limit(300),
+      ? supabase.from('agenda_events').select('id,titre,date_debut,type,animal_id').eq('pro_profile_id', activeProfileId)
+      : supabase.from('agenda_events').select('id,titre,date_debut,type,animal_id').eq('uid', userUid).or('pro_profile_id.is.null,pro_profile_id.eq.'))
+      .gte('date_debut', new Date(`${today}T00:00:00`).toISOString()).lte('date_debut', `${end}T23:59:59`).order('date_debut').limit(300),
     loadMembres(ownerUid, 'eleveur', userUid).catch(() => []),
     // Contrats de l'élevage (app/elevage/contrat/page.tsx) qui attendent une action.
     supabase.from('documents_animaux').select('id,titre,statut,animal_id,created_at')
@@ -167,7 +230,9 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
     }
   }
 
-  const soinsDuJour = new Set<string>();
+  const carnet = await carnetP;
+  soins.push(...carnet);
+  const soinsDuJour = new Set(carnet.map(l => l.cleSoin!));
   for (const t of taches) {
     const date = t.date.slice(0, 10);
     const fait = t.statut === 'fait';
@@ -187,7 +252,8 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
       responsable: resp, fait, retard: !fait && date < today, lien: lienJour(date),
     };
     if (acte) {
-      if (t.animal_id) soinsDuJour.add(`${date}|${acte}|${t.animal_id}`);
+      // Même rappel déjà listé depuis le carnet : la tâche du jour n'est pas répétée.
+      if (t.animal_id && soinsDuJour.has(`${date}|${acte}|${t.animal_id}`)) continue;
       soins.push({ ...ligne, sousTitre: 'Rappel du carnet' });
     } else {
       aFaire.push({ ...ligne, cochable: { table: 'taches_elevage', ligne: t } });
@@ -196,23 +262,14 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
 
   for (const e of evenements) {
     const date = jourLocal(e.date_debut);
-    const acte = e.type === 'medication' ? acteDe(e.titre, ACTE_RAPPEL) : '';
-    if (acte) {
-      // Rappel du carnet : retiré par le serveur au renouvellement du soin,
-      // donc toujours présent tant qu'il n'est pas fait (en retard si passé).
-      if (e.animal_id != null && soinsDuJour.has(`${date}|${acte}|${e.animal_id}`)) continue;
-      soins.push({
-        cle: `e_${e.id}`, titre: sansPictos(e.titre), date, fait: false, retard: date < today,
-        lien: lienJour(date), sousTitre: 'Rappel du carnet',
-      });
-      continue;
-    }
+    // Copie d'agenda d'un rappel du carnet : déjà listée depuis le carnet.
+    if (e.type === 'medication' && acteDe(e.titre, ACTE_RAPPEL)) continue;
     if (date < today) continue;
     const d = new Date(e.date_debut);
     const heure = d.getHours() || d.getMinutes() ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : null;
     agenda.push({
       cle: `e_${e.id}`, titre: sansPictos(e.titre), date, heure, fait: false, retard: false, lien: lienJour(date),
-      couleur: COULEUR_TYPE[e.type ?? ''] ?? COULEUR_TYPE.autre, sousTitre: e.lieu ?? null,
+      couleur: COULEUR_TYPE[e.type ?? ''] ?? COULEUR_TYPE.autre,
     });
   }
 
