@@ -11,7 +11,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contrat_education.dart';
 import 'package:PetsMatch/utils/animal_proprietaire.dart';
 import 'package:PetsMatch/utils/forfait_education.dart';
-import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage, CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/pages/pro/education_shared.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
@@ -24,7 +24,7 @@ import 'package:PetsMatch/widgets/animal/pro_animal_entete.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
 import 'package:PetsMatch/utils/document_pro.dart' show showDocumentProSheet;
 import 'package:PetsMatch/utils/document_prive.dart' show ouvrirDocument;
-import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv, choisirAnimalRdv;
+import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv;
 import 'package:PetsMatch/utils/fin_seance_education.dart' show devisDepuisRdv, factureDepuisRdv, finSeanceEducation, clientDuRdv;
 
 /// Fiche éducative (éducateur / comportementaliste) — vue métier unique de
@@ -93,6 +93,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   DateTime? _rdvSuivantDossier;
   /// RDV du dossier = bilan (cours de type « Bilan » du catalogue).
   bool _rdvEstBilan = false;
+  Map<String, dynamic>? _dossierDevis, _dossierFacture, _dossierContrat, _dossierConseil, _dossierOrphelin;
   /// Bilans chargés par le pro (documents_animaux « compte_rendu_pro » titrés « Bilan… »).
   List<Map<String, dynamic>> _bilansCharges = [];
   bool _loading = true;
@@ -102,6 +103,50 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     super.initState();
     _tab = TabController(length: 4, vsync: this, initialIndex: widget.initialTab.clamp(0, 3));
     _load();
+  }
+
+  /// États du dossier : devis et facture du RDV, contrat de l'animal, forfait conseillé
+  /// dans le bilan, compte rendu à rattacher (miroir site DossierEducationModal).
+  Future<void> _chargerEtatsDossier() async {
+    final rid = widget.rdvId!;
+    final moi = FirebaseAuth.instance.currentUser?.uid ?? '';
+    Map<String, dynamic>? devis, facture, contrat, conseil, orphelin;
+    try {
+      devis = await _supa.from('devis').select('id, statut, total_ttc').eq('rdv_id', rid)
+          .order('created_at', ascending: false).limit(1).maybeSingle();
+    } catch (_) {}
+    try {
+      facture = await _supa.from('factures').select('id, statut, total_ttc, numero_affichage').eq('source_rdv_id', rid)
+          .neq('statut', 'annulee').or('type_facture.is.null,type_facture.not.in.(acompte,avoir)')
+          .order('created_at', ascending: false).limit(1).maybeSingle();
+    } catch (_) {}
+    try {
+      // Un devis envoyé est aussi un document à signer : ce n'est pas le contrat.
+      contrat = await _supa.from('documents_animaux').select('id, token, statut')
+          .eq('uid_eleveur', moi).eq('type', 'contrat_education').eq('animal_id', widget.animalId)
+          .isFilter('metadata->>devis_id', null).not('statut', 'in', '(annule,refuse)')
+          .order('created_at', ascending: false).limit(1).maybeSingle();
+      contrat ??= await _supa.from('documents_animaux').select('id, token, statut')
+          .eq('uid_eleveur', moi).eq('type', 'contrat_education').contains('metadata', {'animaux_ids': [widget.animalId]})
+          .isFilter('metadata->>devis_id', null).not('statut', 'in', '(annule,refuse)')
+          .order('created_at', ascending: false).limit(1).maybeSingle();
+    } catch (_) {}
+    try {
+      final bilans = await _supa.from('education_progression').select('animal_id, bilan_forfait_conseille_id')
+          .eq('rdv_id', rid).not('bilan_forfait_conseille_id', 'is', null) as List;
+      if (bilans.isNotEmpty) {
+        final b = bilans.where((x) => x['animal_id']?.toString() == widget.animalId).firstOrNull ?? bilans.first;
+        conseil = await _supa.from('forfaits_education').select('nom').eq('id', b['bilan_forfait_conseille_id']).maybeSingle();
+      }
+    } catch (_) {}
+    try {
+      final dejaCr = await _supa.from('education_progression').select('id').eq('rdv_id', rid).eq('animal_id', widget.animalId).limit(1).maybeSingle();
+      if (dejaCr == null) {
+        orphelin = await _supa.from('education_progression').select('id, date_seance').eq('animal_id', widget.animalId)
+            .isFilter('rdv_id', null).order('created_at', ascending: false).limit(1).maybeSingle();
+      }
+    } catch (_) {}
+    _dossierDevis = devis; _dossierFacture = facture; _dossierContrat = contrat; _dossierConseil = conseil; _dossierOrphelin = orphelin;
   }
 
   Map<String, dynamic>? get _forfaitActif {
@@ -208,7 +253,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         }
       } catch (_) {}
       // Compte rendu d'une séance précise (depuis le tableau de bord / l'agenda).
-      if (widget.dossier && widget.rdvId != null && _rdvDossier == null) {
+      if (widget.dossier && widget.rdvId != null) {
         try {
           final r = await _supa.from('rdv').select().eq('id', widget.rdvId!).maybeSingle();
           var bilan = RegExp('bilan', caseSensitive: false).hasMatch(r?['motif']?.toString() ?? '');
@@ -217,6 +262,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             bilan = pe?['bilan_requis'] == true;
           }
           final prochain = r == null ? null : await prochainRdvDate(r);
+          await _chargerEtatsDossier();
           if (mounted) setState(() { _rdvDossier = r; _rdvEstBilan = bilan; _rdvSuivantDossier = prochain; });
         } catch (_) {}
       }
@@ -1176,13 +1222,15 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
 
   @override
   Widget build(BuildContext context) {
+    // Dossier de la séance : écran dédié, sans les onglets de la fiche.
+    final enDossier = widget.dossier && widget.rdvId != null && (_rdvDossier != null || _loading);
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
         backgroundColor: _kOrange,
         foregroundColor: Colors.white,
         elevation: 0,
-        title: Text('Suivi — ${widget.animalNom}',
+        title: Text(enDossier ? 'Dossier de la séance' : 'Suivi — ${widget.animalNom}',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
           IconButton(
@@ -1192,7 +1240,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                 MaterialPageRoute(builder: (_) => const EducationBibliothequePage())),
           ),
         ],
-        bottom: TabBar(
+        bottom: enDossier ? null : TabBar(
           controller: _tab,
           indicatorColor: Colors.white,
           labelColor: Colors.white,
@@ -1201,7 +1249,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           tabs: const [Tab(text: 'Synthèse'), Tab(text: 'Programme'), Tab(text: 'Séances'), Tab(text: 'Documents')],
         ),
       ),
-      floatingActionButton: AnimatedBuilder(
+      floatingActionButton: enDossier ? null : AnimatedBuilder(
         animation: _tab,
         builder: (_, __) {
           if (_tab.index == 3) return const SizedBox.shrink();
@@ -1227,100 +1275,174 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
       body: Column(children: [
         // En-tête commun : identité + propriétaire (appeler, message, urgence).
         ProAnimalEntete(animalId: widget.animalId, catPro: 'education', statut: _statutSuivi),
-        if (_rdvDossier != null) _barreDossier(_rdvDossier!),
-        Expanded(child: _loading
+        Expanded(child: _loading || (enDossier && _rdvDossier == null)
             ? const Center(child: CircularProgressIndicator(color: _kOrange))
+            : enDossier ? _vueDossier(_rdvDossier!)
             : TabBarView(controller: _tab, children: [_syntheseTab(), _programmeTab(), _seancesTab(), _documentsTab()])),
       ]),
     );
   }
 
-  /// Dossier de la séance : chaque action revient sur cet écran (rechargé).
-  Widget _barreDossier(Map<String, dynamic> rdv) {
+  /// Dossier de la séance (miroir site DossierEducationModal) : une ligne par sujet,
+  /// avec son état et ses actions ; chaque action revient ici, rechargé.
+  Widget _vueDossier(Map<String, dynamic> rdv) {
+    const vert = Color(0xFF2E7D32), ambre = Color(0xFFB45309), gris = Color(0xFF6B7280), teal = Color(0xFF0C5C6C);
     final d = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
     final crRdv = _seances.where((x) => x['rdv_id']?.toString() == rdv['id'].toString()).firstOrNull;
+    final detail = animauxDetailRdv(rdv);
     final proNom = _proNom;
+    final pid = rdv['pro_profile_id']?.toString() ?? '';
+    bool deCeProfil(Map<String, dynamic> x) => pid.isEmpty || x['pro_profile_id']?.toString() == pid;
+    final nbExercices = _exercices.where((e) => deCeProfil(e) && const ['a_faire', 'en_cours'].contains(e['statut'])).length;
+    final nbObjectifs = _objectifs.where((o) => deCeProfil(o) && o['statut'] != 'acquis').length;
+    String eur(dynamic n) => '${((n as num?) ?? 0).toStringAsFixed(2)} €';
+
     Future<void> puis(Future<void> Function() action) async { await action(); if (mounted) await _load(); }
-    Widget chip(IconData icone, String label, Future<void> Function() action) => Padding(
-          padding: const EdgeInsets.only(right: 6),
-          child: ActionChip(
-            avatar: Icon(icone, size: 16, color: const Color(0xFF0C5C6C)),
-            label: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
-            backgroundColor: Colors.white, side: const BorderSide(color: Color(0xFFE0E4E2)),
-            onPressed: () => puis(action),
-          ),
+    Widget bouton(String label, Future<void> Function() action) => OutlinedButton(
+          onPressed: () => puis(action),
+          style: OutlinedButton.styleFrom(foregroundColor: teal, side: const BorderSide(color: teal),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), minimumSize: const Size(0, 34),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+          child: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
         );
-    return Container(
-      width: double.infinity,
-      color: const Color(0xFFF1F6F7),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Séance${d == null ? '' : ' du ${_dateFr(rdv['date_heure']?.toString())} à ${d.hour.toString().padLeft(2, '0')}h${d.minute.toString().padLeft(2, '0')}'}'
-            '${animauxDetailRdv(rdv).isNotEmpty ? ' · ${widget.animalNom}' : ''}'
-            '${crRdv == null ? ' · compte rendu à rédiger' : crRdv['statut'] == 'brouillon' ? ' · compte rendu en brouillon' : ' · compte rendu rédigé'}'
-            '${_rdvSuivantDossier != null ? ' · prochain RDV : ${libelleProchainRdv(_rdvSuivantDossier).replaceFirst('Prévu le ', '').replaceAll('.', '')}' : ''}'
-            '${DateTime.tryParse(rdv['documents_envoyes_le']?.toString() ?? '') != null ? ' · documents envoyés le ${_dateFr(rdv['documents_envoyes_le'].toString())}' : ''}',
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+    Widget ligne(String titre, String etat, Color couleur, List<Widget> actions) => Container(
+          padding: const EdgeInsets.symmetric(vertical: 11),
+          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFEFF1EF)))),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1E2025))),
+            const SizedBox(height: 2),
+            Text(etat, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: couleur)),
+            if (actions.isNotEmpty) ...[
+              const SizedBox(height: 7),
+              Wrap(spacing: 6, runSpacing: 6, children: actions),
+            ],
+          ]),
+        );
+    Future<void> ficheComplete() => Navigator.push(context, MaterialPageRoute(builder: (_) => EducationSuiviPage(
+        animalId: widget.animalId, animalNom: widget.animalNom, ownerProfileId: widget.ownerProfileId,
+        ownerName: widget.ownerName, initialTab: 1)));
+
+    // Forfait décompté pour CE chien (séance à plusieurs : chacun le sien).
+    final marque = detail.where((a) => a['id']?.toString() == widget.animalId).firstOrNull?['forfait_souscrit_id']?.toString();
+    final uneMarque = detail.any((a) => a['forfait_souscrit_id'] != null);
+    final fidRdv = uneMarque ? marque : rdv['forfait_souscrit_id']?.toString();
+    final forfaitRdv = fidRdv == null ? null : _souscrits.where((f) => f['id']?.toString() == fidRdv).firstOrNull;
+    final fActif = _forfaitActif;
+
+    final devis = _dossierDevis;
+    final statutDevis = devis?['statut']?.toString();
+    final devisEnAttente = devis != null && statutDevis != 'accepte' && statutDevis != 'refuse';
+    final facture = _dossierFacture;
+    final contrat = _dossierContrat;
+    const statutsContrat = {
+      'brouillon': 'Brouillon', 'en_attente': 'En attente de signature', 'partiellement_signe': 'Signé en partie',
+      'signe': 'Signé', 'annule': 'Annulé', 'refuse': 'Refusé',
+    };
+    final conseil = _dossierConseil;
+    final envoyes = DateTime.tryParse(rdv['documents_envoyes_le']?.toString() ?? '')?.toLocal();
+    final orphelin = _dossierOrphelin;
+    final nomClient = widget.ownerName.isEmpty ? 'Client' : widget.ownerName;
+    Future<void> contratPetsMatch() => ouvrirContratEducation(context, rdv: rdv, animalId: widget.animalId,
+        clientNom: nomClient, proProfileId: rdv['pro_profile_id']?.toString(), forfait: fActif);
+
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 24), children: [
+      Text([widget.animalNom, if (widget.ownerName.isNotEmpty) widget.ownerName].join(' · ')
+          + (d == null ? '' : ' — ${DateFormat('EEEE d MMMM', 'fr_FR').format(d)} à ${DateFormat('HH:mm').format(d)}'),
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: gris)),
+      if ((rdv['motif']?.toString() ?? '').isNotEmpty)
+        Padding(padding: const EdgeInsets.only(top: 2),
+          child: Text('${rdv['motif']}${(rdv['lieu']?.toString() ?? '').isNotEmpty ? ' · ${rdv['lieu']}' : ''}',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: gris))),
+      if (detail.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        const Text('Plusieurs animaux : un compte rendu par animal.', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: gris)),
         const SizedBox(height: 6),
-        SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
-          // Plusieurs animaux (comme véto / ostéo) : un compte rendu par animal.
-          if (animauxDetailRdv(rdv).isNotEmpty)
-            chip(Icons.pets_outlined, 'Autre animal', () async {
-              final a = await choisirAnimalRdv(context, rdv, table: 'education_progression',
-                  color: const Color(0xFF0C5C6C), titre: 'Dossier de quel animal ?');
-              if (a == null || !mounted || a['id'] == widget.animalId) return;
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          for (final a in detail) ChoiceChip(
+            selected: a['id']?.toString() == widget.animalId,
+            selectedColor: teal,
+            backgroundColor: Colors.white,
+            showCheckmark: false,
+            side: const BorderSide(color: teal),
+            label: Text('${a['nom'] ?? 'Animal'}${(a['motif']?.toString() ?? '').isNotEmpty ? ' · ${a['motif']}' : ''}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                    color: a['id']?.toString() == widget.animalId ? Colors.white : teal)),
+            onSelected: (_) {
+              if (a['id']?.toString() == widget.animalId) return;
               Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => EducationSuiviPage(
                 animalId: a['id'].toString(), animalNom: a['nom']?.toString() ?? 'Animal',
                 ownerProfileId: widget.ownerProfileId, ownerName: widget.ownerName,
                 rdvId: widget.rdvId, dossier: true)));
-            }),
-          chip(Icons.edit_note_outlined,
-              '${crRdv == null ? 'Rédiger' : 'Modifier'} ${_rdvEstBilan ? 'le bilan' : 'le compte rendu'}', () async {
-            _tab.animateTo(2);
-            await _editSeance(existing: crRdv, rdv: rdv, bilan: _rdvEstBilan);
+            },
+          ),
+        ]),
+      ],
+      const SizedBox(height: 6),
+      ligne(_rdvEstBilan ? 'Bilan comportemental' : 'Compte rendu',
+          crRdv == null ? 'À rédiger' : crRdv['statut'] == 'brouillon' ? 'Brouillon' : crRdv['type'] == 'bilan' ? 'Bilan rédigé' : 'Rédigé',
+          crRdv == null ? gris : crRdv['statut'] == 'brouillon' ? ambre : vert, [
+        bouton(crRdv == null ? 'Rédiger' : 'Modifier / voir', () => _editSeance(existing: crRdv, rdv: rdv, bilan: _rdvEstBilan)),
+        bouton('Charger le mien', () => showDocumentProSheet(context, rdv: rdv, mode: 'compte_rendu', clientNom: widget.ownerName,
+            animalNom: widget.animalNom, proNom: proNom, catPro: 'education',
+            titre: _rdvEstBilan ? 'Bilan comportemental — ${widget.animalNom}' : null)),
+        if (crRdv == null && orphelin != null)
+          bouton('Rattacher celui du ${_dateFr(orphelin['date_seance']?.toString())}', () async {
+            await _supa.from('education_progression').update({'rdv_id': rdv['id']}).eq('id', orphelin['id']);
           }),
-          chip(Icons.fitness_center_outlined, 'Exercices', () async { _tab.animateTo(1); await _attribuerExercices(); }),
-          chip(Icons.track_changes_outlined, 'Programme', () async { _tab.animateTo(1); await _editObjectif(); }),
-          if (rdv['forfait_souscrit_id'] != null)
-            chip(Icons.confirmation_number_outlined, 'Séance décomptée (annuler)', () async {
-              await annulerDecompteForfait(rdv['id'].toString());
-              _rdvDossier = null;
-            })
-          else if (_forfaitActif != null)
-            chip(Icons.confirmation_number_outlined,
-                'Décompter du forfait (${libelleCompteurs(_forfaitActif!)})', () async {
-              final t = await typeSeanceRdv(rdv);
-              final sansForfait = await decompterSeanceForfait(_forfaitActif!, rdv['id'].toString(),
-                  animalId: widget.animalId, animalNom: widget.animalNom, ownerUid: _ownerUid, typeCours: t);
-              if (sansForfait.isNotEmpty) _snack('${sansForfait.join(', ')} : pas de forfait en cours, séance non décomptée (à facturer).');
-              _rdvDossier = null;
-            })
-          else
-            chip(Icons.confirmation_number_outlined, 'Attribuer un forfait', () async { _tab.animateTo(1); await _enregistrerForfait(); }),
-          chip(Icons.request_quote_outlined, 'Devis', () => devisDepuisRdv(context, rdv, animalNom: widget.animalNom)),
-          chip(Icons.event_available_outlined, _rdvSuivantDossier == null ? 'Programmer le prochain RDV' : 'Programmer un autre RDV', () async {
-            await Navigator.push(context, MaterialPageRoute(builder: (_) => ProAgendaPage(nouveauRdv: true,
-                nouveauRdvAnimalId: widget.animalId, nouveauRdvMotif: rdv['motif']?.toString())));
-            _rdvDossier = null;
+      ]),
+      ligne('Exercices', nbExercices > 0 ? '$nbExercices en cours' : 'Aucun en cours', nbExercices > 0 ? vert : gris,
+          [bouton('Attribuer', _attribuerExercices)]),
+      ligne('Programme de travail', nbObjectifs > 0 ? '$nbObjectifs objectif${nbObjectifs > 1 ? 's' : ''} en cours' : 'Aucun objectif',
+          nbObjectifs > 0 ? vert : gris, [bouton(nbObjectifs > 0 ? 'Voir / ajouter' : 'Définir', ficheComplete)]),
+      if (rdv['forfait_souscrit_id'] != null)
+        ligne('Forfait', 'Séance décomptée${forfaitRdv != null ? ' · ${forfaitRdv['nom_snapshot']} · ${libelleCompteurs(forfaitRdv)}' : ''}', vert,
+            [bouton('Annuler le décompte', () => annulerDecompteForfait(rdv['id'].toString()))])
+      else if (fActif != null)
+        ligne('Forfait', '${fActif['nom_snapshot']} · ${libelleCompteurs(fActif)}${estReparti(fActif) ? '' : ' · ${libelleTypeSeances(fActif['type_seances']?.toString())}'}', ambre, [
+          bouton('Décompter cette séance', () async {
+            final t = await typeSeanceRdv(rdv);
+            final sansForfait = await decompterSeanceForfait(fActif, rdv['id'].toString(),
+                animalId: widget.animalId, animalNom: widget.animalNom, ownerUid: _ownerUid, typeCours: t);
+            if (sansForfait.isNotEmpty) _snack('${sansForfait.join(', ')} : pas de forfait en cours, séance non décomptée (à facturer).');
           }),
-          if (!seanceCouverte(rdv))
-            chip(Icons.receipt_long_outlined, 'Facture', () => factureDepuisRdv(context, rdv, animalNom: widget.animalNom)),
-          chip(Icons.upload_file_outlined, _rdvEstBilan ? 'Charger mon bilan' : 'Charger mon compte rendu', () async {
-            await showDocumentProSheet(context, rdv: rdv, mode: 'compte_rendu', clientNom: widget.ownerName,
-                animalNom: widget.animalNom, proNom: proNom, catPro: 'education',
-                titre: _rdvEstBilan ? 'Bilan comportemental — ${widget.animalNom}' : null);
-          }),
-          // Contrat : généré par PetsMatch (signé en ligne) ou chargé.
-          chip(Icons.draw_outlined, 'Contrat PetsMatch', () => ouvrirContratEducation(context, rdv: rdv,
-              animalId: widget.animalId, clientNom: widget.ownerName.isEmpty ? 'Client' : widget.ownerName,
-              proProfileId: rdv['pro_profile_id']?.toString(), forfait: _forfaitActif)),
-          chip(Icons.upload_file_outlined, 'Charger mon contrat', () async {
-            await showDocumentProSheet(context, rdv: rdv, mode: 'contrat', clientNom: widget.ownerName,
-                animalNom: widget.animalNom, proNom: proNom, catPro: 'education');
-          }),
-        ])),
-        const SizedBox(height: 6),
-        SizedBox(width: double.infinity, child: ElevatedButton.icon(
+          bouton('Gérer', ficheComplete),
+        ])
+      else
+        ligne('Forfait', 'Aucun forfait en cours', gris, [bouton('Attribuer un forfait', _enregistrerForfait)]),
+      ligne('Devis',
+          devis == null ? (conseil != null ? 'À proposer : forfait ${conseil['nom']}' : 'Aucun')
+              : '${statutDevis == 'accepte' ? 'Accepté' : statutDevis == 'refuse' ? 'Refusé' : statutDevis == 'envoye' ? 'Envoyé' : 'À envoyer à la fin'} · ${eur(devis['total_ttc'])}',
+          devis == null ? gris : statutDevis == 'accepte' ? vert : ambre, [
+        if (devis == null) bouton('Créer', () => devisDepuisRdv(context, rdv, animalNom: widget.animalNom))
+        else if (statutDevis == 'brouillon' || statutDevis == 'envoye')
+          bouton('Modifier', () => Navigator.push(context, MaterialPageRoute(builder: (_) => DevisPage(modifierId: devis['id'].toString()))))
+        else bouton('Voir', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DevisPage()))),
+      ]),
+      if (facture == null && seanceCouverte(rdv))
+        ligne('Facture', 'Couverte par le forfait (payé d\u2019avance)', vert, const [])
+      else
+        ligne('Facture', facture == null ? 'À émettre' : '${facture['statut'] == 'payee' ? 'Payée' : 'Émise'} · ${eur(facture['total_ttc'])}',
+            facture == null ? gris : facture['statut'] == 'payee' ? vert : ambre, [
+          if (facture == null) bouton('Facturer', () => factureDepuisRdv(context, rdv, animalNom: widget.animalNom))
+          else bouton('Voir', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FacturationPage()))),
+        ]),
+      ligne('Prochain RDV', libelleProchainRdv(_rdvSuivantDossier), _rdvSuivantDossier != null ? vert : gris, [
+        bouton(_rdvSuivantDossier != null ? 'Programmer un autre' : 'Programmer', () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
+            ProAgendaPage(nouveauRdv: true, nouveauRdvAnimalId: widget.animalId, nouveauRdvMotif: rdv['motif']?.toString())))),
+      ]),
+      ligne('Contrat',
+          contrat != null ? 'Contrat PetsMatch · ${statutsContrat[contrat['statut']] ?? contrat['statut']}'
+              : devisEnAttente ? 'À générer une fois le devis accepté'
+              : statutDevis == 'accepte' ? 'Devis accepté : générez le contrat'
+              : 'Générer avec PetsMatch ou charger le vôtre (photo ou PDF)',
+          contrat == null ? (statutDevis == 'accepte' ? ambre : gris) : contrat['statut'] == 'signe' ? vert : ambre, [
+        if (contrat != null) bouton('Voir', contratPetsMatch)
+        else if (!devisEnAttente) bouton('Générer', contratPetsMatch),
+        bouton('Charger le mien', () => showDocumentProSheet(context, rdv: rdv, mode: 'contrat', clientNom: widget.ownerName,
+            animalNom: widget.animalNom, proNom: proNom, catPro: 'education')),
+      ]),
+      const SizedBox(height: 14),
+      SizedBox(width: double.infinity, child: ElevatedButton(
           onPressed: () => puis(() async {
             // Forfait en cours : même type de cours → séance décomptée ; sinon choix.
             var cible = rdv;
@@ -1356,12 +1478,16 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             await finSeanceEducation(context, cible, animalNom: widget.animalNom, clientNom: widget.ownerName);
             _rdvDossier = null;
           }),
-          icon: const Icon(Icons.send_outlined, size: 18),
-          label: const Text('Terminer et envoyer au client', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0C5C6C), foregroundColor: Colors.white),
-        )),
-      ]),
-    );
+          style: ElevatedButton.styleFrom(backgroundColor: teal, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14)),
+          child: const Text('Terminer et envoyer au client', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      )),
+      const SizedBox(height: 6),
+      Text(envoyes != null
+          ? 'Documents envoyés au client le ${_dateFr(rdv['documents_envoyes_le'].toString())} à ${DateFormat('HH:mm').format(envoyes)}'
+          : 'Compte rendu avec exercices et programme (PDF signé) et facture, en un seul e-mail.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: envoyes != null ? FontWeight.w600 : FontWeight.w400, color: envoyes != null ? vert : gris)),
+    ]);
   }
 
   /// Statut métier affiché dans l'en-tête.
