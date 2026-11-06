@@ -26,7 +26,16 @@ const kActesCarnet = ['vermifuge', 'antiparasitaire', 'vaccination', 'traitement
 /// Où mène une ligne : le jour de l'agenda, le planning du jour des
 /// protocoles (validation d'un soin avec inscription au carnet), ou l'onglet
 /// Santé de la fiche de l'animal (rappel du carnet).
-enum CibleTB { jour, planning, fiche, animaux }
+enum CibleTB { jour, planning, fiche, animaux, soin }
+
+/// Rappel du carnet : de quoi ouvrir le formulaire de soin prérempli (PorteeSoinSheet).
+class SoinTB {
+  final String typeActe; // vaccination | vermifuge | antiparasitaire
+  final String produit;
+  final List<String> animalIds;
+  final int? ecartJours; // intervalle habituel soin → rappel
+  const SoinTB(this.typeActe, this.produit, this.animalIds, this.ecartJours);
+}
 
 class LigneTB {
   final String cle;
@@ -48,10 +57,11 @@ class LigneTB {
   final String? cleSoin;
   /// Rappel du carnet : jour|soin|produit — même clé = une ligne, animaux regroupés.
   final String? groupe;
+  final SoinTB? soin;
   LigneTB({
     required this.cle, required this.titre, required this.date, this.heure, this.animal,
     this.responsable, this.fait = false, this.retard = false, this.couleur, this.sousTitre,
-    this.cible = CibleTB.jour, this.tableCochable, this.brut, this.animalId, this.cleSoin, this.groupe,
+    this.cible = CibleTB.jour, this.tableCochable, this.brut, this.animalId, this.cleSoin, this.groupe, this.soin,
   });
 }
 
@@ -315,13 +325,16 @@ List<LigneTB> _grouperRappels(List<LigneTB> lignes) {
       if (g.length == 1) g.first
       else LigneTB(cle: g.map((x) => x.cle).join('+'), titre: g.first.titre, date: g.first.date,
           animal: g.map((x) => x.animal).whereType<String>().join(', '), retard: g.first.retard,
-          sousTitre: g.first.sousTitre, cible: CibleTB.animaux, groupe: g.first.groupe),
+          sousTitre: g.first.sousTitre, cible: CibleTB.soin, groupe: g.first.groupe,
+          soin: g.first.soin == null ? null
+              : SoinTB(g.first.soin!.typeActe, g.first.soin!.produit, [for (final x in g) ...?x.soin?.animalIds], g.first.soin!.ecartJours)),
   ];
 }
 
 /// Rappels du carnet à faire (en retard ou dans l'horizon) pour les animaux
 /// présents du profil — mêmes animaux que le compteur « Animaux » de l'accueil.
-Future<List<LigneTB>> _rappelsCarnet(String ownerUid, String pid, DateTime aujourdhui, String end) async {
+/// Animaux présents du profil actif — même calcul que le compteur « Animaux » de l'accueil.
+Future<List<String>> animauxDuProfil(String ownerUid, String pid) async {
   final supa = Supabase.instance.client;
   var q = supa.from('animaux_proprietes').select('animal_id').eq('uid_proprio', ownerUid).isFilter('date_fin', null);
   if (pid.isNotEmpty) {
@@ -329,7 +342,30 @@ Future<List<LigneTB>> _rappelsCarnet(String ownerUid, String pid, DateTime aujou
         .eq('uid_proprio', ownerUid).not('profile_id_proprio', 'is', null).limit(1);
     if ((check as List).isNotEmpty) q = q.eq('profile_id_proprio', pid);
   }
-  final ids = {for (final r in await q.limit(2000) as List) if (r['animal_id'] != null) r['animal_id'].toString()}.toList();
+  return {for (final r in await q.limit(2000) as List) if (r['animal_id'] != null) r['animal_id'].toString()}.toList();
+}
+
+/// Articles d'inventaire du profil sous leur seuil d'alerte ou en rupture
+/// (même règle que la page Inventaire et la notification « Stock bas »).
+Future<int> stockBas({required String ownerUid, required String pid}) async {
+  final supa = Supabase.instance.client;
+  final rows = pid.isNotEmpty
+      ? await supa.from('inventaire_items').select('quantite, quantite_alerte, alerte_active').eq('eleveur_profile_id', pid)
+      : await supa.from('inventaire_items').select('quantite, quantite_alerte, alerte_active').eq('uid_eleveur', ownerUid);
+  var n = 0;
+  for (final i in rows as List) {
+    final q = (i['quantite'] as num?)?.toDouble() ?? 0;
+    final seuil = (i['quantite_alerte'] as num?)?.toDouble();
+    if (q <= 0 || (i['alerte_active'] == true && seuil != null && q <= seuil)) n++;
+  }
+  return n;
+}
+
+const _typeSoin = {'vaccinations': 'vaccination', 'vermifuges': 'vermifuge', 'antiparasitaires': 'antiparasitaire'};
+
+Future<List<LigneTB>> _rappelsCarnet(String ownerUid, String pid, DateTime aujourdhui, String end) async {
+  final supa = Supabase.instance.client;
+  final ids = await animauxDuProfil(ownerUid, pid);
   if (ids.isEmpty) return [];
   final morceaux = [for (var i = 0; i < ids.length; i += 100) ids.sublist(i, i + 100 > ids.length ? ids.length : i + 100)];
   final noms = <String, String>{};
@@ -358,9 +394,13 @@ Future<List<LigneTB>> _rappelsCarnet(String ownerUid, String pid, DateTime aujou
       final date = _jour(rappel);
       final produit = (r[c.nom] ?? '').toString().trim();
       final animalId = r['animal_id'].toString();
+      // Intervalle habituel (soin → rappel) : proposé pour le prochain rappel.
+      final dSoin = DateTime.tryParse((r['date']?.toString() ?? '').length >= 10 ? r['date'].toString().substring(0, 10) : '');
+      final ecart = dSoin == null ? null : date.difference(DateTime(dSoin.year, dSoin.month, dSoin.day)).inDays;
       lignes.add(LigneTB(cle: 'c_${c.table}_${r['id']}', titre: produit.isEmpty ? c.libelle : '${c.libelle} — $produit',
           date: date, animal: (noms[animalId] ?? '').isEmpty ? null : noms[animalId],
-          retard: date.isBefore(aujourdhui), sousTitre: 'Carnet de santé', cible: CibleTB.fiche,
+          retard: date.isBefore(aujourdhui), sousTitre: 'Carnet de santé', cible: CibleTB.soin,
+          soin: SoinTB(_typeSoin[c.table]!, produit, [animalId], ecart != null && ecart > 0 ? ecart : null),
           animalId: animalId, cleSoin: '${_ymd(date)}|${c.acte}|$animalId',
           // Mots du produit triés : « Effitix Virbac » = « Virbac Effitix ».
           groupe: '${_ymd(date)}|${c.table}|${(produit.toLowerCase().split(RegExp(r'\s+'))..removeWhere((m) => m.isEmpty)..sort()).join(' ')}'));

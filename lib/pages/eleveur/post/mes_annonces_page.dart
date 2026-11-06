@@ -774,6 +774,14 @@ class _AnnonceCardState extends State<_AnnonceCard> {
 
 // ─── Stats bottom sheet ──────────────────────────────────────────────────────
 
+/// Fenêtre « Statistiques » d'une annonce, ouverte depuis l'accueil éleveur.
+Future<void> showAnnonceStats(BuildContext context, String annonceId, String titre) => showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AnnonceStatsSheet(annonceId: annonceId, titre: titre),
+    );
+
 class _AnnonceStatsSheet extends StatefulWidget {
   final String annonceId;
   final String titre;

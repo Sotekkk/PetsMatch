@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { erreursDatesSante } from '@/lib/controle-dates';
 import { useAuth } from '@/lib/auth-context';
 import { aujourdhuiLocal, creerRdvVeto } from '@/lib/rdv-veto';
+import { poserRappelAgenda } from '@/lib/rappel-agenda';
 
 export interface SoinAnimal {
   id: string;
@@ -27,20 +28,30 @@ const ACTE_TYPES = [
   { value: 'autre',           label: 'Autre',               emoji: '📋' },
 ];
 
+// Soin pour vaccin / vermifuge / antiparasitaire : prochain rappel (carnet de
+// chaque animal + un seul rappel d'agenda pour le groupe, lib/rappel-agenda.ts).
+const TABLE_RAPPEL: Record<string, string> = { vaccination: 'vaccinations', vermifuge: 'vermifuges', antiparasitaire: 'antiparasitaires' };
+
 // Modal « Soin portée » — un même acte de santé appliqué à plusieurs animaux
 // d'une portée. `uid` / `activeProfileId` = l'élevage propriétaire (éleveur ou
-// employeur pour un employé).
-export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose }: {
+// employeur pour un employé). Ouvert aussi depuis l'accueil éleveur (rappel du
+// carnet) : `initial` préremplit le soin, le produit, le prochain rappel et les
+// animaux concernés (les autres animaux de l'élevage restent proposés).
+export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose, onSaved, titre, initial }: {
   animals: SoinAnimal[];
   uid: string;
   activeProfileId: string | null;
   onClose: () => void;
+  onSaved?: () => void;
+  titre?: string;
+  initial?: { typeActe?: string; description?: string; dateRappel?: string; selection?: string[] };
 }) {
   const { user } = useAuth();
-  const [typeActe, setTypeActe]       = useState('vermifuge');
+  const [typeActe, setTypeActe]       = useState(initial?.typeActe ?? 'vermifuge');
+  const [dateRappel, setDateRappel]   = useState(initial?.dateRappel ?? '');
   const [heure, setHeure]             = useState('');
   const [date, setDate]               = useState(new Date().toISOString().slice(0, 10));
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(initial?.description ?? '');
   const [intervenant, setIntervenant] = useState('');
   const [ordonnance, setOrdonnance]   = useState('');
   const [dosage, setDosage]           = useState('');
@@ -48,7 +59,7 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
   const [saving, setSaving]           = useState(false);
   const [saved, setSaved]             = useState(false);
   const [error, setError]             = useState('');
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(animals.map(a => a.id)));
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(initial?.selection ?? animals.map(a => a.id)));
 
   const toggleAnimal = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -72,6 +83,8 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
     if (!description.trim()) { setError(typeActe === 'visite' ? 'Le motif est obligatoire.' : 'Le produit / la description est obligatoire.'); return; }
     if (typeActe === 'visite' && !intervenant.trim()) { setError('Indiquez le nom du cabinet vétérinaire.'); return; }
     if (selectedIds.size === 0) { setError('Sélectionnez au moins un animal.'); return; }
+    const avecRappel = !!TABLE_RAPPEL[typeActe] && /^\d{4}-\d{2}-\d{2}$/.test(dateRappel);
+    if (avecRappel && dateRappel <= date) { setError('Le prochain rappel doit être après la date du soin.'); return; }
     const erreurs = erreursDatesSante({ date }, [{ key: 'date', label: 'Date', required: true }]);
     if (erreurs.length) { setError(erreurs.join(' ')); return; }
     setSaving(true); setError('');
@@ -87,6 +100,7 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
           await supabase.from('vermifuges').insert({
             id: entryId, animal_id: animal.id,
             produit: desc, date: dateIso, source: 'owner',
+            ...(avecRappel ? { date_rappel: dateRappel } : {}),
             ...(dosage.trim() ? { dosage: dosage.trim() } : {}),
             ...(n ? { notes: n } : {}),
           });
@@ -94,11 +108,13 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
           await supabase.from('vaccinations').insert({
             id: entryId, animal_id: animal.id,
             vaccin: desc, veterinaire: interv, date: dateIso, source: 'owner',
+            ...(avecRappel ? { date_rappel: dateRappel } : {}),
           });
         } else if (typeActe === 'antiparasitaire') {
           await supabase.from('antiparasitaires').insert({
             id: entryId, animal_id: animal.id,
             produit: desc, type: 'autre', date: dateIso, source: 'owner',
+            ...(avecRappel ? { date_rappel: dateRappel } : {}),
             ...(dosage.trim() ? { frequence: dosage.trim() } : {}),
             ...(n ? { notes: n } : {}),
           });
@@ -138,10 +154,16 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
         success++;
       } catch { /* continue */ }
     }
+    // Prochain rappel : un seul événement d'agenda pour les animaux traités ensemble.
+    const traites = animals.filter(a => selectedIds.has(a.id)).map(a => a.id);
+    if (success > 0 && avecRappel && traites.length) {
+      await poserRappelAgenda({ table: TABLE_RAPPEL[typeActe], uid, profilActif: activeProfileId,
+        animalId: traites[0], autres: traites.slice(1), nom: desc, dateRappel });
+    }
     setSaving(false);
-    if (success > 0) { setSaved(true); setTimeout(onClose, 1200); }
+    if (success > 0) { onSaved?.(); setSaved(true); setTimeout(onClose, 1200); }
     else setError('Erreur lors de l\'enregistrement. Vérifiez votre connexion.');
-  }, [animals, uid, user?.uid, activeProfileId, typeActe, date, heure, description, dosage, notes, intervenant, ordonnance, onClose, selectedIds]);
+  }, [animals, uid, user?.uid, activeProfileId, typeActe, date, heure, description, dosage, notes, intervenant, ordonnance, onClose, onSaved, selectedIds, dateRappel]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
@@ -150,7 +172,7 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-xl bg-[#FFF8E1] flex items-center justify-center text-xl">💊</div>
             <div className="flex-1">
-              <p className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>Soin pour la portée</p>
+              <p className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>{titre ?? 'Soin pour la portée'}</p>
               <p className="text-xs text-[#6E9E57]">{selectedIds.size}/{animals.length} {animals.length > 1 ? 'animaux' : 'animal'} sélectionné{selectedIds.size > 1 ? 's' : ''}</p>
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
@@ -211,6 +233,16 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
             placeholder={typeActe === 'rdv_veto' || typeActe === 'visite' ? 'Ex : vaccins, contrôle de portée' : 'Ex : Milbemax® 1 comprimé par chiot de 0,5 kg à 10 kg'}
             className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 resize-none focus:outline-none focus:border-[#0C5C6C]"
             style={{ fontFamily: 'Galey, sans-serif' }} />
+
+          {!!TABLE_RAPPEL[typeActe] && (
+            <>
+              <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">Prochain rappel (optionnel)</p>
+              <input type="date" value={dateRappel} onChange={e => setDateRappel(e.target.value)} min={date || undefined} aria-label="Prochain rappel"
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-1 focus:outline-none focus:border-[#0C5C6C]"
+                style={{ fontFamily: 'Galey, sans-serif' }} />
+              <p className="text-[11px] text-gray-400 mb-4">Inscrit au carnet de chaque animal, avec un rappel dans l&apos;agenda.</p>
+            </>
+          )}
 
           {(typeActe === 'vermifuge' || typeActe === 'antiparasitaire') && (
             <>

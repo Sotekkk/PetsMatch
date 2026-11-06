@@ -40,6 +40,8 @@ export interface LigneTB {
   cleSoin?: string;
   /** Rappel du carnet : jour|soin|produit — même clé = une seule ligne, animaux regroupés. */
   groupe?: string;
+  /** Rappel du carnet : de quoi ouvrir le formulaire de soin prérempli (PorteeSoinModal). */
+  soin?: { typeActe: string; produit: string; animalIds: string[]; ecartJours: number | null };
   /** Coche directe possible (tâches simples uniquement). */
   cochable?: { table: 'taches_elevage'; ligne: TacheBrute } | { table: 'plan_taches'; ligne: RoutineBrute };
 }
@@ -65,9 +67,11 @@ const CARNET: { table: string; acte: string; libelle: string; nom: string; cols:
   { table: 'vermifuges', acte: 'vermifuge', libelle: 'Rappel vermifuge', nom: 'produit', cols: 'id,animal_id,date,date_rappel,produit' },
   { table: 'antiparasitaires', acte: 'antiparasitaire', libelle: 'Rappel antiparasitaire', nom: 'produit', cols: 'id,animal_id,date,date_rappel,produit' },
 ];
+// Type de soin du formulaire PorteeSoinModal pour chaque table du carnet.
+const TYPE_SOIN: Record<string, string> = { vaccinations: 'vaccination', vermifuges: 'vermifuge', antiparasitaires: 'antiparasitaire' };
 
 /** Animaux présents du profil actif — même calcul que le compteur « Animaux » de l'accueil. */
-async function animauxDuProfil(ownerUid: string, activeProfileId: string): Promise<string[]> {
+export async function animauxDuProfil(ownerUid: string, activeProfileId: string): Promise<string[]> {
   let q = supabase.from('animaux_proprietes').select('animal_id').eq('uid_proprio', ownerUid).is('date_fin', null);
   if (activeProfileId) {
     const { data: check } = await supabase.from('animaux_proprietes').select('animal_id')
@@ -112,6 +116,7 @@ function grouperRappels(lignes: LigneTB[]): LigneTB[] {
     ...g[0],
     cle: g.map(x => x.cle).join('+'),
     animal: g.map(x => x.animal).filter(Boolean).join(', '),
+    soin: g[0].soin ? { ...g[0].soin, animalIds: g.flatMap(x => x.soin?.animalIds ?? []) } : undefined,
     // Plusieurs animaux : la liste des animaux (la fiche de chacun s'ouvre de là).
     lien: '/mes-animaux',
   });
@@ -144,11 +149,16 @@ async function rappelsCarnet(ids: string[], end: string, today: string): Promise
       if (rappelRemplace(c.table, r, parAnimal.get(String(r.animal_id)) ?? [])) continue;
       const produit = String(r[c.nom] ?? '').trim();
       const animalId = String(r.animal_id);
+      // Intervalle habituel (soin → rappel) : proposé pour le prochain rappel.
+      const dSoin = String(r.date ?? '').slice(0, 10);
+      const ecart = /^\d{4}-\d{2}-\d{2}$/.test(dSoin)
+        ? Math.round((Date.parse(`${rappel}T12:00:00`) - Date.parse(`${dSoin}T12:00:00`)) / 86400000) : null;
       lignes.push({
         cle: `c_${c.table}_${r.id}`, titre: produit ? `${c.libelle} — ${produit}` : c.libelle,
         date: rappel, animal: noms.get(animalId) || null, fait: false, retard: rappel < today,
         lien: `/mes-animaux/${animalId}?tab=sante&cat=${c.table}`, sousTitre: 'Carnet de santé',
         cleSoin: `${rappel}|${c.acte}|${animalId}`,
+        soin: { typeActe: TYPE_SOIN[c.table], produit, animalIds: [animalId], ecartJours: ecart && ecart > 0 ? ecart : null },
         // Mots du produit triés : « Effitix Virbac » = « Virbac Effitix ».
         groupe: `${rappel}|${c.table}|${produit.toLowerCase().split(/\s+/).filter(Boolean).sort().join(' ')}`,
       });

@@ -6,6 +6,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/utils/rdv_veto.dart';
 import 'package:PetsMatch/widgets/agenda/rdv_veto_sheets.dart' show ChoixDateHeureRdv;
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show poserRappelAgendaSoin;
 
 // Types d'actes (mirror de registre_sanitaire.dart)
 const _kActes = [
@@ -22,20 +23,33 @@ const _kActes = [
 
 typedef _Acte = ({String value, String label, IconData icon, Color color});
 
+/// Soins avec prochain rappel (carnet de chaque animal + un rappel d'agenda pour le groupe).
+const _kLibelleRappel = {'vaccination': 'Rappel vaccin', 'vermifuge': 'Rappel vermifuge', 'antiparasitaire': 'Rappel antiparasitaire'};
+
 class PorteeSoinSheet extends StatefulWidget {
   final List<Map<String, dynamic>> animals;
   /// Employé : propriétaire de l'élevage (RDV vétérinaire inscrit à son agenda).
   final String? eleveurUid;
 
-  const PorteeSoinSheet({super.key, required this.animals, this.eleveurUid});
+  /// Ouvert depuis l'accueil éleveur (rappel du carnet) : titre, soin, produit,
+  /// prochain rappel et animaux concernés préremplis ; les autres restent proposés.
+  final String? titre;
+  final String? acteInitial;
+  final String? produitInitial;
+  final DateTime? rappelInitial;
+  final Set<String>? selectionInitiale;
+  const PorteeSoinSheet({super.key, required this.animals, this.eleveurUid,
+      this.titre, this.acteInitial, this.produitInitial, this.rappelInitial, this.selectionInitiale});
 
   /// Ouvre le bottom sheet et retourne true si des soins ont été enregistrés.
-  static Future<bool> show(BuildContext context, List<Map<String, dynamic>> animals, {String? eleveurUid}) async {
+  static Future<bool> show(BuildContext context, List<Map<String, dynamic>> animals, {String? eleveurUid,
+      String? titre, String? acteInitial, String? produitInitial, DateTime? rappelInitial, Set<String>? selectionInitiale}) async {
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => PorteeSoinSheet(animals: animals, eleveurUid: eleveurUid),
+      builder: (_) => PorteeSoinSheet(animals: animals, eleveurUid: eleveurUid, titre: titre, acteInitial: acteInitial,
+          produitInitial: produitInitial, rappelInitial: rappelInitial, selectionInitiale: selectionInitiale),
     );
     return result ?? false;
   }
@@ -50,6 +64,8 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
 
   _Acte _selectedActe = _kActes.first; // vermifuge par défaut
   DateTime _date = DateTime.now();
+  DateTime? _dateRappel;
+  bool get _avecRappel => _kLibelleRappel.containsKey(_selectedActe.value);
   // RDV vétérinaire à venir : date et heure dans le futur.
   DateTime? _dateRdv;
   TimeOfDay? _heureRdv;
@@ -67,7 +83,24 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedIds = widget.animals.map((a) => a['id']?.toString() ?? '').toSet()..remove('');
+    _selectedIds = widget.selectionInitiale ?? (widget.animals.map((a) => a['id']?.toString() ?? '').toSet()..remove(''));
+    if (widget.acteInitial != null) {
+      _selectedActe = _kActes.firstWhere((a) => a.value == widget.acteInitial, orElse: () => _kActes.first);
+    }
+    if (widget.produitInitial != null) _descriptionCtrl.text = widget.produitInitial!;
+    _dateRappel = widget.rappelInitial;
+  }
+
+  Future<void> _pickRappel() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dateRappel ?? _date.add(const Duration(days: 30)),
+      firstDate: _date.add(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 3 * 365)),
+      locale: const Locale('fr'),
+      builder: (ctx, child) => Theme(data: ThemeData.light().copyWith(colorScheme: const ColorScheme.light(primary: _teal)), child: child!),
+    );
+    if (picked != null) setState(() => _dateRappel = picked);
   }
 
   @override
@@ -129,6 +162,12 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
       setState(() => _error = 'Indiquez le nom du cabinet vétérinaire.');
       return;
     }
+    final rappel = _avecRappel ? _dateRappel : null;
+    if (rappel != null && !DateTime(rappel.year, rappel.month, rappel.day).isAfter(DateTime(_date.year, _date.month, _date.day))) {
+      setState(() => _error = 'Le prochain rappel doit être après la date du soin.');
+      return;
+    }
+    final rappelTxt = rappel == null ? null : DateFormat('yyyy-MM-dd').format(rappel);
     setState(() { _saving = true; _error = null; });
     final supa        = Supabase.instance.client;
     final type        = _selectedActe.value;
@@ -149,6 +188,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
             await supa.from('vermifuges').insert({
               'id': entryId, 'animal_id': id,
               'produit': desc, 'date': dateIso, 'source': 'owner',
+              if (rappelTxt != null) 'date_rappel': rappelTxt,
               if (dosage.isNotEmpty) 'dosage': dosage,
               if (notes.isNotEmpty) 'notes': notes,
             });
@@ -156,11 +196,13 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
             await supa.from('vaccinations').insert({
               'id': entryId, 'animal_id': id,
               'vaccin': desc, 'veterinaire': interv, 'date': dateIso, 'source': 'owner',
+              if (rappelTxt != null) 'date_rappel': rappelTxt,
             });
           case 'antiparasitaire':
             await supa.from('antiparasitaires').insert({
               'id': entryId, 'animal_id': id,
               'produit': desc, 'type': 'autre', 'date': dateIso, 'source': 'owner',
+              if (rappelTxt != null) 'date_rappel': rappelTxt,
               if (dosage.isNotEmpty) 'frequence': dosage,
               if (notes.isNotEmpty) 'notes': notes,
             });
@@ -193,6 +235,12 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
         );
         success++;
       } catch (_) {}
+    }
+    // Prochain rappel : un seul événement d'agenda pour les animaux traités ensemble.
+    final traites = [for (final a in widget.animals) if (_selectedIds.contains(a['id']?.toString())) a['id'].toString()];
+    if (success > 0 && rappel != null && traites.isNotEmpty) {
+      await poserRappelAgendaSoin(animalId: traites.first, autres: traites.skip(1).toList(), dateRappel: rappel,
+          titre: '${_kLibelleRappel[type]} — $desc');
     }
     if (mounted) {
       setState(() => _saving = false);
@@ -233,7 +281,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
             const SizedBox(width: 10),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Soin pour la portée', style: TextStyle(fontFamily: 'Galey',
+                Text(widget.titre ?? 'Soin pour la portée', style: const TextStyle(fontFamily: 'Galey',
                     fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
                 Text('${_selectedIds.length}/${widget.animals.length} ${widget.animals.length > 1 ? 'animaux' : 'animal'} sélectionné${_selectedIds.length > 1 ? 's' : ''}',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6E9E57))),
@@ -367,6 +415,37 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
+
+          // Prochain rappel (vaccin, vermifuge, antiparasitaire).
+          if (_avecRappel) ...[
+            const SizedBox(height: 14),
+            const Text('Prochain rappel (optionnel)', style: TextStyle(fontFamily: 'Galey',
+                fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0C5C6C))),
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: _pickRappel,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(color: const Color(0xFFF8F8F6), borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _teal.withValues(alpha: 0.2))),
+                child: Row(children: [
+                  const Icon(Icons.event_repeat_outlined, size: 16, color: _teal),
+                  const SizedBox(width: 8),
+                  Text(_dateRappel == null ? 'Aucun' : DateFormat('dd/MM/yyyy').format(_dateRappel!), style: const TextStyle(
+                      fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
+                  const Spacer(),
+                  if (_dateRappel != null)
+                    GestureDetector(onTap: () => setState(() => _dateRappel = null),
+                        child: const Icon(Icons.close, size: 18, color: Color(0xFF9E9E9E)))
+                  else
+                    const Icon(Icons.chevron_right, size: 18, color: Color(0xFF9E9E9E)),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text('Inscrit au carnet de chaque animal, avec un rappel dans l\'agenda.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+          ],
 
           // Dosage (visible pour vermifuge et antiparasitaire)
           if (_selectedActe.value == 'vermifuge' || _selectedActe.value == 'antiparasitaire') ...[

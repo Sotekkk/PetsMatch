@@ -9924,6 +9924,12 @@ Future<void> _scheduleRappelAgenda({
   } catch (_) {}
 }
 
+/// Accès public (formulaire de soin à plusieurs animaux, accueil éleveur) :
+/// même rappel d'agenda que le carnet, un seul pour les animaux traités ensemble.
+Future<void> poserRappelAgendaSoin({required String animalId, required DateTime dateRappel,
+    required String titre, List<String> autres = const []}) =>
+    _scheduleRappelAgenda(animalId: animalId, dateRappel: dateRappel, titre: titre, autres: autres);
+
 // ─── Durée de gestation par espèce ───────────────────────────────────────────
 
 int _gestationJours(String espece) {

@@ -25,6 +25,9 @@ import 'package:PetsMatch/pages/eleveur/animaux/recuperations_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/portee_soin_sheet.dart';
+import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
+import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 
 const _vert = Color(0xFF6E9E57);
 const _rouge = Color(0xFFB42318);
@@ -82,17 +85,89 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
     return (row?['uid'] as String?) ?? uid;
   }
 
+  /// Articles d'inventaire sous leur seuil (à la place du compteur Agenda, déjà dans la barre du bas).
+  int? _stockBas;
+  /// Annonces en ligne : vues, contacts, favoris (cumulés) et les 3 plus vues.
+  ({int vues, int contacts, int favoris, List<Map<String, dynamic>> top})? _statsAnnonces;
+  final _cleSoins = GlobalKey();
+
   Future<void> _charger() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final pid = User_Info.activeProfileId;
     try {
-      final d = await chargerTableauBord(userUid: uid, ownerUid: await _ownerUid(uid), activeProfileId: pid);
+      final owner = await _ownerUid(uid);
+      final res = await Future.wait<dynamic>([
+        chargerTableauBord(userUid: uid, ownerUid: owner, activeProfileId: pid),
+        stockBas(ownerUid: owner, pid: pid).catchError((_) => -1),
+        _chargerStatsAnnonces(owner, pid).catchError((_) => null),
+      ]);
       if (!mounted || pid != User_Info.activeProfileId) return;
-      setState(() { _donnees = d; _erreur = false; _profilCharge = pid; });
+      setState(() {
+        _donnees = res[0] as DonneesTB; _erreur = false; _profilCharge = pid;
+        _stockBas = (res[1] as int) < 0 ? null : res[1] as int;
+        _statsAnnonces = res[2] as ({int vues, int contacts, int favoris, List<Map<String, dynamic>> top})?;
+      });
     } catch (_) {
       if (mounted) setState(() => _erreur = true);
     }
+  }
+
+  /// Mêmes annonces que le compteur « Annonces » de l'accueil (profil actif) ;
+  /// favoris = table likes, comme la fenêtre Statistiques.
+  Future<({int vues, int contacts, int favoris, List<Map<String, dynamic>> top})?> _chargerStatsAnnonces(String owner, String pid) async {
+    final supa = Supabase.instance.client;
+    var q = supa.from('annonces').select('id, titre, espece, race, photos, vues, contacts, statut')
+        .eq('uid_eleveur', owner).inFilter('statut', ['disponible', 'reserve', 'pause']);
+    q = pid.isNotEmpty ? q.eq('profile_id', pid) : q.neq('profil_source', 'association');
+    final rows = [for (final x in await q.limit(50) as List) Map<String, dynamic>.from(x as Map)];
+    if (rows.isEmpty) return null;
+    final likes = await supa.from('likes').select('annonce_id').inFilter('annonce_id', [for (final r in rows) r['id'].toString()]);
+    final fav = <String, int>{};
+    for (final l in likes as List) { fav[l['annonce_id'].toString()] = (fav[l['annonce_id'].toString()] ?? 0) + 1; }
+    int n(Object? v) => (v as num?)?.toInt() ?? 0;
+    for (final r in rows) { r['_favoris'] = fav[r['id'].toString()] ?? 0; }
+    rows.sort((a, b) => n(b['vues']).compareTo(n(a['vues'])));
+    return (
+      vues: rows.fold<int>(0, (t, r) => t + n(r['vues'])),
+      contacts: rows.fold<int>(0, (t, r) => t + n(r['contacts'])),
+      favoris: rows.fold<int>(0, (t, r) => t + n(r['_favoris'])),
+      top: rows.take(3).toList(),
+    );
+  }
+
+  /// Rappel du carnet : formulaire de soin prérempli (soin, produit, prochain
+  /// rappel au même intervalle, animaux concernés cochés ; les autres animaux
+  /// de l'élevage restent proposés).
+  Future<void> _ouvrirSoin(LigneTB l) async {
+    final soin = l.soin;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (soin == null || uid == null) return;
+    final owner = await _ownerUid(uid);
+    final ids = {...soin.animalIds, ...await animauxDuProfil(owner, User_Info.activeProfileId)}.toList();
+    final animaux = <Map<String, dynamic>>[];
+    for (var i = 0; i < ids.length; i += 100) {
+      final rows = await Supabase.instance.client.from('animaux')
+          .select('id, nom, espece, sexe, date_naissance, identification, statut, uid_eleveur, profile_id')
+          .inFilter('id', ids.sublist(i, i + 100 > ids.length ? ids.length : i + 100));
+      for (final a in rows as List) {
+        final m = Map<String, dynamic>.from(a as Map);
+        final concerne = soin.animalIds.contains(m['id'].toString());
+        if (concerne || !const ['sorti', 'decede', 'adopte', 'transfere'].contains(m['statut'])) animaux.add(m);
+      }
+    }
+    // Animaux concernés en tête, puis les autres par nom.
+    animaux.sort((a, b) {
+      final ca = soin.animalIds.contains(a['id'].toString()), cb = soin.animalIds.contains(b['id'].toString());
+      if (ca != cb) return ca ? -1 : 1;
+      return (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString());
+    });
+    if (!mounted) return;
+    final ok = await PorteeSoinSheet.show(context, animaux, eleveurUid: owner, titre: l.titre,
+        acteInitial: soin.typeActe, produitInitial: soin.produit,
+        rappelInitial: soin.ecartJours == null ? null : DateTime.now().add(Duration(days: soin.ecartJours!)),
+        selectionInitiale: soin.animalIds.toSet());
+    if (ok && mounted) _charger();
   }
 
   void _ouvrir(Widget page) =>
@@ -109,6 +184,7 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
         // Rappel groupé (plusieurs animaux) : la liste des animaux.
         CibleTB.animaux => _ouvrir(const MesAnimauxPage()),
         CibleTB.jour => _ouvrirAgenda(jour: l.date),
+        CibleTB.soin => _ouvrirSoin(l),
       };
 
   Future<void> _cocher(LigneTB l) async {
@@ -138,7 +214,6 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
     final aFaireOuvertes = d?.aFaire.where((l) => !l.fait).length;
     final soinsOuverts = d?.soins.where((l) => !l.fait).length;
     final soinsRetard = d?.soins.where((l) => !l.fait && l.retard).length ?? 0;
-    final rdv = d?.agenda.where((l) => !l.fait).length;
     final gratuit = widget.planCode == 'free';
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -150,14 +225,19 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
               onTap: () => _ouvrir(const MesAnimauxPage())),
           _Indicateur(valeur: aFaireOuvertes?.toString() ?? '–', label: 'Tâches en attente', icon: Icons.task_alt, teinte: _vert,
               onTap: () => _ouvrirAgenda()),
-          _Indicateur(valeur: rdv?.toString() ?? '–', label: 'Agenda ($kHorizonJours j)', icon: Icons.event_outlined,
-              teinte: const Color(0xFF2196F3), onTap: () => _ouvrirAgenda()),
+          // Agenda : déjà dans la barre du bas ; ici l'état de l'inventaire.
+          _Indicateur(valeur: _stockBas?.toString() ?? '–', label: 'Stock bas', icon: Icons.inventory_2_outlined,
+              teinte: (_stockBas ?? 0) > 0 ? _rouge : const Color(0xFF2196F3), onTap: () => _ouvrir(const InventairePage())),
           _Indicateur(valeur: '${widget.postCount}', label: 'Annonces actives', icon: Icons.campaign_outlined,
               onTap: () => _ouvrir(const MesAnnoncesPage())),
           _Indicateur(valeur: soinsOuverts?.toString() ?? '–',
               label: soinsRetard > 0 ? 'Soins, $soinsRetard en retard' : 'Échéances sanitaires',
               icon: Icons.vaccines_outlined, teinte: soinsRetard > 0 ? _rouge : _orange,
-              onTap: () => _ouvrir(gratuit ? const AbonnementPage() : const RegistreSanitairePage())),
+              // Les échéances elles-mêmes (bloc ci-dessous), pas le registre.
+              onTap: () {
+                final c = _cleSoins.currentContext;
+                if (c != null) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 300), alignment: 0.05);
+              }),
         ]),
       ),
       const SizedBox(height: 14),
@@ -172,7 +252,9 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
           _Raccourci(label: 'Ajouter une tâche', icon: Icons.add_task_outlined,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (ctx) =>
                   AgendaPage(onBack: () => Navigator.pop(ctx), autoOpenAddTache: true))).then((_) { if (mounted) _charger(); })),
-          _Raccourci(label: 'Agenda', icon: Icons.calendar_month_outlined, onTap: () => _ouvrirAgenda()),
+          // Agenda : déjà dans la barre du bas. Protocoles : formule Premium.
+          _Raccourci(label: 'Protocoles', icon: Icons.event_note_outlined, verrou: widget.planCode != 'premium',
+              onTap: () => _ouvrir(widget.planCode == 'premium' ? const PlanTemplateListPage() : const AbonnementPage())),
           _Raccourci(label: 'Créer une annonce', icon: Icons.campaign_outlined,
               onTap: () => _ouvrir(const CreateAnnoncePage())),
           _Raccourci(label: 'Entrée / Sortie', icon: Icons.swap_horiz, verrou: gratuit,
@@ -198,7 +280,7 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
               rendu: (l) => _LigneTache(l: l, enCours: _enCours == l.cle,
                   onCocher: () => _cocher(l), onOuvrir: () => _ouvrirLigne(l)))),
       const SizedBox(height: 14),
-      _Bloc(titre: 'Soins et échéances', icone: Icons.vaccines_outlined, compteur: soinsRetard, compteurAlerte: true,
+      _Bloc(key: _cleSoins, titre: 'Soins et échéances', icone: Icons.vaccines_outlined, compteur: soinsRetard, compteurAlerte: true,
           libelleVoirTout: 'Suivi sanitaire',
           voirTout: () => _ouvrir(gratuit ? const AbonnementPage() : const RegistreSanitairePage()),
           child: _Liste(lignes: d?.soins, vide: 'Aucun soin prévu cette semaine ni en retard.',
@@ -220,11 +302,49 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
                   sousTitre: d.recuperations.take(3).join(', '), onTap: () => _ouvrir(const RecuperationsPage())),
             if (d.contrats.isNotEmpty || d.recuperations.isNotEmpty) const SizedBox(height: 10),
             Row(children: [
-              const Expanded(child: Text('DERNIÈRES ANNONCES', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+              const Expanded(child: Text('MES ANNONCES EN LIGNE', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
                   fontWeight: FontWeight.w700, letterSpacing: 0.5, color: kDashMuted))),
               DashLien('Voir tout', onTap: () => _ouvrir(const MesAnnoncesPage())),
             ]),
-            widget.annoncesRecentes,
+            if (_statsAnnonces == null)
+              widget.annoncesRecentes
+            else ...[
+              Row(children: [
+                for (final (t, v) in [('Vues', _statsAnnonces!.vues), ('Contacts', _statsAnnonces!.contacts), ('Favoris', _statsAnnonces!.favoris)])
+                  Expanded(child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(color: const Color(0xFFF1F7F8), borderRadius: BorderRadius.circular(12)),
+                    child: Column(children: [
+                      Text('$v', style: const TextStyle(fontFamily: 'Galey', fontSize: 18, fontWeight: FontWeight.w700, color: kDashInk)),
+                      Text(t, style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: kDashMuted)),
+                    ]),
+                  )),
+              ]),
+              const SizedBox(height: 4),
+              const Text('Depuis la mise en ligne. Touchez une annonce pour ses statistiques détaillées.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: kDashMuted)),
+              for (final a in _statsAnnonces!.top)
+                InkWell(
+                  onTap: () => showAnnonceStats(context, a['id'].toString(),
+                      (a['titre'] ?? a['race'] ?? a['espece'] ?? 'Annonce').toString()),
+                  child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(children: [
+                    ClipRRect(borderRadius: BorderRadius.circular(8), child: SizedBox(width: 40, height: 40,
+                        child: ((a['photos'] as List?) ?? const []).isNotEmpty
+                            ? Image.network(((a['photos'] as List).first).toString(), fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(color: const Color(0xFFE8F4F6)))
+                            : Container(color: const Color(0xFFE8F4F6), child: const Icon(Icons.pets, size: 18, color: kDashTeal)))),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text((a['titre'] ?? a['race'] ?? a['espece'] ?? 'Annonce').toString(), maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: kDashInk)),
+                      Text('${a['vues'] ?? 0} vues · ${a['contacts'] ?? 0} contacts · ${a['_favoris']} favoris',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
+                    ])),
+                    const Icon(Icons.bar_chart, size: 18, color: kDashTeal),
+                  ])),
+                ),
+            ],
           ])),
     ]);
   }
@@ -319,7 +439,7 @@ class _Bloc extends StatelessWidget {
   final VoidCallback? voirTout;
   final String libelleVoirTout;
   final Widget child;
-  const _Bloc({required this.titre, required this.icone, required this.child, this.compteur,
+  const _Bloc({super.key, required this.titre, required this.icone, required this.child, this.compteur,
       this.compteurAlerte = false, this.voirTout, this.libelleVoirTout = 'Voir tout'});
 
   @override

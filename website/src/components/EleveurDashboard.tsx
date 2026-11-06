@@ -12,7 +12,9 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan, resolveOwnerUid } from '@/lib/use-plan';
 import { Icone, Puce, BORDURE, OMBRE, TEAL } from '@/components/dashboard/kit';
-import { chargerTableauBord, type DonneesTB, type LigneTB, HORIZON_JOURS } from '@/lib/tableau-bord-eleveur';
+import { chargerTableauBord, animauxDuProfil, ymd, type DonneesTB, type LigneTB, HORIZON_JOURS } from '@/lib/tableau-bord-eleveur';
+import PorteeSoinModal, { type SoinAnimal } from '@/components/animaux/PorteeSoinModal';
+import AnnonceStatsModal from '@/components/AnnonceStatsModal';
 import { basculerRoutine, basculerTacheManuelle } from '@/lib/valider-tache';
 
 interface Annonce {
@@ -23,6 +25,7 @@ interface Annonce {
   photos?: string[];
   statut?: string;
   vues?: number;
+  contacts?: number;
   created_at?: string;
 }
 
@@ -57,6 +60,11 @@ export default function EleveurDashboard() {
   const [mesAlertes, setMesAlertes] = useState<{ id: string }[]>([]);
   const [postCount, setPostCount] = useState(0);
   const [recentAnnonces, setRecentAnnonces] = useState<Annonce[]>([]);
+  // Statistiques des annonces actives (vues et contacts cumulés, favoris).
+  const [statsAnnonces, setStatsAnnonces] = useState<{ vues: number; contacts: number; favoris: number; top: (Annonce & { favoris: number })[] } | null>(null);
+  const [statsOuverte, setStatsOuverte] = useState<{ id: string; titre: string } | null>(null);
+  // Rappel du carnet ouvert dans le formulaire de soin (animaux concernés cochés).
+  const [soinOuvert, setSoinOuvert] = useState<{ ligne: LigneTB; animaux: SoinAnimal[]; ownerUid: string; dateRappel?: string } | null>(null);
   const [donnees, setDonnees] = useState<DonneesTB | null>(null);
   const [erreurTB, setErreurTB] = useState(false);
   const [enCours, setEnCours] = useState<string | null>(null);
@@ -128,7 +136,7 @@ export default function EleveurDashboard() {
       const ownerUid = await resolveOwnerUid(user.uid, activeProfileId ?? '');
       let q = supabase
         .from('annonces')
-        .select('id, titre, espece, race, photos, statut, vues, created_at')
+        .select('id, titre, espece, race, photos, statut, vues, contacts, created_at')
         .eq('uid_eleveur', ownerUid)
         .in('statut', ['disponible', 'reserve', 'pause']);
       q = activeProfileId ? q.eq('profile_id', activeProfileId) : q.neq('profil_source', 'association');
@@ -136,6 +144,18 @@ export default function EleveurDashboard() {
       const docs = (data ?? []) as Annonce[];
       setPostCount(docs.filter(d => ['disponible', 'reserve'].includes(d.statut ?? '')).length);
       setRecentAnnonces(docs.slice(0, 3));
+      // Favoris par annonce (table likes, comme la fenêtre Statistiques).
+      const ids = docs.map(d => d.id);
+      const { data: likes } = ids.length ? await supabase.from('likes').select('annonce_id').in('annonce_id', ids) : { data: [] };
+      const fav = new Map<string, number>();
+      ((likes ?? []) as { annonce_id: string }[]).forEach(l => fav.set(l.annonce_id, (fav.get(l.annonce_id) ?? 0) + 1));
+      const avec = docs.map(d => ({ ...d, favoris: fav.get(d.id) ?? 0 }));
+      setStatsAnnonces({
+        vues: avec.reduce((t, d) => t + Number(d.vues ?? 0), 0),
+        contacts: avec.reduce((t, d) => t + Number(d.contacts ?? 0), 0),
+        favoris: avec.reduce((t, d) => t + d.favoris, 0),
+        top: [...avec].sort((a, b) => Number(b.vues ?? 0) - Number(a.vues ?? 0)).slice(0, 3),
+      });
     })();
   }, [user, activeProfileId]);
 
@@ -157,6 +177,27 @@ export default function EleveurDashboard() {
     setDonnees(null);
     chargerTB();
   }, [user, authLoading, chargerTB]);
+
+  // Rappel du carnet : formulaire de soin prérempli (soin, produit, prochain rappel,
+  // animaux concernés cochés ; les autres animaux de l'élevage restent proposés).
+  async function ouvrirSoin(l: LigneTB) {
+    if (!user || !l.soin) return;
+    const ownerUid = await resolveOwnerUid(user.uid, activeProfileId ?? '');
+    const ids = [...new Set([...l.soin.animalIds, ...await animauxDuProfil(ownerUid, activeProfileId ?? '')])];
+    const animaux: SoinAnimal[] = [];
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data } = await supabase.from('animaux').select('id, nom, espece, sexe, date_naissance, identification, statut').in('id', ids.slice(i, i + 100));
+      animaux.push(...((data ?? []) as (SoinAnimal & { statut?: string | null })[])
+        .filter(a => l.soin!.animalIds.includes(String(a.id)) || !['sorti', 'decede', 'adopte', 'transfere'].includes(a.statut ?? ''))
+        .map(a => ({ ...a, id: String(a.id) })));
+    }
+    // Animaux concernés en tête, puis les autres par nom.
+    animaux.sort((a, b) => Number(l.soin!.animalIds.includes(b.id)) - Number(l.soin!.animalIds.includes(a.id)) || (a.nom ?? '').localeCompare(b.nom ?? ''));
+    // Même intervalle que la dernière fois, à partir d'aujourd'hui.
+    let dateRappel: string | undefined;
+    if (l.soin.ecartJours) { const d = new Date(); d.setDate(d.getDate() + l.soin.ecartJours); dateRappel = ymd(d); }
+    setSoinOuvert({ ligne: l, animaux, ownerUid, dateRappel });
+  }
 
   async function cocher(l: LigneTB) {
     if (!user || !l.cochable || enCours) return;
@@ -261,7 +302,7 @@ export default function EleveurDashboard() {
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
           <Raccourci label="Ajouter un animal" icone="plus" href="/mes-animaux/ajouter" />
           <Raccourci label="Ajouter une tâche" icone="valide" href="/mes-taches?add=1" />
-          <Raccourci label="Agenda" icone="calendrier" href="/elevage/agenda" />
+          <Raccourci label="Protocoles" icone="calendrier" href="/elevage/planning" />
           <Raccourci label="Créer une annonce" icone="document" href="/annonces/creer" />
           <Raccourci label="Entrée / Sortie" icone="renouveler" href="/elevage/registre-entree-sortie" />
           <Raccourci label="Créer un contrat" icone="crayon" href="/elevage/contrat" />
@@ -283,7 +324,7 @@ export default function EleveurDashboard() {
             <Bloc id="soins" titre="Soins et échéances" icone="seringue" lien="/elevage/registre-sanitaire" libelleLien="Suivi sanitaire"
               compteur={soinsRetard || null} compteurAlerte>
               <Liste lignes={donnees?.soins} vide="Aucun soin prévu cette semaine ni en retard."
-                rendu={l => <LigneSimple l={l} />} />
+                rendu={l => <LigneSimple l={l} onClick={l.soin ? () => ouvrirSoin(l) : undefined} />} />
             </Bloc>
           </div>
           <div className="space-y-5">
@@ -326,7 +367,7 @@ export default function EleveurDashboard() {
 
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Dernières annonces</p>
+                      <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Mes annonces en ligne</p>
                       <Link href="/mes-annonces" className="text-xs font-semibold text-[#0C5C6C] hover:underline">Voir tout</Link>
                     </div>
                     {recentAnnonces.length === 0 ? (
@@ -334,32 +375,40 @@ export default function EleveurDashboard() {
                         Aucune annonce publiée. <Link href="/annonces/creer" className="text-[#0C5C6C] font-semibold hover:underline">Créer une annonce</Link>
                       </p>
                     ) : (
-                      <div className="divide-y divide-[#EEF0EE]">
-                        {recentAnnonces.map(a => {
-                          const title = a.titre || a.race || a.espece || 'Annonce';
-                          const photos = (a.photos as unknown as string[]) ?? [];
-                          const statut = a.statut ?? 'disponible';
-                          const statutLabel = statut === 'pause' ? 'En pause' : statut === 'reserve' ? 'Réservé' : 'En ligne';
-                          const [fg, bg] = statut === 'pause' ? ['#6B7280', '#F3F4F6']
-                            : statut === 'reserve' ? [ORANGE, '#FEF3C7']
-                            : ['#2F7D3A', '#EAF5EC'];
-                          return (
-                            <Link key={a.id} href={`/annonces/${a.id}`} className="flex items-center gap-3 py-2 hover:bg-gray-50 -mx-2 px-2 rounded-lg">
-                              <span className="w-10 h-10 rounded-lg overflow-hidden bg-[#E8F4F6] text-[#0C5C6C] flex-shrink-0 flex items-center justify-center">
-                                {photos[0]
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  ? <img src={photos[0]} alt="" className="w-full h-full object-cover" />
-                                  : <Icone nom="patte" taille={18} />}
-                              </span>
-                              <span className="min-w-0 flex-1 text-sm font-semibold text-[#1E2025] truncate capitalize">{title}</span>
-                              {(a.vues ?? 0) > 0 && (
-                                <span className="inline-flex items-center gap-1 text-xs text-gray-500 tabular-nums"><Icone nom="oeil" taille={14} />{a.vues}</span>
-                              )}
-                              <Puce texte={statutLabel} fg={fg} bg={bg} point />
-                            </Link>
-                          );
-                        })}
-                      </div>
+                      <>
+                        {statsAnnonces && (
+                          <div className="grid grid-cols-3 gap-2 mb-2">
+                            {[['Vues', statsAnnonces.vues], ['Contacts', statsAnnonces.contacts], ['Favoris', statsAnnonces.favoris]].map(([t, v]) => (
+                              <div key={t as string} className="rounded-xl bg-[#F1F7F8] px-2 py-2 text-center">
+                                <p className="text-lg font-bold text-[#1E2025] tabular-nums leading-tight">{v}</p>
+                                <p className="text-[11px] text-gray-600">{t}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-[11px] text-gray-400 mb-1">Depuis la mise en ligne. Touchez une annonce pour ses statistiques détaillées.</p>
+                        <div className="divide-y divide-[#EEF0EE]">
+                          {(statsAnnonces?.top ?? recentAnnonces.map(a => ({ ...a, favoris: 0 }))).map(a => {
+                            const title = a.titre || a.race || a.espece || 'Annonce';
+                            const photos = (a.photos as unknown as string[]) ?? [];
+                            return (
+                              <button key={a.id} type="button" onClick={() => setStatsOuverte({ id: a.id, titre: title })}
+                                className="w-full text-left flex items-center gap-3 py-2 hover:bg-gray-50 -mx-2 px-2 rounded-lg">
+                                <span className="w-10 h-10 rounded-lg overflow-hidden bg-[#E8F4F6] text-[#0C5C6C] flex-shrink-0 flex items-center justify-center">
+                                  {photos[0]
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    ? <img src={photos[0]} alt="" className="w-full h-full object-cover" />
+                                    : <Icone nom="patte" taille={18} />}
+                                </span>
+                                <span className="min-w-0 flex-1 text-sm font-semibold text-[#1E2025] truncate capitalize">{title}</span>
+                                <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">
+                                  {Number(a.vues ?? 0)} vues · {Number(a.contacts ?? 0)} contacts · {a.favoris} favoris
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -368,6 +417,25 @@ export default function EleveurDashboard() {
           </div>
         </div>
       </div>
+      {soinOuvert && soinOuvert.ligne.soin && (
+        <PorteeSoinModal
+          titre={soinOuvert.ligne.titre}
+          animals={soinOuvert.animaux}
+          uid={soinOuvert.ownerUid}
+          activeProfileId={activeProfileId || null}
+          initial={{
+            typeActe: soinOuvert.ligne.soin.typeActe,
+            description: soinOuvert.ligne.soin.produit,
+            selection: soinOuvert.ligne.soin.animalIds,
+            dateRappel: soinOuvert.dateRappel,
+          }}
+          onSaved={chargerTB}
+          onClose={() => setSoinOuvert(null)} />
+      )}
+      {statsOuverte && (
+        <AnnonceStatsModal annonceId={statsOuverte.id} annonceTitle={statsOuverte.titre} isPremium={plan === 'premium'}
+          onClose={() => setStatsOuverte(null)} />
+      )}
     </div>
   );
 }
@@ -474,15 +542,19 @@ function LigneTache({ l, enCours, onCocher }: { l: LigneTB; enCours: boolean; on
   );
 }
 
-function LigneSimple({ l }: { l: LigneTB }) {
-  return (
-    <Link href={l.lien} className="flex items-center gap-3 py-2.5 group">
+function LigneSimple({ l, onClick }: { l: LigneTB; onClick?: () => void }) {
+  const contenu = (
+    <>
       <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: l.retard ? ROUGE : (l.couleur ?? '#FF9800') }} aria-hidden />
       <span className="min-w-0 flex-1">
         <span className={`block text-sm font-semibold truncate group-hover:underline ${l.fait ? 'text-gray-400 line-through' : 'text-[#1E2025]'}`}>{l.titre}</span>
         <Details l={l} />
       </span>
       <Quand l={l} />
-    </Link>
+    </>
   );
+  // Rappel du carnet : ouvre le formulaire de soin ; sinon lien vers le module.
+  return onClick
+    ? <button type="button" onClick={onClick} className="w-full text-left flex items-center gap-3 py-2.5 group">{contenu}</button>
+    : <Link href={l.lien} className="flex items-center gap-3 py-2.5 group">{contenu}</Link>;
 }
