@@ -84,6 +84,8 @@ interface FacturePrefill {
   forfaitSouscritId?: string;
   /** Facture d'un devis accepté : reliée à tous les forfaits activés par ce devis. */
   devisId?: string;
+  /** Tous les animaux du RDV, proposés sur chaque ligne de la facture. */
+  animauxIds?: string[];
   nomClient?: string;
   prenomClient?: string;
   emailClient?: string;
@@ -664,7 +666,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
   const [animauxFacture, setAnimauxFacture] = useState<{ id: string; nom: string; identification: string }[]>([]);
   useEffect(() => {
     const ids = [...new Set([...(prefill?.lignes ?? []).map(l => l.animalId).filter(Boolean) as string[],
-      ...(prefill?.sourceAnimalId ? [prefill.sourceAnimalId] : [])])];
+      ...(prefill?.sourceAnimalId ? [prefill.sourceAnimalId] : []), ...(prefill?.animauxIds ?? [])])];
     if (ids.length === 0) return;
     supabase.from('animaux').select('id, nom, identification').in('id', ids).then(({ data }) => {
       const liste = ((data ?? []) as { id: string; nom: string | null; identification: string | null }[])

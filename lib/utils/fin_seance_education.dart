@@ -131,13 +131,19 @@ Future<void> factureDepuisRdv(BuildContext context, Map<String, dynamic> rdv, {S
     await Navigator.push(context, MaterialPageRoute(builder: (_) => CreerFacturePage(
       clientPrenom: c['prenom'], clientNom: c['nom'], clientEmail: c['email'], clientTel: c['tel'],
       clientRue: c['rue'], clientCp: c['cp'], clientVille: c['ville'],
-      lignesPrefill: [for (final l in lignesDevis) FacturePrefillLigne(
-        designation: _v(l['description']), description: '',
-        quantite: (l['quantite'] as num?)?.toDouble() ?? 1,
-        prixTTC: ((l['prix_unitaire'] ?? l['total']) as num?)?.toDouble() ?? 0,
-        animalId: l['animal_id']?.toString(),
-        animalNom: chiens.where((a) => a['id']?.toString() == l['animal_id']?.toString()).firstOrNull?['nom']?.toString(),
-      )],
+      animauxIds: [for (final a in chiens) a['id'].toString()],
+      lignesPrefill: [for (final l in lignesDevis) () {
+        // Le chien de la ligne : son lien, sinon son nom dans le texte (« … pour Luna »).
+        final texte = _v(l['description']).toLowerCase();
+        final chien = chiens.where((a) => a['id']?.toString() == l['animal_id']?.toString()).firstOrNull
+            ?? chiens.where((a) => _v(a['nom']).length > 1 && texte.contains(_v(a['nom']).toLowerCase())).firstOrNull;
+        return FacturePrefillLigne(
+          designation: _v(l['description']), description: '',
+          quantite: (l['quantite'] as num?)?.toDouble() ?? 1,
+          prixTTC: ((l['prix_unitaire'] ?? l['total']) as num?)?.toDouble() ?? 0,
+          animalId: chien?['id']?.toString(), animalNom: chien?['nom']?.toString(),
+        );
+      }()],
       // Le RDV a déjà sa facture de séance : celle du devis n'en prend pas la place.
       sourceRdvId: factureSeance ? null : rdv['id'].toString(), sourceAnimalId: rdv['animal_id']?.toString(),
       envoiEnFinDeSeance: true, devisId: devis!['id'].toString(),

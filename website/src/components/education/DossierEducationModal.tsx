@@ -326,10 +326,16 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
             rueClient: coord.rue || undefined, cpClient: coord.cp || undefined, villeClient: coord.ville || undefined,
             // Le RDV a déjà sa facture de séance : celle du devis n'en prend pas la place.
             ...(facture ? {} : { sourceRdvId: r.id }), sourceAnimalId: r.animal_id ?? undefined, envoiEnFinDeSeance: true, clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
-            retour, devisId: devis.id,
-            lignes: lignes.map(l => ({ description: l.description ?? '', quantite: l.quantite ?? 1, prixUnitaire: 0,
-              prixTTC: Number(l.prix_unitaire ?? l.total ?? 0), tva: 20,
-              ...(l.animal_id ? { animalId: l.animal_id, animalNom: detail.find(a => a.id === l.animal_id)?.nom } : {}) })),
+            retour, devisId: devis.id, animauxIds: detail.map(a => a.id),
+            lignes: lignes.map(l => {
+              // Le chien de la ligne : son lien, sinon son nom dans le texte (« … pour Luna »).
+              const texte = (l.description ?? '').toLowerCase();
+              const chien = detail.find(a => a.id === l.animal_id)
+                ?? detail.find(a => (a.nom ?? '').length > 1 && texte.includes((a.nom ?? '').toLowerCase()));
+              return { description: l.description ?? '', quantite: l.quantite ?? 1, prixUnitaire: 0,
+                prixTTC: Number(l.prix_unitaire ?? l.total ?? 0), tva: 20,
+                ...(chien ? { animalId: chien.id, animalNom: chien.nom } : {}) };
+            }),
           }));
         } catch { /* facture vierge */ }
         ouvrir('/elevage/facturation', 'Facture du devis');

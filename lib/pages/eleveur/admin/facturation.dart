@@ -773,6 +773,8 @@ class CreerFacturePage extends StatefulWidget {
   final String? forfaitSouscritId;
   /// Facture d'un devis accepté : reliée à tous les forfaits activés par ce devis.
   final String? devisId;
+  /// Tous les animaux du RDV, proposés sur chaque ligne de la facture.
+  final List<String> animauxIds;
   final String? sourceRdvId;      // RDV « ancre »
   final List<String> sourceRdvIds; // tous les RDV couverts (garde multi-jours)
   /// Facture d'une consultation / séance : envoyée au client à la fin de la
@@ -800,6 +802,7 @@ class CreerFacturePage extends StatefulWidget {
     this.sourceRdvId,
     this.forfaitSouscritId,
     this.devisId,
+    this.animauxIds = const [],
     this.sourceRdvIds = const [],
     this.envoiEnFinDeSeance = false,
     this.sourceAnimalId,
@@ -866,6 +869,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     final ids = {
       for (final l in widget.lignesPrefill) if ((l.animalId ?? '').isNotEmpty) l.animalId!,
       if ((widget.sourceAnimalId ?? '').isNotEmpty) widget.sourceAnimalId!,
+      ...widget.animauxIds,
     }.toList();
     if (ids.isEmpty) return;
     try {
