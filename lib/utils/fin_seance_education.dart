@@ -111,9 +111,18 @@ Future<void> factureDepuisRdv(BuildContext context, Map<String, dynamic> rdv, {S
   // Devis accepté : une seule facture, reprenant ses lignes (une par chien) ; elle sera
   // aussi celle de tous les forfaits activés par ce devis (miroir site).
   Map<String, dynamic>? devis;
+  var factureSeance = false;
   try {
-    devis = await Supabase.instance.client.from('devis').select('id, lignes').eq('rdv_id', rdv['id'].toString())
+    final supa = Supabase.instance.client;
+    devis = await supa.from('devis').select('id, lignes').eq('rdv_id', rdv['id'].toString())
         .eq('statut', 'accepte').order('created_at', ascending: false).limit(1).maybeSingle();
+    final fs = await supa.from('factures').select('id').eq('source_rdv_id', rdv['id'].toString()).neq('statut', 'annulee').limit(1).maybeSingle();
+    factureSeance = fs != null;
+    if (devis != null) {
+      final forfaits = await supa.from('forfaits_souscrits').select('facture_id').eq('devis_id', devis['id']) as List;
+      // Forfaits déjà facturés, ou facture de séance sans forfait à facturer : facture normale.
+      if (forfaits.any((x) => x['facture_id'] != null) || (forfaits.isEmpty && factureSeance)) devis = null;
+    }
   } catch (_) {}
   final lignesDevis = (devis?['lignes'] as List?) ?? const [];
   if (lignesDevis.isNotEmpty) {
@@ -129,7 +138,8 @@ Future<void> factureDepuisRdv(BuildContext context, Map<String, dynamic> rdv, {S
         animalId: l['animal_id']?.toString(),
         animalNom: chiens.where((a) => a['id']?.toString() == l['animal_id']?.toString()).firstOrNull?['nom']?.toString(),
       )],
-      sourceRdvId: rdv['id'].toString(), sourceAnimalId: rdv['animal_id']?.toString(),
+      // Le RDV a déjà sa facture de séance : celle du devis n'en prend pas la place.
+      sourceRdvId: factureSeance ? null : rdv['id'].toString(), sourceAnimalId: rdv['animal_id']?.toString(),
       envoiEnFinDeSeance: true, devisId: devis!['id'].toString(),
       clientUid: rdv['client_uid']?.toString(), clientProfileId: rdv['client_profile_id']?.toString(),
     )));

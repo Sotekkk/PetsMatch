@@ -93,6 +93,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   DateTime? _rdvSuivantDossier;
   /// RDV du dossier = bilan (cours de type « Bilan » du catalogue).
   bool _rdvEstBilan = false;
+  bool _dossierDevisAFacturer = false;
   Map<String, dynamic>? _dossierDevis, _dossierFacture, _dossierContrat, _dossierConseil, _dossierOrphelin;
   /// Bilans chargés par le pro (documents_animaux « compte_rendu_pro » titrés « Bilan… »).
   List<Map<String, dynamic>> _bilansCharges = [];
@@ -146,6 +147,14 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             .isFilter('rdv_id', null).order('created_at', ascending: false).limit(1).maybeSingle();
       }
     } catch (_) {}
+    var aFacturer = false;
+    try {
+      if (devis?['statut'] == 'accepte') {
+        final fd = await _supa.from('forfaits_souscrits').select('facture_id').eq('devis_id', devis!['id']) as List;
+        aFacturer = fd.isNotEmpty && fd.every((x) => x['facture_id'] == null);
+      }
+    } catch (_) {}
+    _dossierDevisAFacturer = aFacturer;
     _dossierDevis = devis; _dossierFacture = facture; _dossierContrat = contrat; _dossierConseil = conseil; _dossierOrphelin = orphelin;
   }
 
@@ -1418,7 +1427,12 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           bouton('Modifier', () => Navigator.push(context, MaterialPageRoute(builder: (_) => DevisPage(modifierId: devis['id'].toString()))))
         else bouton('Voir', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DevisPage()))),
       ]),
-      if (facture == null && seanceCouverte(rdv) && statutDevis != 'accepte')
+      if (_dossierDevisAFacturer)
+        ligne('Facture des forfaits', 'À émettre · ${eur(devis?['total_ttc'])}', ambre,
+            [bouton('Facturer', () => factureDepuisRdv(context, rdv, animalNom: widget.animalNom))]),
+      if (facture == null && _dossierDevisAFacturer)
+        const SizedBox.shrink()
+      else if (facture == null && seanceCouverte(rdv))
         ligne('Facture', 'Couverte par le forfait (payé d\u2019avance)', vert, const [])
       else
         ligne('Facture', facture == null ? 'À émettre' : '${facture['statut'] == 'payee' ? 'Payée' : 'Émise'} · ${eur(facture['total_ttc'])}',

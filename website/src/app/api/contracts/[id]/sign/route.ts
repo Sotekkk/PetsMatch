@@ -234,7 +234,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           .eq('id', devisId).eq('statut', 'envoye');
         try {
           const { data: dv } = await supabase.from('devis')
-            .select('pro_uid, pro_profile_id, client_uid, client_profile_id, animal_id, lignes').eq('id', devisId).maybeSingle();
+            .select('pro_uid, pro_profile_id, client_uid, client_profile_id, animal_id, lignes, rdv_id').eq('id', devisId).maybeSingle();
+          // Chiens du RDV : une ligne saisie à la main (« … pour Luna ») désigne son chien par son nom.
+          let chiensRdv: { id?: unknown; nom?: unknown }[] = [];
+          if (dv?.rdv_id) {
+            const { data: rv } = await supabase.from('rdv').select('animaux_detail').eq('id', dv.rdv_id).maybeSingle();
+            if (Array.isArray(rv?.animaux_detail)) chiensRdv = rv.animaux_detail as { id?: unknown; nom?: unknown }[];
+          }
           if (dv?.pro_uid && Array.isArray(dv.lignes)) {
             const { data: forfaits } = await supabase.from('forfaits_education')
               .select('id, nom, nb_seances, prix, type_seances, nb_seances_indiv, nb_seances_coll').eq('pro_uid', dv.pro_uid).eq('actif', true);
@@ -243,7 +249,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               const match = (forfaits ?? []).find(f => desc.includes((f.nom ?? '').toLowerCase()) && (f.nom ?? '').length > 2);
               if (match) {
                 // Forfait par chien : la ligne désigne le chien ; sinon celui du devis.
-                const animalLigne = l.animal_id || dv.animal_id;
+                const parNom = chiensRdv.find(c => String(c.nom ?? '').length > 1 && desc.includes(String(c.nom).toLowerCase()));
+                const animalLigne = l.animal_id || (parNom?.id ? String(parNom.id) : null) || dv.animal_id;
                 let dejaQ = supabase.from('forfaits_souscrits').select('id').eq('devis_id', devisId).eq('forfait_id', match.id);
                 dejaQ = animalLigne ? dejaQ.eq('animal_id', animalLigne) : dejaQ.is('animal_id', null);
                 const { data: exists } = await dejaQ.limit(1).maybeSingle();

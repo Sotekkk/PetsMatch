@@ -74,6 +74,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   const [crOrphelin, setCrOrphelin] = useState<{ id: string; date_seance: string | null } | null>(null);
   // RDV de bilan (cours de type « Bilan » du catalogue) : bilan comportemental.
   const [estBilan, setEstBilan] = useState(false);
+  const [devisAFacturer, setDevisAFacturer] = useState(false);
   const [conseils, setConseils] = useState<Record<string, ForfaitConseille>>({});
   const [devis, setDevis] = useState<{ id: string; statut: string | null; total_ttc: number | null } | null>(null);
   // Prochain rendez-vous (facultatif) : programmé tout de suite ou par le client plus tard.
@@ -132,6 +133,13 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
       setCrOrphelin((orph as typeof crOrphelin) ?? null);
     } else setCrOrphelin(null);
     setDevis(dv.error ? null : (dv.data as typeof devis) ?? null);
+    // Forfaits activés par le devis : reste-t-il à les facturer ?
+    const idDevis = dv.error ? null : (dv.data as { id?: string; statut?: string } | null);
+    if (idDevis?.id && idDevis.statut === 'accepte') {
+      const { data: fd } = await supabase.from('forfaits_souscrits').select('facture_id').eq('devis_id', idDevis.id);
+      const lignesF = (fd ?? []) as { facture_id: string | null }[];
+      setDevisAFacturer(lignesF.length > 0 && lignesF.every(x => !x.facture_id));
+    } else setDevisAFacturer(false);
     setFacture((fa.data as typeof facture) ?? null);
     const c = (cc.data ?? {}) as Record<string, string>;
     setCoord({ prenom: c.prenom ?? '', nom: c.nom ?? x.client_nom_manuel ?? '', email: c.email || x.client_email_manuel || '',
@@ -308,7 +316,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     if (!r) return;
     // Devis accepté : une seule facture, reprenant ses lignes (une par chien) ; elle
     // sera aussi celle de tous les forfaits activés par ce devis.
-    if (devis?.statut === 'accepte') {
+    if (devis?.statut === 'accepte' && (devisAFacturer || !facture)) {
       const { data: dv } = await supabase.from('devis').select('lignes').eq('id', devis.id).maybeSingle();
       const lignes = ((dv as { lignes?: unknown } | null)?.lignes ?? []) as { description?: string; quantite?: number; prix_unitaire?: number; total?: number; animal_id?: string | null }[];
       if (lignes.length) {
@@ -316,7 +324,8 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
             nomClient: coord.nom || nomClient, prenomClient: coord.prenom || undefined, emailClient: coord.email || undefined, telClient: coord.tel || undefined,
             rueClient: coord.rue || undefined, cpClient: coord.cp || undefined, villeClient: coord.ville || undefined,
-            sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined, envoiEnFinDeSeance: true, clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
+            // Le RDV a déjà sa facture de séance : celle du devis n'en prend pas la place.
+            ...(facture ? {} : { sourceRdvId: r.id }), sourceAnimalId: r.animal_id ?? undefined, envoiEnFinDeSeance: true, clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
             retour, devisId: devis.id,
             lignes: lignes.map(l => ({ description: l.description ?? '', quantite: l.quantite ?? 1, prixUnitaire: 0,
               prixTTC: Number(l.prix_unitaire ?? l.total ?? 0), tva: 20,
@@ -421,7 +430,8 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           {ligne('Devis', !devis ? (forfaitConseille ? `À proposer : forfait ${forfaitConseille.nom}` : 'Aucun') : `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'À envoyer à la fin'} · ${eur(devis.total_ttc)}`,
             !devis ? GRIS : devis.statut === 'accepte' ? VERT : AMBRE,
             [!devis ? btn('Créer', creerDevis) : devisModifiable(devis.statut) ? btn('Modifier', () => ouvrir(`/education/devis?modifier=${devis.id}`, 'Devis')) : btn('Voir', () => ouvrir('/education/devis', 'Devis'))])}
-          {!facture && seanceCouverte(r) && devis?.statut !== 'accepte' ? ligne('Facture', 'Couverte par le forfait (payé d’avance)', VERT, [])
+          {devisAFacturer && ligne('Facture des forfaits', `À émettre · ${eur(devis?.total_ttc)}`, AMBRE, [btn('Facturer', facturer)])}
+          {!facture && devisAFacturer ? null : !facture && seanceCouverte(r) ? ligne('Facture', 'Couverte par le forfait (payé d’avance)', VERT, [])
             : ligne('Facture', !facture ? 'À émettre' : `${facture.statut === 'payee' ? 'Payée' : 'Émise'} · ${eur(facture.total_ttc)}`,
             !facture ? GRIS : facture.statut === 'payee' ? VERT : AMBRE,
             [!facture ? btn('Facturer', facturer) : btn('Voir', () => ouvrir('/elevage/facturation', 'Factures'))])}
