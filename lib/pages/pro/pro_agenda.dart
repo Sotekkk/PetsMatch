@@ -48,6 +48,7 @@ import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
 import 'package:PetsMatch/utils/document_pro.dart' show showDocumentProSheet;
+import 'package:PetsMatch/utils/rdv_reouvrir.dart';
 
 const _kMaxJoursSejour = 92;
 
@@ -5764,7 +5765,19 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             await supa.from('rdv').delete().eq('id', rdv['id']);
             await _loadRdvs();
           } : null,
-          onDone:    () => _updateStatut(rdv['id'].toString(), 'termine'),
+          // Un appui trop rapide arrive vite : confirmation, puis « Annuler « Terminé » ».
+          onDone:    () async { if (await confirmerTermine(context)) await _updateStatut(rdv['id'].toString(), 'termine'); },
+          onRouvrir: rdv['statut'] == 'termine' ? () async {
+            if (!await confirmerRouvrir(context)) return;
+            final err = await rouvrirRdv(rdv['id'].toString(), clientUid: rdv['client_uid']?.toString());
+            if (!mounted) return;
+            if (err != null) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Impossible de rouvrir : $err', style: const TextStyle(fontFamily: 'Galey'))));
+              return;
+            }
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rendez-vous rouvert : il est de nouveau confirmé.', style: TextStyle(fontFamily: 'Galey'))));
+            await Future.wait([_loadRdvs(), _loadAujourdhui()]);
+          } : null,
           onNotes:   () => _showNotesDialog(rdv),
           // Fiche/carnet de santé en lecture — désormais sur tous les onglets
           // (y compris « Demandes »), pas seulement les RDV confirmés.
@@ -6086,6 +6099,8 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback? onRdvControle;
   /// Tous les pros : mon compte rendu / mon contrat (photo ou PDF).
   final void Function(String mode)? onDocumentPro;
+  /// RDV terminé : « Annuler « Terminé » » (clic par erreur).
+  final VoidCallback? onRouvrir;
 
   const _RdvCard({
     required this.rdv,
@@ -6117,6 +6132,7 @@ class _RdvCard extends StatelessWidget {
     this.onRdvControle,
     this.onHistorique,
     this.onDocumentPro,
+    this.onRouvrir,
   });
 
   Widget _badge(String texte, Color fg, Color bg) => Container(
@@ -6890,6 +6906,13 @@ class _RdvCard extends StatelessWidget {
                 ),
               ],
             ]),
+            if (statut == 'termine' && onRouvrir != null)
+              Align(alignment: Alignment.centerRight, child: TextButton.icon(
+                onPressed: onRouvrir,
+                icon: const Icon(Icons.undo, size: 18),
+                label: const Text('Annuler « Terminé »', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700)),
+                style: TextButton.styleFrom(foregroundColor: const Color(0xFF0C5C6C)),
+              )),
             if (showActions || showCancel) ...[
               const SizedBox(height: 8),
               Wrap(alignment: WrapAlignment.end, crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, runSpacing: 6, children: [

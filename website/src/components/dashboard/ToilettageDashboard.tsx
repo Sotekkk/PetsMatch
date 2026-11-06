@@ -311,7 +311,11 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
                 {e === 'attendu' && passe && bouton('Non présenté', () => maj(fiche, { statut: 'absent' }), ROUGE)}
                 {e === 'arrive' && bouton('Démarrer le toilettage', () => maj(fiche, { prestation_debut_le: iso() }))}
                 {e === 'enCours' && bouton('Toilettage terminé — animal prêt', () => pret(fiche), VERT)}
-                {e === 'pret' && bouton('Animal récupéré — clôturer', () => maj(fiche, { statut: 'termine', termine_at: iso() }))}
+                {e === 'pret' && bouton('Animal récupéré — clôturer', () => {
+                  // Un clic trop rapide arrive vite : annulable ensuite (« Annuler « Terminé » », Gérer mes RDV).
+                  if (!confirm('Animal récupéré : clôturer le rendez-vous ?')) return;
+                  return maj(fiche, { statut: 'termine', termine_at: iso() });
+                })}
                 {(e === 'pret' || e === 'termine') && !factures.has(fiche.id) && bouton('Facturer la prestation', () => {
                   // Facture pré-remplie (module existant) ; terminé ≠ payé.
                   const prix = (fiche as Rdv & { prix_calcule?: number | null }).prix_calcule ?? (fiche.prestation_id ? prixPresta[fiche.prestation_id] : 0) ?? 0;

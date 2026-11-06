@@ -21,6 +21,7 @@ import 'package:PetsMatch/pages/pro/toilettage_planning_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dashboard_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage;
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
+import 'package:PetsMatch/utils/rdv_reouvrir.dart' show confirmerTermine;
 
 const _teal = kDashTeal;
 const _ink = kDashInk;
@@ -321,7 +322,10 @@ class _ToilettageSalonDashboardState extends State<ToilettageSalonDashboard> {
           if (e == EtapeToilettage.enCours)
             action(ctx, Icons.check_circle_outline, 'Toilettage terminé — animal prêt', () => _pret(r), c: _vert),
           if (e == EtapeToilettage.pret)
-            action(ctx, Icons.logout_rounded, 'Animal récupéré — clôturer', () => _maj(r, {'statut': 'termine', 'termine_at': _now}, ok: 'Prestation clôturée')),
+            // Un appui trop rapide arrive vite : confirmation (annulable ensuite dans l'agenda).
+            action(ctx, Icons.logout_rounded, 'Animal récupéré — clôturer', () async {
+              if (await confirmerTermine(context)) _maj(r, {'statut': 'termine', 'termine_at': _now}, ok: 'Prestation clôturée');
+            }),
           // Facturation : module existant, statut propre (terminé ≠ payé).
           if ((e == EtapeToilettage.pret || e == EtapeToilettage.termine) && !_factures.contains(r['id'].toString()))
             action(ctx, Icons.receipt_long_outlined, 'Facturer la prestation', () => _facturer(r)),

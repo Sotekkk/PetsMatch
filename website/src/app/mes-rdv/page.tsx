@@ -5,6 +5,7 @@ import { historiqueTrie, historiqueFiltre, ligneHospitalisation } from '@/lib/hi
 import { estDansPanneau, MSG_PANNEAU_FERMER, signalerPanneau } from '@/lib/panneau';
 import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/DossierSeanceModal';
 import { animauxDetailRdv, dureeRdvLabel, ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
+import { rouvrirRdv, MESSAGE_CONFIRMER_TERMINE } from '@/lib/rdv-reouvrir';
 import ComptesRendusAnimauxRdv from '@/components/rdv/ComptesRendusAnimauxRdv';
 import { useEspaceClinique } from '@/lib/espace-clinique';
 import { preparerFactureOsteo } from '@/lib/seance-osteo';
@@ -1592,7 +1593,7 @@ function RefuserModal({ rdv, label, type, onClose, onDone }: {
 
 // ── Carte RDV ──────────────────────────────────────────────────────────────────
 
-function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier, onHistorique, onDossier, crParAnimal, onFinConsultation, onFacturer, onDocumentPro }: {
+function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onRouvrir, onDelete, onOpenAnimal, onModifier, onHistorique, onDossier, crParAnimal, onFinConsultation, onFacturer, onDocumentPro }: {
   rdv: Rdv;
   /** Tous les pros : charger mon propre compte rendu ou mon contrat (PDF / photo). */
   onDocumentPro?: (mode: 'compte_rendu' | 'contrat') => void;
@@ -1609,6 +1610,8 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
   onRefuser?: () => void;
   onAnnuler?: () => void;
   onTerminer?: () => void;
+  /** « Terminé » cliqué par erreur : le RDV redevient confirmé. */
+  onRouvrir?: () => void;
   onDelete?: () => void;
   onOpenAnimal?: (id: string) => void;
   /** Vétérinaire : historique des consultations du patient. */
@@ -1824,6 +1827,13 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
             className="flex-1 min-w-[80px] text-xs font-semibold px-3 py-2 rounded-xl text-white"
             style={{ background: GREEN, fontFamily: 'Galey, sans-serif' }}>
             ✓ Terminé
+          </button>
+        )}
+        {tab === 'historique' && rdv.statut === 'termine' && onRouvrir && (
+          <button onClick={onRouvrir}
+            className="text-xs font-semibold px-3 py-2 rounded-xl border"
+            style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+            Annuler « Terminé »
           </button>
         )}
         {tab === 'historique' && (
@@ -2480,7 +2490,16 @@ export default function MesRdvPage() {
 
   useEffect(() => { fetchAujourdhui(); }, [fetchAujourdhui]);
 
-  async function marquerTermine(rdv: Rdv) {
+  async function rouvrir(rdv: Rdv) {
+    if (!confirm('Annuler « Terminé » ? Le rendez-vous redevient confirmé. Compte rendu, facture et documents déjà faits ne changent pas.')) return;
+    const err = await rouvrirRdv(rdv);
+    if (err) { alert(`Impossible de rouvrir le rendez-vous : ${err}`); return; }
+    fetchRdvs(true);
+  }
+
+  async function marquerTermine(rdv: Rdv, sansConfirmation = false) {
+    // Un clic trop rapide arrive vite : confirmation (annulable ensuite dans l'historique).
+    if (!sansConfirmation && !confirm(MESSAGE_CONFIRMER_TERMINE)) return;
     // Heure réelle de fin : base des retards en cascade (alerte automatique).
     await supabase.from('rdv').update({ statut: 'termine', termine_at: new Date().toISOString() }).eq('id', rdv.id);
     // Séance terminée → invite la famille à laisser un avis (une seule fois :
@@ -2809,6 +2828,7 @@ export default function MesRdvPage() {
                   onRefuser={() => rdv.serie ? setModalSerie({ serie: rdv.serie, mode: 'refuser' }) : setModalRefuser(rdv)}
                   onAnnuler={() => setModalAnnuler(rdv)}
                   onTerminer={() => marquerTermine(rdv)}
+                  onRouvrir={() => rouvrir(rdv)}
                   onDelete={() => deleteRdv(rdv.id)}
                   onOpenAnimal={openAnimalFiche}
                   onModifier={() => setModalModifier(rdv)}
@@ -2889,7 +2909,7 @@ export default function MesRdvPage() {
         <FinConsultationModal rdvId={finConsultation.id} proProfileId={activeProfileId || null} clientNom={finConsultation.clientName}
           metier={catPro === 'sante' ? 'sante' : 'veterinaire'}
           onClose={() => setFinConsultation(null)} onDone={() => { setFinConsultation(null); setVersionDossier(v => v + 1); fetchRdvs(true); }}
-          onTerminer={finConsultation.statut !== 'termine' ? () => marquerTermine(finConsultation) : undefined} />
+          onTerminer={finConsultation.statut !== 'termine' ? () => marquerTermine(finConsultation, true) : undefined} />
       )}
       {docPro && (
         <DocumentProModal rdv={{ ...docPro.rdv, pro_profile_id: docPro.rdv.pro_profile_id ?? (activeProfileId || null) }} mode={docPro.mode}
