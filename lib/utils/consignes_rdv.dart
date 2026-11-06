@@ -42,6 +42,29 @@ List<(String, String)> reponsesConsignes(String? metier, Map? reponses) {
   ];
 }
 
+// ── RDV à plusieurs animaux : consignes par animal ──────────────────────────
+// rdv.consignes garde sa forme simple { cle: valeur } pour un RDV à un animal ;
+// à plusieurs animaux : { par_animal: { "<id animal>": { cle: valeur } } }.
+// Une ancienne saisie simple vaut pour tous les animaux. Miroir site :
+// website/src/lib/consignes-rdv.ts.
+bool consignesParAnimalStockees(Object? c) => c is Map && c['par_animal'] is Map;
+
+/// Consignes d'un RDV animal par animal, pour l'affichage côté professionnel.
+/// [animaux] : (id, nom) des animaux du RDV.
+List<({String id, String nom, List<(String, String)> lignes})> consignesParAnimal(
+    String? metier, Object? c, List<({String id, String nom})> animaux) {
+  if (c is! Map) return const [];
+  if (!consignesParAnimalStockees(c) || animaux.length < 2) {
+    final simple = consignesParAnimalStockees(c)
+        ? ((c['par_animal'] as Map).values.firstOrNull as Map?)
+        : c;
+    return [(id: animaux.firstOrNull?.id ?? '', nom: animaux.length > 1 ? 'Tous les animaux' : (animaux.firstOrNull?.nom ?? ''),
+        lignes: reponsesConsignes(metier, simple))];
+  }
+  final par = c['par_animal'] as Map;
+  return [for (final a in animaux) (id: a.id, nom: a.nom, lignes: reponsesConsignes(metier, par[a.id] as Map?))];
+}
+
 Map<String, dynamic> _json(http.Response r) {
   try {
     return jsonDecode(r.body) as Map<String, dynamic>;
@@ -60,9 +83,10 @@ class ConsignesApi {
     return j;
   }
 
-  static Future<void> enregistrer(String rdvId, Map<String, String> reponses) async {
+  /// [parAnimal] : id de l'animal → réponses (un seul élément pour un RDV à un animal).
+  static Future<void> enregistrer(String rdvId, Map<String, Map<String, String>> parAnimal) async {
     final r = await http.post(Uri.parse('$kSiteBaseUrl/api/rdv/consignes'), headers: await siteApiHeaders(),
-        body: jsonEncode({'rdvId': rdvId, 'reponses': reponses}));
+        body: jsonEncode({'rdvId': rdvId, 'reponses_par_animal': parAnimal}));
     if (r.statusCode != 200) throw Exception(_json(r)['error'] ?? 'Enregistrement impossible');
   }
 

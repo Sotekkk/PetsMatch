@@ -13,7 +13,8 @@ import ContactCanaux from '@/components/ContactCanaux';
 import SeanceToilettageModal, { type RdvSeance } from '@/components/toilettage/SeanceToilettageModal';
 import ConsignesRdvForm from '@/components/ConsignesRdvForm';
 import { apiFetch } from '@/lib/api-fetch';
-import { reponsesAffichables } from '@/lib/consignes-rdv';
+import { consignesParAnimal } from '@/lib/consignes-rdv';
+import { animauxDetailRdv } from '@/lib/rdv-animaux';
 import { envoyerContratParEmail } from '@/lib/contrat-email';
 import { signerContratAvecSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
 import SignatureProModal from '@/components/signature/SignatureProModal';
@@ -32,7 +33,8 @@ interface RdvRow {
   animal_id: string | null; animal_nom_manuel?: string | null; client_uid: string | null; client_profile_id: string | null;
   prestation_id: string | null; prix_calcule?: number | null; pro_uid?: string; pro_profile_id?: string | null; employe_id?: string | null;
   client_telephone_manuel?: string | null; client_email_manuel?: string | null;
-  consignes?: Record<string, string> | null; consignes_le?: string | null; consignes_demandees_le?: string | null;
+  consignes?: Record<string, unknown> | null; consignes_le?: string | null; consignes_demandees_le?: string | null;
+  animaux_detail?: unknown;
 }
 interface Seance { id: string; compte_rendu: string | null; partage_proprietaire: boolean }
 interface Contrat { id: string; token: string; statut: string }
@@ -241,13 +243,28 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
             r.consignes_le ? `Reçues le ${new Date(r.consignes_le).toLocaleDateString('fr-FR')}` : r.consignes_demandees_le ? `Demandées le ${new Date(r.consignes_demandees_le).toLocaleDateString('fr-FR')}, en attente` : 'Non demandées',
             r.consignes_le ? VERT : r.consignes_demandees_le ? AMBRE : GRIS,
             r.consignes_le ? [] : [btn(r.consignes_demandees_le ? 'Relancer' : 'Demander', demanderConsignes), btn('Saisir', () => setSaisirConsignes(true))])}
-          {r.consignes_le && reponsesAffichables('toilettage', r.consignes).length > 0 && (
-            <div className="rounded-xl bg-[#F1F7F8] px-3 py-2 mb-1.5 space-y-1">
-              {reponsesAffichables('toilettage', r.consignes).map(x => (
-                <p key={x.label} className="text-xs"><span className="font-bold text-[#0C5C6C]">{x.label} : </span><span className="text-gray-700 whitespace-pre-line">{x.valeur}</span></p>
-              ))}
-            </div>
-          )}
+          {r.consignes_le && (() => {
+            // RDV à plusieurs animaux : consignes animal par animal.
+            const detail = animauxDetailRdv(r);
+            const blocs = consignesParAnimal('toilettage', r.consignes,
+              detail.length > 1 ? detail.map(a => ({ id: a.id, nom: a.nom })) : [{ id: r.animal_id ?? '', nom: animalNom }])
+              .filter(b => b.lignes.length > 0 || detail.length > 1);
+            if (!blocs.length) return null;
+            return (
+              <div className="rounded-xl bg-[#F1F7F8] px-3 py-2 mb-1.5 space-y-2">
+                {blocs.map(b => (
+                  <div key={b.id || b.nom} className="space-y-1">
+                    {detail.length > 1 && <p className="text-xs font-bold text-[#1F2A2E]">{b.nom}</p>}
+                    {b.lignes.length === 0
+                      ? <p className="text-xs text-gray-500">Aucune consigne pour cet animal.</p>
+                      : b.lignes.map(x => (
+                        <p key={x.label} className="text-xs"><span className="font-bold text-[#0C5C6C]">{x.label} : </span><span className="text-gray-700 whitespace-pre-line">{x.valeur}</span></p>
+                      ))}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
           {ligne('Contrat',
             !contrat ? 'Non généré' : contrat.statut === 'signe' ? 'Signé' : contrat.statut === 'partiellement_signe' ? 'Signé par une partie' : 'En attente de signature',
             !contrat ? GRIS : contrat.statut === 'signe' ? VERT : AMBRE,

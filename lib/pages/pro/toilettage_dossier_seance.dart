@@ -26,6 +26,7 @@ import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_seance_page.dart';
 import 'package:PetsMatch/widgets/contact_canaux.dart';
 import 'package:PetsMatch/utils/consignes_rdv.dart';
+import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv;
 import 'package:PetsMatch/pages/rdv_consignes_page.dart';
 import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro, signerEtEnregistrer;
 import 'package:PetsMatch/utils/document_pro.dart' show comptesRendusProDuRdv, lignesCrsPro, ajouterPiecesCrsPro;
@@ -435,7 +436,7 @@ class _DossierToilettageState extends State<_DossierToilettage> {
     _coord = await coordonneesClientRdv(r);
     _prochain = await prochainRdvDate(r);
     try { _seance = await _supa.from('seances_toilettage').select().eq('rdv_id', id).maybeSingle(); } catch (_) {}
-    try { _consignes = await _supa.from('rdv').select('consignes, consignes_le, consignes_demandees_le').eq('id', id).maybeSingle(); } catch (_) {}
+    try { _consignes = await _supa.from('rdv').select('consignes, consignes_le, consignes_demandees_le, animal_id, animaux_detail').eq('id', id).maybeSingle(); } catch (_) {}
     try {
       _contrat = await _supa.from('documents_animaux').select('id, token, statut')
           .eq('rdv_id', id).eq('type', 'contrat_prestation_toilettage').maybeSingle();
@@ -505,20 +506,33 @@ class _DossierToilettageState extends State<_DossierToilettage> {
   }
 
   void _voirConsignes() {
-    final rep = reponsesConsignes('toilettage', _consignes?['consignes'] as Map?);
+    // RDV à plusieurs animaux : consignes animal par animal.
+    final detail = _consignes == null ? const <Map<String, dynamic>>[] : animauxDetailRdv(_consignes!);
+    final blocs = consignesParAnimal('toilettage', _consignes?['consignes'],
+        detail.length > 1
+            ? [for (final a in detail) (id: a['id'].toString(), nom: (a['nom'] ?? 'Animal').toString())]
+            : [(id: _consignes?['animal_id']?.toString() ?? '', nom: _animalNom)]);
+    final plusieurs = detail.length > 1;
     showModalBottomSheet<void>(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => SafeArea(child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Consignes du client${_animalNom.isNotEmpty ? ' — $_animalNom' : ''}',
+          Text('Consignes du client${!plusieurs && _animalNom.isNotEmpty ? ' — $_animalNom' : ''}',
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _ink)),
           const SizedBox(height: 10),
-          for (final (label, valeur) in rep) ...[
-            Text(label, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal)),
-            Text(valeur, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: _ink)),
-            const SizedBox(height: 8),
+          for (final b in blocs) ...[
+            if (plusieurs) Padding(padding: const EdgeInsets.only(bottom: 4),
+                child: Text(b.nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _ink))),
+            if (plusieurs && b.lignes.isEmpty)
+              Text('Aucune consigne pour cet animal.', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+            for (final (label, valeur) in b.lignes) ...[
+              Text(label, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal)),
+              Text(valeur, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: _ink)),
+              const SizedBox(height: 8),
+            ],
+            if (plusieurs) const Divider(height: 18),
           ],
           Text('À reporter si besoin dans la fiche toilettage de l\'animal (consignes permanentes du salon).',
               style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
