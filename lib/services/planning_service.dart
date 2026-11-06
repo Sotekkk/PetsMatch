@@ -179,6 +179,35 @@ class PlanningService {
   // donc pas les lignes plans_actifs (ça cascaderait aussi sur l'historique
   // via plan_taches.plan_id ON DELETE CASCADE) : on les détache du template
   // et on les marque annulées à la place.
+  /// Protocole appliqué par erreur : retire toutes ses tâches non faites
+  /// (passées comprises), garde les tâches cochées et le protocole. Plans
+  /// vidés supprimés, plans avec des tâches faites annulés. Renvoie le nombre
+  /// de tâches retirées. Miroir site : onRetirerTaches (elevage/planning).
+  static Future<int> retirerTachesGenerees(String templateId) async {
+    final plans = await _supa.from('plans_actifs').select('id').eq('template_id', templateId);
+    final planIds = [for (final p in plans as List) p['id'].toString()];
+    if (planIds.isEmpty) return 0;
+    final aRetirer = await _supa.from('plan_taches').select('id').inFilter('plan_id', planIds).neq('statut', 'fait');
+    final n = (aRetirer as List).length;
+    if (n == 0) return 0;
+    await _supa.from('plan_taches').delete().inFilter('plan_id', planIds).neq('statut', 'fait');
+    final restes = await _supa.from('plan_taches').select('plan_id').inFilter('plan_id', planIds);
+    final gardes = {for (final r in restes as List) r['plan_id'].toString()};
+    final vides = planIds.where((id) => !gardes.contains(id)).toList();
+    if (vides.isNotEmpty) await _supa.from('plans_actifs').delete().inFilter('id', vides);
+    if (gardes.isNotEmpty) await _supa.from('plans_actifs').update({'statut': 'annule'}).inFilter('id', gardes.toList());
+    return n;
+  }
+
+  /// Nombre de tâches non faites générées par ce protocole.
+  static Future<int> nbTachesNonFaites(String templateId) async {
+    final plans = await _supa.from('plans_actifs').select('id').eq('template_id', templateId);
+    final planIds = [for (final p in plans as List) p['id'].toString()];
+    if (planIds.isEmpty) return 0;
+    final rows = await _supa.from('plan_taches').select('id').inFilter('plan_id', planIds).neq('statut', 'fait');
+    return (rows as List).length;
+  }
+
   static Future<void> deleteTemplate(String templateId) async {
     final today = DateTime.now().toIso8601String().split('T').first;
     final plans = await _supa.from('plans_actifs').select('id').eq('template_id', templateId);
@@ -238,6 +267,7 @@ class PlanningService {
                 espece: espece,
                 forcedAnimalIds: forcedAnimalIds,
                 dateReference: dateReference,
+                profileId: ownerProfileId,
               );
 
     if (cibles.isEmpty) return 0;
@@ -328,6 +358,7 @@ class PlanningService {
     String? espece,
     List<String>? forcedAnimalIds,
     required DateTime dateReference,
+    String? profileId,
   }) async {
     switch (cibleType) {
       case 'individuel':
@@ -361,11 +392,20 @@ class PlanningService {
       case 'gestantes': {
         // Gestations en cours : confirmées, mise bas (date_naissance) non saisie.
         // gestations n'a pas de uid_eleveur : on filtre par l'animal.
+        // En cours = mise bas non saisie ET prévue il y a moins de 15 jours (ou à
+        // venir) ; sans date prévue : saillie de moins de 75 jours. Avant, une
+        // ancienne gestation jamais clôturée comptait encore (06/11/2026).
+        String ilYa(int j) => DateTime.now().subtract(Duration(days: j)).toIso8601String().substring(0, 10);
         var q = _supa.from('gestations')
-            .select('id, animal_id, date_naissance, date_prevue, animaux!inner(nom, espece, statut, uid_eleveur)')
+            .select('id, animal_id, date_naissance, date_prevue, animaux!inner(nom, espece, statut, uid_eleveur, profile_id)')
             .eq('animaux.uid_eleveur', uid)
             .eq('gestation_confirmee', true)
-            .filter('date_naissance', 'is', null);
+            .filter('date_naissance', 'is', null)
+            .filter('date_accouchement', 'is', null)
+            .filter('nb_nes', 'is', null)
+            .or('date_prevue.gte.${ilYa(15)},and(date_prevue.is.null,date.gte.${ilYa(75)})');
+        if ((profileId ?? '').isNotEmpty) q = q.eq('animaux.profile_id', profileId!);
+        if (espece != null && espece.isNotEmpty) q = q.eq('animaux.espece', espece);
         final rows = await q.order('date_prevue');
         return (rows as List).where((g) =>
             !estHorsPriseEnCharge(g['animaux'] as Map<String, dynamic>? ?? {})).map((g) {

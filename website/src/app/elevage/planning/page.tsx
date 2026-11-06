@@ -497,6 +497,27 @@ function PlanningPageInner() {
           onApply={setApplyingTemplate}
           onPrint={t => ouvrirFicheProtocole(t, { structure: nomStructure, profilSource })}
           profilSource={profilSource}
+          onRetirerTaches={async (t) => {
+            // Protocole appliqué par erreur : toutes ses tâches non faites (passées comprises) sont
+            // retirées ; les tâches cochées restent (historique). Le protocole est gardé.
+            const { data: plans } = await supabase.from('plans_actifs').select('id').eq('template_id', t.id);
+            const planIds = (plans ?? []).map(p => p.id as string);
+            if (!planIds.length) { alert('Aucune tâche générée par ce protocole.'); return; }
+            const { count } = await supabase.from('plan_taches').select('id', { count: 'exact', head: true })
+              .in('plan_id', planIds).neq('statut', 'fait');
+            if (!count) { alert('Aucune tâche à retirer : celles de ce protocole sont toutes faites.'); return; }
+            if (!confirm(`Retirer les ${count} tâche${count > 1 ? 's' : ''} non faite${count > 1 ? 's' : ''} générée${count > 1 ? 's' : ''} par « ${t.nom} » ?\n\nLes tâches déjà cochées restent. Le protocole est gardé : vous pourrez le corriger et l'appliquer à nouveau.`)) return;
+            const { error } = await supabase.from('plan_taches').delete().in('plan_id', planIds).neq('statut', 'fait');
+            if (error) { alert(`Impossible de retirer les tâches : ${error.message}`); return; }
+            // Plans vidés : supprimés ; ceux qui gardent des tâches faites : annulés.
+            const { data: restes } = await supabase.from('plan_taches').select('plan_id').in('plan_id', planIds);
+            const gardes = new Set(((restes ?? []) as { plan_id: string }[]).map(x => x.plan_id));
+            const vides = planIds.filter(id => !gardes.has(id));
+            if (vides.length) await supabase.from('plans_actifs').delete().in('id', vides);
+            if (gardes.size) await supabase.from('plans_actifs').update({ statut: 'annule' }).in('id', [...gardes]);
+            alert(`${count} tâche${count > 1 ? 's' : ''} retirée${count > 1 ? 's' : ''}.`);
+            loadTaches();
+          }}
           onDelete={async (id) => {
             if (!confirm('Supprimer ce protocole ?')) return;
             // Ne retire que les occurrences FUTURES de l'agenda ; l'historique
@@ -852,12 +873,14 @@ function GroupedTacheCard({ groupe, onValider, onReporter, onDelete }: {
 
 // ── Vue Protocoles ────────────────────────────────────────────────────────────
 
-function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileId, isEmployeeMode = false, authorizedTemplateIds, profilSource, onNew, onEdit, onApply, onPrint, onDelete }: {
+function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileId, isEmployeeMode = false, authorizedTemplateIds, profilSource, onNew, onEdit, onApply, onPrint, onDelete, onRetirerTaches }: {
   templates: Template[]; canWrite?: boolean; ownerProfileId?: string | null;
   myProfileId?: string | null; isEmployeeMode?: boolean; authorizedTemplateIds?: Set<string>;
   profilSource?: string;
   onNew: () => void; onEdit: (t: Template) => void;
   onApply: (t: Template) => void; onPrint: (t: Template) => void; onDelete: (id: string) => void;
+  /** Annule l'application : retire toutes les tâches non faites générées par ce protocole. */
+  onRetirerTaches?: (t: Template) => void;
 }) {
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
   const [authModalTemplate, setAuthModalTemplate] = useState<Template | null>(null);
@@ -979,6 +1002,10 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
                         {!isEmployeeMode && (
                           <button onClick={() => { setMenuOuvert(null); setAuthModalTemplate(t); }}
                             className="w-full text-left px-3 py-2 hover:bg-gray-50">🔓 Qui peut l&apos;appliquer</button>
+                        )}
+                        {canEditThis && onRetirerTaches && (
+                          <button onClick={() => { setMenuOuvert(null); onRetirerTaches(t); }}
+                            className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-600">Retirer les tâches générées</button>
                         )}
                         {canEditThis && (
                           <button onClick={() => { setMenuOuvert(null); onDelete(t.id); }}
@@ -1819,10 +1846,18 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
           targets.push({ animal_id: id, date_base: dateRef, animal_nom: animal?.nom });
         }
       } else if (cibleType === 'gestantes') {
-        const { data: gestations } = await supabase.from('gestations')
-          // gestations n'a pas de uid_eleveur : on filtre par l'animal ; en cours = confirmée, mise bas non saisie.
-          .select('animal_id, date_prevue, animaux!inner(nom, statut, uid_eleveur)').eq('animaux.uid_eleveur', uid)
-          .eq('gestation_confirmee', true).is('date_naissance', null);
+        // gestations n'a pas de uid_eleveur : on filtre par l'animal. En cours = confirmée,
+        // mise bas non saisie ET prévue il y a moins de 15 jours (ou à venir) ; sans date
+        // prévue : saillie de moins de 75 jours. Avant, une ancienne gestation jamais
+        // clôturée comptait encore (protocole appliqué à toutes les chiennes, 06/11/2026).
+        const ilYa = (j: number) => toISODate(addDays(new Date(), -j));
+        let qg = supabase.from('gestations')
+          .select('animal_id, date_prevue, animaux!inner(nom, statut, uid_eleveur, profile_id, espece)').eq('animaux.uid_eleveur', uid)
+          .eq('gestation_confirmee', true).is('date_naissance', null).is('date_accouchement', null).is('nb_nes', null)
+          .or(`date_prevue.gte.${ilYa(15)},and(date_prevue.is.null,date.gte.${ilYa(75)})`);
+        if (profileId) qg = qg.eq('animaux.profile_id', profileId);
+        if (template.espece) qg = qg.eq('animaux.espece', template.espece);
+        const { data: gestations } = await qg;
         for (const g of (gestations ?? []) as unknown as { animal_id: string; date_prevue: string | null; animaux: { nom: string; statut?: string | null }[] | { nom: string; statut?: string | null } | null }[]) {
           const anim = Array.isArray(g.animaux) ? g.animaux[0] : g.animaux;
           if (anim && estHorsPriseEnCharge(anim)) continue;

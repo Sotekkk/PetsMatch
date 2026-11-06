@@ -145,6 +145,34 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
     );
   }
 
+  /// Protocole appliqué par erreur : retirer ses tâches non faites (le protocole reste).
+  Future<void> _retirerTaches(String id, String nom) async {
+    final n = await PlanningService.nbTachesNonFaites(id);
+    if (!mounted) return;
+    if (n == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Aucune tâche non faite générée par ce protocole.', style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Retirer les tâches générées ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text('Les $n tâche${n > 1 ? 's' : ''} non faite${n > 1 ? 's' : ''} de « $nom » seront retirées de l\'agenda. '
+            'Les tâches déjà cochées restent. Le protocole est gardé : vous pourrez le corriger et l\'appliquer à nouveau.',
+            style: const TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Retirer', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final retirees = await PlanningService.retirerTachesGenerees(id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$retirees tâche${retirees > 1 ? 's' : ''} retirée${retirees > 1 ? 's' : ''}.', style: const TextStyle(fontFamily: 'Galey'))));
+    _load();
+  }
+
   Future<void> _delete(String id, String nom) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -259,6 +287,7 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
                         ),
                       )).then((_) => _load()),
                       onDelete: !canEditThis ? null : () => _delete(t['id'] as String, t['nom'] as String),
+                      onRetirerTaches: !canEditThis ? null : () => _retirerTaches(t['id'] as String, t['nom'] as String),
                       onPrint: () => PlanningPdfService.printProtocole(t, profilSource: widget.profilSource),
                       profilSource: widget.profilSource,
                       onManageAuth: _isEmployeeMode ? null : () => _manageAuthorizations(t),
@@ -318,6 +347,8 @@ class _TemplateCard extends StatelessWidget {
   final VoidCallback onView;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  /// Protocole appliqué par erreur : retirer ses tâches non faites.
+  final VoidCallback? onRetirerTaches;
   final bool canApply;
   final VoidCallback? onApply;
   final VoidCallback onPrint;
@@ -326,7 +357,7 @@ class _TemplateCard extends StatelessWidget {
   const _TemplateCard({
     required this.template, this.creatorName, this.isOwnerProtocol = false, this.isEmployeeMode = false,
     required this.canWrite, this.canApply = true, required this.onView, this.profilSource,
-    required this.onEdit, required this.onDelete, required this.onApply, required this.onPrint,
+    required this.onEdit, required this.onDelete, this.onRetirerTaches, required this.onApply, required this.onPrint,
     this.onManageAuth,
   });
 
@@ -387,6 +418,7 @@ class _TemplateCard extends StatelessWidget {
               if (v == 'view') onView();
               if (v == 'edit' && onEdit != null) onEdit!();
               if (v == 'delete' && onDelete != null) onDelete!();
+              if (v == 'retirer' && onRetirerTaches != null) onRetirerTaches!();
               if (v == 'auth' && onManageAuth != null) onManageAuth!();
             },
             itemBuilder: (_) => [
@@ -395,6 +427,8 @@ class _TemplateCard extends StatelessWidget {
                 const PopupMenuItem(value: 'edit', child: Text('Modifier', style: TextStyle(fontFamily: 'Galey'))),
               if (onManageAuth != null)
                 const PopupMenuItem(value: 'auth', child: Text('Qui peut l’appliquer', style: TextStyle(fontFamily: 'Galey'))),
+              if (onRetirerTaches != null)
+                const PopupMenuItem(value: 'retirer', child: Text('Retirer les tâches générées', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
               if (onDelete != null)
                 const PopupMenuItem(value: 'delete', child: Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
               if (isEmployeeMode && !canWrite)
