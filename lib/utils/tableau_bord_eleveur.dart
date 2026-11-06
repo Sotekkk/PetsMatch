@@ -3,10 +3,12 @@
 // n'apparaît que dans un bloc :
 //   • À faire  : tâches manuelles (taches_elevage) + tâches de protocole qui
 //                ne sont pas des soins ;
-//   • Soins    : soins des protocoles (plan_taches, type_acte sanitaire),
-//                tâches « Vaccin — … » des rappels du carnet, rappels du
-//                carnet dans l'agenda (agenda_events « Rappel vaccin — … ») ;
-//                le rappel d'agenda est masqué s'il double une tâche du jour ;
+//   • Soins    : rappels du CARNET (vaccinations / vermifuges / antiparasitaires,
+//                dernière ligne de chaque soin, soinRemplace), soins des
+//                protocoles (plan_taches, type_acte sanitaire) et tâches
+//                « Vaccin — … » des rappels (masquées si le rappel du carnet du
+//                même jour est listé). Les copies d'agenda « Rappel vaccin — … »
+//                ne sont pas reprises ;
 //   • Agenda   : autres événements + RDV vétérinaires à venir ;
 //   • Activité : contrats à envoyer / à signer, demandes de récupération.
 // Filtres de profil : ceux de l'agenda (agenda_page.dart _loadTasks).
@@ -14,6 +16,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/cloisonnement_profils.dart';
+import 'package:PetsMatch/utils/soin_remplace.dart';
 
 typedef _Filtre = PostgrestFilterBuilder<List<Map<String, dynamic>>>;
 typedef _Transf = PostgrestTransformBuilder<List<Map<String, dynamic>>>;
@@ -21,9 +24,10 @@ typedef _Transf = PostgrestTransformBuilder<List<Map<String, dynamic>>>;
 const kHorizonJours = 7;
 const kActesCarnet = ['vermifuge', 'antiparasitaire', 'vaccination', 'traitement'];
 
-/// Où mène une ligne : le jour de l'agenda, ou le planning du jour des
-/// protocoles (validation d'un soin avec inscription au carnet).
-enum CibleTB { jour, planning }
+/// Où mène une ligne : le jour de l'agenda, le planning du jour des
+/// protocoles (validation d'un soin avec inscription au carnet), ou l'onglet
+/// Santé de la fiche de l'animal (rappel du carnet).
+enum CibleTB { jour, planning, fiche }
 
 class LigneTB {
   final String cle;
@@ -40,10 +44,13 @@ class LigneTB {
   /// Coche directe (tâches simples) : 'taches_elevage' ou 'plan_taches'.
   final String? tableCochable;
   final Map<String, dynamic>? brut;
+  /// Rappel du carnet : animal (fiche) et clé jour|acte|animal.
+  final String? animalId;
+  final String? cleSoin;
   LigneTB({
     required this.cle, required this.titre, required this.date, this.heure, this.animal,
     this.responsable, this.fait = false, this.retard = false, this.couleur, this.sousTitre,
-    this.cible = CibleTB.jour, this.tableCochable, this.brut,
+    this.cible = CibleTB.jour, this.tableCochable, this.brut, this.animalId, this.cleSoin,
   });
 }
 
@@ -93,7 +100,6 @@ Future<DonneesTB> chargerTableauBord({
   final aujourdhui = DateTime(maintenant.year, maintenant.month, maintenant.day);
   final today = _ymd(aujourdhui);
   final end = _ymd(aujourdhui.add(const Duration(days: kHorizonJours)));
-  final debutRetard = aujourdhui.subtract(const Duration(days: 90));
 
   const colsR = 'id,label,date_prevue,statut,type_acte,animal_nom,assigned_to';
   const colsT = 'id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,assignes_a,assigne_a,rdv_veto_cabinet,rdv_veto_motif,notes';
@@ -120,33 +126,41 @@ Future<DonneesTB> chargerTableauBord({
       ? supa.from('taches_elevage').select(colsT).eq('assigne_profile_id', pid)
       : supa.from('taches_elevage').select(colsT).eq('assigne_a', userUid);
   final evQ = pid.isNotEmpty
-      ? supa.from('agenda_events').select('id,titre,date_debut,type,animal_id,lieu').eq('pro_profile_id', pid)
-      : supa.from('agenda_events').select('id,titre,date_debut,type,animal_id,lieu').eq('uid', userUid)
+      ? supa.from('agenda_events').select('id,titre,date_debut,type,animal_id').eq('pro_profile_id', pid)
+      : supa.from('agenda_events').select('id,titre,date_debut,type,animal_id').eq('uid', userUid)
           .or('pro_profile_id.is.null,pro_profile_id.eq.');
 
+  // Une requête en erreur ne bloque pas tout l'accueil : liste vide + journal.
+  Future<dynamic> sur(Future<dynamic> f, String quoi) => f.catchError((Object e) {
+        debugPrint('Tableau de bord éleveur, $quoi : $e');
+        return quoi == 'equipe' ? <String, String>{} : <dynamic>[];
+      });
+  final carnetF = _rappelsCarnet(ownerUid, pid, aujourdhui, end)
+      .catchError((Object e) { debugPrint('Tableau de bord éleveur, carnet : $e'); return <LigneTB>[]; });
+
   final r = await Future.wait<dynamic>([
-    avecProfil('plan_taches', (q) => q.gte('date_prevue', today).lte('date_prevue', end), cols: colsR),
-    avecProfil('plan_taches', (q) => q.neq('statut', 'fait').lt('date_prevue', today), cols: colsR, ordre: 'date_prevue', limite: 200),
-    routinesAMoi().gte('date_prevue', today).lte('date_prevue', end).limit(300),
-    routinesAMoi().neq('statut', 'fait').lt('date_prevue', today).limit(200),
-    avecProfil('taches_elevage', (q) => q.gte('date', today).lte('date', end), cols: colsT),
-    avecProfil('taches_elevage', (q) => q.neq('statut', 'fait').lt('date', today), cols: colsT, ordre: 'date', limite: 200),
-    tachesAMoi().gte('date', today).lte('date', end).limit(300),
-    tachesAMoi().neq('statut', 'fait').lt('date', today).limit(200),
-    evQ.gte('date_debut', debutRetard.toUtc().toIso8601String())
+    sur(avecProfil('plan_taches', (q) => q.gte('date_prevue', today).lte('date_prevue', end), cols: colsR), 'protocoles'),
+    sur(avecProfil('plan_taches', (q) => q.neq('statut', 'fait').lt('date_prevue', today), cols: colsR, ordre: 'date_prevue', limite: 200), 'protocoles en retard'),
+    sur(routinesAMoi().gte('date_prevue', today).lte('date_prevue', end).limit(300), 'protocoles assignés'),
+    sur(routinesAMoi().neq('statut', 'fait').lt('date_prevue', today).limit(200), 'protocoles assignés en retard'),
+    sur(avecProfil('taches_elevage', (q) => q.gte('date', today).lte('date', end), cols: colsT), 'tâches'),
+    sur(avecProfil('taches_elevage', (q) => q.neq('statut', 'fait').lt('date', today), cols: colsT, ordre: 'date', limite: 200), 'tâches en retard'),
+    sur(tachesAMoi().gte('date', today).lte('date', end).limit(300), 'tâches assignées'),
+    sur(tachesAMoi().neq('statut', 'fait').lt('date', today).limit(200), 'tâches assignées en retard'),
+    sur(evQ.gte('date_debut', aujourdhui.toUtc().toIso8601String())
         .lte('date_debut', DateTime.parse('${end}T23:59:59').toUtc().toIso8601String())
-        .order('date_debut').limit(300),
-    _membres(ownerUid, userUid),
+        .order('date_debut').limit(300), 'agenda'),
+    sur(_membres(ownerUid, userUid), 'equipe'),
     // Contrats de l'élevage (contrat_reservation.dart) qui attendent une action.
-    supa.from('documents_animaux').select('id,titre,statut,animal_id,created_at')
+    sur(supa.from('documents_animaux').select('id,titre,statut,animal_id,created_at')
         .eq('uid_eleveur', ownerUid)
         .inFilter('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession', 'contrat_saillie'])
         .inFilter('statut', ['brouillon', 'en_attente', 'partiellement_signe'])
-        .order('created_at', ascending: false).limit(50),
+        .order('created_at', ascending: false).limit(50), 'contrats'),
     // Demandes de récupération (recuperations_page.dart).
-    supa.from('animal_recuperations').select('id,animal_id,created_at')
+    sur(supa.from('animal_recuperations').select('id,animal_id,created_at')
         .eq('eleveur_uid', ownerUid).eq('statut', 'en_attente')
-        .order('created_at', ascending: false).limit(50),
+        .order('created_at', ascending: false).limit(50), 'récupérations'),
   ]);
 
   List<Map<String, dynamic>> maps(dynamic l) => [for (final x in l as List) Map<String, dynamic>.from(x as Map)];
@@ -184,7 +198,9 @@ Future<DonneesTB> chargerTableauBord({
     }
   }
 
-  final soinsDuJour = <String>{};
+  final carnet = await carnetF;
+  soins.addAll(carnet);
+  final soinsDuJour = {for (final l in carnet) l.cleSoin!};
   for (final t in taches) {
     final date = _jour(t['date'].toString());
     final fait = t['statut'] == 'fait';
@@ -207,7 +223,8 @@ Future<DonneesTB> chargerTableauBord({
         sousTitre: acte.isNotEmpty ? 'Rappel du carnet' : null,
         tableCochable: acte.isNotEmpty ? null : 'taches_elevage', brut: acte.isNotEmpty ? null : t);
     if (acte.isNotEmpty) {
-      if ((t['animal_id']?.toString() ?? '').isNotEmpty) soinsDuJour.add('${_ymd(date)}|$acte|${t['animal_id']}');
+      // Même rappel déjà listé depuis le carnet : la tâche du jour n'est pas répétée.
+      if ((t['animal_id']?.toString() ?? '').isNotEmpty && soinsDuJour.contains('${_ymd(date)}|$acte|${t['animal_id']}')) continue;
       soins.add(ligne);
     } else {
       aFaire.add(ligne);
@@ -217,20 +234,13 @@ Future<DonneesTB> chargerTableauBord({
   for (final e in evenements) {
     final debut = DateTime.parse(e['date_debut'].toString()).toLocal();
     final date = DateTime(debut.year, debut.month, debut.day);
-    final acte = e['type'] == 'medication' ? _acte(e['titre']?.toString() ?? '', _acteRappel) : '';
-    if (acte.isNotEmpty) {
-      // Rappel du carnet : retiré par le serveur au renouvellement du soin.
-      if (e['animal_id'] != null && soinsDuJour.contains('${_ymd(date)}|$acte|${e['animal_id']}')) continue;
-      soins.add(LigneTB(cle: 'e_${e['id']}', titre: sansPictos(e['titre'].toString()), date: date,
-          retard: date.isBefore(aujourdhui), sousTitre: 'Rappel du carnet'));
-      continue;
-    }
+    // Copie d'agenda d'un rappel du carnet : déjà listée depuis le carnet.
+    if (e['type'] == 'medication' && _acte(e['titre']?.toString() ?? '', _acteRappel).isNotEmpty) continue;
     if (date.isBefore(aujourdhui)) continue;
     final heure = debut.hour != 0 || debut.minute != 0
         ? '${debut.hour.toString().padLeft(2, '0')}:${debut.minute.toString().padLeft(2, '0')}' : null;
     agenda.add(LigneTB(cle: 'e_${e['id']}', titre: sansPictos(e['titre'].toString()), date: date, heure: heure,
-        couleur: _couleurType[e['type']?.toString() ?? ''] ?? _couleurType['autre'],
-        sousTitre: (e['lieu']?.toString() ?? '').isEmpty ? null : e['lieu'].toString()));
+        couleur: _couleurType[e['type']?.toString() ?? ''] ?? _couleurType['autre']));
   }
 
   // En retard d'abord, puis par jour et heure ; faites en dernier dans la journée.
@@ -253,8 +263,12 @@ Future<DonneesTB> chargerTableauBord({
   };
   final noms = <String, String>{};
   if (ids.isNotEmpty) {
-    final rows = await supa.from('animaux').select('id, nom').inFilter('id', ids.toList());
-    for (final a in rows as List) { noms[a['id'].toString()] = (a['nom'] ?? '').toString(); }
+    try {
+      final rows = await supa.from('animaux').select('id, nom').inFilter('id', ids.toList());
+      for (final a in rows as List) { noms[a['id'].toString()] = (a['nom'] ?? '').toString(); }
+    } catch (e) {
+      debugPrint('Tableau de bord éleveur, noms des animaux : $e');
+    }
   }
 
   return DonneesTB(aFaire, soins, agenda, [
@@ -262,6 +276,61 @@ Future<DonneesTB> chargerTableauBord({
       ContratTB(c['id'].toString(), sansPictos((c['titre'] ?? 'Contrat').toString()), c['statut'].toString(),
           noms[c['animal_id']?.toString()]),
   ], [for (final x in recups) noms[x['animal_id']?.toString()] ?? 'Animal']);
+}
+
+// Tables du carnet avec date de rappel (functions/sante.js, TABLES).
+const _carnet = [
+  (table: 'vaccinations', acte: 'vaccin', libelle: 'Rappel vaccin', nom: 'vaccin', cols: 'id,animal_id,date,date_rappel,vaccin,categorie'),
+  (table: 'vermifuges', acte: 'vermifuge', libelle: 'Rappel vermifuge', nom: 'produit', cols: 'id,animal_id,date,date_rappel,produit'),
+  (table: 'antiparasitaires', acte: 'antiparasitaire', libelle: 'Rappel antiparasitaire', nom: 'produit', cols: 'id,animal_id,date,date_rappel,produit'),
+];
+
+/// Rappels du carnet à faire (en retard ou dans l'horizon) pour les animaux
+/// présents du profil — mêmes animaux que le compteur « Animaux » de l'accueil.
+Future<List<LigneTB>> _rappelsCarnet(String ownerUid, String pid, DateTime aujourdhui, String end) async {
+  final supa = Supabase.instance.client;
+  var q = supa.from('animaux_proprietes').select('animal_id').eq('uid_proprio', ownerUid).isFilter('date_fin', null);
+  if (pid.isNotEmpty) {
+    final check = await supa.from('animaux_proprietes').select('animal_id')
+        .eq('uid_proprio', ownerUid).not('profile_id_proprio', 'is', null).limit(1);
+    if ((check as List).isNotEmpty) q = q.eq('profile_id_proprio', pid);
+  }
+  final ids = {for (final r in await q.limit(2000) as List) if (r['animal_id'] != null) r['animal_id'].toString()}.toList();
+  if (ids.isEmpty) return [];
+  final morceaux = [for (var i = 0; i < ids.length; i += 100) ids.sublist(i, i + 100 > ids.length ? ids.length : i + 100)];
+  final noms = <String, String>{};
+  for (final m in morceaux) {
+    final rows = await supa.from('animaux').select('id, nom').inFilter('id', m);
+    for (final a in rows as List) { noms[a['id'].toString()] = (a['nom'] ?? '').toString(); }
+  }
+  final lignes = <LigneTB>[];
+  for (final c in _carnet) {
+    final rows = <Map<String, dynamic>>[];
+    for (final m in morceaux) {
+      try {
+        final res = await supa.from(c.table).select(c.cols).inFilter('animal_id', m).limit(5000);
+        rows.addAll([for (final x in res as List) Map<String, dynamic>.from(x as Map)]);
+      } catch (e) {
+        debugPrint('Tableau de bord éleveur, ${c.table} : $e');
+      }
+    }
+    final parAnimal = <String, List<Map<String, dynamic>>>{};
+    for (final r in rows) { parAnimal.putIfAbsent(r['animal_id'].toString(), () => []).add(r); }
+    for (final r in rows) {
+      final rappel = (r['date_rappel']?.toString() ?? '');
+      if (rappel.length < 10 || rappel.substring(0, 10).compareTo(end) > 0) continue;
+      // Soin déjà renouvelé (ligne plus récente du même produit) : plus rien à faire.
+      if (soinRemplace(c.table, r, parAnimal[r['animal_id'].toString()] ?? const [])) continue;
+      final date = _jour(rappel);
+      final produit = (r[c.nom] ?? '').toString().trim();
+      final animalId = r['animal_id'].toString();
+      lignes.add(LigneTB(cle: 'c_${c.table}_${r['id']}', titre: produit.isEmpty ? c.libelle : '${c.libelle} — $produit',
+          date: date, animal: (noms[animalId] ?? '').isEmpty ? null : noms[animalId],
+          retard: date.isBefore(aujourdhui), sousTitre: 'Carnet de santé', cible: CibleTB.fiche,
+          animalId: animalId, cleSoin: '${_ymd(date)}|${c.acte}|$animalId'));
+    }
+  }
+  return lignes;
 }
 
 /// Noms de l'équipe (moi + employés avec compte) — miroir site loadMembres.

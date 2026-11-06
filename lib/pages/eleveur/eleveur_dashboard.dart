@@ -19,6 +19,7 @@ import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/recuperations_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
@@ -101,9 +102,12 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
       builder: (ctx) => AgendaPage(onBack: () => Navigator.pop(ctx), jourInitial: jour,
           initialViewMode: jour != null ? 1 : 0))).then((_) { if (mounted) _charger(); });
 
-  void _ouvrirLigne(LigneTB l) => l.cible == CibleTB.planning
-      ? _ouvrir(PlanningJourPage(initialDate: l.date))
-      : _ouvrirAgenda(jour: l.date);
+  void _ouvrirLigne(LigneTB l) => switch (l.cible) {
+        CibleTB.planning => _ouvrir(PlanningJourPage(initialDate: l.date)),
+        // Rappel du carnet : onglet Santé de la fiche (index 1 chez l'éleveur).
+        CibleTB.fiche => _ouvrir(AnimalFichePage(animalId: l.animalId, initialTabIndex: 1)),
+        CibleTB.jour => _ouvrirAgenda(jour: l.date),
+      };
 
   Future<void> _cocher(LigneTB l) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
