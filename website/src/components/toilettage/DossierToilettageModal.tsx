@@ -36,6 +36,8 @@ interface RdvRow {
   client_telephone_manuel?: string | null; client_email_manuel?: string | null;
   consignes?: Record<string, unknown> | null; consignes_le?: string | null; consignes_demandees_le?: string | null;
   animaux_detail?: unknown;
+  /** Fin de séance envoyée (FinConsultationModal), comme vétérinaire / éducateur / ostéo. */
+  documents_envoyes_le?: string | null;
 }
 interface Seance { id: string; compte_rendu: string | null; partage_proprietaire: boolean }
 interface Contrat { id: string; token: string; statut: string }
@@ -428,6 +430,13 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
         <button onClick={() => setFinSeance(true)} className="w-full mt-4 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: TEAL }}>
           Fin de séance : envoyer et encaisser
         </button>
+        {r.documents_envoyes_le ? (
+          <p className="text-xs font-semibold text-center mt-1.5" style={{ color: '#2E7D32' }}>
+            {`Documents envoyés au client le ${new Date(r.documents_envoyes_le).toLocaleDateString('fr-FR')} à ${new Date(r.documents_envoyes_le).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`}
+          </p>
+        ) : (
+          <p className="text-[11px] text-gray-400 mt-1.5 text-center">Comptes rendus (PDF signés), devis et facture, en un seul e-mail.</p>
+        )}
         <button onClick={onClose} className="w-full mt-2 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
       </div>
       {finSeance && (

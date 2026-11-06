@@ -427,17 +427,27 @@ Future<void> finSeanceToilettage(BuildContext context, Map<String, dynamic> rdv,
       messenger.showSnackBar(SnackBar(behavior: SnackBarBehavior.floating, content: Text(
           echecsDevis > 0 ? 'Devis : e-mail non envoyé (adresse manquante ou erreur).' : 'Devis envoyé au client pour signature.',
           style: const TextStyle(fontFamily: 'Galey'))));
+      if (pieces.isEmpty && echecsDevis == 0) await _traceEnvoi(rdvId);
     }
     if (pieces.isEmpty || !context.mounted) return;
     final coord = await coordonneesClientRdv(rdv);
     if (!context.mounted) return;
-    await envoyerDocumentsParEmail(context, pieces: pieces, animalNom: animalNom, destinataireNom: nomClient,
+    final envoye = await envoyerDocumentsParEmail(context, pieces: pieces, animalNom: animalNom, destinataireNom: nomClient,
         emailParDefaut: (coord['email'] ?? '').isNotEmpty ? coord['email'] : ((facture?['email_client'] ?? '').toString().isEmpty ? null : facture!['email_client'].toString()),
         animalId: rdv['animal_id']?.toString());
+    // Trace de l'envoi, affichée dans le dossier (comme vétérinaire / éducateur / ostéo).
+    if (envoye) await _traceEnvoi(rdvId);
   } catch (e) {
     messenger.showSnackBar(SnackBar(content: Text('Impossible : $e', style: const TextStyle(fontFamily: 'Galey')),
         behavior: SnackBarBehavior.floating));
   }
+}
+
+/// Fin de séance envoyée au client : rdv.documents_envoyes_le (miroir site FinConsultationModal).
+Future<void> _traceEnvoi(String rdvId) async {
+  try {
+    await Supabase.instance.client.from('rdv').update({'documents_envoyes_le': DateTime.now().toUtc().toIso8601String()}).eq('id', rdvId);
+  } catch (_) {}
 }
 
 /// Facture de la prestation : prix TTC affiché (HT déduit selon le régime de
@@ -556,7 +566,7 @@ class _DossierToilettageState extends State<_DossierToilettage> {
     final id = r['id'];
     _coord = await coordonneesClientRdv(r);
     _prochain = await prochainRdvDate(r);
-    try { _consignes = await _supa.from('rdv').select('consignes, consignes_le, consignes_demandees_le, animal_id, animaux_detail').eq('id', id).maybeSingle(); } catch (_) {}
+    try { _consignes = await _supa.from('rdv').select('consignes, consignes_le, consignes_demandees_le, animal_id, animaux_detail, documents_envoyes_le').eq('id', id).maybeSingle(); } catch (_) {}
     // Détail des animaux (absent de certaines listes de l'agenda) : repris du RDV.
     if (r['animaux_detail'] == null && _consignes?['animaux_detail'] != null) r['animaux_detail'] = _consignes!['animaux_detail'];
     // Une fiche par animal du RDV (migration_toilettage_seance_par_animal.sql).
@@ -918,6 +928,20 @@ class _DossierToilettageState extends State<_DossierToilettage> {
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
         )),
+        Builder(builder: (_) {
+          final envoyes = DateTime.tryParse(_consignes?['documents_envoyes_le']?.toString() ?? '')?.toLocal();
+          return Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: SizedBox(width: double.infinity, child: Text(
+              envoyes != null
+                  ? 'Documents envoyés au client le ${DateFormat('dd/MM/yyyy').format(envoyes)} à ${DateFormat('HH:mm').format(envoyes)}'
+                  : 'Comptes rendus (PDF signés), devis et facture, en un seul e-mail.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: envoyes != null ? FontWeight.w700 : FontWeight.w400,
+                  color: envoyes != null ? const Color(0xFF2E7D32) : Colors.grey.shade600),
+            )),
+          );
+        }),
         const Padding(padding: EdgeInsets.only(top: 10, bottom: 6),
             child: Text('Contacter le client', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5, color: _ink))),
         ContactCanaux(clientUid: r['client_uid']?.toString(), tel: _coord['tel'], email: _coord['email'], monProfilId: _pid,
