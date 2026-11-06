@@ -207,7 +207,19 @@ class _PensionDashboardState extends State<PensionDashboard> {
   // Alertes ---------------------------------------------------------------
 
   // Demandes de séjour ------------------------------------------------------
-  Future<void> _decider(Map<String, dynamic> d, bool accepter, {bool forcer = false}) async {
+  /// Demandes d'un même client aux mêmes dates (plusieurs animaux) : un bloc,
+  /// acceptées ou refusées ensemble. Miroir site : PensionDashboard.
+  List<List<Map<String, dynamic>>> get _groupesDemandes {
+    final m = <String, List<Map<String, dynamic>>>{};
+    for (final d in _demandes) {
+      final cle = '${d['client_uid'] ?? d['id']}|${d['client_profile_id'] ?? ''}|${d['date_arrivee']}|${d['date_depart']}';
+      m.putIfAbsent(cle, () => []).add(d);
+    }
+    return m.values.toList();
+  }
+
+  Future<void> _decider(List<Map<String, dynamic>> g, bool accepter, {bool forcer = false}) async {
+    final d = g.first;
     if (_decisionEnCours == d['id'].toString() && !forcer) return;
     String? motif;
     if (!accepter) {
@@ -227,7 +239,8 @@ class _PensionDashboardState extends State<PensionDashboard> {
     setState(() => _decisionEnCours = d['id'].toString());
     try {
       final r = await http.post(Uri.parse('$kSiteBaseUrl/api/pension/sejour'), headers: await siteApiHeaders(),
-          body: jsonEncode({'action': 'decider', 'demandeId': d['id'], 'accepter': accepter, if (motif != null) 'motif': motif, if (forcer) 'forcer': true}));
+          body: jsonEncode({'action': 'decider', 'demandeId': d['id'], 'demandeIds': [for (final x in g) x['id']],
+              'accepter': accepter, if (motif != null) 'motif': motif, if (forcer) 'forcer': true}));
       if (!mounted) return;
       setState(() => _decisionEnCours = null);
       // Hébergements pleins sur une partie du séjour : accepter quand même ?
@@ -237,13 +250,13 @@ class _PensionDashboardState extends State<PensionDashboard> {
         if (j['complet'] == true) {
           final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
             title: const Text('Pension complète', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-            content: Text('${j['error']}\nAccepter quand même ce séjour ?', style: const TextStyle(fontFamily: 'Galey')),
+            content: Text('${j['error']}\nAccepter quand même ${g.length > 1 ? 'ces séjours' : 'ce séjour'} ?', style: const TextStyle(fontFamily: 'Galey')),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
               TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Accepter quand même')),
             ],
           ));
-          if (ok == true) await _decider(d, true, forcer: true);
+          if (ok == true) await _decider(g, true, forcer: true);
           return;
         }
       }
@@ -254,7 +267,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(accepter
-          ? 'Séjour accepté : il est au planning et le client est prévenu' : 'Demande refusée, le client est prévenu')));
+          ? '${g.length > 1 ? 'Séjours acceptés : ils sont' : 'Séjour accepté : il est'} au planning et le client est prévenu' : 'Demande refusée, le client est prévenu')));
       setState(() => _loading = true);
       _charger();
     } catch (e) {
@@ -271,29 +284,37 @@ class _PensionDashboardState extends State<PensionDashboard> {
       padding: const EdgeInsets.only(bottom: 16),
       child: DashCarte(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         DashTitre('Demandes de séjour', icone: Icons.mark_email_unread_outlined, compteur: _demandes.length),
-        for (final d in _demandes)
-          Padding(
+        for (final g in _groupesDemandes)
+          Builder(builder: (_) {
+          final d = g.first;
+          return Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('${d['animal_nom'] ?? 'Animal'}${d['nouveau_pensionnaire'] == true ? ' · nouveau pensionnaire' : d['nouveau_pensionnaire'] == false ? ' · déjà venu (selon le client)' : ''}',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
-              Text('Du ${_jm(d['date_arrivee'])} au ${_jm(d['date_depart'])}'
+              for (final x in g)
+                InkWell(
+                  onTap: g.length > 1 ? () => _go(AnimalFichePensionPage(animalId: x['animal_id'].toString(), animalNom: x['animal_nom']?.toString() ?? 'Animal')) : null,
+                  child: Text('${x['animal_nom'] ?? 'Animal'}${x['nouveau_pensionnaire'] == true ? ' · nouveau pensionnaire' : x['nouveau_pensionnaire'] == false ? ' · déjà venu (selon le client)' : ''}',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                ),
+              Text('${g.length > 1 ? '${g.length} animaux · ' : ''}Du ${_jm(d['date_arrivee'])} au ${_jm(d['date_depart'])}'
                   '${d['essai_date'] != null ? ' · essai le ${_jm(d['essai_date'])}' : ''}'
                   '${d['hebergement'] == 'box' ? ' · box' : d['hebergement'] == 'pre' ? ' · pré' : ''}',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),
               if ((d['message']?.toString() ?? '').isNotEmpty)
                 Text('« ${d['message']} »', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _muted)),
               Row(children: [
-                FilledButton(onPressed: _decisionEnCours == d['id'].toString() ? null : () => _decider(d, true), style: FilledButton.styleFrom(backgroundColor: _vert, visualDensity: VisualDensity.compact),
-                    child: const Text('Accepter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600))),
+                FilledButton(onPressed: _decisionEnCours == d['id'].toString() ? null : () => _decider(g, true), style: FilledButton.styleFrom(backgroundColor: _vert, visualDensity: VisualDensity.compact),
+                    child: Text(g.length > 1 ? 'Accepter les ${g.length}' : 'Accepter', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600))),
                 const SizedBox(width: 8),
-                TextButton(onPressed: () => _decider(d, false), child: const Text('Refuser', style: TextStyle(fontFamily: 'Galey'))),
+                TextButton(onPressed: () => _decider(g, false), child: const Text('Refuser', style: TextStyle(fontFamily: 'Galey'))),
                 const Spacer(),
-                TextButton(onPressed: () => _go(AnimalFichePensionPage(animalId: d['animal_id'].toString(), animalNom: d['animal_nom']?.toString() ?? 'Animal')),
-                    child: const Text('Fiche', style: TextStyle(fontFamily: 'Galey'))),
+                if (g.length == 1)
+                  TextButton(onPressed: () => _go(AnimalFichePensionPage(animalId: d['animal_id'].toString(), animalNom: d['animal_nom']?.toString() ?? 'Animal')),
+                      child: const Text('Fiche', style: TextStyle(fontFamily: 'Galey'))),
               ]),
             ]),
-          ),
+          );
+          }),
       ])),
     );
   }

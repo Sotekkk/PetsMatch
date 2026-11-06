@@ -1,5 +1,5 @@
 // Pension — réservation d'un séjour par le client (au lieu d'un rendez-vous) :
-// animal, dates d'arrivée / départ, date d'essai si la pension l'exige pour un
+// un ou plusieurs animaux (liste à cocher ; places vérifiées pour leur nombre), dates d'arrivée / départ, date d'essai si la pension l'exige pour un
 // premier séjour, estimation du prix (tarifs publics), message. Demande à
 // accepter par la pension (route /api/pension/sejour). Miroir site :
 // website/src/components/pension/ReservationSejourModal.tsx.
@@ -15,6 +15,7 @@ import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionTarifKeyForEspece, pensionTarifPourKey, pensionTarifEquin, pensionPrixNuit;
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
+import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 
 const _ink = Color(0xFF1F2A2E);
 
@@ -33,13 +34,17 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
   final _supa = Supabase.instance.client;
   final _message = TextEditingController();
   List<Map<String, dynamic>> _animaux = [];
-  Map<String, dynamic>? _animal;
+  // Animaux du séjour (liste à cocher, comme le vétérinaire).
+  List<Map<String, dynamic>> _choisis = [];
   DateTimeRange? _dates;
   DateTime? _essai;
   Map<String, dynamic>? _pension;
-  bool? _premierSejour;
-  // Sans historique chez cette pension : l'animal est-il déjà venu ? (null = pas répondu)
-  bool? _dejaVenu;
+  // Premier séjour de chaque animal chez cette pension.
+  Map<String, bool> _premiers = {};
+  // Sans historique chez cette pension : l'animal est-il déjà venu ? (absent = pas répondu)
+  final Map<String, bool> _dejaVenus = {};
+  // Places libres aux dates choisies pour le nombre d'animaux (message si complet).
+  String? _complet;
   // Équidés : hébergement souhaité ('box' / 'pre').
   String? _hebergement;
   bool _loading = true, _envoi = false;
@@ -67,7 +72,7 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
       if (User_Info.activeProfileId.isNotEmpty) q = q.eq('profile_id_proprio', User_Info.activeProfileId);
       final ids = [for (final r in await q) r['animal_id'].toString()];
       if (ids.isNotEmpty) {
-        _animaux = List<Map<String, dynamic>>.from(await _supa.from('animaux').select('id, nom, espece, photo_url, statut')
+        _animaux = List<Map<String, dynamic>>.from(await _supa.from('animaux').select('id, nom, espece, race, photo_url, statut')
             .inFilter('id', ids).not('statut', 'in', '(sorti,decede)').order('nom'));
       }
     } catch (_) {}
@@ -83,37 +88,66 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
     await _charger();
   }
 
+  /// Infos de la pension, premier séjour de chaque animal et places libres
+  /// aux dates choisies pour le nombre d'animaux (route /api/pension/sejour).
   Future<void> _infosPension() async {
     if (_pid.isEmpty) return;
+    final f = DateFormat('yyyy-MM-dd');
     try {
-      final q = _animal != null ? '&animalId=${Uri.encodeComponent(_animal!['id'].toString())}' : '';
-      final r = await http.get(Uri.parse('$kSiteBaseUrl/api/pension/sejour?pensionProfileId=${Uri.encodeComponent(_pid)}$q'),
+      final qs = <String, String>{
+        'pensionProfileId': _pid,
+        if (_choisis.isNotEmpty) 'animalIds': _choisis.map((a) => a['id'].toString()).join(','),
+        if (_dates != null) ...{
+          'arrivee': f.format(_dates!.start), 'depart': f.format(_dates!.end),
+          'nb': '${_choisis.isEmpty ? 1 : _choisis.length}',
+        },
+      };
+      final r = await http.get(Uri.parse('$kSiteBaseUrl/api/pension/sejour').replace(queryParameters: qs),
           headers: await siteApiHeaders());
       if (r.statusCode == 200) {
         final j = jsonDecode(r.body) as Map<String, dynamic>;
         _pension = Map<String, dynamic>.from(j['pension'] as Map);
-        _premierSejour = j['premier_sejour'] as bool?;
+        _premiers = {for (final e in ((j['premiers'] as Map?) ?? const {}).entries) e.key.toString(): e.value == true};
+        _complet = (j['dispo'] as Map?)?['message']?.toString();
       }
     } catch (_) {}
   }
 
-  bool get _questionNouveau => _premierSejour == true;
-  bool get _equin => pensionTarifEquin(pensionTarifKeyForEspece(_animal?['espece']?.toString()));
-  bool get _essaiRequis => _pension?['essai_requis'] == true && _premierSejour == true && _dejaVenu == false;
+  Future<void> _actualiser() async {
+    await _infosPension();
+    if (mounted) setState(() {});
+  }
 
-  /// Estimation : nuits × prix/nuit de l'espèce (tarifs publics de la pension).
+  List<Map<String, dynamic>> get _aQuestionner => [for (final a in _choisis) if (_premiers[a['id'].toString()] == true) a];
+  List<Map<String, dynamic>> get _nouveaux => [for (final a in _aQuestionner) if (_dejaVenus[a['id'].toString()] == false) a];
+  bool get _equin => _choisis.any((a) => pensionTarifEquin(pensionTarifKeyForEspece(a['espece']?.toString())));
+  bool get _essaiRequis => _pension?['essai_requis'] == true && _nouveaux.isNotEmpty;
+
+  /// Estimation : nuits × prix/nuit de l'espèce, pour chaque animal (tarifs publics).
   String? get _estimation {
     final tarifs = _pension?['tarifs'] as Map?;
-    if (tarifs == null || _dates == null || _animal == null) return null;
-    final key = pensionTarifKeyForEspece(_animal!['espece']?.toString());
-    if (key == null) return null;
-    final t = pensionTarifPourKey((tarifs['especes'] as List?) ?? const [], key);
-    if (t == null) return null;
-    final prix = pensionPrixNuit(t, hebergement: _hebergement);
-    if (prix <= 0) return null;
+    if (tarifs == null || _dates == null || _choisis.isEmpty) return null;
+    var total = 0.0;
+    for (final a in _choisis) {
+      final key = pensionTarifKeyForEspece(a['espece']?.toString());
+      if (key == null) return null;
+      final t = pensionTarifPourKey((tarifs['especes'] as List?) ?? const [], key);
+      if (t == null) return null;
+      final prix = pensionPrixNuit(t, hebergement: _hebergement);
+      if (prix <= 0) return null;
+      total += prix;
+    }
     final nuits = _dates!.end.difference(_dates!.start).inDays;
     if (nuits <= 0) return null;
-    return '$nuits nuit${nuits > 1 ? 's' : ''} × ${prix.toStringAsFixed(0)} € = ${(nuits * prix).toStringAsFixed(0)} € environ (hors réductions et options)';
+    return '$nuits nuit${nuits > 1 ? 's' : ''} × ${total.toStringAsFixed(0)} €'
+        '${_choisis.length > 1 ? ' (${_choisis.length} animaux)' : ''} = ${(nuits * total).toStringAsFixed(0)} € environ (hors réductions et options)';
+  }
+
+  Future<void> _choisirAnimaux() async {
+    final res = await AnimalPickerSheet.pickMany(context, preloaded: _animaux, current: _choisis, accentColor: _c, showPortees: false);
+    if (res == null || !mounted) return;
+    setState(() { _choisis = res; _hebergement = null; });
+    await _actualiser();
   }
 
   Future<void> _choisirDates() async {
@@ -122,7 +156,9 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
       context: context, firstDate: DateTime(now.year, now.month, now.day), lastDate: now.add(const Duration(days: 365)),
       initialDateRange: _dates, helpText: 'Arrivée et départ', saveText: 'Valider', locale: const Locale('fr', 'FR'),
     );
-    if (r != null) setState(() { _dates = r; if (_essai != null && !_essai!.isBefore(r.start)) _essai = null; });
+    if (r == null) return;
+    setState(() { _dates = r; if (_essai != null && !_essai!.isBefore(r.start)) _essai = null; });
+    await _actualiser();
   }
 
   Future<void> _choisirEssai() async {
@@ -138,10 +174,16 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
   }
 
   Future<void> _envoyer() async {
-    if (_animal == null || _dates == null) return;
-    if (_questionNouveau && _dejaVenu == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Indiquez si votre animal est déjà venu dans cette pension.')));
+    if (_choisis.isEmpty || _dates == null) return;
+    if (_complet != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_complet!)));
       return;
+    }
+    for (final a in _aQuestionner) {
+      if (!_dejaVenus.containsKey(a['id'].toString())) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Indiquez si ${a['nom'] ?? 'votre animal'} est déjà venu dans cette pension.')));
+        return;
+      }
     }
     if (_essaiRequis && _essai == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cette pension demande un essai avant le premier séjour : choisissez sa date.")));
@@ -151,8 +193,10 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
     final f = DateFormat('yyyy-MM-dd');
     try {
       final r = await http.post(Uri.parse('$kSiteBaseUrl/api/pension/sejour'), headers: await siteApiHeaders(), body: jsonEncode({
-        'pensionProfileId': _pid, 'animalId': _animal!['id'], 'dateArrivee': f.format(_dates!.start), 'dateDepart': f.format(_dates!.end),
-        if (_questionNouveau) 'dejaVenu': _dejaVenu,
+        'pensionProfileId': _pid,
+        'animalIds': [for (final a in _choisis) a['id']], 'animalId': _choisis.first['id'],
+        'dateArrivee': f.format(_dates!.start), 'dateDepart': f.format(_dates!.end),
+        if (_aQuestionner.isNotEmpty) 'dejaVenus': {for (final a in _aQuestionner) a['id'].toString(): _dejaVenus[a['id'].toString()]},
         if (_equin && _hebergement != null) 'hebergement': _hebergement,
         if (_essaiRequis && _essai != null) 'essaiDate': f.format(_essai!),
         'message': _message.text.trim(),
@@ -162,9 +206,10 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
       try { j = jsonDecode(r.body) as Map<String, dynamic>; } on FormatException { j = {'error': 'Service momentanément indisponible.'}; }
       if (r.statusCode != 200) throw Exception(j['error'] ?? 'Demande impossible');
       if (!mounted) return;
+      final noms = _choisis.map((a) => a['nom']?.toString() ?? 'Animal').join(', ');
       await showDialog(context: context, builder: (ctx) => AlertDialog(
         title: const Text('Demande envoyée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        content: Text('${widget.proName} va étudier votre demande de séjour. Vous serez prévenu dès qu\'elle sera acceptée.',
+        content: Text('${widget.proName} va étudier votre demande de séjour${_choisis.length > 1 ? ' pour $noms' : ''}. Vous serez prévenu dès qu\'elle sera acceptée.',
             style: const TextStyle(fontFamily: 'Galey')),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Voir mes demandes')),
@@ -189,42 +234,66 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
   Widget _titre(String t) => Padding(padding: const EdgeInsets.only(top: 18, bottom: 8),
       child: Text(t, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _ink)));
 
+  Widget _vignette(Map<String, dynamic> a) {
+    final url = a['photo_url']?.toString() ?? '';
+    return ClipRRect(borderRadius: BorderRadius.circular(8), child: Container(
+      width: 32, height: 32, color: _c.withValues(alpha: 0.08),
+      child: url.isNotEmpty
+          ? Image.network(url, width: 32, height: 32, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Icon(Icons.pets_outlined, size: 16, color: _c))
+          : Icon(Icons.pets_outlined, size: 16, color: _c),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final f = DateFormat('EEE d MMM', 'fr_FR');
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(backgroundColor: _c, foregroundColor: Colors.white, elevation: 0,
-          title: Text('Réserver un séjour', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+          title: const Text('Réserver un séjour', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
       body: _loading
           ? Center(child: CircularProgressIndicator(color: _c))
           : ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 32), children: [
               Text(widget.proName, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
-              _titre('Animal'),
+              _titre('Animaux'),
               if (_animaux.isEmpty)
                 Text("Créez d'abord la fiche de votre animal : la pension y trouvera sa santé et son alimentation.",
                     style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade600))
               else
-                Wrap(spacing: 8, runSpacing: 8, children: [
-                  for (final a in _animaux)
-                    ChoiceChip(
-                      label: Text(a['nom']?.toString() ?? 'Animal', style: TextStyle(fontFamily: 'Galey', color: _animal?['id'] == a['id'] ? Colors.white : _ink)),
-                      selected: _animal?['id'] == a['id'], showCheckmark: false, selectedColor: _c, backgroundColor: Colors.white,
-                      onSelected: (_) async {
-                        setState(() { _animal = a; _premierSejour = null; _dejaVenu = null; _essai = null; _hebergement = null; });
-                        await _infosPension();
-                        if (mounted) setState(() {});
-                      },
-                    ),
-                ]),
-              if (_questionNouveau) ...[
-                _titre('${_animal?['nom'] ?? 'Votre animal'} est-il déjà venu dans cette pension ?'),
+                InkWell(
+                  onTap: _choisirAnimaux,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)),
+                    child: Row(children: [
+                      if (_choisis.isEmpty) ...[
+                        Icon(Icons.pets_outlined, color: Colors.grey.shade400, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text('Choisir un ou plusieurs animaux…',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500))),
+                      ] else ...[
+                        for (final a in _choisis.take(4)) Padding(padding: const EdgeInsets.only(right: 4), child: _vignette(a)),
+                        const SizedBox(width: 6),
+                        Expanded(child: Text(_choisis.map((a) => a['nom']?.toString() ?? 'Animal').join(' + '),
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: _c))),
+                      ],
+                      Icon(Icons.expand_more, color: Colors.grey.shade500, size: 20),
+                    ]),
+                  ),
+                ),
+              if (_choisis.length > 1)
+                Padding(padding: const EdgeInsets.only(top: 6), child: Text('${_choisis.length} animaux pour ce séjour.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _c))),
+              for (final a in _aQuestionner) ...[
+                _titre('${a['nom'] ?? 'Votre animal'} est-il déjà venu dans cette pension ?'),
                 Wrap(spacing: 8, children: [
                   for (final (v, lib) in [(false, 'Non, nouveau pensionnaire'), (true, 'Oui, il est déjà venu')])
                     ChoiceChip(
-                      label: Text(lib, style: TextStyle(fontFamily: 'Galey', color: _dejaVenu == v ? Colors.white : _ink)),
-                      selected: _dejaVenu == v, showCheckmark: false, selectedColor: _c, backgroundColor: Colors.white,
-                      onSelected: (_) => setState(() { _dejaVenu = v; if (v) _essai = null; }),
+                      label: Text(lib, style: TextStyle(fontFamily: 'Galey', color: _dejaVenus[a['id'].toString()] == v ? Colors.white : _ink)),
+                      selected: _dejaVenus[a['id'].toString()] == v, showCheckmark: false, selectedColor: _c, backgroundColor: Colors.white,
+                      onSelected: (_) => setState(() => _dejaVenus[a['id'].toString()] = v),
                     ),
                 ]),
               ],
@@ -258,11 +327,16 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
               if (_estimation != null)
                 Padding(padding: const EdgeInsets.only(top: 6), child: Text('Estimation : $_estimation',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700))),
+              if (_complet != null)
+                Padding(padding: const EdgeInsets.only(top: 8), child: Text(
+                    "$_complet Choisissez d'autres dates${_choisis.length > 1 ? " ou moins d'animaux" : ''}.",
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFB3261E)))),
               if (_essaiRequis) ...[
                 _titre("Essai avant le premier séjour"),
-                Text((_pension?['essai_info']?.toString() ?? '').trim().isNotEmpty
+                Text('${(_pension?['essai_info']?.toString() ?? '').trim().isNotEmpty
                     ? _pension!['essai_info'].toString()
-                    : "Cette pension demande une journée d'essai avant le premier séjour de votre animal.",
+                    : "Cette pension demande une journée d'essai avant le premier séjour de votre animal."}'
+                    '${_nouveaux.length > 1 ? ' Un seul essai pour ${_nouveaux.map((a) => a['nom'] ?? 'Animal').join(', ')}.' : ''}',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
@@ -281,7 +355,7 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
                   style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: _envoi || _animal == null || _dates == null ? null : _envoyer,
+                onPressed: _envoi || _choisis.isEmpty || _dates == null || _complet != null ? null : _envoyer,
                 style: FilledButton.styleFrom(backgroundColor: _c, padding: const EdgeInsets.symmetric(vertical: 14)),
                 child: Text(_envoi ? 'Envoi…' : 'Envoyer la demande de séjour', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
               ),

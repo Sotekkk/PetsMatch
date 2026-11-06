@@ -104,6 +104,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   final List<TimeOfDay> _gardeHorairesSupp = [];
   // Plusieurs animaux (rdv.animaux_ids) — _selectedAnimal = le premier.
   List<Map<String, dynamic>> _animauxGarde = [];
+  // Garde : RDV en cours du pet-sitter avec leur nombre d'animaux
+  // (pm_garde_occupation) — les places d'un créneau se comptent en animaux.
+  List<({DateTime debut, int duree, String motif, int nb})> _occupGarde = [];
   // Vétérinaire, ostéo, toiletteur, éducateur : d'autres animaux sur le même
   // RDV, chacun avec son motif (ou sa prestation) et sa durée — le créneau
   // couvre la somme des durées (rdv.animaux_ids + rdv.animaux_detail).
@@ -771,6 +774,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       });
       _existingRdvs = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
     } catch (_) {}
+    if (widget.isGarde) await _chargerOccupGarde(profileId, now, maxDt);
     if (widget.isVet && profileId.isNotEmpty) {
       try {
         final pr = await Supabase.instance.client.rpc('pm_praticiens_clinique', params: {'p_pro_profile_id': profileId});
@@ -874,6 +878,60 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     };
   }
 
+  /// Garde : RDV en cours avec leur nombre d'animaux. Sans la fonction
+  /// (migration_garde_places_animaux.sql non passée) : 1 animal par RDV.
+  Future<void> _chargerOccupGarde(String profileId, DateTime debut, DateTime fin) async {
+    List<Map<String, dynamic>> rows;
+    try {
+      final r = await Supabase.instance.client.rpc('pm_garde_occupation', params: {
+        'p_pro_profile_id': profileId,
+        'p_debut': debut.toUtc().toIso8601String(),
+        'p_fin': fin.add(const Duration(days: 1)).toUtc().toIso8601String(),
+      });
+      rows = (r as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {
+      rows = [for (final x in _existingRdvs) if (x['statut'] == 'demande' || x['statut'] == 'confirme') x];
+    }
+    _occupGarde = [
+      for (final x in rows)
+        if (DateTime.tryParse(x['date_heure']?.toString() ?? '') != null)
+          (
+            debut: DateTime.parse(x['date_heure'].toString()).toLocal(),
+            duree: (x['duree_minutes'] as num?)?.toInt() ?? 30,
+            motif: (x['motif']?.toString() ?? '').toLowerCase(),
+            nb: (x['nb_animaux'] as num?)?.toInt() ?? 1,
+          ),
+    ];
+  }
+
+  /// Nombre d'animaux de la demande en cours (au moins 1).
+  int get _nbAnimauxGarde => _animauxGarde.isEmpty ? 1 : _animauxGarde.length;
+
+  /// Garde : places d'un créneau à l'heure [t] (minutes) — `capacite` du
+  /// créneau de 15 min, 1 par défaut.
+  int _capaciteA(String date, int t) {
+    var cap = 0;
+    for (final slot in _availableSlots) {
+      if (slot['date'] != date || !_slotForPrestation(slot)) continue;
+      final sp = (slot['heure_debut'] as String).split(':');
+      if (int.parse(sp[0]) * 60 + int.parse(sp[1]) != t) continue;
+      final c = (slot['capacite'] as num?)?.toInt() ?? 1;
+      if (c > cap) cap = c;
+    }
+    return cap == 0 ? 1 : cap;
+  }
+
+  /// Garde : animaux déjà pris sur [début, fin) d'un jour.
+  int _animauxOccupes(DateTime jour, int debutMin, int finMin) {
+    var n = 0;
+    for (final o in _occupGarde) {
+      if (o.debut.year != jour.year || o.debut.month != jour.month || o.debut.day != jour.day) continue;
+      final s = o.debut.hour * 60 + o.debut.minute;
+      if (debutMin < s + o.duree && finMin > s) n += o.nb;
+    }
+    return n;
+  }
+
   /// Un créneau accepte la garde-journée si `type_garde` est nul ou `'journee'`.
   bool _slotForJournee(Map<String, dynamic> slot) {
     final tg = slot['type_garde']?.toString();
@@ -899,15 +957,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     return cap;
   }
 
-  /// Garde-journée : nb de gardes-journée déjà demandées/confirmées ce jour.
+  /// Garde-journée : animaux déjà en garde-journée (demandée/confirmée) ce jour.
   int _gardeJourneeCount(DateTime day) {
     var n = 0;
-    for (final rdv in _existingRdvs) {
-      final m = (rdv['motif']?.toString() ?? '').toLowerCase();
-      if (m != 'garde journée' && m != 'garde_journee') continue;
-      final dh = DateTime.tryParse(rdv['date_heure'] as String? ?? '')?.toLocal();
-      if (dh == null) continue;
-      if (dh.year == day.year && dh.month == day.month && dh.day == day.day) n++;
+    for (final o in _occupGarde) {
+      if (o.motif != 'garde journée' && o.motif != 'garde_journee') continue;
+      if (o.debut.year == day.year && o.debut.month == day.month && o.debut.day == day.day) n += o.nb;
     }
     return n;
   }
@@ -1013,6 +1068,13 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
               ? false
               : blocked.any((b) => t < b.endMin && t + duration > b.startMin);
           if (overlaps) continue;
+          // Prestations qui se chevauchent : plus de place si les animaux déjà
+          // pris + ceux de la demande dépassent les places du créneau (posées
+          // par le pet-sitter ; 1 place = pas de limite, comme avant).
+          if (gardeOverlapAllowed) {
+            final cap = _capaciteA(date, t);
+            if (cap > 1 && _animauxOccupes(dayDate, t, t + duration) + _nbAnimauxGarde > cap) continue;
+          }
           if (checkTrajet && !_trajetOk(t, t + duration, window.origine, rdvsDuJour)) continue;
           final h = t ~/ 60;
           final m = t % 60;
@@ -1522,6 +1584,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           'client_uid': uid,
           if (_resolveClientProfileId() != null) 'client_profile_id': _resolveClientProfileId(),
           if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
+          if (_animauxGarde.length > 1) 'animaux_ids': [for (final a in _animauxGarde) a['id']?.toString()],
           'date_heure': dh.toIso8601String(),
           'motif': 'Garde journée',
           if (_premiereVisite != null) 'premiere_visite': _premiereVisite,
@@ -1623,7 +1686,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                   ..._buildMotifSection(),
                   const SizedBox(height: 20),
                   // Plusieurs animaux : la durée en dépend, donc avant les créneaux.
-                  if (_multiAnimaux) ...[
+                  if (_multiAnimaux || widget.isGarde) ...[
                     _buildAnimalSection(),
                     const SizedBox(height: 20),
                   ],
@@ -1653,7 +1716,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                     ],
                   ],
                   const SizedBox(height: 20),
-                  if (!_multiAnimaux) ...[
+                  if (!_multiAnimaux && !widget.isGarde) ...[
                     _buildAnimalSection(),
                     const SizedBox(height: 20),
                   ],
@@ -2070,7 +2133,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     while (!d.isAfter(end)) {
       final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
       final hasSlot = _availableSlots.any((s) => s['date'] == key && _slotForJournee(s));
-      final ok = hasSlot && _gardeJourneeCount(d) < _dayCapacity(key);
+      // Places comptées en animaux : ceux déjà gardés + ceux de la demande.
+      final ok = hasSlot && _gardeJourneeCount(d) + _nbAnimauxGarde <= _dayCapacity(key);
       out.add((day: d, ok: ok));
       d = d.add(const Duration(days: 1));
     }
@@ -2591,6 +2655,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
               setState(() {
                 _animauxGarde = res;
                 _selectedAnimal = res.isEmpty ? null : res.first;
+                // Places comptées en animaux : le créneau est à revérifier.
+                if (widget.isGarde) _selectedSlot = null;
               });
             }
           },

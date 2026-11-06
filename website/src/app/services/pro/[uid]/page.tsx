@@ -253,6 +253,9 @@ function ProDetailContent() {
   const [gardeDebut, setGardeDebut] = useState('');
   const [gardeFin, setGardeFin] = useState('');
   const [gardeJourCounts, setGardeJourCounts] = useState<Record<string, number>>({});
+  // Garde : RDV en cours du pet-sitter avec leur nombre d'animaux
+  // (pm_garde_occupation) — les places d'un créneau se comptent en animaux.
+  const [occupGarde, setOccupGarde] = useState<{ debut: number; fin: number; nb: number }[]>([]);
 
   // Santé/ostéo : rendez-vous à domicile ou au cabinet, avec calcul du temps
   // de trajet — même mécanisme que EducationReservationModal.tsx (colonnes
@@ -815,22 +818,36 @@ function ProDetailContent() {
       praticien: s.praticien_profile_id ?? null,
     })));
 
-    // Garde : gardes-journée déjà demandées/confirmées (pour la capacité/jour).
+    // Garde : RDV demandés/confirmés de TOUS les clients avec leur nombre
+    // d'animaux (places comptées en animaux). Sans la fonction
+    // (migration_garde_places_animaux.sql) : lecture directe, 1 animal par RDV.
     if (pro?.cat_pro === 'garde') {
-      const { data: gj } = await supabase.from('rdv')
-        .select('date_heure, motif')
-        .eq('pro_uid', uid).eq('pro_profile_id', profileId)
-        .in('statut', ['demande', 'confirme'])
-        .gte('date_heure', new Date().toISOString());
+      const finOcc = new Date(); finOcc.setMonth(finOcc.getMonth() + 3);
+      type Occ = { date_heure: string; motif: string | null; duree_minutes?: number | null; nb_animaux?: number | null };
+      const rpc = await supabase.rpc('pm_garde_occupation', {
+        p_pro_profile_id: profileId, p_debut: new Date().toISOString(), p_fin: finOcc.toISOString(),
+      });
+      let lignes: Occ[] = (rpc.data ?? []) as Occ[];
+      if (rpc.error) {
+        const { data: gj } = await supabase.from('rdv')
+          .select('date_heure, motif, duree_minutes')
+          .eq('pro_uid', uid).eq('pro_profile_id', profileId)
+          .in('statut', ['demande', 'confirme'])
+          .gte('date_heure', new Date().toISOString());
+        lignes = (gj ?? []) as Occ[];
+      }
       const counts: Record<string, number> = {};
-      for (const r of (gj ?? []) as { date_heure: string; motif: string | null }[]) {
+      for (const r of lignes) {
         const m = (r.motif ?? '').toLowerCase();
         if (!m.includes('garde') || !m.includes('journ')) continue;
-        const d = new Date(r.date_heure);
-        const key = toDateStr(d);
-        counts[key] = (counts[key] ?? 0) + 1;
+        const key = toDateStr(new Date(r.date_heure));
+        counts[key] = (counts[key] ?? 0) + (r.nb_animaux ?? 1);
       }
       setGardeJourCounts(counts);
+      setOccupGarde(lignes.map(r => {
+        const d = new Date(r.date_heure).getTime();
+        return { debut: d, fin: d + (r.duree_minutes ?? 30) * 60000, nb: r.nb_animaux ?? 1 };
+      }));
     }
 
     const direct = (animauxRes.data ?? []) as Animal[];
@@ -978,6 +995,7 @@ function ProDetailContent() {
           await supabase.from('rdv').insert({
             pro_uid: pro.uid, client_uid: user.uid,
             animal_id: selectedAnimalId || null,
+            ...(animauxGarde.length > 1 ? { animaux_ids: animauxGarde.map(String) } : {}),
             date_heure: dh.toISOString(), duree_minutes: 480,
             statut: 'demande',
             motif: `${motifLabel}${premiereSuffix}`,
@@ -1198,6 +1216,19 @@ function ProDetailContent() {
     const f = new Date(`${s.date}T${s.heureFin}`).getTime();
     return occupes.some(o => d < o.fin && f > o.debut);
   };
+  // Garde : animaux de la demande (au moins 1).
+  const nbAnimauxGarde = Math.max(1, animauxGarde.length);
+  // Prestations qui se chevauchent : plus de place si les animaux déjà pris +
+  // ceux de la demande dépassent les places du créneau (1 place = pas de
+  // limite, comme avant). Miroir appli : rdv_booking_page._capaciteA.
+  const placesManquantes = (s: Slot) => {
+    const cap = s.capacite ?? 1;
+    if (!chevauchementOk || cap <= 1) return false;
+    const d = new Date(`${s.date}T${s.heureDebut}`).getTime();
+    const f = new Date(`${s.date}T${s.heureFin}`).getTime();
+    const pris = occupGarde.reduce((t, o) => (d < o.fin && f > o.debut ? t + o.nb : t), 0);
+    return pris + nbAnimauxGarde > cap;
+  };
 
   // Plusieurs animaux sur le même RDV : durée de chaque animal selon son
   // motif, créneau de la somme des durées (miroir appli _selectedDuration).
@@ -1299,6 +1330,7 @@ function ProDetailContent() {
     : slots.reduce<Record<string, Slot[]>>((acc, s) => {
     if (pro?.cat_pro === 'garde' && !slotForPrestation(s)) return acc;
     if (!chevauchementOk && estOccupe(s)) return acc;
+    if (pro?.cat_pro === 'garde' && placesManquantes(s)) return acc;
     if (pro?.cat_pro === 'sante' && domicile && (!s.domicileOk || !trajetOk(s))) return acc;
     const [dy, dmo, dd] = s.date.split('-').map(Number);
     const [sh, sm] = s.heureDebut.split(':').map(Number);
@@ -1324,7 +1356,8 @@ function ProDetailContent() {
     while (d <= end) {
       const key = toDateStr(d);
       const hasSlot = slots.some(s => s.date === key && slotForJournee(s));
-      out.push({ date: key, ok: hasSlot && (gardeJourCounts[key] ?? 0) < dayCapacity(key) });
+      // Places comptées en animaux : ceux déjà gardés + ceux de la demande.
+      out.push({ date: key, ok: hasSlot && (gardeJourCounts[key] ?? 0) + nbAnimauxGarde <= dayCapacity(key) });
       d.setDate(d.getDate() + 1);
     }
     return out;
@@ -2449,7 +2482,7 @@ function ProDetailContent() {
                     ) : pro.cat_pro === 'garde' || pro.cat_pro === 'photographe' ? (
                       <div>
                         <AnimalMultiPickerField animaux={animaux} selectedIds={animauxGarde} accentColor={catColor}
-                          onChange={ids => { setAnimauxGarde(ids); setSelectedAnimalId((ids[0] ?? null) as number | null); }} />
+                          onChange={ids => { setAnimauxGarde(ids); setSelectedAnimalId((ids[0] ?? null) as number | null); if (pro.cat_pro === 'garde') setSelectedSlot(null); }} />
                         {animauxGarde.length > 1 && (
                           <p className="text-xs mt-1.5" style={{ color: catColor }}>{animauxGarde.length} animaux pour cette prestation.</p>
                         )}

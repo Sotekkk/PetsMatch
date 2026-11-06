@@ -162,6 +162,33 @@ class _AvisProSectionState extends State<AvisProSection> {
     }
   }
 
+  /// L'auteur supprime son avis (RLS avis_pro_delete : client_uid = auteur).
+  Future<void> _supprimer(Map<String, dynamic> a) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Supprimer votre avis ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: const Text('Votre note et votre commentaire seront retirés. Vous pourrez laisser un nouvel avis ensuite.',
+          style: TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+        TextButton(onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer', style: TextStyle(color: Color(0xFFB3261E)))),
+      ],
+    ));
+    if (ok != true) return;
+    try {
+      await _supa.from('avis_pro').delete().eq('id', a['id'].toString()).eq('client_uid', uid);
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Avis supprimé.', style: TextStyle(fontFamily: 'Galey'))));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Suppression impossible : $e')));
+    }
+  }
+
   double get _moyenne {
     if (_avis.isEmpty) return 0;
     return _avis.fold<int>(0, (s, a) => s + ((a['note'] as num?)?.toInt() ?? 0)) / _avis.length;
@@ -216,6 +243,7 @@ class _AvisProSectionState extends State<AvisProSection> {
               onContester: () => _contester(a['id'].toString()),
               // L'auteur peut modifier son avis.
               onModifier: a['client_uid'] == FirebaseAuth.instance.currentUser?.uid ? () => _openForm(a) : null,
+              onSupprimer: a['client_uid'] == FirebaseAuth.instance.currentUser?.uid ? () => _supprimer(a) : null,
             )),
     ]);
   }
@@ -228,7 +256,8 @@ class _AvisTile extends StatelessWidget {
   final bool isPro;
   final VoidCallback onContester;
   final VoidCallback? onModifier;
-  const _AvisTile({required this.avis, this.reviewer, this.isPro = false, required this.onContester, this.onModifier});
+  final VoidCallback? onSupprimer;
+  const _AvisTile({required this.avis, this.reviewer, this.isPro = false, required this.onContester, this.onModifier, this.onSupprimer});
 
   @override
   Widget build(BuildContext context) {
@@ -266,15 +295,25 @@ class _AvisTile extends StatelessWidget {
           const SizedBox(height: 6),
           Text(avis['commentaire'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
         ],
-        if (onModifier != null)
+        if (onModifier != null || onSupprimer != null)
           Align(
             alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: onModifier,
-              icon: const Icon(Icons.edit_outlined, size: 14, color: _teal),
-              label: const Text('Modifier mon avis', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
-              style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
-            ),
+            child: Wrap(spacing: 14, children: [
+              if (onModifier != null)
+                TextButton.icon(
+                  onPressed: onModifier,
+                  icon: const Icon(Icons.edit_outlined, size: 14, color: _teal),
+                  label: const Text('Modifier mon avis', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
+                ),
+              if (onSupprimer != null)
+                TextButton.icon(
+                  onPressed: onSupprimer,
+                  icon: const Icon(Icons.delete_outline, size: 14, color: Color(0xFFB3261E)),
+                  label: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFFB3261E))),
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
+                ),
+            ]),
           ),
         if (isPro) ...[
           const SizedBox(height: 6),

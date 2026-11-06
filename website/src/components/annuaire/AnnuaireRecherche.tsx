@@ -29,7 +29,7 @@ import {
 
 const ServicesMap = dynamic(() => import('@/components/ServicesMap'), { ssr: false });
 
-type Pro = ProMapItem & { se_deplace?: boolean | null; description?: string };
+type Pro = ProMapItem & { se_deplace?: boolean | null; description?: string; note_moyenne?: number; nb_avis?: number };
 
 const font = { fontFamily: 'Galey, sans-serif' };
 
@@ -151,6 +151,9 @@ export default function AnnuaireRecherche() {
         rayon_intervention: row.rayon_intervention,
         se_deplace: row.se_deplace,
         description: row.desc_entreprise || row.description || '',
+        // Avis clients (avis_pro, recalculés par trigger sur le profil pro).
+        note_moyenne: Number(row.note_moyenne ?? 0),
+        nb_avis: Number(row.nb_avis ?? 0),
       }));
       setPros(items);
       const gardeIds = items.filter(p => p.cat_pro === 'garde' && p.profileTableId).map(p => p.profileTableId!);
@@ -312,6 +315,13 @@ function CarteResultat({ pro, distance }: { pro: Pro; distance: number | null })
       </div>
       <div className="flex-1 min-w-0 flex flex-col">
         <p className="text-[15px] font-bold text-[#1E2025] leading-snug line-clamp-2">{pro.name}</p>
+        {(pro.nb_avis ?? 0) > 0 && (
+          <p className="text-xs mt-0.5 flex items-center gap-1" aria-label={`Note moyenne ${(pro.note_moyenne ?? 0).toFixed(1)} sur 5, ${pro.nb_avis} avis`}>
+            <span className="text-[#FFA000] text-sm leading-none">★</span>
+            <span className="font-bold text-[#1E2025]">{(pro.note_moyenne ?? 0).toFixed(1).replace('.', ',')}</span>
+            <span className="text-gray-500">({pro.nb_avis} avis)</span>
+          </p>
+        )}
         <p className="text-sm text-gray-600 mt-0.5 flex items-center gap-1.5 min-w-0">
           {/* Repère : couleur du marqueur de ce métier sur la carte */}
           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: couleurMarqueurPro(pro.cat_pro) }} />

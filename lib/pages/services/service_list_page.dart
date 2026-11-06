@@ -187,6 +187,9 @@ class _ServiceListPageState extends State<ServiceListPage> {
       'horaires': row['horaires'] ?? {},
       'certifications': row['certifications'] ?? [],
       'tarifs': row['tarifs'] ?? '',
+      // Avis clients (avis_pro, recalculés par trigger sur le profil pro).
+      'note_moyenne': (row['note_moyenne'] as num?)?.toDouble() ?? 0,
+      'nb_avis': (row['nb_avis'] as num?)?.toInt() ?? 0,
     };
   }
 
@@ -884,6 +887,17 @@ class _ProCard extends StatelessWidget {
                     ),
                   ),
                 ]),
+                if (((pro['nb_avis'] as num?) ?? 0) > 0) ...[
+                  const SizedBox(height: 3),
+                  Row(children: [
+                    const Icon(Icons.star_rounded, size: 15, color: Color(0xFFFFA000)),
+                    const SizedBox(width: 2),
+                    Text(((pro['note_moyenne'] as num?) ?? 0).toStringAsFixed(1).replaceAll('.', ','),
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF1E2025))),
+                    const SizedBox(width: 4),
+                    Text('(${pro['nb_avis']} avis)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                  ]),
+                ],
                 if (profession.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Text(profession.toString(),

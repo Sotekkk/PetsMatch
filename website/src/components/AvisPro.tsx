@@ -104,6 +104,16 @@ export default function AvisPro({ proUid, proProfileId, clientUid, autoOpen = fa
     if (clientUid && !dejaNote && !isPro) setShowForm(true);
     sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [autoOpen, loading, clientUid, dejaNote, isPro]);
+  // L'auteur supprime son avis (RLS avis_pro_delete : client_uid = auteur).
+  async function supprimer(avisId: string) {
+    if (!clientUid) return;
+    if (!window.confirm('Supprimer votre avis ? Votre note et votre commentaire seront retirés.')) return;
+    const { error: err } = await supabase.from('avis_pro').delete().eq('id', avisId).eq('client_uid', clientUid);
+    if (err) { window.alert(`Suppression impossible : ${err.message}`); return; }
+    if (editId === avisId) { setEditId(null); setShowForm(false); setNote(0); setComment(''); }
+    reload();
+  }
+
   const moyenne = avis.length ? avis.reduce((s, a) => s + a.note, 0) / avis.length : 0;
 
   async function submit() {
@@ -189,9 +199,12 @@ export default function AvisPro({ proUid, proProfileId, clientUid, autoOpen = fa
               </div>
               {a.commentaire && <p className="text-sm text-gray-700 mt-1">{a.commentaire}</p>}
               {clientUid && a.client_uid === clientUid && (
-                <button onClick={() => { setEditId(a.id); setNote(a.note); setComment(a.commentaire ?? ''); setShowForm(true);
-                  sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
-                  className="text-[11px] font-semibold text-[#0C5C6C] mt-1">Modifier mon avis</button>
+                <div className="flex gap-4 mt-1">
+                  <button onClick={() => { setEditId(a.id); setNote(a.note); setComment(a.commentaire ?? ''); setShowForm(true);
+                    sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                    className="text-[11px] font-semibold text-[#0C5C6C]">Modifier mon avis</button>
+                  <button onClick={() => supprimer(a.id)} className="text-[11px] font-semibold text-[#B3261E]">Supprimer</button>
+                </div>
               )}
               {isPro && (
                 <button onClick={() => contester(a.id)} className="text-[11px] text-gray-400 hover:text-gray-600 mt-1">🚩 Signaler</button>

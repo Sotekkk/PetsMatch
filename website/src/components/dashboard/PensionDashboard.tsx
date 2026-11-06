@@ -23,7 +23,7 @@ interface Sejour extends SejourPension {
   date_entree: string; date_sortie_prevue: string | null; statut: string; pro_profile_id?: string | null;
   arrivee_reelle_le?: string | null;
 }
-interface Demande { id: string; animal_id: string; animal_nom: string | null; nouveau_pensionnaire?: boolean | null; hebergement?: string | null; date_arrivee: string; date_depart: string; essai_date: string | null; message: string | null }
+interface Demande { id: string; client_uid?: string | null; client_profile_id?: string | null; animal_id: string; animal_nom: string | null; nouveau_pensionnaire?: boolean | null; hebergement?: string | null; date_arrivee: string; date_depart: string; essai_date: string | null; message: string | null }
 interface Logement { id: string; nom: string; capacite: number | null }
 interface Tache { id: string; titre: string | null; date: string; animal_id: string | null; animal_nom: string | null }
 interface Animal { id: string; nom: string | null; photo_url: string | null }
@@ -54,7 +54,7 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
     let tq = supabase.from('taches_elevage').select('id, titre, date, animal_id, animal_nom').eq('profil_source', 'pension')
       .neq('statut', 'fait').lte('date', iso(jour));
     tq = pid ? tq.eq('eleveur_profile_id', pid) : tq.eq('uid_eleveur', uid);
-    let dq = supabase.from('pension_demandes').select('id, animal_id, animal_nom, date_arrivee, date_depart, essai_date, message, nouveau_pensionnaire, hebergement')
+    let dq = supabase.from('pension_demandes').select('id, client_uid, client_profile_id, animal_id, animal_nom, date_arrivee, date_depart, essai_date, message, nouveau_pensionnaire, hebergement')
       .eq('pro_uid', uid).eq('statut', 'demande');
     if (pid) dq = dq.eq('pro_profile_id', pid);
     const dRes = await dq.order('date_arrivee');
@@ -85,20 +85,28 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
   // Nouvelles demandes sans recharger la page.
   useActualisationAuto(uid ? charger : null);
 
-  async function decider(d: Demande, accepter: boolean, forcer = false) {
+  // Demandes d'un même client aux mêmes dates (plusieurs animaux) : un bloc,
+  // acceptées ou refusées ensemble.
+  const groupes = Object.values(demandes.reduce<Record<string, Demande[]>>((acc, d) => {
+    const cle = `${d.client_uid ?? d.id}|${d.client_profile_id ?? ''}|${d.date_arrivee}|${d.date_depart}`;
+    (acc[cle] ??= []).push(d);
+    return acc;
+  }, {}));
+
+  async function decider(g: Demande[], accepter: boolean, forcer = false) {
     let motif: string | null = null;
     if (!accepter) {
       motif = window.prompt('Motif pour le client (facultatif) : complet à ces dates…', '');
       if (motif === null) return;
     }
-    setDecision(d.id);
+    setDecision(g[0].id);
     const r = await apiFetch('/api/pension/sejour', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'decider', demandeId: d.id, accepter, ...(motif ? { motif } : {}), ...(forcer ? { forcer: true } : {}) }) });
+      body: JSON.stringify({ action: 'decider', demandeId: g[0].id, demandeIds: g.map(d => d.id), accepter, ...(motif ? { motif } : {}), ...(forcer ? { forcer: true } : {}) }) });
     const j = await r.json().catch(() => ({})) as { error?: string; complet?: boolean };
     setDecision('');
     // Hébergements pleins sur une partie du séjour : accepter quand même ?
     if (r.status === 409 && j.complet && accepter && !forcer) {
-      if (window.confirm(`${j.error}\nAccepter quand même ce séjour ?`)) decider(d, true, true);
+      if (window.confirm(`${j.error}\nAccepter quand même ${g.length > 1 ? 'ces séjours' : 'ce séjour'} ?`)) decider(g, true, true);
       return;
     }
     if (!r.ok) { window.alert(j.error ?? 'Action impossible'); return; }
@@ -152,22 +160,28 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
             {demandes.length > 0 && (
               <Section titre="Demandes de séjour" icone={<Icone nom="calendrier" taille={18} />} compteur={demandes.length}>
                 <div className="divide-y divide-gray-100">
-                  {demandes.map(d => (
+                  {groupes.map(g => {
+                    const d = g[0];
+                    return (
                     <div key={d.id} className="py-2.5 flex flex-wrap items-center gap-2">
                       <div className="flex-1 min-w-[180px]">
-                        <p className="text-sm font-bold text-[#1E2025]">{d.animal_nom ?? 'Animal'}
-                          {d.nouveau_pensionnaire === true && <span className="font-semibold text-xs text-[#D97706]"> · nouveau pensionnaire</span>}
-                          {d.nouveau_pensionnaire === false && <span className="font-normal text-xs text-gray-500"> · déjà venu (selon le client)</span>}
-                        </p>
-                        <p className="text-xs text-gray-500">Du {jm(d.date_arrivee)} au {jm(d.date_depart)}{d.essai_date ? ` · essai le ${jm(d.essai_date)}` : ''}{d.hebergement === 'box' ? ' · box' : d.hebergement === 'pre' ? ' · pré' : ''}</p>
+                        {g.map(x => (
+                          <p key={x.id} className="text-sm font-bold text-[#1E2025]">
+                            <Link href={`/pension/fiche/${x.animal_id}`} className="hover:underline">{x.animal_nom ?? 'Animal'}</Link>
+                            {x.nouveau_pensionnaire === true && <span className="font-semibold text-xs text-[#D97706]"> · nouveau pensionnaire</span>}
+                            {x.nouveau_pensionnaire === false && <span className="font-normal text-xs text-gray-500"> · déjà venu (selon le client)</span>}
+                          </p>
+                        ))}
+                        <p className="text-xs text-gray-500">{g.length > 1 ? `${g.length} animaux · ` : ''}Du {jm(d.date_arrivee)} au {jm(d.date_depart)}{d.essai_date ? ` · essai le ${jm(d.essai_date)}` : ''}{d.hebergement === 'box' ? ' · box' : d.hebergement === 'pre' ? ' · pré' : ''}</p>
                         {d.message && <p className="text-xs text-gray-500 italic">« {d.message} »</p>}
                       </div>
-                      <Link href={`/pension/fiche/${d.animal_id}`} className="text-xs font-semibold text-[#0C5C6C]">Fiche</Link>
-                      <button disabled={decision === d.id} onClick={() => decider(d, false)} className="text-xs font-semibold text-gray-500 px-2 py-1">Refuser</button>
-                      <button disabled={decision === d.id} onClick={() => decider(d, true)}
-                        className="text-xs font-bold text-white rounded-full px-3 py-1.5 disabled:opacity-50" style={{ background: VERT }}>Accepter</button>
+                      {g.length === 1 && <Link href={`/pension/fiche/${d.animal_id}`} className="text-xs font-semibold text-[#0C5C6C]">Fiche</Link>}
+                      <button disabled={decision === d.id} onClick={() => decider(g, false)} className="text-xs font-semibold text-gray-500 px-2 py-1">Refuser</button>
+                      <button disabled={decision === d.id} onClick={() => decider(g, true)}
+                        className="text-xs font-bold text-white rounded-full px-3 py-1.5 disabled:opacity-50" style={{ background: VERT }}>{g.length > 1 ? `Accepter les ${g.length}` : 'Accepter'}</button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </Section>
             )}

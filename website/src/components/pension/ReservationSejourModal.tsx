@@ -1,6 +1,7 @@
 'use client';
 // Pension — réservation d'un séjour par le client (au lieu d'un rendez-vous) :
-// animal, dates d'arrivée / départ, date d'essai si la pension l'exige pour un
+// un ou plusieurs animaux (liste à cocher, comme le vétérinaire), dates
+// d'arrivée / départ (places libres vérifiées pour le nombre d'animaux), date d'essai si la pension l'exige pour un
 // premier séjour, estimation (tarifs publics), message. Demande à accepter par
 // la pension (route /api/pension/sejour). Miroir appli : pension_reservation_page.dart.
 import { useEffect, useState } from 'react';
@@ -8,9 +9,10 @@ import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { AnimalMultiPickerField } from '@/components/AnimalPickerField';
 import { pensionPrixNuit, pensionTarifEquin, pensionTarifKeyForEspece, pensionTarifPourKey, type EspeceTarif } from '@/lib/pension-especes';
 
-interface Animal { id: string; nom: string | null; espece: string | null }
+interface Animal { id: string; nom: string | null; espece: string | null; race?: string | null; photo_url?: string | null }
 interface InfosPension { nom: string; essai_requis: boolean; essai_info: string | null; tarifs: { especes?: EspeceTarif[] } | null }
 
 export default function ReservationSejourModal({ pensionProfileId, pensionNom, couleur, onClose, onVisite }: {
@@ -19,15 +21,18 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
   const { user } = useAuth();
   const pid = useActiveProfile();
   const [animaux, setAnimaux] = useState<Animal[]>([]);
-  const [animalId, setAnimalId] = useState('');
+  const [animalIds, setAnimalIds] = useState<string[]>([]);
   const [arrivee, setArrivee] = useState('');
   const [depart, setDepart] = useState('');
   const [essai, setEssai] = useState('');
   const [message, setMessage] = useState('');
   const [infos, setInfos] = useState<InfosPension | null>(null);
-  const [premier, setPremier] = useState<boolean | null>(null);
-  // Sans historique chez cette pension : l'animal est-il déjà venu ? (null = pas répondu)
-  const [dejaVenu, setDejaVenu] = useState<boolean | null>(null);
+  // Premier séjour de chaque animal chez cette pension.
+  const [premiers, setPremiers] = useState<Record<string, boolean>>({});
+  // Sans historique chez cette pension : l'animal est-il déjà venu ? (absent = pas répondu)
+  const [dejaVenus, setDejaVenus] = useState<Record<string, boolean>>({});
+  // Places libres aux dates choisies pour le nombre d'animaux (message si complet).
+  const [complet, setComplet] = useState<string | null>(null);
   // Équidés : hébergement souhaité.
   const [hebergement, setHebergement] = useState<'box' | 'pre' | null>(null);
   const [etat, setEtat] = useState<'' | 'envoi' | 'ok'>('');
@@ -50,41 +55,62 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
       const { data } = await q;
       const ids = ((data ?? []) as { animal_id: string }[]).map(r => r.animal_id);
       if (ids.length) {
-        const { data: an } = await supabase.from('animaux').select('id, nom, espece, statut').in('id', ids).not('statut', 'in', '(sorti,decede)').order('nom');
+        const { data: an } = await supabase.from('animaux').select('id, nom, espece, race, photo_url, statut').in('id', ids).not('statut', 'in', '(sorti,decede)').order('nom');
         setAnimaux((an ?? []) as Animal[]);
       }
       setAujourdhui(new Date().toISOString().slice(0, 10));
     })();
   }, [user, pid, rechargement]);
 
+  const datesOk = !!arrivee && !!depart && depart >= arrivee;
   useEffect(() => {
     if (!user) return;
-    apiFetch(`/api/pension/sejour?pensionProfileId=${encodeURIComponent(pensionProfileId)}${animalId ? `&animalId=${encodeURIComponent(animalId)}` : ''}`, { cache: 'no-store' })
+    const qs = new URLSearchParams({ pensionProfileId });
+    if (animalIds.length) qs.set('animalIds', animalIds.join(','));
+    if (datesOk) { qs.set('arrivee', arrivee); qs.set('depart', depart); qs.set('nb', String(Math.max(1, animalIds.length))); }
+    apiFetch(`/api/pension/sejour?${qs.toString()}`, { cache: 'no-store' })
       .then(r => (r.ok ? r.json() : null))
-      .then(j => { if (j) { setInfos(j.pension as InfosPension); setPremier(j.premier_sejour as boolean | null); } })
+      .then(j => {
+        if (!j) return;
+        setInfos(j.pension as InfosPension);
+        setPremiers((j.premiers ?? {}) as Record<string, boolean>);
+        setComplet((j.dispo?.message as string | null | undefined) ?? null);
+      })
       .catch(() => {});
-  }, [user, pensionProfileId, animalId]);
+  }, [user, pensionProfileId, animalIds, arrivee, depart, datesOk]);
 
-  const questionNouveau = premier === true;
-  const essaiRequis = !!infos?.essai_requis && premier === true && dejaVenu === false;
+  const choisis = animaux.filter(a => animalIds.includes(a.id));
+  // Animaux sans historique chez cette pension : « déjà venu ? » pour chacun.
+  const aQuestionner = choisis.filter(a => premiers[a.id] === true);
+  const nouveaux = aQuestionner.filter(a => dejaVenus[a.id] === false);
+  const essaiRequis = !!infos?.essai_requis && nouveaux.length > 0;
   const nuits = arrivee && depart ? Math.round((new Date(depart).getTime() - new Date(arrivee).getTime()) / 86400000) : 0;
-  const animal = animaux.find(a => a.id === animalId);
-  const cle = pensionTarifKeyForEspece(animal?.espece);
-  const equin = pensionTarifEquin(cle);
-  const tarif = cle ? pensionTarifPourKey(infos?.tarifs?.especes ?? [], cle) : undefined;
-  const prix = tarif ? pensionPrixNuit(tarif, { hebergement }) : 0;
-  const estimation = prix && nuits > 0 ? `${nuits} nuit${nuits > 1 ? 's' : ''} × ${prix} € = ${nuits * prix} € environ (hors réductions et options)` : '';
+  const equin = choisis.some(a => pensionTarifEquin(pensionTarifKeyForEspece(a.espece)));
+  // Estimation : nuits × prix/nuit de l'espèce, pour chaque animal (tarifs publics).
+  const prixAnimaux = choisis.map(a => {
+    const cle = pensionTarifKeyForEspece(a.espece);
+    const tarif = cle ? pensionTarifPourKey(infos?.tarifs?.especes ?? [], cle) : undefined;
+    return tarif ? pensionPrixNuit(tarif, { hebergement }) : 0;
+  });
+  const prixTotal = prixAnimaux.length && prixAnimaux.every(p => p > 0) ? prixAnimaux.reduce((t, p) => t + p, 0) : 0;
+  const estimation = prixTotal && nuits > 0
+    ? `${nuits} nuit${nuits > 1 ? 's' : ''} × ${prixTotal} €${choisis.length > 1 ? ` (${choisis.length} animaux)` : ''} = ${nuits * prixTotal} € environ (hors réductions et options)`
+    : '';
 
   async function envoyer() {
     setErreur('');
-    if (!animalId || !arrivee || !depart) { setErreur('Choisissez l\'animal et les dates du séjour.'); return; }
+    if (!animalIds.length || !arrivee || !depart) { setErreur('Choisissez les animaux et les dates du séjour.'); return; }
     if (depart < arrivee) { setErreur('La date de départ doit suivre l\'arrivée.'); return; }
-    if (questionNouveau && dejaVenu === null) { setErreur('Indiquez si votre animal est déjà venu dans cette pension.'); return; }
+    if (complet) { setErreur(complet); return; }
+    const sansReponse = aQuestionner.find(a => typeof dejaVenus[a.id] !== 'boolean');
+    if (sansReponse) { setErreur(`Indiquez si ${sansReponse.nom ?? 'votre animal'} est déjà venu dans cette pension.`); return; }
     if (essaiRequis && (!essai || essai >= arrivee)) { setErreur('Choisissez une date d\'essai avant l\'arrivée.'); return; }
     setEtat('envoi');
     const r = await apiFetch('/api/pension/sejour', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pensionProfileId, animalId, dateArrivee: arrivee, dateDepart: depart, ...(questionNouveau ? { dejaVenu } : {}), ...(equin && hebergement ? { hebergement } : {}), ...(essaiRequis ? { essaiDate: essai } : {}),
+      body: JSON.stringify({ pensionProfileId, animalIds, animalId: animalIds[0], dateArrivee: arrivee, dateDepart: depart,
+        ...(aQuestionner.length ? { dejaVenus: Object.fromEntries(aQuestionner.map(a => [a.id, dejaVenus[a.id]])) } : {}),
+        ...(equin && hebergement ? { hebergement } : {}), ...(essaiRequis ? { essaiDate: essai } : {}),
         message, ...(pid ? { profileId: pid } : {}) }),
     });
     const j = await r.json().catch(() => ({})) as { error?: string };
@@ -102,35 +128,36 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
         </div>
         {etat === 'ok' ? (
           <>
-            <p className="text-sm text-gray-700">Demande envoyée. {pensionNom} va l&apos;étudier ; vous serez prévenu dès qu&apos;elle sera acceptée.</p>
+            <p className="text-sm text-gray-700">Demande envoyée{choisis.length > 1 ? ` pour ${choisis.map(a => a.nom ?? 'Animal').join(', ')}` : ''}. {pensionNom} va l&apos;étudier ; vous serez prévenu dès qu&apos;elle sera acceptée.</p>
             <a href="/mes-sejours" className="block text-center text-sm font-semibold" style={{ color: couleur }}>Voir mes demandes</a>
             <button onClick={onClose} className="w-full py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: couleur }}>Fermer</button>
           </>
         ) : (
           <>
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Animal</label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Animaux</label>
               {animaux.length === 0 ? <p className="text-sm text-gray-500">Créez d&apos;abord la fiche de votre animal : la pension y trouvera sa santé et son alimentation.</p> : (
-                <select value={animalId} onChange={e => { setAnimalId(e.target.value); setEssai(''); setDejaVenu(null); setPremier(null); setHebergement(null); }} className={`${champ} bg-white`}>
-                  <option value="">Choisir…</option>
-                  {animaux.map(a => <option key={a.id} value={a.id}>{a.nom ?? 'Animal'}</option>)}
-                </select>
+                <AnimalMultiPickerField accentColor={couleur}
+                  animaux={animaux.map(a => ({ id: a.id, nom: a.nom ?? 'Animal', espece: a.espece ?? '', race: a.race ?? null, photo_url: a.photo_url ?? null }))}
+                  selectedIds={animalIds}
+                  onChange={ids => { setAnimalIds(ids.map(String)); setHebergement(null); }} />
               )}
+              {choisis.length > 1 && <p className="text-xs mt-1" style={{ color: couleur }}>{choisis.length} animaux pour ce séjour.</p>}
             </div>
-            {questionNouveau && (
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">{animal?.nom ?? 'Votre animal'} est-il déjà venu dans cette pension ?</label>
+            {aQuestionner.map(a => (
+              <div key={a.id}>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">{a.nom ?? 'Votre animal'} est-il déjà venu dans cette pension ?</label>
                 <div className="flex flex-wrap gap-2">
                   {([[false, 'Non, nouveau pensionnaire'], [true, 'Oui, il est déjà venu']] as const).map(([v, lib]) => (
-                    <button key={lib} type="button" onClick={() => { setDejaVenu(v); if (v) setEssai(''); }}
+                    <button key={lib} type="button" onClick={() => setDejaVenus(m => ({ ...m, [a.id]: v }))}
                       className="px-3 py-1.5 rounded-full text-sm border"
-                      style={dejaVenu === v ? { background: couleur, color: '#fff', borderColor: couleur } : { borderColor: '#E5E7EB', color: '#1F2A2E' }}>
+                      style={dejaVenus[a.id] === v ? { background: couleur, color: '#fff', borderColor: couleur } : { borderColor: '#E5E7EB', color: '#1F2A2E' }}>
                       {lib}
                     </button>
                   ))}
                 </div>
               </div>
-            )}
+            ))}
             {equin && (
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Hébergement souhaité</label>
@@ -155,10 +182,11 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
                 <input type="date" min={arrivee || aujourdhui} value={depart} onChange={e => setDepart(e.target.value)} className={champ} /></div>
             </div>
             {nuits > 0 && <p className="text-xs text-gray-500">{nuits} nuit{nuits > 1 ? 's' : ''}{estimation ? ` · estimation : ${estimation}` : ''}</p>}
+            {complet && <p className="text-sm font-semibold text-[#B3261E]">{complet} Choisissez d&apos;autres dates{choisis.length > 1 ? ' ou moins d\'animaux' : ''}.</p>}
             {essaiRequis && (
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Essai avant le premier séjour</label>
-                <p className="text-xs text-gray-500 mb-1">{infos?.essai_info?.trim() || 'Cette pension demande une journée d\'essai avant le premier séjour de votre animal.'}</p>
+                <p className="text-xs text-gray-500 mb-1">{infos?.essai_info?.trim() || 'Cette pension demande une journée d\'essai avant le premier séjour de votre animal.'}{nouveaux.length > 1 ? ` Un seul essai pour ${nouveaux.map(a => a.nom ?? 'Animal').join(', ')}.` : ''}</p>
                 <input type="date" min={aujourdhui} max={arrivee || undefined} value={essai} onChange={e => setEssai(e.target.value)} className={champ} />
               </div>
             )}
@@ -168,7 +196,7 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
             </div>
             <p className="text-[11px] text-gray-400">La pension aura accès à la fiche de votre animal (santé, alimentation) pour préparer le séjour.</p>
             {erreur && <p className="text-sm text-[#B3261E]">{erreur}</p>}
-            <button onClick={envoyer} disabled={etat === 'envoi' || !animaux.length} className="w-full py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: couleur }}>
+            <button onClick={envoyer} disabled={etat === 'envoi' || !animaux.length || !!complet} className="w-full py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: couleur }}>
               {etat === 'envoi' ? 'Envoi…' : 'Envoyer la demande de séjour'}
             </button>
             {onVisite && <button onClick={onVisite} className="w-full text-sm font-semibold" style={{ color: couleur }}>Demander plutôt une visite de la pension</button>}
