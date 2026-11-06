@@ -26,7 +26,7 @@ const kActesCarnet = ['vermifuge', 'antiparasitaire', 'vaccination', 'traitement
 /// Où mène une ligne : le jour de l'agenda, le planning du jour des
 /// protocoles (validation d'un soin avec inscription au carnet), ou l'onglet
 /// Santé de la fiche de l'animal (rappel du carnet).
-enum CibleTB { jour, planning, fiche, animaux, soin }
+enum CibleTB { jour, planning, fiche, animaux, soin, protocole }
 
 /// Rappel du carnet : de quoi ouvrir le formulaire de soin prérempli (PorteeSoinSheet).
 class SoinTB {
@@ -58,10 +58,12 @@ class LigneTB {
   /// Rappel du carnet : jour|soin|produit — même clé = une ligne, animaux regroupés.
   final String? groupe;
   final SoinTB? soin;
+  /// Soins d'un protocole le même jour (une ligne) : tâches non faites à valider ensemble.
+  final List<Map<String, dynamic>>? protocole;
   LigneTB({
     required this.cle, required this.titre, required this.date, this.heure, this.animal,
     this.responsable, this.fait = false, this.retard = false, this.couleur, this.sousTitre,
-    this.cible = CibleTB.jour, this.tableCochable, this.brut, this.animalId, this.cleSoin, this.groupe, this.soin,
+    this.cible = CibleTB.jour, this.tableCochable, this.brut, this.animalId, this.cleSoin, this.groupe, this.soin, this.protocole,
   });
 }
 
@@ -112,7 +114,7 @@ Future<DonneesTB> chargerTableauBord({
   final today = _ymd(aujourdhui);
   final end = _ymd(aujourdhui.add(const Duration(days: kHorizonJours)));
 
-  const colsR = 'id,label,date_prevue,statut,type_acte,animal_nom,assigned_to';
+  const colsR = 'id,label,date_prevue,statut,type_acte,animal_nom,assigned_to,animal_id,etape_id,jour_traitement,total_jours,uid_eleveur';
   const colsT = 'id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,assignes_a,assigne_a,rdv_veto_cabinet,rdv_veto_motif,notes';
 
   // Même règle que l'agenda : profile_id strict, sinon repli uid_eleveur + profil_source.
@@ -194,19 +196,31 @@ Future<DonneesTB> chargerTableauBord({
 
   final aFaire = <LigneTB>[], soins = <LigneTB>[], agenda = <LigneTB>[];
 
+  // Soins d'un protocole : une ligne par étape et par jour (tous les animaux),
+  // validée en une fois depuis l'accueil (carnet + registre). Miroir site.
+  final groupesProto = <String, List<Map<String, dynamic>>>{};
   for (final x in routines) {
     final date = _jour(x['date_prevue'].toString());
     final fait = x['statut'] == 'fait';
     final titre = sansPictos((x['label'] ?? 'Tâche').toString());
     if (kActesCarnet.contains(x['type_acte']?.toString() ?? '')) {
-      soins.add(LigneTB(cle: 'r_${x['id']}', titre: titre, date: date, animal: x['animal_nom']?.toString(),
-          responsable: resp(x['assigned_to']), fait: fait, retard: !fait && date.isBefore(aujourdhui),
-          sousTitre: 'Protocole', cible: CibleTB.planning));
+      groupesProto.putIfAbsent('${_ymd(date)}|${x['etape_id'] ?? titre}', () => []).add(x);
     } else {
       aFaire.add(LigneTB(cle: 'r_${x['id']}', titre: titre, date: date, animal: x['animal_nom']?.toString(),
           responsable: resp(x['assigned_to']), fait: fait, retard: !fait && date.isBefore(aujourdhui),
           tableCochable: 'plan_taches', brut: x));
     }
+  }
+  for (final e in groupesProto.entries) {
+    final g = e.value;
+    final date = _jour(g.first['date_prevue'].toString());
+    final restantes = [for (final r in g) if (r['statut'] != 'fait') r];
+    final fait = restantes.isEmpty;
+    soins.add(LigneTB(cle: 'p_${e.key}', titre: sansPictos((g.first['label'] ?? 'Soin').toString()), date: date,
+        animal: g.map((r) => r['animal_nom']?.toString() ?? '').where((n) => n.isNotEmpty).join(', '),
+        responsable: resp(g.first['assigned_to']), fait: fait, retard: !fait && date.isBefore(aujourdhui),
+        sousTitre: fait ? 'Protocole — fait' : 'Protocole${g.length > 1 ? ' — ${restantes.length}/${g.length} à faire' : ''}',
+        cible: fait ? CibleTB.planning : CibleTB.protocole, protocole: restantes));
   }
 
   final carnet = await carnetF;

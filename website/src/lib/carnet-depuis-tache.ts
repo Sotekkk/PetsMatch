@@ -69,3 +69,20 @@ export async function inscrireTacheAuCarnet(t: TacheSanitaire, uidEleveur: strin
     if (error) await supabase.from(cible.table).insert(ligne); // colonne duree_jours absente (migration)
   } catch { /* l'inscription au carnet ne bloque pas la validation */ }
 }
+
+/** Valide des tâches de protocole (planning du jour, accueil éleveur) : tâche faite
+ *  (auteur, notes) puis, pour un soin sanitaire et si demandé, carnet + registre
+ *  de chaque animal. Une seule implémentation pour les deux écrans. */
+export async function validerTachesProtocole(
+  taches: (TacheSanitaire & { uid_eleveur?: string | null })[],
+  o: { uid: string; profileId: string | null; notes?: string; inscrire: boolean },
+): Promise<void> {
+  for (const t of taches) {
+    await supabase.from('plan_taches').update({
+      statut: 'fait', valide_par: o.uid, valide_par_profile_id: o.profileId,
+      valide_at: new Date().toISOString(), notes_validation: o.notes?.trim() || null,
+    }).eq('id', t.id);
+    if (o.inscrire && ACTES_CARNET.includes(t.type_acte ?? '')) await inscrireTacheAuCarnet(t, t.uid_eleveur ?? o.uid, o.profileId);
+  }
+}
+

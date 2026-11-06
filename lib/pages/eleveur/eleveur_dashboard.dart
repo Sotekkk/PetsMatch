@@ -29,6 +29,7 @@ import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_soin_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
+import 'package:PetsMatch/services/planning_service.dart';
 
 const _vert = Color(0xFF6E9E57);
 const _rouge = Color(0xFFB42318);
@@ -186,7 +187,76 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
         CibleTB.animaux => _ouvrir(const MesAnimauxPage()),
         CibleTB.jour => _ouvrirAgenda(jour: l.date),
         CibleTB.soin => _ouvrirSoin(l),
+        CibleTB.protocole => _validerProtocole(l),
       };
+
+  /// Soins d'un protocole le même jour : animaux cochés, inscription au carnet et
+  /// au registre cochée d'office, validés en une fois — même enregistrement que
+  /// le planning du jour (PlanningService.validerTache). Miroir site :
+  /// ValiderSoinsProtocoleModal.
+  Future<void> _validerProtocole(LigneTB l) async {
+    final taches = l.protocole ?? const [];
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (taches.isEmpty || uid == null) return;
+    final coches = {for (final t in taches) t['id'].toString()};
+    var inscrire = true;
+    var enCours = false;
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) => SafeArea(child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(l.titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700, color: kDashInk)),
+          Text('Protocole · ${taches.length} animal${taches.length > 1 ? 'aux' : ''}',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: kDashMuted)),
+          const SizedBox(height: 8),
+          for (final t in taches)
+            CheckboxListTile(
+              dense: true, contentPadding: EdgeInsets.zero, activeColor: kDashTeal,
+              value: coches.contains(t['id'].toString()),
+              title: Text((t['animal_nom'] ?? 'Animal').toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+              onChanged: (v) => setM(() => v == true ? coches.add(t['id'].toString()) : coches.remove(t['id'].toString())),
+            ),
+          const Divider(),
+          CheckboxListTile(
+            dense: true, contentPadding: EdgeInsets.zero, activeColor: kDashTeal, value: inscrire,
+            title: const Text('Inscrire dans le carnet de santé et le registre sanitaire de chaque animal',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
+            onChanged: (v) => setM(() => inscrire = v ?? false),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(width: double.infinity, child: FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: kDashTeal, padding: const EdgeInsets.symmetric(vertical: 13)),
+            onPressed: coches.isEmpty || enCours ? null : () async {
+              setM(() => enCours = true);
+              try {
+                for (final t in taches.where((t) => coches.contains(t['id'].toString()))) {
+                  await PlanningService.validerTache(t['id'].toString(), validateurUid: uid,
+                      validateurProfileId: User_Info.activeProfileId.isEmpty ? null : User_Info.activeProfileId,
+                      tacheData: t, insertRegistre: inscrire);
+                }
+                if (ctx.mounted) Navigator.pop(ctx, true);
+              } catch (e) {
+                setM(() => enCours = false);
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Validation impossible : $e', style: const TextStyle(fontFamily: 'Galey'))));
+                }
+              }
+            },
+            child: Text(enCours ? 'Enregistrement…' : 'Valider pour ${coches.length} animal${coches.length > 1 ? 'aux' : ''}',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          )),
+        ]),
+      ))),
+    );
+    if (ok == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(behavior: SnackBarBehavior.floating,
+          content: Text('Soin validé et inscrit.', style: TextStyle(fontFamily: 'Galey'))));
+      _charger();
+    }
+  }
 
   Future<void> _cocher(LigneTB l) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;

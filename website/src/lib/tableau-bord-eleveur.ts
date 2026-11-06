@@ -42,6 +42,8 @@ export interface LigneTB {
   groupe?: string;
   /** Rappel du carnet : de quoi ouvrir le formulaire de soin prérempli (PorteeSoinModal). */
   soin?: { typeActe: string; produit: string; animalIds: string[]; ecartJours: number | null };
+  /** Soins d'un protocole le même jour (une ligne) : tâches à valider ensemble. */
+  protocole?: RoutineBrute[];
   /** Coche directe possible (tâches simples uniquement). */
   cochable?: { table: 'taches_elevage'; ligne: TacheBrute } | { table: 'plan_taches'; ligne: RoutineBrute };
 }
@@ -56,6 +58,7 @@ export interface TacheBrute {
 export interface RoutineBrute {
   id: string; label: string; date_prevue: string; statut: string; type_acte?: string | null;
   animal_nom?: string | null; assigned_to?: string | null;
+  animal_id?: string | null; etape_id?: string | null; jour_traitement?: number | null; total_jours?: number | null; uid_eleveur?: string | null;
 }
 interface EvenementBrut {
   id: number | string; titre: string; date_debut: string; type?: string | null; animal_id?: unknown;
@@ -215,7 +218,7 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
     if ((strict.data ?? []).length > 0) return strict;
     return repli();
   };
-  const colsR = 'id,label,date_prevue,statut,type_acte,animal_nom,assigned_to';
+  const colsR = 'id,label,date_prevue,statut,type_acte,animal_nom,assigned_to,animal_id,etape_id,jour_traitement,total_jours,uid_eleveur';
   const colsT = 'id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,assignes_a,assigne_a,rdv_veto_cabinet,rdv_veto_motif';
   const assigneesAMoi = () => activeProfileId
     ? supabase.from('plan_taches').select(colsR).eq('assigned_profile_id', activeProfileId)
@@ -267,6 +270,9 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
   const soins: LigneTB[] = [];
   const agenda: LigneTB[] = [];
 
+  // Soins d'un protocole : une ligne par étape et par jour (tous les animaux), validée
+  // en une fois depuis l'accueil (carnet + registre) — ValiderSoinsProtocoleModal.
+  const groupesProto = new Map<string, RoutineBrute[]>();
   for (const r of routines) {
     const date = r.date_prevue.slice(0, 10);
     const fait = r.statut === 'fait';
@@ -275,11 +281,23 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
       responsable: responsable(r.assigned_to), fait, retard: !fait && date < today, lien: lienJour(date),
     };
     if (ACTES_CARNET.includes(r.type_acte ?? '')) {
-      // Soin d'un protocole : validé depuis Protocoles (inscription au carnet).
-      soins.push({ ...ligne, lien: '/elevage/planning', sousTitre: 'Protocole' });
+      const k = `${date}|${r.etape_id ?? sansPictos(r.label || '')}`;
+      groupesProto.set(k, [...(groupesProto.get(k) ?? []), r]);
     } else {
       aFaire.push({ ...ligne, cochable: { table: 'plan_taches', ligne: r } });
     }
+  }
+  for (const [k, g] of groupesProto) {
+    const date = g[0].date_prevue.slice(0, 10);
+    const restantes = g.filter(r => r.statut !== 'fait');
+    const fait = restantes.length === 0;
+    soins.push({
+      cle: `p_${k}`, titre: sansPictos(g[0].label || 'Soin'), date,
+      animal: g.map(r => r.animal_nom).filter(Boolean).join(', ') || null,
+      responsable: responsable(g[0].assigned_to), fait, retard: !fait && date < today,
+      lien: '/elevage/planning', sousTitre: fait ? 'Protocole — fait' : `Protocole${g.length > 1 ? ` — ${restantes.length}/${g.length} à faire` : ''}`,
+      protocole: restantes,
+    });
   }
 
   const carnet = await carnetP;

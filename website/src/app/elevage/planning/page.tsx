@@ -1,6 +1,6 @@
 'use client';
 
-import { ACTES_CARNET, inscrireTacheAuCarnet } from '@/lib/carnet-depuis-tache';
+import { ACTES_CARNET, validerTachesProtocole } from '@/lib/carnet-depuis-tache';
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -2125,15 +2125,8 @@ function ValidateModal({ groupe, uid, profileId, onClose, onValidated }: {
 
   const validate = async () => {
     setSaving(true);
-    const toValidate = taches.filter(t => selected[t.id]);
-    for (const t of toValidate) {
-      await supabase.from('plan_taches').update({
-        statut: 'fait', valide_par: uid, valide_par_profile_id: profileId,
-        valide_at: new Date().toISOString(),
-        notes_validation: notes.trim() || null,
-      }).eq('id', t.id);
-      if (sanitaire && inscrire) await inscrireTacheAuCarnet(t, t.uid_eleveur ?? uid, profileId);
-    }
+    // Fonction partagée avec l'accueil éleveur (lib/carnet-depuis-tache.ts).
+    await validerTachesProtocole(taches.filter(t => selected[t.id]), { uid, profileId, notes, inscrire: sanitaire && inscrire });
     onValidated();
   };
 

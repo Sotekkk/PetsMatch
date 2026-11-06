@@ -15,6 +15,7 @@ import { Icone, Puce, BORDURE, OMBRE, TEAL } from '@/components/dashboard/kit';
 import { chargerTableauBord, animauxDuProfil, ymd, type DonneesTB, type LigneTB, HORIZON_JOURS } from '@/lib/tableau-bord-eleveur';
 import PorteeSoinModal, { type SoinAnimal } from '@/components/animaux/PorteeSoinModal';
 import AnnonceStatsModal from '@/components/AnnonceStatsModal';
+import ValiderSoinsProtocoleModal from '@/components/planning/ValiderSoinsProtocoleModal';
 import { basculerRoutine, basculerTacheManuelle } from '@/lib/valider-tache';
 
 interface Annonce {
@@ -63,6 +64,8 @@ export default function EleveurDashboard() {
   // Statistiques des annonces actives (vues et contacts cumulés, favoris).
   const [statsAnnonces, setStatsAnnonces] = useState<{ vues: number; contacts: number; favoris: number; top: (Annonce & { favoris: number })[] } | null>(null);
   const [statsOuverte, setStatsOuverte] = useState<{ id: string; titre: string } | null>(null);
+  // Soins d'un protocole (même jour) validés en une fois.
+  const [protoOuvert, setProtoOuvert] = useState<LigneTB | null>(null);
   // Rappel du carnet ouvert dans le formulaire de soin (animaux concernés cochés).
   const [soinOuvert, setSoinOuvert] = useState<{ ligne: LigneTB; animaux: SoinAnimal[]; ownerUid: string; dateRappel?: string } | null>(null);
   const [donnees, setDonnees] = useState<DonneesTB | null>(null);
@@ -324,7 +327,7 @@ export default function EleveurDashboard() {
             <Bloc id="soins" titre="Soins et échéances" icone="seringue" lien="/elevage/registre-sanitaire" libelleLien="Suivi sanitaire"
               compteur={soinsRetard || null} compteurAlerte>
               <Liste lignes={donnees?.soins} vide="Aucun soin prévu cette semaine ni en retard."
-                rendu={l => <LigneSimple l={l} onClick={l.soin ? () => ouvrirSoin(l) : undefined} />} />
+                rendu={l => <LigneSimple l={l} onClick={l.soin ? () => ouvrirSoin(l) : l.protocole?.length ? () => setProtoOuvert(l) : undefined} />} />
             </Bloc>
           </div>
           <div className="space-y-5">
@@ -438,6 +441,10 @@ export default function EleveurDashboard() {
           }}
           onSaved={chargerTB}
           onClose={() => setSoinOuvert(null)} />
+      )}
+      {protoOuvert?.protocole && user && (
+        <ValiderSoinsProtocoleModal titre={protoOuvert.titre} taches={protoOuvert.protocole} uid={user.uid} profileId={activeProfileId || null}
+          onClose={() => setProtoOuvert(null)} onValidated={() => { setProtoOuvert(null); chargerTB(); }} />
       )}
       {statsOuverte && (
         <AnnonceStatsModal annonceId={statsOuverte.id} annonceTitle={statsOuverte.titre} isPremium={plan === 'premium'}
