@@ -5946,19 +5946,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   // Éducateur : dossier de la séance (compte rendu, exercices, devis, facture, envoi).
                   : AgendaContexte.catPro == 'education' && rdv['statut'] != 'demande' && rdv['statut'] != 'contre_proposition' && hasAnimal
                       ? () async {
-                          // Plusieurs animaux : dossier de l'animal choisi (un compte rendu chacun).
-                          var animalDossier = animalId;
-                          var nomDossier = rdv['_animal_nom']?.toString() ?? 'Animal';
-                          if (animauxDetailRdv(rdv).isNotEmpty) {
-                            final a = await choisirAnimalRdv(context, rdv, table: 'education_progression', color: _teal,
-                                titre: 'Dossier de quel animal ?');
-                            if (a == null) return;
-                            animalDossier = a['id'].toString();
-                            nomDossier = a['nom']?.toString() ?? 'Animal';
-                          }
-                          if (!context.mounted) return;
+                          // Plusieurs animaux : le dossier s'ouvre sur le premier, on passe de
+                          // l'un à l'autre en haut du dossier (comme le site).
+                          final premier = animauxDetailRdv(rdv).where((a) => a['id']?.toString() == animalId).firstOrNull;
+                          final nomDossier = premier?['nom']?.toString() ?? rdv['_animal_nom']?.toString() ?? 'Animal';
                           await Navigator.push(context, MaterialPageRoute(builder: (_) => EducationSuiviPage(
-                            animalId: animalDossier, animalNom: nomDossier,
+                            animalId: animalId, animalNom: nomDossier,
                             ownerProfileId: rdv['client_profile_id']?.toString(),
                             ownerName: rdv['_client_name']?.toString() ?? 'La famille',
                             rdvId: rdv['id']?.toString(), dossier: true)));

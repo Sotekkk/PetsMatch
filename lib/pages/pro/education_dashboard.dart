@@ -270,10 +270,11 @@ class _EducationDashboardState extends State<EducationDashboard> {
             const SizedBox(height: 8),
             if (r['animal_id'] != null)
               _action(ctx, Icons.folder_open_outlined, 'Dossier de la séance', () async {
-                final a = await _animalSeance(r, table: 'education_progression', titre: 'Dossier de quel animal ?');
-                if (a == null || !mounted) return;
+                // Plusieurs animaux : on passe de l'un à l'autre en haut du dossier (comme le site).
+                final id = r['animal_id'].toString();
+                final premier = animauxDetailRdv(r).where((a) => a['id']?.toString() == id).firstOrNull;
                 _go(EducationSuiviPage(
-                  animalId: a['id'].toString(), animalNom: a['nom']?.toString() ?? _nomAnimal(r), ownerProfileId: r['client_profile_id']?.toString(),
+                  animalId: id, animalNom: premier?['nom']?.toString() ?? _nomAnimal(r), ownerProfileId: r['client_profile_id']?.toString(),
                   ownerName: _nomClient(r), rdvId: r['id']?.toString(), dossier: true));
               }),
             _action(ctx, Icons.assignment_ind_outlined, 'Ouvrir la fiche éducative', () => _fiche(r)),
