@@ -4,8 +4,8 @@
 //   • À faire   : tâches manuelles (taches_elevage) + tâches de protocole qui
 //                 ne sont pas des soins (plan_taches hors ACTES_CARNET) ;
 //   • Soins     : rappels du CARNET (vaccinations / vermifuges / antiparasitaires,
-//                 date_rappel de la dernière ligne de chaque soin, soinRemplace :
-//                 même règle que functions/sante.js), soins des protocoles
+//                 date_rappel de la dernière ligne de chaque soin, même règle
+//                 de renouvellement que functions/sante.js), soins des protocoles
 //                 (plan_taches, type_acte sanitaire) et tâches « Vaccin — … »
 //                 posées par les rappels (masquées quand le rappel du carnet
 //                 du même jour est déjà listé). Les événements d'agenda
@@ -19,7 +19,6 @@ import { supabase } from '@/lib/supabase';
 import { ACTES_CARNET } from '@/lib/carnet-depuis-tache';
 import { sansAutresProfils } from '@/lib/cloisonnement-profils';
 import { loadMembres } from '@/components/agenda/AddTacheModal';
-import { soinRemplace } from '@/lib/soin-remplace';
 
 export const HORIZON_JOURS = 7;
 
@@ -39,6 +38,8 @@ export interface LigneTB {
   sousTitre?: string | null;
   /** Rappel du carnet : jour|acte|animal (pour masquer la tâche du même rappel). */
   cleSoin?: string;
+  /** Rappel du carnet : jour|soin|produit — même clé = une seule ligne, animaux regroupés. */
+  groupe?: string;
   /** Coche directe possible (tâches simples uniquement). */
   cochable?: { table: 'taches_elevage'; ligne: TacheBrute } | { table: 'plan_taches'; ligne: RoutineBrute };
 }
@@ -77,6 +78,42 @@ async function animauxDuProfil(ownerUid: string, activeProfileId: string): Promi
   return [...new Set((data ?? []).map((r: { animal_id: unknown }) => String(r.animal_id)).filter(Boolean))];
 }
 
+// Rappel déjà renouvelé : MÊME règle que les relances (functions/sante.js,
+// cleTraitement + dejaRemplace) — vermifuge / antiparasitaire : toute ligne plus
+// récente du même animal, quel que soit le nom saisi (« Effitix Virbac » puis
+// « Virbac Effitix ») ; vaccin : même type (catégorie, sinon nom du vaccin).
+const normTB = (v: unknown) => String(v ?? '').trim().toLowerCase();
+const typeVaccinTB = (r: Record<string, unknown>) => {
+  const c = normTB(r.categorie);
+  return c && c !== 'autre' ? c : normTB(r.vaccin);
+};
+function rappelRemplace(table: string, r: Record<string, unknown>, lignes: Record<string, unknown>[]): boolean {
+  const jour = (v: unknown) => String(v ?? '').slice(0, 10);
+  return lignes.some(x => {
+    if (String(x.id) === String(r.id)) return false;
+    if (table === 'vaccinations' && typeVaccinTB(x) !== typeVaccinTB(r)
+      && !(normTB(r.vaccin) && normTB(x.vaccin) === normTB(r.vaccin))) return false;
+    return (!!jour(x.date) && !!jour(r.date) && jour(x.date) > jour(r.date))
+      || (!!jour(x.date_rappel) && !!jour(r.date_rappel) && jour(x.date_rappel) > jour(r.date_rappel));
+  });
+}
+
+/** Même rappel le même jour pour plusieurs animaux : une ligne (comme les notifications groupées). */
+function grouperRappels(lignes: LigneTB[]): LigneTB[] {
+  const groupes = new Map<string, LigneTB[]>();
+  for (const l of lignes) {
+    const k = l.groupe ?? l.cle;
+    groupes.set(k, [...(groupes.get(k) ?? []), l]);
+  }
+  return [...groupes.values()].map(g => g.length === 1 ? g[0] : {
+    ...g[0],
+    cle: g.map(x => x.cle).join('+'),
+    animal: g.map(x => x.animal).filter(Boolean).join(', '),
+    // Plusieurs animaux : la liste des animaux (la fiche de chacun s'ouvre de là).
+    lien: '/mes-animaux',
+  });
+}
+
 /** Rappels du carnet à faire (en retard ou dans l'horizon) pour ces animaux. */
 async function rappelsCarnet(ids: string[], end: string, today: string): Promise<LigneTB[]> {
   if (!ids.length) return [];
@@ -100,8 +137,8 @@ async function rappelsCarnet(ids: string[], end: string, today: string): Promise
     for (const r of rows) {
       const rappel = String(r.date_rappel ?? '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(rappel) || rappel > end) continue;
-      // Soin déjà renouvelé (ligne plus récente du même produit) : plus rien à faire.
-      if (soinRemplace(c.table, r, parAnimal.get(String(r.animal_id)) ?? [])) continue;
+      // Soin déjà renouvelé : plus rien à faire.
+      if (rappelRemplace(c.table, r, parAnimal.get(String(r.animal_id)) ?? [])) continue;
       const produit = String(r[c.nom] ?? '').trim();
       const animalId = String(r.animal_id);
       lignes.push({
@@ -109,6 +146,8 @@ async function rappelsCarnet(ids: string[], end: string, today: string): Promise
         date: rappel, animal: noms.get(animalId) || null, fait: false, retard: rappel < today,
         lien: `/mes-animaux/${animalId}?tab=sante&cat=${c.table}`, sousTitre: 'Carnet de santé',
         cleSoin: `${rappel}|${c.acte}|${animalId}`,
+        // Mots du produit triés : « Effitix Virbac » = « Virbac Effitix ».
+        groupe: `${rappel}|${c.table}|${produit.toLowerCase().split(/\s+/).filter(Boolean).sort().join(' ')}`,
       });
     }
   }));
@@ -231,7 +270,7 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
   }
 
   const carnet = await carnetP;
-  soins.push(...carnet);
+  soins.push(...grouperRappels(carnet));
   const soinsDuJour = new Set(carnet.map(l => l.cleSoin!));
   for (const t of taches) {
     const date = t.date.slice(0, 10);

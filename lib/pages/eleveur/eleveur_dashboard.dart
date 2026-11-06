@@ -106,6 +106,8 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
         CibleTB.planning => _ouvrir(PlanningJourPage(initialDate: l.date)),
         // Rappel du carnet : onglet Santé de la fiche (index 1 chez l'éleveur).
         CibleTB.fiche => _ouvrir(AnimalFichePage(animalId: l.animalId, initialTabIndex: 1)),
+        // Rappel groupé (plusieurs animaux) : la liste des animaux.
+        CibleTB.animaux => _ouvrir(const MesAnimauxPage()),
         CibleTB.jour => _ouvrirAgenda(jour: l.date),
       };
 

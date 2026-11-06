@@ -4,7 +4,7 @@
 //   • À faire  : tâches manuelles (taches_elevage) + tâches de protocole qui
 //                ne sont pas des soins ;
 //   • Soins    : rappels du CARNET (vaccinations / vermifuges / antiparasitaires,
-//                dernière ligne de chaque soin, soinRemplace), soins des
+//                dernière ligne de chaque soin, règle de functions/sante.js), soins des
 //                protocoles (plan_taches, type_acte sanitaire) et tâches
 //                « Vaccin — … » des rappels (masquées si le rappel du carnet du
 //                même jour est listé). Les copies d'agenda « Rappel vaccin — … »
@@ -16,7 +16,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/cloisonnement_profils.dart';
-import 'package:PetsMatch/utils/soin_remplace.dart';
 
 typedef _Filtre = PostgrestFilterBuilder<List<Map<String, dynamic>>>;
 typedef _Transf = PostgrestTransformBuilder<List<Map<String, dynamic>>>;
@@ -27,7 +26,7 @@ const kActesCarnet = ['vermifuge', 'antiparasitaire', 'vaccination', 'traitement
 /// Où mène une ligne : le jour de l'agenda, le planning du jour des
 /// protocoles (validation d'un soin avec inscription au carnet), ou l'onglet
 /// Santé de la fiche de l'animal (rappel du carnet).
-enum CibleTB { jour, planning, fiche }
+enum CibleTB { jour, planning, fiche, animaux }
 
 class LigneTB {
   final String cle;
@@ -47,10 +46,12 @@ class LigneTB {
   /// Rappel du carnet : animal (fiche) et clé jour|acte|animal.
   final String? animalId;
   final String? cleSoin;
+  /// Rappel du carnet : jour|soin|produit — même clé = une ligne, animaux regroupés.
+  final String? groupe;
   LigneTB({
     required this.cle, required this.titre, required this.date, this.heure, this.animal,
     this.responsable, this.fait = false, this.retard = false, this.couleur, this.sousTitre,
-    this.cible = CibleTB.jour, this.tableCochable, this.brut, this.animalId, this.cleSoin,
+    this.cible = CibleTB.jour, this.tableCochable, this.brut, this.animalId, this.cleSoin, this.groupe,
   });
 }
 
@@ -199,7 +200,7 @@ Future<DonneesTB> chargerTableauBord({
   }
 
   final carnet = await carnetF;
-  soins.addAll(carnet);
+  soins.addAll(_grouperRappels(carnet));
   final soinsDuJour = {for (final l in carnet) l.cleSoin!};
   for (final t in taches) {
     final date = _jour(t['date'].toString());
@@ -285,6 +286,38 @@ const _carnet = [
   (table: 'antiparasitaires', acte: 'antiparasitaire', libelle: 'Rappel antiparasitaire', nom: 'produit', cols: 'id,animal_id,date,date_rappel,produit'),
 ];
 
+// Rappel déjà renouvelé : MÊME règle que les relances (functions/sante.js,
+// cleTraitement + dejaRemplace) — vermifuge / antiparasitaire : toute ligne plus
+// récente du même animal, quel que soit le nom saisi ; vaccin : même type
+// (catégorie, sinon nom du vaccin).
+String _normTB(Object? v) => (v ?? '').toString().trim().toLowerCase();
+String _typeVaccinTB(Map r) {
+  final c = _normTB(r['categorie']);
+  return c.isNotEmpty && c != 'autre' ? c : _normTB(r['vaccin']);
+}
+String _j10(Object? v) { final t = (v ?? '').toString(); return t.length >= 10 ? t.substring(0, 10) : t; }
+bool _rappelRemplace(String table, Map r, List<Map> lignes) => lignes.any((x) {
+      if (x['id']?.toString() == r['id']?.toString()) return false;
+      if (table == 'vaccinations' && _typeVaccinTB(x) != _typeVaccinTB(r)
+          && !(_normTB(r['vaccin']).isNotEmpty && _normTB(x['vaccin']) == _normTB(r['vaccin']))) { return false; }
+      final dx = _j10(x['date']), dr = _j10(r['date']), rx = _j10(x['date_rappel']), rr = _j10(r['date_rappel']);
+      return (dx.isNotEmpty && dr.isNotEmpty && dx.compareTo(dr) > 0)
+          || (rx.isNotEmpty && rr.isNotEmpty && rx.compareTo(rr) > 0);
+    });
+
+/// Même rappel le même jour pour plusieurs animaux : une ligne (comme les notifications groupées).
+List<LigneTB> _grouperRappels(List<LigneTB> lignes) {
+  final groupes = <String, List<LigneTB>>{};
+  for (final l in lignes) { groupes.putIfAbsent(l.groupe ?? l.cle, () => []).add(l); }
+  return [
+    for (final g in groupes.values)
+      if (g.length == 1) g.first
+      else LigneTB(cle: g.map((x) => x.cle).join('+'), titre: g.first.titre, date: g.first.date,
+          animal: g.map((x) => x.animal).whereType<String>().join(', '), retard: g.first.retard,
+          sousTitre: g.first.sousTitre, cible: CibleTB.animaux, groupe: g.first.groupe),
+  ];
+}
+
 /// Rappels du carnet à faire (en retard ou dans l'horizon) pour les animaux
 /// présents du profil — mêmes animaux que le compteur « Animaux » de l'accueil.
 Future<List<LigneTB>> _rappelsCarnet(String ownerUid, String pid, DateTime aujourdhui, String end) async {
@@ -319,15 +352,17 @@ Future<List<LigneTB>> _rappelsCarnet(String ownerUid, String pid, DateTime aujou
     for (final r in rows) {
       final rappel = (r['date_rappel']?.toString() ?? '');
       if (rappel.length < 10 || rappel.substring(0, 10).compareTo(end) > 0) continue;
-      // Soin déjà renouvelé (ligne plus récente du même produit) : plus rien à faire.
-      if (soinRemplace(c.table, r, parAnimal[r['animal_id'].toString()] ?? const [])) continue;
+      // Soin déjà renouvelé : plus rien à faire.
+      if (_rappelRemplace(c.table, r, parAnimal[r['animal_id'].toString()] ?? const [])) continue;
       final date = _jour(rappel);
       final produit = (r[c.nom] ?? '').toString().trim();
       final animalId = r['animal_id'].toString();
       lignes.add(LigneTB(cle: 'c_${c.table}_${r['id']}', titre: produit.isEmpty ? c.libelle : '${c.libelle} — $produit',
           date: date, animal: (noms[animalId] ?? '').isEmpty ? null : noms[animalId],
           retard: date.isBefore(aujourdhui), sousTitre: 'Carnet de santé', cible: CibleTB.fiche,
-          animalId: animalId, cleSoin: '${_ymd(date)}|${c.acte}|$animalId'));
+          animalId: animalId, cleSoin: '${_ymd(date)}|${c.acte}|$animalId',
+          // Mots du produit triés : « Effitix Virbac » = « Virbac Effitix ».
+          groupe: '${_ymd(date)}|${c.table}|${(produit.toLowerCase().split(RegExp(r'\s+'))..removeWhere((m) => m.isEmpty)..sort()).join(' ')}'));
     }
   }
   return lignes;
