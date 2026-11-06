@@ -55,7 +55,8 @@ export default function SeanceToilettageModal({ animalId, animalNom, proUid, pro
       const fiche = f as { id: string; longueur_coupe?: string | null; shampooing_prefere?: string | null } | null;
       let s = seance ?? null;
       if (!s && rdvId) {
-        const { data } = await supabase.from('seances_toilettage').select('*').eq('rdv_id', rdvId).maybeSingle();
+        // Une fiche par animal du RDV (migration_toilettage_seance_par_animal.sql).
+        const { data } = await supabase.from('seances_toilettage').select('*').eq('rdv_id', rdvId).eq('animal_id', animalId).maybeSingle();
         s = data as SeanceToilettage | null;
       }
       if (annule) return;

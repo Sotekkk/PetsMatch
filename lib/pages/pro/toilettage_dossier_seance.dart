@@ -27,6 +27,7 @@ import 'package:PetsMatch/pages/pro/toilettage_seance_page.dart';
 import 'package:PetsMatch/widgets/contact_canaux.dart';
 import 'package:PetsMatch/utils/consignes_rdv.dart';
 import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv;
+import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill;
 import 'package:PetsMatch/pages/rdv_consignes_page.dart';
 import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro, signerEtEnregistrer;
 import 'package:PetsMatch/utils/document_pro.dart' show comptesRendusProDuRdv, lignesCrsPro, ajouterPiecesCrsPro;
@@ -111,6 +112,33 @@ Future<({String nom, double? prix})> prestationToilettageRdv(Map<String, dynamic
   return (nom: nom.isEmpty ? 'Prestation de toilettage' : nom, prix: prix);
 }
 
+/// RDV à plusieurs animaux : une ligne par animal (sa prestation, son prix :
+/// détail du RDV, sinon prix de base de sa prestation). Vide pour un seul animal.
+/// Miroir site : DossierToilettageModal (lignesAnimaux).
+Future<List<({String id, String nom, String prestation, double? prix})>> lignesAnimauxToilettage(Map<String, dynamic> rdv) async {
+  final detail = animauxDetailRdv(rdv);
+  if (detail.length < 2) return const [];
+  final base = await prestationToilettageRdv(rdv);
+  final ids = {for (final a in detail) if ((a['prestation_id']?.toString() ?? '').isNotEmpty) a['prestation_id'].toString()};
+  final prest = <String, Map<String, dynamic>>{};
+  if (ids.isNotEmpty) {
+    try {
+      final rows = await Supabase.instance.client.from('prestations_toilettage').select('id, nom, prix_base').inFilter('id', ids.toList());
+      for (final p in rows as List) { prest[p['id'].toString()] = Map<String, dynamic>.from(p as Map); }
+    } catch (_) {}
+  }
+  return [
+    for (final a in detail)
+      (
+        id: a['id'].toString(),
+        nom: (a['nom'] ?? 'Animal').toString(),
+        prestation: (a['motif']?.toString() ?? '').trim().isNotEmpty ? a['motif'].toString().trim()
+            : (prest[a['prestation_id']?.toString()]?['nom']?.toString() ?? base.nom),
+        prix: (a['prix'] as num?)?.toDouble() ?? (prest[a['prestation_id']?.toString()]?['prix_base'] as num?)?.toDouble(),
+      ),
+  ];
+}
+
 /// Génère (ou rouvre) le contrat de prestation toilettage d'une séance et
 /// l'envoie au client à la création. Formule payante requise (signature).
 Future<void> genererContratToilettage(BuildContext context, Map<String, dynamic> rdv,
@@ -139,6 +167,18 @@ Future<void> genererContratToilettage(BuildContext context, Map<String, dynamic>
   if (token == null) {
     final pr = await prestationToilettageRdv(rdv);
     final coord = await coordonneesClientRdv(rdv);
+    // Plusieurs animaux : un seul contrat pour tous, prestations de chacun, au
+    // total du RDV (ou du devis accepté).
+    final lignes = await lignesAnimauxToilettage(rdv);
+    double? totalDevis;
+    if (lignes.isNotEmpty) {
+      try {
+        final dv = await supa.from('devis').select('total_ttc').eq('rdv_id', rdv['id']).eq('statut', 'accepte')
+            .order('created_at', ascending: false).limit(1).maybeSingle();
+        totalDevis = (dv?['total_ttc'] as num?)?.toDouble();
+      } catch (_) {}
+    }
+    final total = lignes.isEmpty ? pr.prix : (totalDevis ?? lignes.fold<double>(0, (t, l) => t + (l.prix ?? 0)));
     final nomClient = clientNom ?? rdv['_client_name']?.toString() ?? '';
     final row = await supa.from('documents_animaux').insert({
       'uid_eleveur': uid,
@@ -155,8 +195,10 @@ Future<void> genererContratToilettage(BuildContext context, Map<String, dynamic>
         'client_uid': rdv['client_uid'],
         'client_profile_id': rdv['client_profile_id'],
         if ((coord['email'] ?? '').isNotEmpty) 'client_email': coord['email'],
-        'prestation_nom': pr.nom,
-        if (pr.prix != null) 'prix_total': pr.prix!.toStringAsFixed(2),
+        'prestation_nom': lignes.isEmpty ? pr.nom : lignes.map((l) => '${l.prestation} — ${l.nom}').join(' ; '),
+        if (total != null && total > 0) 'prix_total': total.toStringAsFixed(2),
+        if (lignes.isNotEmpty) 'animaux_ids': [for (final l in lignes) l.id],
+        if (lignes.isNotEmpty) 'animaux_noms': [for (final l in lignes) l.nom],
       },
     }).select('id, token').single();
     token = row['token'] as String?;
@@ -206,8 +248,22 @@ Future<void> signerContratAvecSignaturePro(BuildContext context, String docId) a
 Future<void> finSeanceToilettage(BuildContext context, Map<String, dynamic> rdv, {String? nomClient, String? animal}) async {
   final supa = Supabase.instance.client;
   final rdvId = rdv['id'].toString();
-  Map<String, dynamic>? fiche, facture;
-  try { fiche = await supa.from('seances_toilettage').select().eq('rdv_id', rdvId).maybeSingle(); } catch (_) {}
+  Map<String, dynamic>? facture;
+  // Une fiche par animal du RDV (plusieurs animaux).
+  var fiches = <Map<String, dynamic>>[];
+  try {
+    fiches = [for (final x in await supa.from('seances_toilettage').select().eq('rdv_id', rdvId).order('created_at') as List)
+        Map<String, dynamic>.from(x as Map)];
+  } catch (_) {}
+  final nomsAnimaux = <String, String>{};
+  final idsFiches = {for (final f in fiches) if ((f['animal_id']?.toString() ?? '').isNotEmpty) f['animal_id'].toString()};
+  if (idsFiches.isNotEmpty) {
+    try {
+      for (final a in await supa.from('animaux').select('id, nom').inFilter('id', idsFiches.toList()) as List) {
+        nomsAnimaux[a['id'].toString()] = (a['nom'] ?? 'Animal').toString();
+      }
+    } catch (_) {}
+  }
   try {
     final f = await supa.from('factures').select().eq('source_rdv_id', rdvId).neq('statut', 'annulee')
         .order('created_at', ascending: false).limit(1);
@@ -217,7 +273,8 @@ Future<void> finSeanceToilettage(BuildContext context, Map<String, dynamic> rdv,
   final crsPro = await comptesRendusProDuRdv(rdvId);
   if (!context.mounted) return;
   final animalNom = (animal ?? '').trim().isEmpty ? 'Animal' : animal!.trim();
-  final coches = <String, bool>{if (fiche != null) 'toil': crsPro.isEmpty, if (facture != null) 'fac': true,
+  String nomFiche(Map<String, dynamic> f) => nomsAnimaux[f['animal_id']?.toString()] ?? animalNom;
+  final coches = <String, bool>{for (final f in fiches) 'toil:${f['id']}': crsPro.isEmpty, if (facture != null) 'fac': true,
     for (final d in crsPro) 'pro:${d['id']}': true};
   final dejaPayee = facture?['statut'] == 'payee';
   var acquittee = false;
@@ -240,11 +297,11 @@ Future<void> finSeanceToilettage(BuildContext context, Map<String, dynamic> rdv,
           const Text('Fin de séance', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
           Text('Envoyer au client par e-mail', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
-          if (fiche == null && facture == null && crsPro.isEmpty)
+          if (fiches.isEmpty && facture == null && crsPro.isEmpty)
             const Padding(padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text('Aucun document pour ce rendez-vous : remplissez d’abord la fiche technique.', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
-          if (fiche != null) ligne('toil', 'Compte rendu de toilettage — $animalNom'),
-          ...lignesCrsPro(ctx, setM, rdvId: rdvId, crsPro: crsPro, coches: coches, ligne: ligne, estGenere: (k) => k == 'toil'),
+          for (final f in fiches) ligne('toil:${f['id']}', 'Compte rendu de toilettage — ${nomFiche(f)}'),
+          ...lignesCrsPro(ctx, setM, rdvId: rdvId, crsPro: crsPro, coches: coches, ligne: ligne, estGenere: (k) => k.startsWith('toil:')),
           if (facture != null)
             ligne('fac', 'Facture ${facture['numero_affichage'] ?? ''}',
                 '${((facture['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}'),
@@ -310,24 +367,27 @@ Future<void> finSeanceToilettage(BuildContext context, Map<String, dynamic> rdv,
       return;
     }
     final pieces = <({String type, String nomFichier, Uint8List bytes})>[];
-    if (fiche != null && coches['toil'] == true) {
+    for (final fiche in fiches) {
+      if (coches['toil:${fiche['id']}'] != true) continue;
       String s(dynamic v) => v?.toString().trim() ?? '';
       final pid = s(rdv['pro_profile_id']).isNotEmpty ? s(rdv['pro_profile_id']) : User_Info.activeProfileId;
       final p = pid.isEmpty ? null : await supa.from('user_profiles_complet')
           .select('nom, firstname, lastname, rue_pro, code_postal_pro, ville_pro, rue, code_postal, ville, phone_number, phone, email_contact')
           .eq('id', pid).maybeSingle();
-      final a = s(rdv['animal_id']).isEmpty ? null
-          : await supa.from('animaux').select('espece, race').eq('id', rdv['animal_id']).maybeSingle();
+      final idAnimal = s(fiche['animal_id']).isNotEmpty ? s(fiche['animal_id']) : s(rdv['animal_id']);
+      final nomA = nomFiche(fiche);
+      final a = idAnimal.isEmpty ? null
+          : await supa.from('animaux').select('espece, race').eq('id', idAnimal).maybeSingle();
       final adresse = (s(p?['rue_pro']).isNotEmpty || s(p?['ville_pro']).isNotEmpty)
           ? [s(p?['rue_pro']), '${s(p?['code_postal_pro'])} ${s(p?['ville_pro'])}'.trim()]
           : [s(p?['rue']), '${s(p?['code_postal'])} ${s(p?['ville'])}'.trim()];
       final f = fiche;
-      pieces.add((type: 'compte_rendu', nomFichier: 'Compte-rendu-toilettage-$animalNom.pdf', bytes: await compteRenduToilettagePdfBytes(
+      pieces.add((type: 'compte_rendu', nomFichier: 'Compte-rendu-toilettage-$nomA.pdf', bytes: await compteRenduToilettagePdfBytes(
         salon: s(p?['nom']).isNotEmpty ? s(p?['nom']) : '${s(p?['firstname'])} ${s(p?['lastname'])}'.trim(),
         adresse: adresse.where((x) => x.isNotEmpty).join(', '),
         tel: s(p?['phone_number']).isNotEmpty ? s(p?['phone_number']) : s(p?['phone']),
         email: s(p?['email_contact']),
-        animalNom: animalNom,
+        animalNom: nomA,
         especeRace: [s(a?['espece']), s(a?['race'])].where((x) => x.isNotEmpty).join(' · '),
         date: DateTime.tryParse(s(f['date_seance'])),
         rubriques: [
@@ -364,26 +424,56 @@ Future<void> finSeanceToilettage(BuildContext context, Map<String, dynamic> rdv,
 Future<void> facturerToilettage(BuildContext context, Map<String, dynamic> rdv, {String? nomClient, String? animal}) async {
   final pr = await prestationToilettageRdv(rdv);
   final c = await coordonneesClientRdv(rdv);
+  final lignesAnimaux = await lignesAnimauxToilettage(rdv);
+  // Devis accepté : la facture reprend ses lignes (une par animal).
+  Map<String, dynamic>? devis;
+  try {
+    devis = await Supabase.instance.client.from('devis').select('id, lignes').eq('rdv_id', rdv['id']).eq('statut', 'accepte')
+        .order('created_at', ascending: false).limit(1).maybeSingle();
+  } catch (_) {}
   if (!context.mounted) return;
   final debut = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
   final animalNom = (animal ?? rdv['_animal_nom']?.toString() ?? '').trim();
   String? v(String k) => (c[k] ?? '').isEmpty ? null : c[k];
+  final dateTxt = debut != null ? ' — ${DateFormat('dd/MM/yyyy').format(debut)}' : '';
+  final lignesDevis = [
+    for (final l in ((devis?['lignes'] as List?) ?? const []))
+      if (l is Map)
+        _ligneFactureDepuisDevis(l, lignesAnimaux),
+  ];
   await Navigator.push(context, MaterialPageRoute(builder: (_) => CreerFacturePage(
     clientNom: v('nom') ?? nomClient ?? rdv['_client_name']?.toString(),
     clientPrenom: v('prenom'), clientEmail: v('email'), clientTel: v('tel'),
     clientRue: v('rue'), clientCp: v('cp'), clientVille: v('ville'),
-    lignesPrefill: [
-      FacturePrefillLigne(
-        designation: [pr.nom, if (animalNom.isNotEmpty) animalNom].join(' — ')
-            + (debut != null ? ' — ${DateFormat('dd/MM/yyyy').format(debut)}' : ''),
-        prixTTC: pr.prix ?? 0, quantite: 1, tauxTVA: 20),
-    ],
+    lignesPrefill: lignesDevis.isNotEmpty ? lignesDevis
+        : lignesAnimaux.isNotEmpty
+            // Plusieurs animaux : une ligne par animal, rattachée à lui (section du PDF).
+            ? [for (final l in lignesAnimaux)
+                FacturePrefillLigne(designation: '${l.prestation} — ${l.nom}$dateTxt', prixTTC: l.prix ?? 0, quantite: 1, tauxTVA: 20,
+                    animalId: l.id, animalNom: l.nom)]
+            : [FacturePrefillLigne(
+                designation: [pr.nom, if (animalNom.isNotEmpty) animalNom].join(' — ') + dateTxt,
+                prixTTC: pr.prix ?? 0, quantite: 1, tauxTVA: 20)],
+    devisId: devis?['id']?.toString(),
+    animauxIds: [for (final l in lignesAnimaux) l.id],
     sourceRdvId: rdv['id']?.toString(),
     envoiEnFinDeSeance: true,
     sourceAnimalId: rdv['animal_id']?.toString(),
     clientUid: rdv['client_uid']?.toString(),
     clientProfileId: rdv['client_profile_id']?.toString(),
   )));
+}
+
+/// Ligne de devis → ligne de facture, rattachée à l'animal (son lien, sinon son nom dans le texte).
+FacturePrefillLigne _ligneFactureDepuisDevis(Map l, List<({String id, String nom, String prestation, double? prix})> animaux) {
+  final texte = (l['description'] ?? '').toString();
+  final bas = texte.toLowerCase();
+  final aid = l['animal_id']?.toString();
+  final a = animaux.where((x) => x.id == aid).firstOrNull
+      ?? animaux.where((x) => x.nom.length > 1 && bas.contains(x.nom.toLowerCase())).firstOrNull;
+  return FacturePrefillLigne(designation: texte.isEmpty ? 'Prestation de toilettage' : texte,
+      prixTTC: (l['prix_unitaire'] as num?)?.toDouble() ?? 0, quantite: (l['quantite'] as num?)?.toDouble() ?? 1,
+      tauxTVA: (l['tva'] as num?)?.toDouble() ?? 20, animalId: a?.id, animalNom: a?.nom);
 }
 
 /// Ouvre le dossier d'une séance de toilettage.
@@ -413,7 +503,12 @@ class _DossierToilettage extends StatefulWidget {
 class _DossierToilettageState extends State<_DossierToilettage> {
   final _supa = Supabase.instance.client;
   bool _loading = true;
-  Map<String, dynamic>? _seance, _contrat, _facture, _consignes;
+  Map<String, dynamic>? _seance, _contrat, _facture, _consignes, _devis;
+  // Plusieurs animaux (comme l'éducateur) : animal affiché ; devis, contrat et
+  // facture communs, une ligne par animal.
+  String? _animalChoisi;
+  List<Map<String, dynamic>> get _detail => animauxDetailRdv(r);
+  bool get _plusieurs => _detail.length > 1;
   Map<String, String> _coord = {};
 
   Map<String, dynamic> get r => widget.rdv;
@@ -422,8 +517,11 @@ class _DossierToilettageState extends State<_DossierToilettage> {
   String get _uid => r['pro_uid']?.toString() ?? '';
   String get _pid => (r['pro_profile_id']?.toString() ?? '').isNotEmpty ? r['pro_profile_id'].toString() : User_Info.activeProfileId;
   DateTime get _debut => DateTime.tryParse(r['date_heure']?.toString() ?? '')?.toLocal() ?? DateTime.now();
-  String get _animalId => r['animal_id']?.toString() ?? '';
-  String get _animalNom => (widget.animal ?? r['_animal_nom']?.toString() ?? '').trim();
+  String get _animalId => _plusieurs && _animalChoisi != null && _detail.any((a) => a['id'].toString() == _animalChoisi)
+      ? _animalChoisi! : (r['animal_id']?.toString() ?? '');
+  String get _animalNom => _plusieurs
+      ? (_detail.firstWhere((a) => a['id'].toString() == _animalId, orElse: () => const <String, dynamic>{})['nom']?.toString() ?? 'Animal')
+      : (widget.animal ?? r['_animal_nom']?.toString() ?? '').trim();
 
   @override
   void initState() {
@@ -435,8 +533,18 @@ class _DossierToilettageState extends State<_DossierToilettage> {
     final id = r['id'];
     _coord = await coordonneesClientRdv(r);
     _prochain = await prochainRdvDate(r);
-    try { _seance = await _supa.from('seances_toilettage').select().eq('rdv_id', id).maybeSingle(); } catch (_) {}
     try { _consignes = await _supa.from('rdv').select('consignes, consignes_le, consignes_demandees_le, animal_id, animaux_detail').eq('id', id).maybeSingle(); } catch (_) {}
+    // Détail des animaux (absent de certaines listes de l'agenda) : repris du RDV.
+    if (r['animaux_detail'] == null && _consignes?['animaux_detail'] != null) r['animaux_detail'] = _consignes!['animaux_detail'];
+    // Une fiche par animal du RDV (migration_toilettage_seance_par_animal.sql).
+    try {
+      _seance = _animalId.isNotEmpty
+          ? await _supa.from('seances_toilettage').select().eq('rdv_id', id).eq('animal_id', _animalId).maybeSingle()
+          : await _supa.from('seances_toilettage').select().eq('rdv_id', id).limit(1).maybeSingle();
+    } catch (_) {}
+    try {
+      _devis = await _supa.from('devis').select('id, statut, total_ttc').eq('rdv_id', id).order('created_at', ascending: false).limit(1).maybeSingle();
+    } catch (_) {}
     try {
       _contrat = await _supa.from('documents_animaux').select('id, token, statut')
           .eq('rdv_id', id).eq('type', 'contrat_prestation_toilettage').maybeSingle();
@@ -492,6 +600,25 @@ class _DossierToilettageState extends State<_DossierToilettage> {
     } catch (e) {
       _snack('Erreur : $e');
     }
+  }
+
+  // ── Devis (partagé avec l'éducateur) : une ligne par animal ──
+  Future<void> _creerDevis() async {
+    final lignes = await lignesAnimauxToilettage(r);
+    final pr = await prestationToilettageRdv(r);
+    if (!mounted) return;
+    await _go(DevisPage(prefill: DevisPrefill(
+      animalId: r['animal_id']?.toString(),
+      clientUid: r['client_uid']?.toString(),
+      clientProfileId: r['client_profile_id']?.toString(),
+      clientNom: (_coord['nom'] ?? '').isNotEmpty ? _coord['nom'] : widget.nomClient,
+      clientPrenom: _coord['prenom'], clientEmail: _coord['email'], clientTel: _coord['tel'],
+      rdvId: r['id']?.toString(),
+      animauxRdv: [for (final a in _detail) {'id': a['id'].toString(), 'nom': (a['nom'] ?? '').toString()}],
+      lignes: lignes.isNotEmpty
+          ? [for (final l in lignes) {'description': '${l.prestation} — ${l.nom}', 'quantite': 1, 'prix_unitaire': l.prix ?? 0, 'animal_id': l.id}]
+          : [{'description': [pr.nom, if (_animalNom.isNotEmpty) _animalNom].join(' — '), 'quantite': 1, 'prix_unitaire': pr.prix ?? 0}],
+    )));
   }
 
   // ── Consignes du client ──
@@ -613,9 +740,26 @@ class _DossierToilettageState extends State<_DossierToilettage> {
           padding: const EdgeInsets.only(left: 40),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('${widget.nomClient} · ${_jour(_debut)} à ${_hm(_debut)}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),
-            if (_animalNom.isNotEmpty) Text('Animal : $_animalNom', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _ink)),
+            if (!_plusieurs && _animalNom.isNotEmpty) Text('Animal : $_animalNom', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _ink)),
           ]),
         ),
+        if (_plusieurs) ...[
+          const SizedBox(height: 8),
+          Text('Plusieurs animaux : un compte rendu par animal ; devis, contrat et facture communs, une ligne par animal.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+          const SizedBox(height: 6),
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            for (final a in _detail)
+              ChoiceChip(
+                label: Text([(a['nom'] ?? 'Animal').toString(), if ((a['motif']?.toString() ?? '').trim().isNotEmpty) a['motif'].toString().trim()].join(' · '),
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700,
+                        color: a['id'].toString() == _animalId ? Colors.white : _teal)),
+                selected: a['id'].toString() == _animalId, showCheckmark: false,
+                selectedColor: _teal, backgroundColor: Colors.white, side: const BorderSide(color: _teal),
+                onSelected: (_) { setState(() { _animalChoisi = a['id'].toString(); _loading = true; }); _charger(); },
+              ),
+          ]),
+        ],
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
@@ -623,7 +767,7 @@ class _DossierToilettageState extends State<_DossierToilettage> {
           child: _loading
               ? const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator(color: _teal)))
               : Column(children: [
-                  _ligne('Compte rendu',
+                  _ligne(_plusieurs ? 'Compte rendu — $_animalNom' : 'Compte rendu',
                       s == null ? (passee ? 'À rédiger' : 'Après la séance') : !crRedige ? 'Fiche remplie, compte rendu à rédiger'
                           : crPartage ? 'Partagé avec le client' : 'Rédigé, non partagé',
                       s == null ? (passee ? _ambre : _muted) : crPartage ? _vert : _ambre,
@@ -644,6 +788,18 @@ class _DossierToilettageState extends State<_DossierToilettage> {
                             (demandees != null ? 'Relancer' : 'Demander', _demanderConsignes),
                             ('Saisir', () => _go(RdvConsignesPage(rdvId: r['id'].toString()))),
                           ],
+                        ]);
+                  }),
+                  Builder(builder: (_) {
+                    final dv = _devis;
+                    final st = dv?['statut']?.toString();
+                    return _ligne('Devis',
+                        dv == null ? 'Aucun' : '${st == 'accepte' ? 'Accepté' : st == 'refuse' ? 'Refusé' : st == 'envoye' ? 'Envoyé' : 'À envoyer à la fin'} · ${eur(dv['total_ttc'])}',
+                        dv == null ? _muted : st == 'accepte' ? _vert : _ambre,
+                        [
+                          if (dv == null) ('Créer', _creerDevis)
+                          else if (st == 'brouillon' || st == 'envoye') ('Modifier', () => _go(DevisPage(modifierId: dv['id'].toString())))
+                          else ('Voir', () => _go(const DevisPage())),
                         ]);
                   }),
                   _ligne('Contrat',

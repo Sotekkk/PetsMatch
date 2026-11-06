@@ -15,6 +15,7 @@ import ConsignesRdvForm from '@/components/ConsignesRdvForm';
 import { apiFetch } from '@/lib/api-fetch';
 import { consignesParAnimal } from '@/lib/consignes-rdv';
 import { animauxDetailRdv } from '@/lib/rdv-animaux';
+import { devisModifiable } from '@/lib/devis-rdv';
 import { envoyerContratParEmail } from '@/lib/contrat-email';
 import { signerContratAvecSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
 import SignatureProModal from '@/components/signature/SignatureProModal';
@@ -57,6 +58,11 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
   const [animalNom, setAnimalNom] = useState(animal ?? '');
   const [prestation, setPrestation] = useState<{ nom: string; prix: number | null }>({ nom: 'Prestation de toilettage', prix: null });
   const [seance, setSeance] = useState<Seance | null>(null);
+  // Plusieurs animaux (comme l'éducateur) : un compte rendu par animal ; devis,
+  // facture et contrat communs, une ligne par animal.
+  const [animalChoisi, setAnimalChoisi] = useState<string | null>(null);
+  const [prixPrestations, setPrixPrestations] = useState<Record<string, { nom: string; prix: number | null }>>({});
+  const [devis, setDevis] = useState<{ id: string; statut: string | null; total_ttc: number | null } | null>(null);
   const [contrat, setContrat] = useState<Contrat | null>(null);
   const [facture, setFacture] = useState<Facture | null>(null);
   const [coord, setCoord] = useState({ tel: '', email: '', prenom: '', nom: '', rue: '', cp: '', ville: '' });
@@ -81,10 +87,17 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
     const x = rdv as RdvRow | null;
     if (!x) return;
     setR(x);
-    const [pr, an, se, ct, fa, prof] = await Promise.all([
+    const detail = animauxDetailRdv(x);
+    const aid = (detail.length > 0 && animalChoisi && detail.some(a => a.id === animalChoisi)) ? animalChoisi : x.animal_id;
+    // Prestations de chaque animal (prix par animal pour le devis et la facture).
+    const idsPrest = [...new Set(detail.map(a => a.prestation_id).filter(Boolean) as string[])];
+    const [pr, an, se, ct, fa, prof, dv, prs] = await Promise.all([
       x.prestation_id ? supabase.from('prestations_toilettage').select('nom, prix_base').eq('id', x.prestation_id).maybeSingle() : Promise.resolve({ data: null }),
-      x.animal_id ? supabase.from('animaux').select('nom').eq('id', x.animal_id).maybeSingle() : Promise.resolve({ data: null }),
-      supabase.from('seances_toilettage').select('id, compte_rendu, partage_proprietaire').eq('rdv_id', rdvId).maybeSingle(),
+      aid ? supabase.from('animaux').select('nom').eq('id', aid).maybeSingle() : Promise.resolve({ data: null }),
+      // Une fiche par animal du RDV (migration_toilettage_seance_par_animal.sql).
+      aid
+        ? supabase.from('seances_toilettage').select('id, compte_rendu, partage_proprietaire').eq('rdv_id', rdvId).eq('animal_id', aid).maybeSingle()
+        : supabase.from('seances_toilettage').select('id, compte_rendu, partage_proprietaire').eq('rdv_id', rdvId).limit(1).maybeSingle(),
       supabase.from('documents_animaux').select('id, token, statut').eq('rdv_id', rdvId).in('type', ['contrat_prestation_toilettage', TYPE_CONTRAT_PRO])
         .not('statut', 'in', '(annule,refuse)').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('factures').select('id, statut, total_ttc, pdf_url, numero_affichage, numero_facture, date_paiement, mode_paiement')
@@ -93,10 +106,15 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
       x.client_profile_id
         ? supabase.from('user_profiles_complet').select('firstname, lastname, phone_number, phone, email_contact, rue, code_postal, ville, rue_pro, code_postal_pro, ville_pro').eq('id', x.client_profile_id).maybeSingle()
         : Promise.resolve({ data: null }),
+      supabase.from('devis').select('id, statut, total_ttc').eq('rdv_id', rdvId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      idsPrest.length ? supabase.from('prestations_toilettage').select('id, nom, prix_base').in('id', idsPrest) : Promise.resolve({ data: [] }),
     ]);
+    setDevis(dv.data as { id: string; statut: string | null; total_ttc: number | null } | null);
+    setPrixPrestations(Object.fromEntries(((prs.data ?? []) as { id: string; nom: string; prix_base: number | null }[])
+      .map(p => [p.id, { nom: p.nom, prix: p.prix_base }])));
     const p = pr.data as { nom?: string; prix_base?: number } | null;
     setPrestation({ nom: p?.nom || x.motif?.trim() || 'Prestation de toilettage', prix: x.prix_calcule ?? p?.prix_base ?? null });
-    const nomA = (an.data as { nom?: string } | null)?.nom ?? x.animal_nom_manuel ?? '';
+    const nomA = (an.data as { nom?: string } | null)?.nom ?? detail.find(a => a.id === aid)?.nom ?? x.animal_nom_manuel ?? '';
     if (nomA) setAnimalNom(nomA);
     setSeance(se.data as Seance | null);
     setContrat(ct.data as Contrat | null);
@@ -113,7 +131,7 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
       cp: v(pf?.code_postal, pf?.code_postal_pro, cc?.code_postal), ville: v(pf?.ville, pf?.ville_pro, cc?.ville),
     });
     setNow(Date.now());
-  }, [rdvId]);
+  }, [rdvId, animalChoisi]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     charger();
@@ -123,6 +141,15 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
   const debut = new Date(r.date_heure);
   const passee = now > 0 && debut.getTime() < now;
   const pid = r.pro_profile_id || pidActif;
+  const detail = animauxDetailRdv(r);
+  const plusieurs = detail.length > 1;
+  const aidSel = (plusieurs && animalChoisi && detail.some(a => a.id === animalChoisi)) ? animalChoisi : r.animal_id;
+  // Une ligne par animal : sa prestation et son prix (détail du RDV, sinon prix de la prestation).
+  const lignesAnimaux = plusieurs ? detail.map(a => {
+    const p = a.prestation_id ? prixPrestations[a.prestation_id] : undefined;
+    return { id: a.id, nom: a.nom, prestation: (a.motif ?? '').trim() || p?.nom || prestation.nom, prix: a.prix ?? p?.prix ?? null };
+  }) : [];
+  const totalAnimaux = lignesAnimaux.reduce((t, l) => t + Number(l.prix ?? 0), 0);
 
   async function notifier(type: string, title: string, body: string, data: Record<string, unknown>) {
     if (!r?.client_uid) { setMessage('Client sans compte PetsMatch : transmettez par e-mail ou téléphone.'); return; }
@@ -137,7 +164,7 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
     await supabase.from('seances_toilettage').update({ partage_proprietaire: true, updated_at: new Date().toISOString() }).eq('id', seance.id);
     setSeance({ ...seance, partage_proprietaire: true });
     await notifier('toilettage_cr', 'Compte rendu de toilettage', `Le compte rendu du toilettage de ${animalNom || 'votre animal'} est disponible.`,
-      { animalId: r?.animal_id, seance_id: seance.id });
+      { animalId: aidSel, seance_id: seance.id });
     onChanged?.();
   }
 
@@ -145,12 +172,19 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
     if (!user || !r) return;
     const { data: ab } = await supabase.from('abonnements').select('plan_code').eq('uid', user.uid).eq('profil_type', 'toilettage').eq('statut', 'actif').limit(1).maybeSingle();
     if (((ab as { plan_code?: string } | null)?.plan_code ?? 'free') === 'free') { setMessage('La signature électronique des contrats est disponible avec les formules payantes.'); return; }
+    // Plusieurs animaux : un seul contrat pour tous, prestations de chacun, au total du RDV
+    // (ou du devis accepté).
+    const prestationContrat = plusieurs ? lignesAnimaux.map(l => `${l.prestation} — ${l.nom}`).join(' ; ') : prestation.nom;
+    const totalContrat = plusieurs
+      ? (devis?.statut === 'accepte' && devis.total_ttc ? Number(devis.total_ttc) : totalAnimaux)
+      : (prestation.prix != null ? Number(prestation.prix) : null);
     const { data, error } = await supabase.from('documents_animaux').insert({
       uid_eleveur: user.uid, ...(pid ? { pro_profile_id: pid } : {}), animal_id: r.animal_id, rdv_id: r.id,
       type: 'contrat_prestation_toilettage', titre: `Contrat de prestation toilettage — ${nomClient}`, statut: 'en_attente',
       // client_uid / client_profile_id / client_email : le contrat remonte dans « Mes contrats » du client.
       metadata: { client_nom: nomClient, client_uid: r.client_uid, client_profile_id: r.client_profile_id, client_email: coord.email || null,
-        prestation_nom: prestation.nom, prix_total: prestation.prix != null ? Number(prestation.prix).toFixed(2) : null },
+        prestation_nom: prestationContrat, prix_total: totalContrat != null && totalContrat > 0 ? totalContrat.toFixed(2) : null,
+        ...(plusieurs ? { animaux_ids: detail.map(a => a.id), animaux_noms: detail.map(a => a.nom) } : {}) },
     }).select('id, token, statut').single();
     if (error) { setMessage(error.message); return; }
     const c = (data as Contrat & { id: string });
@@ -179,17 +213,59 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
     charger();
   }
 
-  function facturer() {
+  function creerDevis() {
     if (!r) return;
+    const q = new URLSearchParams({ prefill: '1', rdv: r.id, retour: `/mes-rdv?rdv=${encodeURIComponent(r.id)}&dossier=1` });
+    if (r.animal_id) q.set('animal', r.animal_id);
+    if (r.client_uid) q.set('clientUid', r.client_uid);
+    if (r.client_profile_id) q.set('clientProfileId', r.client_profile_id);
+    if (coord.nom || nomClient) q.set('nom', coord.nom || nomClient);
+    if (coord.prenom) q.set('prenom', coord.prenom);
+    if (coord.email) q.set('email', coord.email);
+    if (coord.tel) q.set('tel', coord.tel);
+    if (plusieurs) {
+      q.set('animaux', JSON.stringify(detail.map(a => ({ id: a.id, nom: a.nom }))));
+      q.set('lignes', JSON.stringify(lignesAnimaux.map(l => ({ d: `${l.prestation} — ${l.nom}`, q: 1, p: Number(l.prix ?? 0), a: l.id }))));
+    } else {
+      q.set('ligneDesc', [prestation.nom, animalNom].filter(Boolean).join(' — '));
+      q.set('ligneQte', '1');
+      if (prestation.prix != null) q.set('lignePrix', String(prestation.prix));
+    }
+    router.push(`/toilettage/devis?${q.toString()}`);
+  }
+
+  async function facturer() {
+    if (!r) return;
+    // Devis accepté : la facture reprend ses lignes (une par animal).
+    let lignesDevis: { description: string; quantite: number; prixUnitaire: number; prixTTC: number; tva: number; animalId?: string; animalNom?: string }[] | null = null;
+    if (devis?.statut === 'accepte') {
+      const { data: dv } = await supabase.from('devis').select('lignes').eq('id', devis.id).maybeSingle();
+      const ls = ((dv as { lignes?: unknown } | null)?.lignes ?? []) as { description?: string; quantite?: number; prix_unitaire?: number; tva?: number; animal_id?: string | null }[];
+      if (Array.isArray(ls) && ls.length) {
+        lignesDevis = ls.map(l => {
+          const texte = (l.description ?? '').toLowerCase();
+          const a = detail.find(x => x.id === l.animal_id) ?? detail.find(x => (x.nom ?? '').length > 1 && texte.includes((x.nom ?? '').toLowerCase()));
+          const qte = Number(l.quantite ?? 1) || 1;
+          return { description: l.description ?? prestation.nom, quantite: qte, prixUnitaire: 0,
+            prixTTC: Number(l.prix_unitaire ?? 0), tva: Number(l.tva ?? 20), ...(a ? { animalId: a.id, animalNom: a.nom } : {}) };
+        });
+      }
+    }
     try {
       // Prix TTC affiché : le HT est déduit selon le régime de TVA du pro.
       sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
         nomClient: coord.nom || nomClient, prenomClient: coord.prenom || undefined, emailClient: coord.email || undefined, telClient: coord.tel || undefined,
         rueClient: coord.rue || undefined, cpClient: coord.cp || undefined, villeClient: coord.ville || undefined,
-        sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined, envoiEnFinDeSeance: true, clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
+        sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined, envoiEnFinDeSeance: true,
+        ...(devis?.statut === 'accepte' ? { devisId: devis.id } : {}),
+        ...(plusieurs ? { animauxIds: detail.map(a => a.id) } : {}), clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
         // Après l'émission : retour au RDV en cours de traitement.
         retour: `/mes-rdv?onglet=a_venir&rdv=${encodeURIComponent(r.id)}`,
-        lignes: [{ description: [prestation.nom, animalNom].filter(Boolean).join(' — ') + ` — ${debut.toLocaleDateString('fr-FR')}`, quantite: 1, prixUnitaire: 0, prixTTC: Number(prestation.prix ?? 0), tva: 20 }],
+        // Plusieurs animaux : une ligne par animal, rattachée à lui (section du PDF).
+        lignes: lignesDevis ?? (plusieurs
+          ? lignesAnimaux.map(l => ({ description: `${l.prestation} — ${l.nom} — ${debut.toLocaleDateString('fr-FR')}`, quantite: 1, prixUnitaire: 0,
+              prixTTC: Number(l.prix ?? 0), tva: 20, animalId: l.id, animalNom: l.nom }))
+          : [{ description: [prestation.nom, animalNom].filter(Boolean).join(' — ') + ` — ${debut.toLocaleDateString('fr-FR')}`, quantite: 1, prixUnitaire: 0, prixTTC: Number(prestation.prix ?? 0), tva: 20 }]),
       }));
     } catch { /* facture vierge */ }
     router.push('/elevage/facturation');
@@ -230,14 +306,31 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
       <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-lg p-5 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
         <p className="font-bold text-[#1E2025]">{prestation.nom}</p>
         <p className="text-sm text-gray-500">{nomClient} · {jour(debut)} à {hm(debut)}{r.duree_minutes ? ` · ${r.duree_minutes} min` : ''}</p>
-        {animalNom && <p className="text-sm">Animal : {animalNom}</p>}
+        {!plusieurs && animalNom && <p className="text-sm">Animal : {animalNom}</p>}
+        {plusieurs && (
+          <div className="mt-2">
+            <p className="text-xs text-gray-500 mb-1.5">Plusieurs animaux : un compte rendu par animal ; devis, contrat et facture communs, une ligne par animal.</p>
+            <div className="flex flex-wrap gap-1.5">
+              {detail.map(a => {
+                const actif = a.id === aidSel;
+                return (
+                  <button key={a.id} type="button" onClick={() => setAnimalChoisi(a.id)}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold border"
+                    style={{ borderColor: TEAL, background: actif ? TEAL : '#fff', color: actif ? '#fff' : TEAL }}>
+                    {a.nom}{a.motif ? ` · ${a.motif}` : ''}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {message && <p className="text-sm mt-2 rounded-xl px-3 py-2 bg-[#E6F2F3]" style={{ color: TEAL }}>{message}</p>}
 
         <div className="mt-3 border border-gray-100 rounded-xl px-3 py-1.5">
-          {ligne('Compte rendu',
+          {ligne(plusieurs ? `Compte rendu — ${animalNom || 'animal'}` : 'Compte rendu',
             !seance ? (passee ? 'À rédiger' : 'Après la séance') : !crRedige ? 'Fiche remplie, compte rendu à rédiger' : seance.partage_proprietaire ? 'Partagé avec le client' : 'Rédigé, non partagé',
             !seance ? (passee ? AMBRE : GRIS) : seance.partage_proprietaire ? VERT : AMBRE,
-            [btn(seance ? 'Ouvrir' : 'Rédiger', () => r.animal_id ? setOuvrirCr(true) : setMessage('Animal non renseigné sur le rendez-vous.')),
+            [btn(seance ? 'Ouvrir' : 'Rédiger', () => aidSel ? setOuvrirCr(true) : setMessage('Animal non renseigné sur le rendez-vous.')),
               ...(crRedige && !seance?.partage_proprietaire && r.client_uid ? [btn('Partager', partagerCr)] : [])])}
           {ligne('Consignes',
             r.consignes_le ? `Reçues le ${new Date(r.consignes_le).toLocaleDateString('fr-FR')}` : r.consignes_demandees_le ? `Demandées le ${new Date(r.consignes_demandees_le).toLocaleDateString('fr-FR')}, en attente` : 'Non demandées',
@@ -265,6 +358,12 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
               </div>
             );
           })()}
+          {ligne('Devis',
+            !devis ? 'Aucun' : `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'À envoyer à la fin'} · ${eur(devis.total_ttc)}`,
+            !devis ? GRIS : devis.statut === 'accepte' ? VERT : AMBRE,
+            [!devis ? btn('Créer', creerDevis)
+              : devisModifiable(devis.statut) ? btn('Modifier', () => router.push(`/toilettage/devis?modifier=${devis.id}`))
+              : btn('Voir', () => router.push('/toilettage/devis'))])}
           {ligne('Contrat',
             !contrat ? 'Non généré' : contrat.statut === 'signe' ? 'Signé' : contrat.statut === 'partiellement_signe' ? 'Signé par une partie' : 'En attente de signature',
             !contrat ? GRIS : contrat.statut === 'signe' ? VERT : AMBRE,
@@ -340,11 +439,11 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
           </div>
         </div>
       )}
-      {ouvrirCr && r.animal_id && user && pid && (
+      {ouvrirCr && aidSel && user && pid && (
         <div onClick={e => e.stopPropagation()}>
-          <SeanceToilettageModal animalId={r.animal_id} animalNom={animalNom || 'Animal'} proUid={r.pro_uid || user.uid} profileId={pid}
+          <SeanceToilettageModal key={aidSel} animalId={aidSel} animalNom={animalNom || 'Animal'} proUid={r.pro_uid || user.uid} profileId={pid}
             rdv={{ id: r.id, date_heure: r.date_heure, duree_minutes: r.duree_minutes, client_uid: r.client_uid, client_profile_id: r.client_profile_id, employe_id: r.employe_id ?? null } as RdvSeance}
-            prestation={prestation.nom} onClose={() => setOuvrirCr(false)} onSaved={() => { setOuvrirCr(false); charger(); onChanged?.(); }} />
+            prestation={plusieurs ? (lignesAnimaux.find(l => l.id === aidSel)?.prestation ?? prestation.nom) : prestation.nom} onClose={() => setOuvrirCr(false)} onSaved={() => { setOuvrirCr(false); charger(); onChanged?.(); }} />
         </div>
       )}
     </div>

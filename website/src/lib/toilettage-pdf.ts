@@ -16,10 +16,10 @@ export interface SeanceToilettagePdf {
   compte_rendu: string | null; conseils_pelage?: string | null; pro_profile_id?: string | null;
 }
 
-/** Fiche technique (seances_toilettage) du RDV, ou null. */
-export async function seanceToilettageDuRdv(rdvId: string): Promise<SeanceToilettagePdf | null> {
-  const { data } = await supabase.from('seances_toilettage').select('*').eq('rdv_id', rdvId).maybeSingle();
-  return (data as SeanceToilettagePdf | null) ?? null;
+/** Fiches techniques (seances_toilettage) du RDV : une par animal (RDV à plusieurs animaux). */
+export async function seancesToilettageDuRdv(rdvId: string): Promise<SeanceToilettagePdf[]> {
+  const { data } = await supabase.from('seances_toilettage').select('*').eq('rdv_id', rdvId).order('created_at');
+  return (data ?? []) as SeanceToilettagePdf[];
 }
 
 export async function pdfCompteRenduToilettage(s: SeanceToilettagePdf, o: { proProfileId: string | null; signature?: string | null; nomAnimal?: string }): Promise<Blob> {

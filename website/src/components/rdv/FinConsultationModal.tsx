@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { seancesDuRdv, pdfSeance, preparerFactureOsteo, type SeanceRdv } from '@/lib/seance-osteo';
-import { seanceToilettageDuRdv, pdfCompteRenduToilettage, type SeanceToilettagePdf } from '@/lib/toilettage-pdf';
+import { seancesToilettageDuRdv, pdfCompteRenduToilettage, type SeanceToilettagePdf } from '@/lib/toilettage-pdf';
 import { animauxDetailRdv } from '@/lib/rdv-animaux';
 import { seancesEducationDuRdv, pdfSeanceEducation, notifierFamilleSeances, type SeanceEducation } from '@/lib/seance-education';
 import { useAuth } from '@/lib/auth-context';
@@ -47,7 +47,8 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
   const toilettage = metier === 'toilettage';
   const education = metier === 'education';
   const [seancesEdu, setSeancesEdu] = useState<SeanceEducation[]>([]);
-  const [ficheToil, setFicheToil] = useState<SeanceToilettagePdf | null>(null);
+  // Toiletteur : une fiche par animal du RDV.
+  const [fichesToil, setFichesToil] = useState<SeanceToilettagePdf[]>([]);
   const [docs, setDocs] = useState<(DocsConsultation & { seances?: SeanceRdv[] }) | null>(null);
   const [prepa, setPrepa] = useState(false);
   const [coches, setCoches] = useState<Record<string, boolean>>({});
@@ -92,7 +93,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         rdv: { ...r, id: String(r.id), animal_id: r.animal_id != null ? String(r.animal_id) : null }, uid: user.uid,
         proProfileId: (r.pro_profile_id as string | null) ?? proProfileId, titre });
       setCrsPro(l => [...l, { id, titre, url, created_at: new Date().toISOString() }]);
-      setCoches(c => Object.fromEntries([...Object.entries(c).map(([k, v]) => [k, k === 'toil' || k.startsWith('cr:') || k.startsWith('seance:') || k.startsWith('edu:') ? false : v]), [`pro:${id}`, true]]));
+      setCoches(c => Object.fromEntries([...Object.entries(c).map(([k, v]) => [k, k.startsWith('toil:') || k.startsWith('cr:') || k.startsWith('seance:') || k.startsWith('edu:') ? false : v]), [`pro:${id}`, true]]));
     } catch (e) {
       alert(`Impossible : ${(e as Error).message}`);
     } finally { setDepot(false); }
@@ -155,19 +156,20 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
     }
     if (toilettage) {
       (async () => {
-        const [fiche, { data: r }, { data: fac }] = await Promise.all([
-          seanceToilettageDuRdv(rdvId),
+        const [fiches, { data: r }, { data: fac }] = await Promise.all([
+          seancesToilettageDuRdv(rdvId),
           supabase.from('rdv').select('animal_id, animal_nom_manuel').eq('id', rdvId).maybeSingle(),
           supabase.from('factures').select('*').eq('source_rdv_id', rdvId).neq('statut', 'annulee').order('created_at', { ascending: false }).limit(1),
         ]);
         const aid = r?.animal_id != null ? String(r.animal_id) : null;
-        const { data: an } = aid ? await supabase.from('animaux').select('id, nom').eq('id', aid).maybeSingle() : { data: null };
+        const ids = [...new Set([aid, ...fiches.map(f => f.animal_id)].filter(Boolean) as string[])];
+        const { data: an } = ids.length ? await supabase.from('animaux').select('id, nom').in('id', ids) : { data: [] };
+        const noms: Record<string, string> = Object.fromEntries(((an ?? []) as { id: string; nom: string }[]).map(a => [String(a.id), a.nom]));
+        if (aid && !noms[aid]) noms[aid] = (r?.animal_nom_manuel as string | undefined) ?? 'Animal';
         const facture = ((fac ?? [])[0] as DocsConsultation['facture']) ?? null;
-        setFicheToil(fiche);
-        setDocs({ rdvId, animalIdPrincipal: aid,
-          noms: aid ? { [aid]: (an?.nom as string | undefined) ?? (r?.animal_nom_manuel as string | undefined) ?? 'Animal' } : {},
-          crs: [], ordos: [], facture, seances: [] });
-        setCoches(c => ({ ...c, ...Object.fromEntries([...(fiche ? [['toil', true]] : []), ...(facture ? [[`fac:${facture.id}`, true]] : [])]) }));
+        setFichesToil(fiches);
+        setDocs({ rdvId, animalIdPrincipal: aid, noms, crs: [], ordos: [], facture, seances: [] });
+        setCoches(c => ({ ...c, ...Object.fromEntries([...fiches.map(f => [`toil:${f.id}`, true]), ...(facture ? [[`fac:${facture.id}`, true]] : [])]) }));
       })();
       return;
     }
@@ -233,10 +235,10 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         const signature = await maSignaturePro(user.uid).catch(() => null);
         const praticien = `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim();
         const pieces: { type: 'ordonnance' | 'compte_rendu' | 'facture' | 'consignes'; blob: Blob; nomFichier: string }[] = [];
-        if (ficheToil && coches.toil) {
-          const nomA = docs.animalIdPrincipal ? nom(docs.animalIdPrincipal) : 'animal';
+        for (const f of fichesToil) if (coches[`toil:${f.id}`]) {
+          const nomA = f.animal_id ? nom(f.animal_id) : 'animal';
           pieces.push({ type: 'compte_rendu', nomFichier: `Compte-rendu-toilettage-${nomA}.pdf`,
-            blob: await pdfCompteRenduToilettage(ficheToil, { proProfileId, signature, nomAnimal: nomA }) });
+            blob: await pdfCompteRenduToilettage(f, { proProfileId, signature, nomAnimal: nomA }) });
         }
         for (const s of docs.seances ?? []) if (coches[`seance:${s.id}`]) {
           const { blob, animalNom } = await pdfSeance(s.id, signature);
@@ -348,12 +350,12 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         {!docs ? <p className="text-sm text-gray-500">Chargement…</p> : (<>
           <div className="space-y-2">
             <p className="text-xs font-semibold text-gray-500">Envoyer au propriétaire par e-mail</p>
-            {docs.crs.length === 0 && docs.ordos.length === 0 && !(docs.interventions?.length) && !docs.facture && !(docs.seances?.length) && !ficheToil && crsPro.length === 0 && seancesEdu.length === 0 && devisRdv.length === 0 && (
+            {docs.crs.length === 0 && docs.ordos.length === 0 && !(docs.interventions?.length) && !docs.facture && !(docs.seances?.length) && fichesToil.length === 0 && crsPro.length === 0 && seancesEdu.length === 0 && devisRdv.length === 0 && (
               <p className="text-sm text-gray-500">{osteo
                 ? <>Aucun document pour ce rendez-vous pour l&apos;instant : finalisez d&apos;abord la séance.</>
                 : <>Aucun document pour ce rendez-vous pour l&apos;instant (compte rendu validé, ordonnance ou facture).</>}</p>
             )}
-            {toilettage && ficheToil && ligne('toil', `Compte rendu de toilettage — ${docs.animalIdPrincipal ? nom(docs.animalIdPrincipal) : 'Animal'}`)}
+            {toilettage && fichesToil.map(f => ligne(`toil:${f.id}`, `Compte rendu de toilettage — ${f.animal_id ? nom(f.animal_id) : 'Animal'}`))}
             {seancesEdu.map(s => ligne(`edu:${s.id}`, `${s.type === 'bilan' ? 'Bilan' : 'Compte rendu de séance'} — ${s.animal_id ? nom(s.animal_id) : 'Animal'}`,
               'Avec les exercices et le programme de travail, signé'))}
             {(docs.seances ?? []).map(s => ligne(`seance:${s.id}`, `Compte rendu de séance — ${s.animal_id ? nom(s.animal_id) : 'Animal'}`))}

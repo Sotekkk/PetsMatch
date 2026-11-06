@@ -67,7 +67,8 @@ class _ToilettageSeancePageState extends State<ToilettageSeancePage> {
       _ficheId = f?['id']?.toString();
       Map<String, dynamic>? s = widget.seance;
       if (s == null && _rdvId != null) {
-        s = await _supa.from('seances_toilettage').select().eq('rdv_id', _rdvId!).maybeSingle();
+        // Une fiche par animal du RDV (migration_toilettage_seance_par_animal.sql).
+        s = await _supa.from('seances_toilettage').select().eq('rdv_id', _rdvId!).eq('animal_id', widget.animalId).maybeSingle();
       }
       if (s != null) {
         _seanceId = s['id']?.toString();
