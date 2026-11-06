@@ -285,8 +285,14 @@ async function dejaRemplace(table, row) {
                 (nomVaccin && String(a.vaccin || "").trim().toLowerCase() === nomVaccin);
             if (!memeType) return false;
         }
-        return (a.date && row.date && a.date > row.date) ||
-            (a.date_rappel && row.date_rappel && a.date_rappel > row.date_rappel);
+        // Seul un soin SAISI PLUS TARD (ou le même jour avec un rappel plus
+        // lointain) renouvelle : un soin plus ancien à rappel lointain (Tokyo :
+        // « virbac » du 19/05, rappel 2027) ne doit pas couper les relances du
+        // soin suivant. Même règle que l'accueil éleveur (tableau-bord-eleveur).
+        const ja = String(a.date || "").slice(0, 10);
+        const jr = String(row.date || "").slice(0, 10);
+        if (!ja || !jr) return false;
+        return ja > jr || (ja === jr && !!a.date_rappel && !!row.date_rappel && a.date_rappel > row.date_rappel);
     });
 }
 
@@ -511,7 +517,12 @@ async function sendOverdueSanteReminders(digest) {
             // Catégorie « Autre » ou vide : le nom du vaccin sert de type.
             const key = cleTraitement(table, row);
             const prev = latestByGroup.get(key);
-            if (!prev || row.date_rappel > prev.date_rappel) latestByGroup.set(key, row);
+            // Dernier soin = date du soin la plus récente (puis rappel le plus
+            // lointain), pas le rappel le plus lointain : un vieux soin à rappel
+            // en 2027 masquait le retard du soin suivant.
+            const d = String(row.date || "").slice(0, 10);
+            const dp = prev ? String(prev.date || "").slice(0, 10) : "";
+            if (!prev || d > dp || (d === dp && row.date_rappel > prev.date_rappel)) latestByGroup.set(key, row);
         }
 
         for (const row of latestByGroup.values()) {
