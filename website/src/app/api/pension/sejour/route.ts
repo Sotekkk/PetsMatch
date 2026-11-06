@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireUser } from '@/lib/server-auth';
+import { PENSION_ESPECES, pensionGroupe, pensionTarifKeyForEspece } from '@/lib/pension-especes';
 
 // Pension — réservation de séjour par le client (demande à accepter).
 // Plusieurs animaux : une demande (pension_demandes) par animal, mêmes dates,
@@ -43,36 +44,97 @@ async function estProprio(uid: string, animalId: string) {
   return (a as { uid_proprietaire?: string | null } | null)?.uid_proprietaire === uid;
 }
 
-/** Jours (nuits) du séjour où les hébergements n'ont pas `nb` places libres.
+/** Clé d'espèce commune (animal, hébergement, séjour) ; '' = espèce inconnue
+ *  (acceptée partout). */
+function cleEsp(e?: string | null) {
+  const s = (e ?? '').trim();
+  if (!s) return '';
+  return pensionTarifKeyForEspece(s) ?? s.toLowerCase();
+}
+/** Un hébergement accepte l'espèce : aucune espèce cochée = toutes ; « NAC »
+ *  accepte un lapin, « Équidés » un âne (pensionGroupe). */
+function accepte(especesLogement: string[], k: string) {
+  if (!k || !especesLogement.length) return true;
+  return especesLogement.some(x => { const c = cleEsp(x); return c === k || pensionGroupe(c) === pensionGroupe(k); });
+}
+function libelleEspeces(cles: string[]) {
+  return cles.map(k => {
+    if (k === 'nac') return 'NAC';
+    const l = (PENSION_ESPECES.find(e => e.key === k)?.label ?? k).toLowerCase();
+    return /[sx]$/.test(l) ? l : `${l}s`;
+  }).join(' et ');
+}
+
+type Complet = { jour: string; occupes: number; restantes: number; especes: string[] };
+
+/** Jours (nuits) du séjour où les hébergements ne peuvent pas accueillir les
+ *  nouveaux animaux, espèce par espèce : un animal ne compte que sur les
+ *  hébergements qui acceptent son espèce (chatterie, box chiens…), un
+ *  hébergement sans espèce cochée accepte tout. Contrôle exact (condition de
+ *  Hall) : pour chaque groupe d'espèces, animaux ≤ places des hébergements qui
+ *  en acceptent au moins une. Un jour n'est « complet » que si les nouveaux
+ *  animaux aggravent un manque (une surréservation déjà acceptée par la
+ *  pension ne bloque pas une autre espèce).
+ *  `besoin(jour)` = espèces des nouveaux animaux ce jour-là ('' = inconnue).
  *  Sans hébergement configuré (pension familiale), aucune limite connue. */
-async function joursComplets(proUid: string, proProfileId: string | null, jours: string[], nb: number | ((jour: string) => number) = 1) {
-  const besoin = (j: string) => (typeof nb === 'function' ? nb(j) : nb);
-  const { data: lg } = await admin.from('enclos_chenil').select('capacite').eq('uid_eleveur', proUid);
-  const logements = (lg ?? []) as { capacite: number | null }[];
-  if (!logements.length || !jours.length) return { capacite: 0, complets: [] as { jour: string; occupes: number; restantes: number }[] };
-  const capacite = logements.reduce((t, l) => t + (l.capacite ?? 1), 0);
+async function joursComplets(proUid: string, proProfileId: string | null, jours: string[], besoin: (jour: string) => string[]) {
+  const { data: lg } = await admin.from('enclos_chenil').select('capacite, especes').eq('uid_eleveur', proUid);
+  const logements = ((lg ?? []) as { capacite: number | null; especes: string[] | null }[])
+    .map(l => ({ cap: l.capacite ?? 1, especes: Array.isArray(l.especes) ? l.especes : [] }));
+  if (!logements.length || !jours.length) return { capacite: 0, complets: [] as Complet[] };
+  const capacite = logements.reduce((t, l) => t + l.cap, 0);
   const tri = [...new Set(jours)].sort();
-  const { data: en } = await admin.from('pension_entrees').select('date_entree, date_sortie_prevue, pro_profile_id')
+  const { data: en } = await admin.from('pension_entrees').select('date_entree, date_sortie_prevue, pro_profile_id, espece')
     .eq('pro_uid', proUid).eq('statut', 'en_pension').lte('date_entree', tri[tri.length - 1]);
-  const entrees = ((en ?? []) as { date_entree: string; date_sortie_prevue: string | null; pro_profile_id: string | null }[])
+  const entrees = ((en ?? []) as { date_entree: string; date_sortie_prevue: string | null; pro_profile_id: string | null; espece: string | null }[])
     .filter(e => !proProfileId || !e.pro_profile_id || e.pro_profile_id === proProfileId);
   const occupe = (e: { date_entree: string; date_sortie_prevue: string | null }, j: string) =>
     e.date_entree <= j && (!e.date_sortie_prevue || e.date_sortie_prevue > j || (e.date_sortie_prevue === e.date_entree && j === e.date_entree));
-  const complets = tri.map(j => {
-    const occupes = entrees.filter(e => occupe(e, j)).length;
-    return { jour: j, occupes, restantes: Math.max(0, capacite - occupes) };
-  }).filter(x => x.occupes + besoin(x.jour) > capacite);
+  const complets: Complet[] = [];
+  for (const j of tri) {
+    const avant = new Map<string, number>();
+    for (const e of entrees) if (occupe(e, j)) { const k = cleEsp(e.espece); avant.set(k, (avant.get(k) ?? 0) + 1); }
+    const nouveaux = new Map<string, number>();
+    for (const k of besoin(j)) nouveaux.set(k, (nouveaux.get(k) ?? 0) + 1);
+    if (!nouveaux.size) continue;
+    const cles = [...new Set([...avant.keys(), ...nouveaux.keys()])].slice(0, 12);
+    let pire: Complet | null = null;
+    // Groupes d'espèces contenant au moins un nouvel animal, du plus petit au plus grand.
+    const groupes: string[][] = [];
+    for (let m = 1; m < (1 << cles.length); m++) {
+      const g = cles.filter((_, i) => m & (1 << i));
+      if (g.some(k => nouveaux.has(k))) groupes.push(g);
+    }
+    groupes.sort((x, y) => x.length - y.length);
+    for (const g of groupes) {
+      const cap = logements.filter(l => g.some(k => accepte(l.especes, k))).reduce((t, l) => t + l.cap, 0);
+      const sans = g.reduce((t, k) => t + (avant.get(k) ?? 0), 0);
+      const avec = sans + g.reduce((t, k) => t + (nouveaux.get(k) ?? 0), 0);
+      if (Math.max(0, avec - cap) > Math.max(0, sans - cap)) {
+        // Groupe couvrant tous les hébergements : manque global (pas lié à l'espèce).
+        const global = cap === capacite;
+        pire = { jour: j, occupes: sans, restantes: Math.max(0, cap - sans), especes: global ? [] : g.filter(k => k) };
+        break;
+      }
+    }
+    if (pire) complets.push(pire);
+  }
   return { capacite, complets };
 }
 
 /** Message « complet » lisible (client comme pension). */
-function texteComplet(capacite: number, complets: { jour: string; restantes: number }[], nb: number) {
+function texteComplet(capacite: number, complets: Complet[], nb: number) {
   const jours = complets.slice(0, 5).map(c => fr(c.jour)).join(', ') + (complets.length > 5 ? '…' : '');
+  const le = complets.length > 1 ? 'les' : 'le';
   const reste = Math.min(...complets.map(c => c.restantes));
-  if (nb > 1 && reste > 0) {
-    return `Plus assez de places pour ${nb} animaux ${complets.length > 1 ? 'les' : 'le'} ${jours} : ${reste} place${reste > 1 ? 's' : ''} libre${reste > 1 ? 's' : ''} (${capacite} au total).`;
+  const especes = complets.find(c => c.especes.length)?.especes ?? [];
+  if (especes.length) {
+    return `Plus assez de places pour les ${libelleEspeces(especes)} ${le} ${jours} : ${reste > 0 ? `${reste} place${reste > 1 ? 's' : ''} libre${reste > 1 ? 's' : ''} pour eux` : 'aucune place libre pour eux'}.`;
   }
-  return `Complet ${complets.length > 1 ? 'les' : 'le'} ${jours} (${capacite} place${capacite > 1 ? 's' : ''}).`;
+  if (nb > 1 && reste > 0) {
+    return `Plus assez de places pour ${nb} animaux ${le} ${jours} : ${reste} place${reste > 1 ? 's' : ''} libre${reste > 1 ? 's' : ''} (${capacite} au total).`;
+  }
+  return `Complet ${le} ${jours} (${capacite} place${capacite > 1 ? 's' : ''}).`;
 }
 
 /** Nuits du séjour (le jour du départ n'est pas compté ; séjour d'un jour = ce jour). */
@@ -106,7 +168,13 @@ export async function GET(req: NextRequest) {
   let dispo: { capacite: number; complets: { jour: string; restantes: number }[]; message: string | null } | null = null;
   if (JOUR.test(arrivee) && JOUR.test(depart) && depart >= arrivee) {
     const nb = Math.max(1, Math.min(20, Number(sp.get('nb')) || 1));
-    const { capacite, complets } = await joursComplets(p.uid, p.id, nuitsDuSejour(arrivee, depart), nb);
+    // Espèces des animaux choisis (places comptées par espèce).
+    let especes: string[] = Array(nb).fill('');
+    if (animalIds.length) {
+      const { data: an } = await admin.from('animaux').select('id, espece').in('id', animalIds);
+      especes = ((an ?? []) as { espece: string | null }[]).map(a => cleEsp(a.espece));
+    }
+    const { capacite, complets } = await joursComplets(p.uid, p.id, nuitsDuSejour(arrivee, depart), () => especes);
     dispo = { capacite, complets: complets.map(c => ({ jour: c.jour, restantes: c.restantes })), message: complets.length ? texteComplet(capacite, complets, nb) : null };
   }
   return NextResponse.json({
@@ -160,13 +228,14 @@ export async function POST(req: NextRequest) {
     // Places libres pour tous les animaux du groupe : la pension peut accepter
     // quand même (surbooking assumé).
     if (!b.forcer) {
-      const parJour = new Map<string, number>();
+      // Espèces des animaux du groupe présents chaque jour (séjour + essai).
+      const parJour = new Map<string, string[]>();
       for (const d of ouvertes) {
         for (const j of new Set([...nuitsDuSejour(d.date_arrivee as string, d.date_depart as string), ...(d.essai_date ? [d.essai_date] : [])])) {
-          parJour.set(j, (parJour.get(j) ?? 0) + 1);
+          parJour.set(j, [...(parJour.get(j) ?? []), cleEsp(d.espece)]);
         }
       }
-      const { capacite, complets } = await joursComplets(d0.pro_uid as string, d0.pro_profile_id, [...parJour.keys()], j => parJour.get(j) ?? 1);
+      const { capacite, complets } = await joursComplets(d0.pro_uid as string, d0.pro_profile_id, [...parJour.keys()], j => parJour.get(j) ?? []);
       if (complets.length) {
         return NextResponse.json({ error: texteComplet(capacite, complets, ouvertes.length), complet: true, capacite, jours: complets }, { status: 409 });
       }
@@ -271,7 +340,8 @@ export async function POST(req: NextRequest) {
     essai = b.essaiDate as string;
   }
   // Places libres pour tous les animaux (la pension tranche ensuite).
-  const { capacite, complets } = await joursComplets(p.uid, p.id, nuitsDuSejour(b.dateArrivee as string, b.dateDepart as string), animalIds.length);
+  const especesDemande = animalIds.map(id => cleEsp(infosAnimal.get(id)?.espece));
+  const { capacite, complets } = await joursComplets(p.uid, p.id, nuitsDuSejour(b.dateArrivee as string, b.dateDepart as string), () => especesDemande);
   if (complets.length) {
     return NextResponse.json({ error: `${texteComplet(capacite, complets, animalIds.length)} Choisissez d'autres dates${animalIds.length > 1 ? ' ou moins d\'animaux' : ''}.`, complet: true, jours: complets }, { status: 409 });
   }
