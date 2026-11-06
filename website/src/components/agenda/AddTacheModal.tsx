@@ -70,7 +70,8 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
    * cogérant (elevage_cogerants), dont l'uid Firebase diffère du gérant. */
   myUid?: string;
   profileId: string | null;
-  profilSource: 'eleveur' | 'association' | 'pension';
+  /** Éleveur, association, pension, particulier, ou le métier du pro (veterinaire…). */
+  profilSource: string;
   selectedDate?: string;
   /** Animaux de l'élevage ; absents = chargés au 1er choix « Animal » / « Portée ». */
   animaux?: AnimalOption[];
@@ -84,14 +85,39 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
   // Élevage : toujours les animaux présents de CE profil (même règle que le RDV vétérinaire),
   // jamais ceux de l'association du compte ni les fiches clients, quelle que soit la page.
   const elevage = profilSource === 'eleveur' && !!profileId;
+  // Éleveur, association, pension : équipe et employés. Particulier, pro : tâche pour soi.
+  const structure = ['eleveur', 'association', 'pension'].includes(profilSource);
   const [animauxCharges, setAnimauxCharges] = useState<AnimalOption[] | null>(elevage ? null : animaux ?? null);
   const [chargementAnimaux, setChargementAnimaux] = useState(false);
   const animauxDispo = animauxCharges ?? [];
+  /** Particulier : ses animaux sur ce profil ; pro : les animaux de ses clients (ce profil). */
+  async function animauxDuProfil(): Promise<AnimalOption[]> {
+    if (!profileId) return [];
+    if (profilSource !== 'particulier') {
+      const { data } = await supabase.rpc('pm_mes_clients', { p_profile: profileId });
+      const vus = new Set<string>();
+      return ((data ?? []) as { animal_id: string | null; animal_nom: string; espece: string }[])
+        .filter(c => c.animal_id && !vus.has(c.animal_id) && !!vus.add(c.animal_id))
+        .map(c => ({ id: c.animal_id!, nom: c.animal_nom || 'Animal', espece: c.espece }));
+    }
+    const { data: props } = await supabase.from('animaux_proprietes').select('animal_id')
+      .eq('profile_id_proprio', profileId).eq('statut', 'actif').is('date_fin', null);
+    const ids = [...new Set((props ?? []).map(p => String(p.animal_id)))];
+    if (!ids.length) return [];
+    const { data } = await supabase.from('animaux').select('id, nom, espece, statut').in('id', ids).order('nom');
+    return ((data ?? []) as (AnimalOption & { statut?: string | null })[]).filter(a => !estHorsPriseEnCharge(a));
+  }
+
   async function chargerAnimaux() {
     if (animauxCharges || chargementAnimaux) return;
     setChargementAnimaux(true);
     if (elevage) {
       setAnimauxCharges(await animauxPresentsElevage(profileId).catch(() => []));
+      setChargementAnimaux(false);
+      return;
+    }
+    if (!structure) {
+      setAnimauxCharges(await animauxDuProfil().catch(() => []));
       setChargementAnimaux(false);
       return;
     }
@@ -309,10 +335,11 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
           </button>
 
           <div>
+            {(structure || membres.length > 0) && <>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-semibold text-gray-500">Attribuer à</label>
-              <button type="button" onClick={() => setShowAddEmploye(v => !v)}
-                className="text-xs font-semibold text-teal-700 hover:text-teal-800">+ Nouvel employé</button>
+              {structure && <button type="button" onClick={() => setShowAddEmploye(v => !v)}
+                className="text-xs font-semibold text-teal-700 hover:text-teal-800">+ Nouvel employé</button>}
             </div>
             {membres.length > 0 ? (
               <select className={champ} value={assigneUid} onChange={e => setAssigneUid(e.target.value)}>
@@ -326,18 +353,19 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
             )}
             {showAddEmploye && (
               <AddEmployeInline
-                uid={uid} profileId={profileId} profilSource={profilSource}
+                uid={uid} profileId={profileId} profilSource={profilSource as 'eleveur' | 'association' | 'pension'}
                 onClose={() => setShowAddEmploye(false)}
                 onCreated={() => { setShowAddEmploye(false); onEmployeCreated(); }}
               />
             )}
+            </>}
           </div>
 
           {/* Rattachement : Aucun / Animal / Portée — jamais mélangés */}
           <div>
             <label className={libelle}>Rattachement (optionnel)</label>
             <div className="grid grid-cols-3 gap-1 p-1 bg-gray-100 rounded-xl">
-              {(profilSource === 'pension'
+              {(profilSource !== 'eleveur' && profilSource !== 'association'
                 ? [['aucun', 'Aucun'], ['animal', 'Animal']] as const
                 : [['aucun', 'Aucun'], ['animal', 'Animal'], ['portee', 'Portée']] as const).map(([v, l]) => {
                 const indispo = !!animauxCharges && v === 'portee' && portees.length === 0;

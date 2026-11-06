@@ -9,6 +9,7 @@ import { useActiveProfileState, useProfileSource } from '@/hooks/useActiveProfil
 import { supabase } from '@/lib/supabase';
 import { typeFromMotif } from '@/lib/agenda-type';
 import { sansAutresProfils } from '@/lib/cloisonnement-profils';
+import { AddTacheModal, type MembreOption } from '@/components/agenda/AddTacheModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -476,6 +477,9 @@ export default function AgendaPage() {
   const [selectedDay, setSelectedDay] = useState<number | null>(new Date().getDate());
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
   const [showAdd, setShowAdd]         = useState(false);
+  const [showAddTache, setShowAddTache] = useState(false);
+  // Particulier : tâche attribuable à un co-propriétaire de ses animaux (aucun choix s'il n'y en a pas).
+  const [coMembres, setCoMembres] = useState<MembreOption[]>([]);
   const [modalAnnuler, setModalAnnuler] = useState<AgendaEvent | null>(null);
   const [modalModifier, setModalModifier] = useState<AgendaEvent | null>(null);
 
@@ -671,7 +675,11 @@ export default function AgendaPage() {
           .gte('date', taskFrom).lte('date', taskTo);
         d1Res = { data: [...(d1Res.data ?? []), ...(partagees ?? [])] };
       }
-    } else if (!isParticulierView) {
+    } else if (isParticulierView) {
+      // Profil pro : ses tâches, de ce profil uniquement.
+      if (activeProfileId) d1Res = await supabase.from('taches_elevage').select(manuelCols)
+        .eq('profile_id', activeProfileId).gte('date', taskFrom).lte('date', taskTo);
+    } else {
       d1Res = activeProfileId
         ? await supabase.from('taches_elevage').select(manuelCols)
             .gte('date', taskFrom).lte('date', taskTo).eq('profile_id', activeProfileId)
@@ -800,6 +808,17 @@ export default function AgendaPage() {
   }, [uid, profilCharge, focusedMonth, activeProfileId, taskProfilSource]);
 
   useEffect(() => { if (uid) load(); }, [uid, load]);
+
+  useEffect(() => {
+    if (!showAddTache || !uid || !activeProfileId || userData?.profileType !== 'particulier') return;
+    (async () => {
+      const { data } = await supabase.from('animaux_proprietes').select('animal_id')
+        .eq('uid_proprio', uid).eq('profile_id_proprio', activeProfileId).eq('statut', 'actif').is('date_fin', null);
+      const co = await coProprietaires([...new Set((data ?? []).map(r => String(r.animal_id)))], uid);
+      setCoMembres(co.size === 0 ? [] : [{ uid, nom: 'Moi', type: 'moi' },
+        ...[...co.entries()].map(([id, c]) => ({ uid: id, nom: c.nom, type: 'employe' as const }))]);
+    })().catch(() => setCoMembres([]));
+  }, [showAddTache, uid, activeProfileId, userData?.profileType]);
 
   function eventsForDay(day: number) {
     return events.filter(e => {
@@ -970,6 +989,13 @@ export default function AgendaPage() {
                 </button>
               ))}
             </div>
+            {isParticulierView && activeProfileId && (
+              <button onClick={() => setShowAddTache(true)}
+                className="flex items-center gap-1 px-3 py-2 rounded-lg bg-white text-[#0C5C6C] text-sm font-bold"
+                style={{ fontFamily: 'Galey, sans-serif' }}>
+                + Tâche
+              </button>
+            )}
             <button onClick={() => setShowAdd(true)}
               className="flex items-center gap-1 px-3 py-2 rounded-lg bg-white text-[#0C5C6C] text-sm font-bold hover:bg-gray-100 transition-colors"
               style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -1059,6 +1085,11 @@ export default function AgendaPage() {
         )}
       </div>
 
+      {showAddTache && uid && activeProfileId && userData?.profileType && (
+        <AddTacheModal uid={uid} myUid={uid} profileId={activeProfileId} profilSource={userData.profileType}
+          selectedDate={`${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`}
+          membres={userData.profileType === 'particulier' ? coMembres : []} onClose={() => setShowAddTache(false)} onSaved={() => { setShowAddTache(false); load(); }} onEmployeCreated={() => {}} />
+      )}
       {showAdd && uid && (
         <AddModal uid={uid} profileId={activeProfileId} types={typesForProfile(userData, userData?.isAssociation ?? false)} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
       )}

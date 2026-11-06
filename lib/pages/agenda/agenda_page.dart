@@ -703,6 +703,10 @@ class _AgendaPageState extends State<AgendaPage> {
               d1 = [...(d1 as List), ...(partagees as List)];
             }
           } catch (_) {}
+        } else if (pid.isNotEmpty) {
+          // Profil pro : ses tâches, de ce profil uniquement.
+          d1 = await _supa.from('taches_elevage').select()
+              .eq('profile_id', pid).gte('date', from).lte('date', to);
         }
       } else if (pid.isNotEmpty) {
         // Filtre uniquement par profile_id (jamais uid_eleveur en plus) — un
@@ -923,22 +927,16 @@ class _AgendaPageState extends State<AgendaPage> {
 
   // Retourne true si le profil actif est un profil éleveur ou association qui peut voir les tâches.
   // Évite de dépendre de User_Info.activeType (peut être incorrect si profile_type est null en BDD).
-  bool _canShowTasks() {
-    if (widget.isParticulier) return false;
-    final pid = User_Info.activeProfileId;
-    if (pid.isEmpty) return true; // profil principal sans UUID = charge par défaut
-    return User_Info.availableProfiles.any((p) {
-      if (p['id']?.toString() != pid) return false;
-      final t = p['profile_type']?.toString() ?? '';
-      return t == 'eleveur' || t == 'association' || t == 'pension';
-    });
-  }
+  // Tous les profils ont leurs tâches : éleveur, association, pension, particulier, pros.
+  bool _canShowTasks() => true;
 
   // Détermine le profil source pour les tâches/protocoles créés depuis l'agenda.
   String get _taskProfilSource {
     if (widget.isParticulier || User_Info.activeType == 'particulier') return 'particulier';
     if (User_Info.activeType == 'association') return 'association';
     if (User_Info.activeType == 'pension') return 'pension';
+    // Profil pro : son métier (veterinaire, garde…).
+    if (_kNonElevageProfileTypes.contains(User_Info.activeType)) return User_Info.activeType;
     return 'eleveur';
   }
 
@@ -3914,7 +3912,12 @@ class AddTacheSheetState extends State<AddTacheSheet> {
   bool _plusieursJours = false;
 
   List<PorteeRattachement> get _portees =>
-      widget.profilSource == 'pension' ? const [] : porteesDepuis(_dispo ?? const []);
+      _sansPortee ? const [] : porteesDepuis(_dispo ?? const []);
+
+  /// Portées : éleveur et association uniquement.
+  bool get _sansPortee => widget.profilSource != 'eleveur' && widget.profilSource != 'association';
+  /// Équipe et employés : éleveur, association, pension (particulier, pro : tâche pour soi).
+  bool get _structure => !_sansPortee || widget.profilSource == 'pension';
 
   /// Animaux réellement concernés à l'enregistrement (portée = ses membres).
   List<Map<String, dynamic>> get _selectedAnimaux {
@@ -4009,6 +4012,17 @@ class AddTacheSheetState extends State<AddTacheSheet> {
     final pid = (widget.profileId ?? User_Info.activeProfileId);
     // Élevage : animaux présents de CE profil (même règle que le RDV vétérinaire).
     if (widget.profilSource == 'eleveur' && pid.isNotEmpty) return animauxPresentsElevage(pid);
+    // Profil pro : les animaux de ses clients, de ce profil uniquement.
+    if (!_structure && widget.profilSource != 'particulier') {
+      if (pid.isEmpty) return [];
+      final rows = await Supabase.instance.client.rpc('pm_mes_clients', params: {'p_profile': pid}) as List;
+      final vus = <String>{};
+      return [
+        for (final r in rows)
+          if ((r['animal_id']?.toString() ?? '').isNotEmpty && vus.add(r['animal_id'].toString()))
+            {'id': r['animal_id'], 'nom': r['animal_nom'], 'espece': r['espece']},
+      ];
+    }
     return chargerAnimauxRattachement(widget.uid, pid.isNotEmpty ? pid : null);
   }
 
@@ -4078,7 +4092,12 @@ class AddTacheSheetState extends State<AddTacheSheet> {
     try {
       final heureStr = '${_heure.hour.toString().padLeft(2, '0')}:${_heure.minute.toString().padLeft(2, '0')}';
       final supa = Supabase.instance.client;
-      final profileIdTache = (widget.profileId ?? User_Info.activeProfileId);
+      // Toujours le profil concerné : profil actif, sinon le profil principal.
+      var profileIdTache = (widget.profileId ?? User_Info.activeProfileId);
+      if (profileIdTache.isEmpty) {
+        profileIdTache = User_Info.availableProfiles
+            .firstWhere((p) => p['is_main'] == true, orElse: () => const {})['id']?.toString() ?? '';
+      }
       final isSelfAssign = _selectedEmployeUid == (widget.myUid ?? widget.uid);
       String? assigneProfileId;
       if (isSelfAssign) {
@@ -4204,7 +4223,7 @@ class AddTacheSheetState extends State<AddTacheSheet> {
       );
 
   Widget _buildRattachement() {
-    final indispoPortee = widget.profilSource == 'pension';
+    final indispoPortee = _sansPortee;
     final choix = [('aucun', 'Aucun'), ('animal', 'Animal'), if (!indispoPortee) ('portee', 'Portée')];
     final n = _rattachement == 'animal' ? _animalIds.length : _rattachement == 'portee' ? _porteeIds.length : 0;
     final nbCibles = _selectedAnimaux.length;
@@ -4382,10 +4401,10 @@ class AddTacheSheetState extends State<AddTacheSheet> {
                 ),
               ),
               const SizedBox(height: 8),
-              if (widget.profilSource != 'particulier' || widget.employes.isNotEmpty) ...[
+              if (_structure || (widget.profilSource == 'particulier' && widget.employes.isNotEmpty)) ...[
               Row(children: [
                 Expanded(child: _libelle('Attribuer à')),
-                if (widget.profilSource != 'particulier')
+                if (_structure)
                 GestureDetector(
                   onTap: () async {
                     final created = await showModalBottomSheet<bool>(
