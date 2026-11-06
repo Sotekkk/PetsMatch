@@ -404,7 +404,8 @@ class PlanningService {
             .filter('date_accouchement', 'is', null)
             .filter('nb_nes', 'is', null)
             .or('date_prevue.gte.${ilYa(15)},and(date_prevue.is.null,date.gte.${ilYa(75)})');
-        if ((profileId ?? '').isNotEmpty) q = q.eq('animaux.profile_id', profileId!);
+        // Animaux du profil actif, ou anciens animaux sans profil enregistré (sinon exclus à tort).
+        if ((profileId ?? '').isNotEmpty) q = q.or('profile_id.eq.$profileId,profile_id.is.null', referencedTable: 'animaux');
         if (espece != null && espece.isNotEmpty) q = q.eq('animaux.espece', espece);
         final rows = await q.order('date_prevue');
         return (rows as List).where((g) =>

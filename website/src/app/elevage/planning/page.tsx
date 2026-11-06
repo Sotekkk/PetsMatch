@@ -1855,7 +1855,8 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
           .select('animal_id, date_prevue, animaux!inner(nom, statut, uid_eleveur, profile_id, espece)').eq('animaux.uid_eleveur', uid)
           .eq('gestation_confirmee', true).is('date_naissance', null).is('date_accouchement', null).is('nb_nes', null)
           .or(`date_prevue.gte.${ilYa(15)},and(date_prevue.is.null,date.gte.${ilYa(75)})`);
-        if (profileId) qg = qg.eq('animaux.profile_id', profileId);
+        // Animaux du profil actif, ou anciens animaux sans profil enregistré (sinon exclus à tort).
+        if (profileId) qg = qg.or(`profile_id.eq.${profileId},profile_id.is.null`, { referencedTable: 'animaux' });
         if (template.espece) qg = qg.eq('animaux.espece', template.espece);
         const { data: gestations } = await qg;
         for (const g of (gestations ?? []) as unknown as { animal_id: string; date_prevue: string | null; animaux: { nom: string; statut?: string | null }[] | { nom: string; statut?: string | null } | null }[]) {
@@ -1962,7 +1963,12 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
         if (taches.length > 0) await supabase.from('plan_taches').insert(taches);
         totalTaches += taches.length;
       }
-      alert(`${totalTaches} tâche${totalTaches > 1 ? 's' : ''} générée${totalTaches > 1 ? 's' : ''} !`);
+      // Aucune tâche : le dire clairement (avant : « 0 tâche générée ! », lu comme un succès).
+      if (totalTaches === 0) {
+        alert(cibleType === 'gestantes'
+          ? 'Aucune tâche créée : aucune femelle gestante en cours trouvée (gestation confirmée, mise bas pas encore saisie, prévue il y a moins de 15 jours ou à venir).'
+          : 'Aucune tâche créée : aucun animal ne correspond à la cible de ce protocole.');
+      } else alert(`${totalTaches} tâche${totalTaches > 1 ? 's' : ''} générée${totalTaches > 1 ? 's' : ''} !`);
       onApplied();
     } catch (e) { console.error(e); setSaving(false); }
   };

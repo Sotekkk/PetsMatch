@@ -175,8 +175,13 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('$count tâche${count > 1 ? 's' : ''} générée${count > 1 ? 's' : ''} !'),
-          backgroundColor: _green,
+          // Aucune tâche : le dire clairement (avant : « 0 tâche générée ! », lu comme un succès).
+          content: Text(count == 0
+              ? (_cibleType == 'gestantes'
+                  ? 'Aucune tâche créée : aucune femelle gestante en cours trouvée (gestation confirmée, mise bas pas encore saisie, prévue il y a moins de 15 jours ou à venir).'
+                  : 'Aucune tâche créée : aucun animal ne correspond à la cible de ce protocole.')
+              : '$count tâche${count > 1 ? 's' : ''} générée${count > 1 ? 's' : ''} !'),
+          backgroundColor: count == 0 ? const Color(0xFFB45309) : _green,
         ));
       }
     } catch (e) {
