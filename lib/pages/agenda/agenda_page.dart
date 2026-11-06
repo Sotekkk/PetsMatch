@@ -183,7 +183,9 @@ class AgendaPage extends StatefulWidget {
   final bool autoOpenAddTache;
   /// Ouvre directement la fiche de ce RDV (notification : consignes, réveil, prêt…).
   final String? ouvrirRdvId;
-  const AgendaPage({super.key, this.onBack, this.isAssociation = false, this.isParticulier = false, this.initialViewMode = 0, this.autoOpenAddTache = false, this.ouvrirRdvId});
+  /// Jour ouvert à l'arrivée (lien depuis l'accueil éleveur) ; aujourd'hui sinon.
+  final DateTime? jourInitial;
+  const AgendaPage({super.key, this.onBack, this.isAssociation = false, this.isParticulier = false, this.initialViewMode = 0, this.autoOpenAddTache = false, this.ouvrirRdvId, this.jourInitial});
   @override
   State<AgendaPage> createState() => _AgendaPageState();
 }
@@ -223,7 +225,7 @@ class _AgendaPageState extends State<AgendaPage> {
   bool _loading = true;
   // 0 = mois, 1 = jour, 2 = liste
   late int _viewMode = widget.initialViewMode;
-  DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  late DateTime _focusedMonth = DateTime((widget.jourInitial ?? DateTime.now()).year, (widget.jourInitial ?? DateTime.now()).month);
   DateTime? _selectedDay;
   // Mode sélection (suppression groupée), lié à un jour (yyyy-MM-dd) : se
   // désactive de lui-même en changeant de jour. Clés 'g:<etape>' / 't:<id>'.
@@ -233,7 +235,7 @@ class _AgendaPageState extends State<AgendaPage> {
   @override
   void initState() {
     super.initState();
-    _selectedDay = DateTime.now();
+    _selectedDay = widget.jourInitial ?? DateTime.now();
     _load();
     _loadTasks();
     _loadColorPrefs();

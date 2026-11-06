@@ -9,6 +9,7 @@ import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/search/quick_search_page.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
+import 'package:PetsMatch/pages/eleveur/eleveur_dashboard.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
@@ -362,6 +363,9 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                         // Photographe : tableau de bord du studio.
                         else if (User_Info.catPro == 'photographe')
                           PhotographeStudioDashboard(key: ValueKey(_refreshTick))
+                        // Éleveur : tableau de bord plus bas (après les bandeaux d'alerte).
+                        else if (!User_Info.isPro)
+                          const SizedBox.shrink()
                         else
                           _buildStatsRow(),
                         if (User_Info.catPro == 'marechal_ferrant') ...[
@@ -380,11 +384,17 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                           const SizedBox(height: 16),
                           _buildAlerteBanner(context),
                         ],
+                        // Éleveur : tableau de bord (pages/eleveur/eleveur_dashboard.dart) ;
+                        // « Dernières annonces » y est reprise dans le bloc Activité.
                         if (!User_Info.isPro) ...[
-                          const SizedBox(height: 24),
-                          _buildSectionTitle('Dernières annonces'),
-                          const SizedBox(height: 12),
-                          _buildRecentPosts(),
+                          const SizedBox(height: 4),
+                          EleveurDashboard(
+                            key: ValueKey('${User_Info.activeProfileId}_$_refreshTick'),
+                            animalCount: _animalCount,
+                            postCount: _postCount,
+                            planCode: _planCode,
+                            annoncesRecentes: _buildRecentPosts(),
+                          ),
                         ],
                       ]),
                     ),

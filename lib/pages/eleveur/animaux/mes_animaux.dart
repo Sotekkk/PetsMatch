@@ -76,7 +76,9 @@ class MesAnimauxPage extends StatefulWidget {
   /// Intégrée dans une autre page (onglet « Animaux » de Mes employeurs) :
   /// barre d'outils claire au lieu de l'AppBar principale.
   final bool embedded;
-  const MesAnimauxPage({super.key, this.initialTab = 0, this.employeur, this.embedded = false});
+  /// Ouvre directement « Ajouter un animal » (raccourci de l'accueil éleveur).
+  final bool ouvrirAjout;
+  const MesAnimauxPage({super.key, this.initialTab = 0, this.employeur, this.embedded = false, this.ouvrirAjout = false});
   @override
   State<MesAnimauxPage> createState() => _MesAnimauxPageState();
 }
@@ -154,6 +156,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       }
     });
     _loadAnimaux();
+    if (widget.ouvrirAjout && widget.employeur == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _showAddSheet(context); });
+    }
   }
 
   static int _intervalChaleurs(String espece) {
