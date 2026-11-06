@@ -76,6 +76,8 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
   final _dosageCtrl       = TextEditingController();
   final _notesCtrl        = TextEditingController();
   final _ordonnanceCtrl   = TextEditingController();
+  /// Vaccination : n° de lot (comme le carnet ; repris dans les annonces).
+  final _lotCtrl          = TextEditingController();
   bool _saving = false;
   String? _error;
   late Set<String> _selectedIds;
@@ -110,6 +112,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
     _dosageCtrl.dispose();
     _notesCtrl.dispose();
     _ordonnanceCtrl.dispose();
+    _lotCtrl.dispose();
     super.dispose();
   }
 
@@ -196,6 +199,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
             await supa.from('vaccinations').insert({
               'id': entryId, 'animal_id': id,
               'vaccin': desc, 'veterinaire': interv, 'date': dateIso, 'source': 'owner',
+              if (_lotCtrl.text.trim().isNotEmpty) 'lot': _lotCtrl.text.trim(),
               if (rappelTxt != null) 'date_rappel': rappelTxt,
             });
           case 'antiparasitaire':
@@ -415,6 +419,27 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
+
+          // Vaccination : n° de lot.
+          if (_selectedActe.value == 'vaccination') ...[
+            const SizedBox(height: 14),
+            const Text('N° de lot', style: TextStyle(fontFamily: 'Galey',
+                fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0C5C6C))),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _lotCtrl,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(
+                hintText: "Numéro inscrit sur l'étiquette du vaccin",
+                hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFBDBDBD)),
+                filled: true, fillColor: const Color(0xFFF8F8F6),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _teal.withValues(alpha: 0.2))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _teal.withValues(alpha: 0.2))),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _teal, width: 1.5)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+            ),
+          ],
 
           // Prochain rappel (vaccin, vermifuge, antiparasitaire).
           if (_avecRappel) ...[

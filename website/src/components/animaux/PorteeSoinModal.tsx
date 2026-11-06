@@ -55,6 +55,8 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
   const [intervenant, setIntervenant] = useState('');
   const [ordonnance, setOrdonnance]   = useState('');
   const [dosage, setDosage]           = useState('');
+  // Vaccination : n° de lot (comme le carnet ; repris dans les annonces).
+  const [lot, setLot]                 = useState('');
   const [notes, setNotes]             = useState('');
   const [saving, setSaving]           = useState(false);
   const [saved, setSaved]             = useState(false);
@@ -108,6 +110,7 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
           await supabase.from('vaccinations').insert({
             id: entryId, animal_id: animal.id,
             vaccin: desc, veterinaire: interv, date: dateIso, source: 'owner',
+            ...(lot.trim() ? { lot: lot.trim() } : {}),
             ...(avecRappel ? { date_rappel: dateRappel } : {}),
           });
         } else if (typeActe === 'antiparasitaire') {
@@ -163,7 +166,7 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
     setSaving(false);
     if (success > 0) { onSaved?.(); setSaved(true); setTimeout(onClose, 1200); }
     else setError('Erreur lors de l\'enregistrement. Vérifiez votre connexion.');
-  }, [animals, uid, user?.uid, activeProfileId, typeActe, date, heure, description, dosage, notes, intervenant, ordonnance, onClose, onSaved, selectedIds, dateRappel]);
+  }, [animals, uid, user?.uid, activeProfileId, typeActe, date, heure, description, dosage, lot, notes, intervenant, ordonnance, onClose, onSaved, selectedIds, dateRappel]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
@@ -233,6 +236,15 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
             placeholder={typeActe === 'rdv_veto' || typeActe === 'visite' ? 'Ex : vaccins, contrôle de portée' : 'Ex : Milbemax® 1 comprimé par chiot de 0,5 kg à 10 kg'}
             className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 resize-none focus:outline-none focus:border-[#0C5C6C]"
             style={{ fontFamily: 'Galey, sans-serif' }} />
+
+          {typeActe === 'vaccination' && (
+            <>
+              <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-1">N° de lot</p>
+              <input value={lot} onChange={e => setLot(e.target.value)} placeholder="Numéro inscrit sur l'étiquette du vaccin"
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm mb-4 focus:outline-none focus:border-[#0C5C6C]"
+                style={{ fontFamily: 'Galey, sans-serif' }} />
+            </>
+          )}
 
           {!!TABLE_RAPPEL[typeActe] && (
             <>

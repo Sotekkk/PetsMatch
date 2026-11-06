@@ -25,6 +25,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/recuperations_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_soin_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
@@ -342,6 +343,12 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
                           style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
                     ])),
                     const Icon(Icons.bar_chart, size: 18, color: kDashTeal),
+                    // Voir l'annonce telle que la voient les visiteurs.
+                    IconButton(
+                      tooltip: "Voir l'annonce", visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.visibility_outlined, size: 20, color: kDashTeal),
+                      onPressed: () => _ouvrir(AnnonceDetailPage(annonceId: a['id'].toString())),
+                    ),
                   ])),
                 ),
             ],

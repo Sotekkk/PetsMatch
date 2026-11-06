@@ -392,8 +392,9 @@ export default function EleveurDashboard() {
                             const title = a.titre || a.race || a.espece || 'Annonce';
                             const photos = (a.photos as unknown as string[]) ?? [];
                             return (
-                              <button key={a.id} type="button" onClick={() => setStatsOuverte({ id: a.id, titre: title })}
-                                className="w-full text-left flex items-center gap-3 py-2 hover:bg-gray-50 -mx-2 px-2 rounded-lg">
+                              <div key={a.id} className="flex items-center gap-2">
+                              <button type="button" onClick={() => setStatsOuverte({ id: a.id, titre: title })}
+                                className="flex-1 min-w-0 text-left flex items-center gap-3 py-2 hover:bg-gray-50 -mx-2 px-2 rounded-lg">
                                 <span className="w-10 h-10 rounded-lg overflow-hidden bg-[#E8F4F6] text-[#0C5C6C] flex-shrink-0 flex items-center justify-center">
                                   {photos[0]
                                     // eslint-disable-next-line @next/next/no-img-element
@@ -405,6 +406,12 @@ export default function EleveurDashboard() {
                                   {Number(a.vues ?? 0)} vues · {Number(a.contacts ?? 0)} contacts · {a.favoris} favoris
                                 </span>
                               </button>
+                              {/* Voir l'annonce telle que la voient les visiteurs. */}
+                              <Link href={`/annonces/${a.id}`} aria-label={`Voir l'annonce ${title}`} title="Voir l'annonce"
+                                className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-[#0C5C6C] hover:bg-[#E8F4F6]">
+                                <Icone nom="oeil" taille={18} />
+                              </Link>
+                              </div>
                             );
                           })}
                         </div>
