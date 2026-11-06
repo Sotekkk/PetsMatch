@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import { estHorsPriseEnCharge } from '@/lib/protocoles';
 import { sansAutresProfils } from '@/lib/cloisonnement-profils';
+import { basculerRoutine, basculerTacheManuelle } from '@/lib/valider-tache';
 import { AddTacheModal, loadMembres, type AnimalOption, type MembreOption } from '@/components/agenda/AddTacheModal';
 import { NouveauRdvVetoModal, ValiderRdvVetoModal } from '@/components/agenda/RdvVetoModals';
 
@@ -505,18 +506,7 @@ function RoutineModal({ groupe, selectedDate, employes, currentUid, currentProfi
 
   const toggle = async (idx: number) => {
     const r = items[idx];
-    const newStatut = r.statut === 'fait' ? 'en_attente' : 'fait';
-    const update: Record<string, unknown> = { statut: newStatut };
-    if (newStatut === 'fait') {
-      update.valide_par = currentUid;
-      update.valide_par_profile_id = currentProfileId;
-      update.valide_at  = new Date().toISOString();
-    } else {
-      update.valide_par = null;
-      update.valide_par_profile_id = null;
-      update.valide_at  = null;
-    }
-    await supabase.from('plan_taches').update(update).eq('id', r.id);
+    const newStatut = await basculerRoutine(r, { uid: currentUid, profileId: currentProfileId });
     setItems(prev => prev.map((it, i) => i === idx
       ? { ...it, statut: newStatut, valide_par: newStatut === 'fait' ? currentUid : null,
           valide_par_profile_id: newStatut === 'fait' ? currentProfileId : null }
@@ -1019,6 +1009,18 @@ export default function AgendaElevagePage() {
   const [selectedDate, setSelectedDate] = useState(toISODate(new Date()));
   const [focusedYear, setFocusedYear]   = useState(new Date().getFullYear());
   const [focusedMois, setFocusedMois]   = useState(new Date().getMonth());
+  // Lien direct vers un jour (?date=AAAA-MM-JJ, depuis l'accueil éleveur).
+  useEffect(() => {
+    const d = new URLSearchParams(window.location.search).get('date');
+    if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+    const j = new Date(`${d}T12:00:00`);
+    if (Number.isNaN(j.getTime())) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedDate(d);
+    setFocusedYear(j.getFullYear());
+    setFocusedMois(j.getMonth());
+    setViewMode('jour');
+  }, []);
   const [routines, setRoutines]         = useState<Routine[]>([]);
   const [tachesM, setTachesM]           = useState<TacheManuelle[]>([]);
   const [dayEvents, setDayEvents]       = useState<AgendaEventLite[]>([]);
@@ -1276,35 +1278,8 @@ export default function AgendaElevagePage() {
     // RDV vétérinaire : récapitulatif (date réelle, animaux vus) avant carnet et registre.
     if (t.rdv_veto_cabinet && t.statut !== 'fait') { setValidationRdvVeto(t); return; }
     if (t.rdv_veto_cabinet && !confirm('Annuler la validation ? Les visites ajoutées au carnet et au registre pour ce RDV seront retirées.')) return;
-    const newStatut = t.statut === 'fait' ? 'a_faire' : 'fait';
-    const update: Record<string, unknown> = { statut: newStatut };
-    if (newStatut === 'fait') {
-      update.fait_par = user!.uid;
-      update.fait_par_profile_id = activeProfileId;
-      update.fait_a   = new Date().toISOString();
-    } else {
-      update.fait_par = null;
-      update.fait_par_profile_id = null;
-      update.fait_a   = null;
-    }
-    await supabase.from('taches_elevage').update(update).eq('id', t.id);
-
-    // Notifier l'éleveur quand un employé valide la tâche
-    if (newStatut === 'fait' && t.uid_eleveur && t.uid_eleveur !== user!.uid) {
-      try {
-        const nomEmploye = await resolveDisplayName(user!.uid, 'Votre employé');
-        await supabase.from('notifications').insert({
-          uid:   t.uid_eleveur,
-          type:  'tache_validee',
-          title: 'Tâche validée ✓',
-          body:  `${nomEmploye} a terminé : ${t.titre}`,
-          data:  { tacheId: t.id, eleveurUid: t.uid_eleveur },
-          read:  false,
-          ...(t.eleveur_profile_id ? { profile_id: t.eleveur_profile_id } : {}),
-        });
-      } catch (_) {}
-    }
-
+    // Mise à jour + notification au gérant : lib/valider-tache.ts (partagé avec l'accueil éleveur).
+    await basculerTacheManuelle(t, { uid: user!.uid, profileId: activeProfileId ?? null });
     load();
   }, [user, activeProfileId, load]);
 

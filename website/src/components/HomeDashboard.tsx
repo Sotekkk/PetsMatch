@@ -170,9 +170,9 @@ export default function HomeDashboard() {
   // Profil secondaire actif particulier → ParticulierDashboard
   if (activeProfile?.profile_type === 'particulier') return <ParticulierDashboard />;
 
-  // Profil principal éleveur sélectionné comme "profil actif" (is_main) → vue éleveur dédiée,
-  // pas le dashboard pro générique (qui ne concerne que les vrais profils secondaires).
-  if (activeProfile?.profile_type === 'eleveur' && activeProfile.is_main) return <EleveurDashboard />;
+  // Profil éleveur actif (principal ou secondaire) → tableau de bord éleveur, qui lit
+  // tout depuis le profil actif (avant : le profil secondaire tombait sur ProDashboard).
+  if (activeProfile?.profile_type === 'eleveur') return <EleveurDashboard />;
 
   // Profil secondaire actif (pro/eleveur) → ProDashboard avec son ID
   if (activeProfile?.profile_type === 'veterinaire') {

@@ -150,6 +150,17 @@ const NAV_PARTICULIER_GROUPES: GroupeNav[] = [
   ] },
 ];
 
+// Barre de l'éleveur (refonte du tableau de bord) : espaces transversaux
+// seulement. Le métier (animaux, annonces de l'élevage, agenda, contrats…)
+// reste dans le menu latéral (MENU_ELEVEUR) et sur l'accueil « Mon espace pro ».
+// Abonnement : pastille du plan sur l'accueil + « Tarifs et abonnement » du menu.
+const NAV_ELEVEUR_GROUPES: GroupeNav[] = [
+  { label: 'Mon espace pro', href: '/' },
+  { label: 'Communauté', href: '/communaute' },
+  { label: 'Annonces', liens: NAV_PARTICULIER_GROUPES.find(g => g.label === 'Annonces')!.liens },
+  { label: 'Annuaire des professionnels', liens: NAV_PARTICULIER_GROUPES.find(g => g.label === 'Services')!.liens },
+];
+
 const NAV_ASSOCIATION = [
   { href: '/association',              label: 'Mon Association' },
   { href: '/association/animaux',      label: 'Mes Animaux' },
@@ -1810,6 +1821,9 @@ export default function Header() {
   // pages déjà dans la barre (annonces, annuaire, communauté…) n'y sont pas
   // répétées.
   const estParticulier = !!user && !isEffectivelyPro && !effectiveIsAssociation && !effectiveIsEleveur;
+  // Éleveur (hors autres métiers pro, que effectiveIsEleveur inclut) : barre groupée.
+  const estEleveurSeul = !!user && !isEffectivelyPro && !effectiveIsAssociation && effectiveIsEleveur;
+  const groupesNav = estParticulier ? NAV_PARTICULIER_GROUPES : estEleveurSeul ? NAV_ELEVEUR_GROUPES : null;
   function MenuParticulier({ onNavigate }: { onNavigate: () => void }) {
     const tous = menuSections.flatMap(sec => sec.items as ItemMenu[]);
     const parHref = (h: string) => tous.find(i => i.href.split('?')[0] === h);
@@ -2019,9 +2033,9 @@ export default function Header() {
         {/* Desktop nav */}
         {/* min-w-0 : la navigation ne repousse jamais la cloche ni le sélecteur
             hors de l'écran ; si elle manque de place, elle défile. */}
-        <nav ref={navGroupesRef} className={`hidden md:flex items-center gap-1 flex-1 min-w-0 justify-center ${!loading && user && !estParticulier ? 'overflow-x-auto [scrollbar-width:none]' : ''}`}>
-          {estParticulier ? (
-            NAV_PARTICULIER_GROUPES.map(g => {
+        <nav ref={navGroupesRef} className={`hidden md:flex items-center gap-1 flex-1 min-w-0 justify-center ${!loading && user && !groupesNav ? 'overflow-x-auto [scrollbar-width:none]' : ''}`}>
+          {groupesNav ? (
+            groupesNav.map(g => {
               const actif = g.href ? isActive(g.href) : (g.liens ?? []).some(l => l.href !== '/' && isActive(l.href.split('?')[0]));
               const ouvert = navGroupe === g.label;
               const cls = `px-3.5 py-1.5 rounded-full text-[15px] font-semibold whitespace-nowrap transition-colors flex items-center gap-1 ${
@@ -2392,9 +2406,9 @@ export default function Header() {
       {menuOpen && (
         <div ref={menuMobileRef} className="md:hidden bg-[#094F5D] px-4 max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
           {/* Nav links */}
-          {estParticulier ? (
+          {groupesNav ? (
             <div className="pt-2">
-              {NAV_PARTICULIER_GROUPES.map(g => (
+              {groupesNav.map(g => (
                 <div key={g.label} className="border-b border-white/10 py-2">
                   {g.href ? (
                     <Link href={g.href} onClick={() => setMenuOpen(false)} className="block py-1.5 text-sm font-bold text-white">{g.label}</Link>
