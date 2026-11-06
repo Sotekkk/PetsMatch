@@ -528,6 +528,8 @@ class _DossierToilettageState extends State<_DossierToilettage> {
   // Plusieurs animaux (comme l'éducateur) : animal affiché ; devis, contrat et
   // facture communs, une ligne par animal.
   String? _animalChoisi;
+  /// Plusieurs animaux : compte rendu rédigé (true) / fiche commencée (false) par animal.
+  Map<String, bool> _crParAnimal = {};
   List<Map<String, dynamic>> get _detail => animauxDetailRdv(r);
   bool get _plusieurs => _detail.length > 1;
   Map<String, String> _coord = {};
@@ -563,6 +565,15 @@ class _DossierToilettageState extends State<_DossierToilettage> {
           ? await _supa.from('seances_toilettage').select().eq('rdv_id', id).eq('animal_id', _animalId).maybeSingle()
           : await _supa.from('seances_toilettage').select().eq('rdv_id', id).limit(1).maybeSingle();
     } catch (_) {}
+    if (_plusieurs) {
+      try {
+        final rows = await _supa.from('seances_toilettage').select('animal_id, compte_rendu').eq('rdv_id', id) as List;
+        _crParAnimal = {
+          for (final x in rows)
+            if (x['animal_id'] != null) x['animal_id'].toString(): (x['compte_rendu']?.toString() ?? '').trim().isNotEmpty,
+        };
+      } catch (_) {}
+    }
     try {
       _devis = await _supa.from('devis').select('id, statut, total_ttc').eq('rdv_id', id).order('created_at', ascending: false).limit(1).maybeSingle();
     } catch (_) {}
@@ -769,10 +780,21 @@ class _DossierToilettageState extends State<_DossierToilettage> {
           Text('Plusieurs animaux : un compte rendu par animal ; devis, contrat et facture communs, une ligne par animal.',
               style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
           const SizedBox(height: 6),
+          // « Arya fait, reste Luna » : comptes rendus rédigés et restants.
+          Builder(builder: (_) {
+            final faits = [for (final a in _detail) if (_crParAnimal[a['id'].toString()] == true) (a['nom'] ?? 'Animal').toString()];
+            final restent = [for (final a in _detail) if (_crParAnimal[a['id'].toString()] != true) (a['nom'] ?? 'Animal').toString()];
+            final texte = restent.isEmpty ? 'Comptes rendus : tous faits'
+                : faits.isEmpty ? 'Comptes rendus : à faire pour ${restent.join(', ')}'
+                : 'Comptes rendus : ${faits.join(', ')} fait${faits.length > 1 ? 's' : ''}, reste ${restent.join(', ')}';
+            return Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(texte,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: restent.isEmpty ? _vert : _ambre)));
+          }),
           Wrap(spacing: 6, runSpacing: 6, children: [
             for (final a in _detail)
               ChoiceChip(
-                label: Text([(a['nom'] ?? 'Animal').toString(), if ((a['motif']?.toString() ?? '').trim().isNotEmpty) a['motif'].toString().trim()].join(' · '),
+                label: Text([(a['nom'] ?? 'Animal').toString(), if ((a['motif']?.toString() ?? '').trim().isNotEmpty) a['motif'].toString().trim(),
+                    _crParAnimal[a['id'].toString()] == true ? 'fait' : 'à faire'].join(' · '),
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700,
                         color: a['id'].toString() == _animalId ? Colors.white : _teal)),
                 selected: a['id'].toString() == _animalId, showCheckmark: false,
@@ -869,9 +891,11 @@ class _DossierToilettageState extends State<_DossierToilettage> {
                       ]),
                   _ligne('Prochain RDV', libelleProchainRdv(_prochain), _prochain != null ? _vert : _muted, [
                     (_prochain == null ? 'Programmer' : 'Programmer un autre', () async {
+                      // Plusieurs animaux : un ou plusieurs à cocher dans le formulaire.
                       await _go(ProAgendaPage(nouveauRdv: true,
-                          nouveauRdvAnimalId: _animalId.isEmpty ? null : _animalId,
-                          nouveauRdvMotif: r['motif']?.toString()));
+                          nouveauRdvAnimalId: _plusieurs ? _detail.first['id'].toString() : (_animalId.isEmpty ? null : _animalId),
+                          nouveauRdvMotif: r['motif']?.toString(),
+                          nouveauRdvAnimaux: _plusieurs ? _detail : null));
                       if (mounted) { setState(() => _loading = true); _charger(); }
                     }),
                   ]),

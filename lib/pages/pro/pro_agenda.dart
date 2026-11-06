@@ -89,12 +89,16 @@ class ProAgendaPage extends StatefulWidget {
   final String? nouveauRdvMotif;
   /// Garde : « Nouveau RDV » ouvert en « garde sur plusieurs jours ».
   final bool nouveauSejourGarde;
+  /// Prochain RDV depuis un dossier à plusieurs animaux : animaux du RDV
+  /// (id, nom, motif, duree_minutes, prestation_id, prix) proposés à cocher.
+  final List<Map<String, dynamic>>? nouveauRdvAnimaux;
   /// RDV de l'intervention (CR préopératoire) : date prévue.
   final DateTime? nouveauRdvDate;
   /// Avec [focusRdvId] : ouvre directement « Modifier » puis revient en arrière.
   final bool modifierFocus;
   const ProAgendaPage({super.key, this.initialTabIndex, this.ongletAgenda = false, this.employeur, this.focusRdvId, this.nouveauRdv = false,
-      this.nouveauRdvAnimalId, this.nouveauRdvMotif, this.nouveauRdvDate, this.modifierFocus = false, this.nouveauSejourGarde = false});
+      this.nouveauRdvAnimalId, this.nouveauRdvMotif, this.nouveauRdvDate, this.modifierFocus = false, this.nouveauSejourGarde = false,
+      this.nouveauRdvAnimaux});
 
   @override
   State<ProAgendaPage> createState() => _ProAgendaPageState();
@@ -468,7 +472,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     if (widget.nouveauRdv) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
-        await _showNouveauRdvDialog(animalInit: widget.nouveauRdvAnimalId, motifInit: widget.nouveauRdvMotif, dateInit: widget.nouveauRdvDate, sejourInit: widget.nouveauSejourGarde);
+        await _showNouveauRdvDialog(animalInit: widget.nouveauRdvAnimalId, motifInit: widget.nouveauRdvMotif, dateInit: widget.nouveauRdvDate, sejourInit: widget.nouveauSejourGarde,
+            animauxInit: widget.nouveauRdvAnimaux);
         if (mounted && (widget.nouveauRdvAnimalId != null || widget.nouveauSejourGarde)) Navigator.pop(context);
       });
     }
@@ -3050,7 +3055,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   /// [praticienInit] '' = titulaire ; [dateInit] / [salleInit] : depuis le
   /// planning de la clinique (créneau touché).
   Future<void> _showNouveauRdvDialog({DateTime? dateInit, String? praticienInit, String? salleInit,
-      String? animalInit, String? motifInit, bool sejourInit = false}) async {
+      String? animalInit, String? motifInit, bool sejourInit = false, List<Map<String, dynamic>>? animauxInit}) async {
     final clientNomCtrl = TextEditingController();
     final clientTelCtrl = TextEditingController();
     final clientEmailCtrl = TextEditingController();
@@ -3060,6 +3065,17 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     DateTime date = dateInit ?? DateTime.now();
     TimeOfDay heure = dateInit != null ? TimeOfDay.fromDateTime(dateInit) : TimeOfDay.now();
     int duree = 30;
+    // Prochain RDV d'un dossier à plusieurs animaux : un ou plusieurs à cocher
+    // (prestation et durée de chacun reprises). Miroir site : NouveauRdvModal.
+    final animauxRdv = [for (final a in animauxInit ?? const <Map<String, dynamic>>[]) if ((a['id']?.toString() ?? '').isNotEmpty) a];
+    final cochesAnimaux = <String>{for (final a in animauxRdv) a['id'].toString()};
+    List<Map<String, dynamic>> animauxCoches() => [for (final a in animauxRdv) if (cochesAnimaux.contains(a['id'].toString())) a];
+    void majAnimaux() {
+      final ch = animauxCoches();
+      animalNomCtrl.text = ch.map((a) => (a['nom'] ?? '').toString()).where((n) => n.isNotEmpty).join(' + ');
+      final total = ch.fold<int>(0, (t, a) => t + ((a['duree_minutes'] as num?)?.toInt() ?? 0));
+      if (total > 0) duree = total;
+    }
     // Garde sur plusieurs jours : une ligne rdv par jour (miroir site : creerSejour).
     final estGarde = AgendaContexte.catPro == 'garde';
     bool sejour = estGarde && sejourInit;
@@ -3245,6 +3261,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       if (!mounted) return;
       patientAnimalId = animalInit;
       animalNomCtrl.text = c['animal_nom'] ?? '';
+      if (animauxRdv.length > 1) majAnimaux();
       if (c['uid'] != null) {
         linkedUid = c['uid'];
         linkedProfileId = c['profile_id'];
@@ -3510,6 +3527,26 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 ],
                 const SizedBox(height: 10),
               ],
+              if (animauxRdv.length > 1) ...[
+                const Text('Animaux du rendez-vous', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700)),
+                for (final a in animauxRdv)
+                  CheckboxListTile(
+                    dense: true, contentPadding: EdgeInsets.zero, activeColor: _teal,
+                    value: cochesAnimaux.contains(a['id'].toString()),
+                    title: Text((a['nom'] ?? 'Animal').toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+                    subtitle: Text([
+                      if ((a['motif']?.toString() ?? '').trim().isNotEmpty) a['motif'].toString().trim(),
+                      if (a['duree_minutes'] != null) '${a['duree_minutes']} min',
+                    ].join(' · '), style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                    onChanged: (v) => setModal(() {
+                      final id = a['id'].toString();
+                      // Au moins un animal.
+                      if (v == true) { cochesAnimaux.add(id); } else if (cochesAnimaux.length > 1) { cochesAnimaux.remove(id); }
+                      majAnimaux();
+                    }),
+                  ),
+                const SizedBox(height: 6),
+              ] else
               TextField(
                 controller: animalNomCtrl,
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
@@ -3946,7 +3983,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       dureeMinutes: duree,
                       linkedUid: linkedUid,
                       linkedProfileId: linkedProfileId,
-                      patientAnimalId: patientAnimalId,
+                      patientAnimalId: animauxRdv.length > 1 ? animauxCoches().first['id'].toString() : patientAnimalId,
+                      animauxDetail: animauxRdv.length > 1 ? animauxCoches() : null,
                       praticienInit: praticienInit,
                       salleInit: salleInit,
                     );
@@ -4155,6 +4193,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     String? praticienInit,
     String? salleInit,
     ({String type, DateTime? recuperation, DateTime? blocDebut, DateTime? blocFin, String consignes, String? salleBloc})? intervention,
+    /// Plusieurs animaux cochés : détail par animal (rdv.animaux_ids + animaux_detail).
+    List<Map<String, dynamic>>? animauxDetail,
   }) async {
     final uid = AgendaContexte.uid;
     if (uid == null) return false;
@@ -4178,6 +4218,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         if (!linked && clientEmail.isNotEmpty) 'client_email_manuel': clientEmail,
         if (animalNom.isNotEmpty) 'animal_nom_manuel': animalNom,
         if (patientAnimalId != null) 'animal_id': patientAnimalId,
+        if (animauxDetail != null && animauxDetail.length > 1) ...{
+          'animaux_ids': [for (final a in animauxDetail) a['id'].toString()],
+          'animaux_detail': [
+            for (final a in animauxDetail)
+              {for (final k in const ['id', 'nom', 'motif', 'motif_cle', 'duree_minutes', 'prestation_id', 'prix']) if (a[k] != null) k: k == 'id' ? a[k].toString() : a[k]},
+          ],
+        },
         'cree_par_pro':             true,
         'date_heure':               dh.toIso8601String(),
         'motif':                    motif.isNotEmpty ? motif : 'RDV',

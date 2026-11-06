@@ -674,9 +674,15 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
   proUid: string; profileId: string; proName: string; catPro: string;
   /** Depuis le planning : date-heure, praticien ('' = titulaire) et salle ;
    *  depuis la fiche d'un patient : animal (propriétaire pré-rempli) et motif. */
-  initial?: { date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string; intervention?: string; sejour?: boolean };
+  initial?: { date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string; intervention?: string; sejour?: boolean;
+    /** Prochain RDV d'un dossier à plusieurs animaux : à cocher (prestation et durée de chacun reprises). */
+    animaux?: AnimalRdv[] };
   onClose: () => void; onDone: () => void;
 }) {
+  // Animaux proposés (au moins deux) et ceux cochés — miroir appli : _showNouveauRdvDialog.
+  const animauxRdv = (initial?.animaux ?? []).filter(a => a.id);
+  const [animauxCoches, setAnimauxCoches] = useState<string[]>(() => animauxRdv.map(a => a.id));
+  const choisis = animauxRdv.filter(a => animauxCoches.includes(a.id));
   const d0 = initial?.date ?? new Date();
   // Vétérinaire : RDV « Intervention » (détartrage, stérilisation…) — dépôt,
   // récupération prévue, temps d'intervention, consignes au propriétaire.
@@ -714,7 +720,10 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
   const [notes, setNotes] = useState('');
   const [date, setDate] = useState(toDateStr(d0));
   const [heure, setHeure] = useState(`${String(d0.getHours()).padStart(2, '0')}:${String(Math.floor(d0.getMinutes() / 15) * 15).padStart(2, '0')}`);
-  const [duree, setDuree] = useState(30);
+  const [duree, setDuree] = useState(() => {
+    const t = animauxRdv.reduce((s, a) => s + Number(a.duree_minutes ?? 0), 0);
+    return animauxRdv.length > 1 && t > 0 ? t : 30;
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Compte PetsMatch existant (e-mail / téléphone exacts)
@@ -1026,6 +1035,8 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
     setSaving(true); setError(null);
     try {
       const dh = new Date(`${date}T${heure}:00`);
+      // Plusieurs animaux cochés : « Arya + Luna » partout (agenda du pro et du client, notification).
+      const nomAnimaux = animauxRdv.length > 1 ? choisis.map(a => a.nom).filter(Boolean).join(' + ') : animalNom.trim();
       const motifTxt = motif.trim() || (intervention ? libelleIntervention(intervention) : 'RDV');
       const recup = intervention && heureRecup ? new Date(`${dateRecup || date}T${heureRecup}:00`) : null;
       const bloc = intervention && blocHeure ? new Date(`${date}T${blocHeure}:00`) : null;
@@ -1037,8 +1048,17 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
           client_telephone_manuel: clientTel.trim() || null,
           client_email_manuel: clientEmail.trim() || null,
         }),
-        ...(animalNom.trim() ? { animal_nom_manuel: animalNom.trim() } : {}),
-        ...(patientId ? { animal_id: patientId } : {}),
+        ...(animauxRdv.length > 1
+          // Animaux cochés : un ou plusieurs (rdv.animaux_ids + animaux_detail).
+          ? { animal_id: choisis[0]?.id ?? patientId, animal_nom_manuel: choisis.map(a => a.nom).filter(Boolean).join(' + '),
+              ...(choisis.length > 1 ? { animaux_ids: choisis.map(a => a.id),
+                // Champs utiles seulement (jamais les marques de décompte d'un forfait du RDV précédent).
+                animaux_detail: choisis.map(a => ({ id: a.id, nom: a.nom, motif: a.motif ?? null, motif_cle: a.motif_cle ?? null,
+                  duree_minutes: a.duree_minutes ?? null, prestation_id: a.prestation_id ?? null, prix: a.prix ?? null })) } : {}) }
+          : {
+            ...(nomAnimaux ? { animal_nom_manuel: nomAnimaux } : {}),
+            ...(patientId ? { animal_id: patientId } : {}),
+          }),
         cree_par_pro: true,
         date_heure: dh.toISOString(),
         motif: motifTxt,
@@ -1058,7 +1078,7 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
       // Intervention : temps d'intervention bloqué (salle de bloc, sinon vétérinaire indisponible).
       if (intervention && bloc) {
         const finBloc = new Date(bloc.getTime() + blocDuree * 60000);
-        const motifBloc = `Intervention — ${motifTxt}${animalNom.trim() ? ` — ${animalNom.trim()}` : ''}`;
+        const motifBloc = `Intervention — ${motifTxt}${nomAnimaux ? ` — ${nomAnimaux}` : ''}`;
         const { error: eBloc } = salleBloc
           ? await supabase.from('occupations_salle').insert({ clinique_profile_id: profileId, salle_id: salleBloc, debut: bloc.toISOString(),
               fin: finBloc.toISOString(), motif: motifBloc, rdv_id: rdvId, praticien_profile_id: praticien || null, cree_par_uid: proUid })
@@ -1076,7 +1096,7 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
 
       // Agenda du pro
       await supabase.from('agenda_events').insert({
-        uid: proUid, titre: `${intervention ? `Intervention — ${motifTxt}` : 'RDV'} avec ${nomClient}${animalNom.trim() ? ` — ${animalNom.trim()}` : ''}`,
+        uid: proUid, titre: `${intervention ? `Intervention — ${motifTxt}` : 'RDV'} avec ${nomClient}${nomAnimaux ? ` — ${nomAnimaux}` : ''}`,
         type: typeFromMotif(motifTxt), date_debut: dh.toISOString(), duree_minutes: duree,
         notes: intervention ? `${motifTxt} (${detailIntervention})` : motifTxt, couleur: `rdv:${rdvId}`, pro_profile_id: profileId,
       });
@@ -1245,8 +1265,30 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
           </>
         )}
 
+        {animauxRdv.length > 1 ? (
+          <div>
+            <label className={label}>Animaux du rendez-vous</label>
+            <div className="space-y-1.5 mt-1">
+              {animauxRdv.map(a => (
+                <label key={a.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={animauxCoches.includes(a.id)} className="w-4 h-4 accent-[#0C5C6C]"
+                    onChange={e => {
+                      // Au moins un animal ; la durée suit les animaux cochés.
+                      const suivants = e.target.checked ? [...animauxCoches, a.id] : animauxCoches.length > 1 ? animauxCoches.filter(x => x !== a.id) : animauxCoches;
+                      setAnimauxCoches(suivants);
+                      const t = animauxRdv.filter(x => suivants.includes(x.id)).reduce((s, x) => s + Number(x.duree_minutes ?? 0), 0);
+                      if (t > 0) setDuree(t);
+                    }} />
+                  <span className="font-semibold">{a.nom}</span>
+                  <span className="text-gray-500">{[a.motif, a.duree_minutes ? `${a.duree_minutes} min` : ''].filter(Boolean).join(' · ')}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : (
         <div><label className={label}>Nom de l&apos;animal</label>
           <input value={animalNom} onChange={e => setAnimalNom(e.target.value)} className={champ} /></div>
+        )}
         {catPro === 'veterinaire' && (
           <div>
             <label className={label}>Type de rendez-vous</label>
@@ -2243,7 +2285,7 @@ export default function MesRdvPage() {
   const [dossierToilettage, setDossierToilettage] = useState<Rdv | null>(null);
   // Éducateur : dossier de la séance (rouvert au retour d'une action : ?rdv=…&dossier=1).
   const [dossierEducation, setDossierEducation] = useState<{ id: string; nomClient: string } | null>(null);
-  const [modalNouveau, setModalNouveau]   = useState<{ date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string; sejour?: boolean } | null>(null);
+  const [modalNouveau, setModalNouveau]   = useState<{ date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string; sejour?: boolean; animaux?: AnimalRdv[] } | null>(null);
   // Ouvert depuis la fiche d'un patient : retour à la fiche une fois fini.
   const [retourFiche, setRetourFiche] = useState<string | null>(null);
   const [modifierFocus, setModifierFocus] = useState(false);
@@ -2796,7 +2838,7 @@ export default function MesRdvPage() {
       {dossierToilettage && (
         <DossierToilettageModal rdvId={dossierToilettage.id} nomClient={dossierToilettage.clientName ?? dossierToilettage.client_nom_manuel ?? 'Client'}
           animal={dossierToilettage.animalNom} onClose={() => setDossierToilettage(null)} onChanged={() => fetchRdvs(true)}
-          onProgrammerRdv={p => setModalNouveau({ animalId: p.animalId, motif: p.motif })} version={versionDossier} />
+          onProgrammerRdv={p => setModalNouveau({ animalId: p.animalId, motif: p.motif, animaux: p.animaux })} version={versionDossier} />
       )}
       {dossierEducation && (
         <DossierEducationModal rdvId={dossierEducation.id}

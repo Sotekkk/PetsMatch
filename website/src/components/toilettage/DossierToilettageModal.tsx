@@ -14,7 +14,7 @@ import SeanceToilettageModal, { type RdvSeance } from '@/components/toilettage/S
 import ConsignesRdvForm from '@/components/ConsignesRdvForm';
 import { apiFetch } from '@/lib/api-fetch';
 import { consignesParAnimal } from '@/lib/consignes-rdv';
-import { animauxDetailRdv } from '@/lib/rdv-animaux';
+import { animauxDetailRdv, type AnimalRdv } from '@/lib/rdv-animaux';
 import { devisModifiable } from '@/lib/devis-rdv';
 import { envoyerContratParEmail } from '@/lib/contrat-email';
 import { signerContratAvecSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
@@ -48,7 +48,7 @@ const eur = (n: number | null | undefined) => `${Math.round(Number(n) || 0)} €
 export default function DossierToilettageModal({ rdvId, nomClient, animal, onClose, onChanged, onProgrammerRdv, version }: {
   rdvId: string; nomClient: string; animal?: string | null; onClose: () => void; onChanged?: () => void;
   /** Prise de RDV ouverte sur la page hôte (Gérer mes RDV) : un panneau sur /mes-rdv se refermerait aussitôt. */
-  onProgrammerRdv?: (p: { animalId?: string; motif?: string }) => void;
+  onProgrammerRdv?: (p: { animalId?: string; motif?: string; animaux?: AnimalRdv[] }) => void;
   version?: number;
 }) {
   const router = useRouter();
@@ -63,6 +63,8 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
   const [animalChoisi, setAnimalChoisi] = useState<string | null>(null);
   const [prixPrestations, setPrixPrestations] = useState<Record<string, { nom: string; prix: number | null }>>({});
   const [devis, setDevis] = useState<{ id: string; statut: string | null; total_ttc: number | null } | null>(null);
+  // Plusieurs animaux : compte rendu rédigé (true) ou fiche commencée (false), par animal.
+  const [crParAnimal, setCrParAnimal] = useState<Record<string, boolean>>({});
   const [contrat, setContrat] = useState<Contrat | null>(null);
   const [facture, setFacture] = useState<Facture | null>(null);
   const [coord, setCoord] = useState({ tel: '', email: '', prenom: '', nom: '', rue: '', cp: '', ville: '' });
@@ -110,6 +112,11 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
       idsPrest.length ? supabase.from('prestations_toilettage').select('id, nom, prix_base').in('id', idsPrest) : Promise.resolve({ data: [] }),
     ]);
     setDevis(dv.data as { id: string; statut: string | null; total_ttc: number | null } | null);
+    if (detail.length > 1) {
+      const { data: fs } = await supabase.from('seances_toilettage').select('animal_id, compte_rendu').eq('rdv_id', rdvId);
+      setCrParAnimal(Object.fromEntries(((fs ?? []) as { animal_id: string | null; compte_rendu: string | null }[])
+        .filter(f => f.animal_id).map(f => [String(f.animal_id), !!f.compte_rendu?.trim()])));
+    }
     setPrixPrestations(Object.fromEntries(((prs.data ?? []) as { id: string; nom: string; prix_base: number | null }[])
       .map(p => [p.id, { nom: p.nom, prix: p.prix_base }])));
     const p = pr.data as { nom?: string; prix_base?: number } | null;
@@ -310,6 +317,15 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
         {plusieurs && (
           <div className="mt-2">
             <p className="text-xs text-gray-500 mb-1.5">Plusieurs animaux : un compte rendu par animal ; devis, contrat et facture communs, une ligne par animal.</p>
+            {(() => {
+              // « Arya fait, reste Luna ».
+              const faits = detail.filter(a => crParAnimal[a.id]).map(a => a.nom);
+              const restent = detail.filter(a => !crParAnimal[a.id]).map(a => a.nom);
+              const texte = !restent.length ? 'Comptes rendus : tous faits'
+                : !faits.length ? `Comptes rendus : à faire pour ${restent.join(', ')}`
+                : `Comptes rendus : ${faits.join(', ')} fait${faits.length > 1 ? 's' : ''}, reste ${restent.join(', ')}`;
+              return <p className="text-sm font-semibold mb-1.5" style={{ color: restent.length ? AMBRE : VERT }}>{texte}</p>;
+            })()}
             <div className="flex flex-wrap gap-1.5">
               {detail.map(a => {
                 const actif = a.id === aidSel;
@@ -317,7 +333,7 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
                   <button key={a.id} type="button" onClick={() => setAnimalChoisi(a.id)}
                     className="px-3 py-1.5 rounded-full text-xs font-semibold border"
                     style={{ borderColor: TEAL, background: actif ? TEAL : '#fff', color: actif ? '#fff' : TEAL }}>
-                    {a.nom}{a.motif ? ` · ${a.motif}` : ''}
+                    {a.nom}{a.motif ? ` · ${a.motif}` : ''} · {crParAnimal[a.id] ? 'fait' : 'à faire'}
                   </button>
                 );
               })}
@@ -397,7 +413,10 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
         {prochain && (
           <div className="mt-2 border border-gray-100 rounded-xl px-3 py-1.5">
             {ligne('Prochain RDV', libelleProchainRdv(prochain), prochain.date ? VERT : GRIS,
-              [btn(prochain.date ? 'Programmer un autre' : 'Programmer', () => onProgrammerRdv ? onProgrammerRdv({ animalId: prochain.animalId, motif: prochain.motif }) : router.push(prochain.chemin))])}
+              // Plusieurs animaux : un ou plusieurs à cocher dans le formulaire.
+              [btn(prochain.date ? 'Programmer un autre' : 'Programmer', () => onProgrammerRdv
+                ? onProgrammerRdv({ animalId: plusieurs ? detail[0].id : prochain.animalId, motif: prochain.motif, ...(plusieurs ? { animaux: detail } : {}) })
+                : router.push(prochain.chemin))])}
           </div>
         )}
         <p className="text-[11px] text-gray-400 mt-1">Le compte rendu partagé (avec vos conseils de soin du pelage) apparaît dans l&apos;onglet Consultations de l&apos;animal.</p>
