@@ -24,6 +24,7 @@ export const CLE_SEJOUR = 'pm_sejour_en_attente';
 interface AnimalInvite {
   nom: string; espece: string; race: string; sexe: '' | 'M' | 'F'; naissance: string; identification: string;
   vaccin: string; dejaVenu: boolean | null; carnet: string | null; // photo du carnet (data URL compressée)
+  hebergement?: '' | 'box' | 'pre'; // équidés : box / pré souhaité
 }
 interface SejourEnAttente {
   pensionProfileId: string; animaux: AnimalInvite[]; arrivee: string; depart: string; essai: string; message: string; savedAt: number;
@@ -202,6 +203,7 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
         body: JSON.stringify({
           pensionProfileId, animalIds: ids, animalId: ids[0], dateArrivee: arrivee, dateDepart: depart,
           dejaVenus: Object.fromEntries(animaux.map((a, i) => [ids[i], !!a.dejaVenu])),
+          hebergements: Object.fromEntries(animaux.map((a, i) => [ids[i], a.hebergement ?? '']).filter(([, h]) => h)),
           ...(essaiRequis ? { essaiDate: essai } : {}), message: consignes, ...(pid ? { profileId: pid } : {}),
         }),
       });
@@ -285,6 +287,16 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
                       className="block w-full text-xs text-gray-600" />
                   )}
                 </div>
+                {(a.espece === 'cheval' || a.espece === 'ane') && (
+                  <div>
+                    <p className="text-[11px] text-gray-500 mb-1">Hébergement souhaité pour {a.nom.trim() || 'cet animal'}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {([['box', 'Box'], ['pre', 'Pré']] as const).map(([v, lib]) => (
+                        <button key={v} type="button" onClick={() => maj(i, { hebergement: a.hebergement === v ? '' : v })} className="px-3 py-1.5 rounded-full text-xs border" style={pastille(a.hebergement === v)}>{lib}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <p className="text-[11px] text-gray-500 mb-1">{a.nom.trim() || 'Cet animal'} est-il déjà venu dans cette pension ?</p>
                   <div className="flex flex-wrap gap-2">

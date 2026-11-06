@@ -44,7 +44,8 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
   // Places libres aux dates choisies pour le nombre d'animaux (message si complet).
   const [complet, setComplet] = useState<string | null>(null);
   // Équidés : hébergement souhaité.
-  const [hebergement, setHebergement] = useState<'box' | 'pre' | null>(null);
+  // Équidés : hébergement souhaité pour chaque animal (box / pré).
+  const [hebergements, setHebergements] = useState<Record<string, 'box' | 'pre'>>({});
   const [etat, setEtat] = useState<'' | 'envoi' | 'ok'>('');
   const [erreur, setErreur] = useState('');
   const [aujourdhui, setAujourdhui] = useState('');
@@ -93,18 +94,18 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
   const proposes = animaux.filter(a => especeAcceptee(infos?.especes, a.espece));
   const nonProposes = animaux.length - proposes.length;
   const choisis = proposes.filter(a => animalIds.includes(a.id));
-  const basculer = (id: string) => { setAnimalIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]); setHebergement(null); };
+  const basculer = (id: string) => setAnimalIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
+  const equins = choisis.filter(a => pensionTarifEquin(pensionTarifKeyForEspece(a.espece)));
   // Animaux sans historique chez cette pension : « déjà venu ? » pour chacun.
   const aQuestionner = choisis.filter(a => premiers[a.id] === true);
   const nouveaux = aQuestionner.filter(a => dejaVenus[a.id] === false);
   const essaiRequis = !!infos?.essai_requis && nouveaux.length > 0;
   const nuits = arrivee && depart ? Math.round((new Date(depart).getTime() - new Date(arrivee).getTime()) / 86400000) : 0;
-  const equin = choisis.some(a => pensionTarifEquin(pensionTarifKeyForEspece(a.espece)));
   // Estimation : nuits × prix/nuit de l'espèce, pour chaque animal (tarifs publics).
   const prixAnimaux = choisis.map(a => {
     const cle = pensionTarifKeyForEspece(a.espece);
     const tarif = cle ? pensionTarifPourKey(infos?.tarifs?.especes ?? [], cle) : undefined;
-    return tarif ? pensionPrixNuit(tarif, { hebergement }) : 0;
+    return tarif ? pensionPrixNuit(tarif, { hebergement: hebergements[a.id] ?? null }) : 0;
   });
   const prixTotal = prixAnimaux.length && prixAnimaux.every(p => p > 0) ? prixAnimaux.reduce((t, p) => t + p, 0) : 0;
   const estimation = prixTotal && nuits > 0
@@ -128,7 +129,8 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pensionProfileId, animalIds: choisis.map(a => a.id), animalId: choisis[0]?.id, dateArrivee: arrivee, dateDepart: depart,
         ...(aQuestionner.length ? { dejaVenus: Object.fromEntries(aQuestionner.map(a => [a.id, dejaVenus[a.id]])) } : {}),
-        ...(equin && hebergement ? { hebergement } : {}), ...(essaiRequis ? { essaiDate: essai } : {}),
+        ...(equins.some(a => hebergements[a.id]) ? { hebergements: Object.fromEntries(equins.filter(a => hebergements[a.id]).map(a => [a.id, hebergements[a.id]])) } : {}),
+        ...(essaiRequis ? { essaiDate: essai } : {}),
         message, ...(pid ? { profileId: pid } : {}) }),
     });
     const j = await r.json().catch(() => ({})) as { error?: string };
@@ -198,20 +200,21 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
                 </div>
               </div>
             ))}
-            {equin && (
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Hébergement souhaité</label>
+            {equins.map(a => (
+              <div key={`h${a.id}`}>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Hébergement souhaité pour {a.nom ?? 'cet animal'}</label>
                 <div className="flex flex-wrap gap-2">
                   {([['box', 'Box'], ['pre', 'Pré']] as const).map(([v, lib]) => (
-                    <button key={v} type="button" onClick={() => setHebergement(h => (h === v ? null : v))}
+                    <button key={v} type="button"
+                      onClick={() => setHebergements(m => { const n = { ...m }; if (n[a.id] === v) delete n[a.id]; else n[a.id] = v; return n; })}
                       className="px-3 py-1.5 rounded-full text-sm border"
-                      style={hebergement === v ? { background: couleur, color: '#fff', borderColor: couleur } : { borderColor: '#E5E7EB', color: '#1F2A2E' }}>
+                      style={hebergements[a.id] === v ? { background: couleur, color: '#fff', borderColor: couleur } : { borderColor: '#E5E7EB', color: '#1F2A2E' }}>
                       {lib}
                     </button>
                   ))}
                 </div>
               </div>
-            )}
+            ))}
             <div className="grid grid-cols-2 gap-2">
               <div><label className="block text-xs font-semibold text-gray-600 mb-1">Arrivée</label>
                 <input type="date" min={aujourdhui} value={arrivee} onChange={e => setArrivee(e.target.value)} className={champ} /></div>

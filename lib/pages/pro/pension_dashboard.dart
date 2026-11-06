@@ -293,12 +293,13 @@ class _PensionDashboardState extends State<PensionDashboard> {
               for (final x in g)
                 InkWell(
                   onTap: g.length > 1 ? () => _go(AnimalFichePensionPage(animalId: x['animal_id'].toString(), animalNom: x['animal_nom']?.toString() ?? 'Animal')) : null,
-                  child: Text('${x['animal_nom'] ?? 'Animal'}${x['nouveau_pensionnaire'] == true ? ' · nouveau pensionnaire' : x['nouveau_pensionnaire'] == false ? ' · déjà venu (selon le client)' : ''}',
+                  child: Text('${x['animal_nom'] ?? 'Animal'}${x['nouveau_pensionnaire'] == true ? ' · nouveau pensionnaire' : x['nouveau_pensionnaire'] == false ? ' · déjà venu (selon le client)' : ''}'
+                      '${x['hebergement'] == 'box' ? ' · box souhaité' : x['hebergement'] == 'pre' ? ' · pré souhaité' : ''}',
                       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                 ),
               Text('${g.length > 1 ? '${g.length} animaux · ' : ''}Du ${_jm(d['date_arrivee'])} au ${_jm(d['date_depart'])}'
                   '${d['essai_date'] != null ? ' · essai le ${_jm(d['essai_date'])}' : ''}'
-                  '${d['hebergement'] == 'box' ? ' · box' : d['hebergement'] == 'pre' ? ' · pré' : ''}',
+                  '',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),
               if ((d['message']?.toString() ?? '').isNotEmpty)
                 Text('« ${d['message']} »', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _muted)),

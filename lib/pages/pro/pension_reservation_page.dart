@@ -44,7 +44,8 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
   // Places libres aux dates choisies pour le nombre d'animaux (message si complet).
   String? _complet;
   // Équidés : hébergement souhaité ('box' / 'pre').
-  String? _hebergement;
+  /// Équidés : hébergement souhaité pour chaque animal ('box' / 'pre').
+  final Map<String, String> _hebergements = {};
   bool _loading = true, _envoi = false;
 
   Color get _c => widget.categoryColor;
@@ -101,7 +102,6 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
       } else {
         _choisis = [..._choisis, a];
       }
-      _hebergement = null;
     });
     await _actualiser();
   }
@@ -138,7 +138,7 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
 
   List<Map<String, dynamic>> get _aQuestionner => [for (final a in _choisis) if (_premiers[a['id'].toString()] == true) a];
   List<Map<String, dynamic>> get _nouveaux => [for (final a in _aQuestionner) if (_dejaVenus[a['id'].toString()] == false) a];
-  bool get _equin => _choisis.any((a) => pensionTarifEquin(pensionTarifKeyForEspece(a['espece']?.toString())));
+  List<Map<String, dynamic>> get _equins => [for (final a in _choisis) if (pensionTarifEquin(pensionTarifKeyForEspece(a['espece']?.toString()))) a];
   bool get _essaiRequis => _pension?['essai_requis'] == true && _nouveaux.isNotEmpty;
 
   /// Estimation : nuits × prix/nuit de l'espèce, pour chaque animal (tarifs publics).
@@ -151,7 +151,7 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
       if (key == null) return null;
       final t = pensionTarifPourKey((tarifs['especes'] as List?) ?? const [], key);
       if (t == null) return null;
-      final prix = pensionPrixNuit(t, hebergement: _hebergement);
+      final prix = pensionPrixNuit(t, hebergement: _hebergements[a['id'].toString()]);
       if (prix <= 0) return null;
       total += prix;
     }
@@ -213,7 +213,8 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
         'animalIds': [for (final a in _choisis) a['id']], 'animalId': _choisis.first['id'],
         'dateArrivee': f.format(_dates!.start), 'dateDepart': f.format(_dates!.end),
         if (_aQuestionner.isNotEmpty) 'dejaVenus': {for (final a in _aQuestionner) a['id'].toString(): _dejaVenus[a['id'].toString()]},
-        if (_equin && _hebergement != null) 'hebergement': _hebergement,
+        if (_equins.any((a) => _hebergements.containsKey(a['id'].toString())))
+          'hebergements': {for (final a in _equins) if (_hebergements.containsKey(a['id'].toString())) a['id'].toString(): _hebergements[a['id'].toString()]},
         if (_essaiRequis && _essai != null) 'essaiDate': f.format(_essai!),
         'message': _message.text.trim(),
         if (User_Info.activeProfileId.isNotEmpty) 'profileId': User_Info.activeProfileId,
@@ -313,14 +314,17 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
                     ),
                 ]),
               ],
-              if (_equin) ...[
-                _titre('Hébergement souhaité'),
+              for (final a in _equins) ...[
+                _titre('Hébergement souhaité pour ${a['nom'] ?? 'cet animal'}'),
                 Wrap(spacing: 8, children: [
                   for (final (v, lib) in [('box', 'Box'), ('pre', 'Pré')])
                     ChoiceChip(
-                      label: Text(lib, style: TextStyle(fontFamily: 'Galey', color: _hebergement == v ? Colors.white : _ink)),
-                      selected: _hebergement == v, showCheckmark: false, selectedColor: _c, backgroundColor: Colors.white,
-                      onSelected: (_) => setState(() => _hebergement = _hebergement == v ? null : v),
+                      label: Text(lib, style: TextStyle(fontFamily: 'Galey', color: _hebergements[a['id'].toString()] == v ? Colors.white : _ink)),
+                      selected: _hebergements[a['id'].toString()] == v, showCheckmark: false, selectedColor: _c, backgroundColor: Colors.white,
+                      onSelected: (_) => setState(() {
+                        final id = a['id'].toString();
+                        if (_hebergements[id] == v) { _hebergements.remove(id); } else { _hebergements[id] = v; }
+                      }),
                     ),
                 ]),
               ],

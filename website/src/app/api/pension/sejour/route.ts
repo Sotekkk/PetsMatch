@@ -59,11 +59,14 @@ function accepte(especesLogement: string[], k: string) {
   if (!k || !especesLogement.length) return true;
   return especesLogement.some(x => { const c = cleEsp(x); return c === k || pensionGroupe(c) === pensionGroupe(k); });
 }
+// Pluriels irréguliers (« chevaux », pas « chevals »).
+const PLURIELS: Record<string, string> = { cheval: 'chevaux', ane: 'ânes', oiseau: 'oiseaux', nac: 'NAC', volaille: 'volailles', lapin: 'lapins', chien: 'chiens', chat: 'chats' };
 function libelleEspeces(cles: string[]) {
   return cles.map(k => {
-    if (k === 'nac') return 'NAC';
+    if (PLURIELS[k]) return PLURIELS[k];
     const l = (PENSION_ESPECES.find(e => e.key === k)?.label ?? k).toLowerCase();
-    return /[sx]$/.test(l) ? l : `${l}s`;
+    if (/[sx]$/.test(l)) return l;
+    return /(al|au|eau)$/.test(l) ? l.replace(/al$/, 'aux').replace(/(e?au)$/, '$1x') : `${l}s`;
   }).join(' et ');
 }
 
@@ -203,6 +206,7 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => ({})) as {
     action?: string; pensionProfileId?: string; animalId?: string; animalIds?: string[]; dateArrivee?: string; dateDepart?: string; essaiDate?: string | null;
     dejaVenu?: boolean | null; dejaVenus?: Record<string, boolean> | null; hebergement?: string | null;
+    /** Équidés : hébergement souhaité par animal ('box' | 'pre'). */ hebergements?: Record<string, string> | null;
     message?: string; profileId?: string | null; demandeId?: string; demandeIds?: string[]; accepter?: boolean; motif?: string; forcer?: boolean;
   };
   const maintenant = new Date().toISOString();
@@ -376,7 +380,7 @@ export async function POST(req: NextRequest) {
     pro_uid: p.uid, pro_profile_id: p.id, client_uid: auth.uid, client_profile_id: profil, animal_id: id,
     animal_nom: infosAnimal.get(id)?.nom ?? null, espece: infosAnimal.get(id)?.espece ?? null, date_arrivee: b.dateArrivee, date_depart: b.dateDepart,
     essai_date: nouveaux.get(id) === true ? essai : null, nouveau_pensionnaire: nouveaux.get(id) ?? null,
-    hebergement: b.hebergement === 'box' || b.hebergement === 'pre' ? b.hebergement : null, message,
+    hebergement: (() => { const h = b.hebergements?.[id] ?? b.hebergement; return h === 'box' || h === 'pre' ? h : null; })(), message,
   }))).select('id');
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const demandeIds = ((dems ?? []) as { id: string }[]).map(d => d.id);

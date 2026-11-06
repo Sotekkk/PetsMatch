@@ -170,9 +170,10 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
                             <Link href={`/pension/fiche/${x.animal_id}`} className="hover:underline">{x.animal_nom ?? 'Animal'}</Link>
                             {x.nouveau_pensionnaire === true && <span className="font-semibold text-xs text-[#D97706]"> · nouveau pensionnaire</span>}
                             {x.nouveau_pensionnaire === false && <span className="font-normal text-xs text-gray-500"> · déjà venu (selon le client)</span>}
+                            {x.hebergement && <span className="font-normal text-xs text-gray-500"> · {x.hebergement === 'pre' ? 'pré' : 'box'} souhaité</span>}
                           </p>
                         ))}
-                        <p className="text-xs text-gray-500">{g.length > 1 ? `${g.length} animaux · ` : ''}Du {jm(d.date_arrivee)} au {jm(d.date_depart)}{d.essai_date ? ` · essai le ${jm(d.essai_date)}` : ''}{d.hebergement === 'box' ? ' · box' : d.hebergement === 'pre' ? ' · pré' : ''}</p>
+                        <p className="text-xs text-gray-500">{g.length > 1 ? `${g.length} animaux · ` : ''}Du {jm(d.date_arrivee)} au {jm(d.date_depart)}{d.essai_date ? ` · essai le ${jm(d.essai_date)}` : ''}</p>
                         {d.message && <p className="text-xs text-gray-500 italic">« {d.message} »</p>}
                       </div>
                       {g.length === 1 && <Link href={`/pension/fiche/${d.animal_id}`} className="text-xs font-semibold text-[#0C5C6C]">Fiche</Link>}
