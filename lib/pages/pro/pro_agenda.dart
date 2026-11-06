@@ -6825,12 +6825,18 @@ class _RdvCard extends StatelessWidget {
               ],
               if (onDossier != null) ...[
                 const SizedBox(width: 6),
-                IconButton(
-                  onPressed: onDossier,
-                  icon: const Icon(Icons.folder_open_outlined, size: 20, color: Color(0xFF0C5C6C)),
-                  tooltip: 'Dossier de la séance',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                InkWell(
+                  onTap: onDossier,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(color: const Color(0xFF0C5C6C), borderRadius: BorderRadius.circular(10)),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.folder_open_outlined, size: 15, color: Colors.white),
+                      SizedBox(width: 4),
+                      Text('Dossier de la séance', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
+                    ]),
+                  ),
                 ),
               ],
               if (onFiche != null) ...[
