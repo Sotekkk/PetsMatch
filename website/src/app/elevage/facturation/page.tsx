@@ -82,6 +82,8 @@ interface FacturePrefill {
   retour?: string;
   /** Facture d'un forfait éducateur : reliée à forfaits_souscrits.facture_id. */
   forfaitSouscritId?: string;
+  /** Facture d'un devis accepté : reliée à tous les forfaits activés par ce devis. */
+  devisId?: string;
   nomClient?: string;
   prenomClient?: string;
   emailClient?: string;
@@ -576,6 +578,9 @@ export default function FacturationPage() {
             setFactures((prev) => [f, ...prev]); setShowForm(false); setAvoirSource(null);
             if (prefill?.forfaitSouscritId && f?.id) {
               supabase.from('forfaits_souscrits').update({ facture_id: f.id }).eq('id', prefill.forfaitSouscritId).then(() => {});
+            }
+            if (prefill?.devisId && f?.id) {
+              supabase.from('forfaits_souscrits').update({ facture_id: f.id }).eq('devis_id', prefill.devisId).then(() => {});
             }
             // Facture préparée depuis un RDV : retour à la vue du RDV (fin de consultation).
             if (prefill?.retour?.startsWith('/')) allerOuFermer(router, prefill.retour);

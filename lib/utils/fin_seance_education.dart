@@ -108,6 +108,33 @@ Future<void> devisDepuisRdv(BuildContext context, Map<String, dynamic> rdv, {Str
 Future<void> factureDepuisRdv(BuildContext context, Map<String, dynamic> rdv, {String animalNom = ''}) async {
   final c = await _client(rdv);
   if (!context.mounted) return;
+  // Devis accepté : une seule facture, reprenant ses lignes (une par chien) ; elle sera
+  // aussi celle de tous les forfaits activés par ce devis (miroir site).
+  Map<String, dynamic>? devis;
+  try {
+    devis = await Supabase.instance.client.from('devis').select('id, lignes').eq('rdv_id', rdv['id'].toString())
+        .eq('statut', 'accepte').order('created_at', ascending: false).limit(1).maybeSingle();
+  } catch (_) {}
+  final lignesDevis = (devis?['lignes'] as List?) ?? const [];
+  if (lignesDevis.isNotEmpty) {
+    if (!context.mounted) return;
+    final chiens = animauxDetailRdv(rdv);
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => CreerFacturePage(
+      clientPrenom: c['prenom'], clientNom: c['nom'], clientEmail: c['email'], clientTel: c['tel'],
+      clientRue: c['rue'], clientCp: c['cp'], clientVille: c['ville'],
+      lignesPrefill: [for (final l in lignesDevis) FacturePrefillLigne(
+        designation: _v(l['description']), description: '',
+        quantite: (l['quantite'] as num?)?.toDouble() ?? 1,
+        prixTTC: ((l['prix_unitaire'] ?? l['total']) as num?)?.toDouble() ?? 0,
+        animalId: l['animal_id']?.toString(),
+        animalNom: chiens.where((a) => a['id']?.toString() == l['animal_id']?.toString()).firstOrNull?['nom']?.toString(),
+      )],
+      sourceRdvId: rdv['id'].toString(), sourceAnimalId: rdv['animal_id']?.toString(),
+      envoiEnFinDeSeance: true, devisId: devis!['id'].toString(),
+      clientUid: rdv['client_uid']?.toString(), clientProfileId: rdv['client_profile_id']?.toString(),
+    )));
+    return;
+  }
   final d = DateTime.tryParse(_v(rdv['date_heure']))?.toLocal();
   final seanceDu = d == null ? '' : 'Séance du ${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   final detail = animauxDetailRdv(rdv);
@@ -280,6 +307,8 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
   // Devis du RDV (créés depuis le dossier) : envoyés avec le reste, lien de signature.
   final devis = await devisDuRdv(rdvId);
   if (!context.mounted) return;
+  // Même facture que celle du RDV (devis accepté) : pas deux fois dans l'e-mail.
+  if (factureForfait != null && factureForfait['id'] == facture?['id']) factureForfait = null;
   final coches = <String, bool>{
     for (final d in devis) 'dev:${d['id']}': d['statut'] == 'brouillon',
     for (final s in seances) 'edu:${s['id']}': crsPro.isEmpty,

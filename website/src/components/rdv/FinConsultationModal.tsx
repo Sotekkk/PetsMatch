@@ -130,7 +130,8 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
               .neq('statut', 'annulee').order('created_at', { ascending: false }).limit(10);
             ff = ((fl ?? []) as { lignes?: unknown }[]).find(x => /"(description|designation)":"Forfait /.test(JSON.stringify(x.lignes ?? []))) ?? null;
           }
-          if (ff) { setFactureForfait(ff as DocsConsultation['facture']); setCoches(c => ({ ...c, [`facf:${(ff as { id: string }).id}`]: true })); }
+          // Même facture que celle du RDV (devis accepté) : pas deux fois dans l'e-mail.
+          if (ff && (ff as { id: string }).id !== (facture as { id?: string } | null | undefined)?.id) { setFactureForfait(ff as DocsConsultation['facture']); setCoches(c => ({ ...c, [`facf:${(ff as { id: string }).id}`]: true })); }
         }
         // Contrats de l'animal : PDF signé (PetsMatch) ou document chargé.
         if (aid && user) {

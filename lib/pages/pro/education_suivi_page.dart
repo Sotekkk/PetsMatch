@@ -1418,7 +1418,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           bouton('Modifier', () => Navigator.push(context, MaterialPageRoute(builder: (_) => DevisPage(modifierId: devis['id'].toString()))))
         else bouton('Voir', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DevisPage()))),
       ]),
-      if (facture == null && seanceCouverte(rdv))
+      if (facture == null && seanceCouverte(rdv) && statutDevis != 'accepte')
         ligne('Facture', 'Couverte par le forfait (payé d\u2019avance)', vert, const [])
       else
         ligne('Facture', facture == null ? 'À émettre' : '${facture['statut'] == 'payee' ? 'Payée' : 'Émise'} · ${eur(facture['total_ttc'])}',

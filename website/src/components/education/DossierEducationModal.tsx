@@ -306,6 +306,27 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
 
   async function facturer() {
     if (!r) return;
+    // Devis accepté : une seule facture, reprenant ses lignes (une par chien) ; elle
+    // sera aussi celle de tous les forfaits activés par ce devis.
+    if (devis?.statut === 'accepte') {
+      const { data: dv } = await supabase.from('devis').select('lignes').eq('id', devis.id).maybeSingle();
+      const lignes = ((dv as { lignes?: unknown } | null)?.lignes ?? []) as { description?: string; quantite?: number; prix_unitaire?: number; total?: number; animal_id?: string | null }[];
+      if (lignes.length) {
+        try {
+          sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
+            nomClient: coord.nom || nomClient, prenomClient: coord.prenom || undefined, emailClient: coord.email || undefined, telClient: coord.tel || undefined,
+            rueClient: coord.rue || undefined, cpClient: coord.cp || undefined, villeClient: coord.ville || undefined,
+            sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined, envoiEnFinDeSeance: true, clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
+            retour, devisId: devis.id,
+            lignes: lignes.map(l => ({ description: l.description ?? '', quantite: l.quantite ?? 1, prixUnitaire: 0,
+              prixTTC: Number(l.prix_unitaire ?? l.total ?? 0), tva: 20,
+              ...(l.animal_id ? { animalId: l.animal_id, animalNom: detail.find(a => a.id === l.animal_id)?.nom } : {}) })),
+          }));
+        } catch { /* facture vierge */ }
+        ouvrir('/elevage/facturation', 'Facture du devis');
+        return;
+      }
+    }
     // Sans forfait : tarif du cours (prix de la réservation, sinon catalogue +
     // supplément à domicile), une ligne par animal.
     const prixAnimaux = detail.length > 0
@@ -400,7 +421,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           {ligne('Devis', !devis ? (forfaitConseille ? `À proposer : forfait ${forfaitConseille.nom}` : 'Aucun') : `${devis.statut === 'accepte' ? 'Accepté' : devis.statut === 'refuse' ? 'Refusé' : devis.statut === 'envoye' ? 'Envoyé' : 'À envoyer à la fin'} · ${eur(devis.total_ttc)}`,
             !devis ? GRIS : devis.statut === 'accepte' ? VERT : AMBRE,
             [!devis ? btn('Créer', creerDevis) : devisModifiable(devis.statut) ? btn('Modifier', () => ouvrir(`/education/devis?modifier=${devis.id}`, 'Devis')) : btn('Voir', () => ouvrir('/education/devis', 'Devis'))])}
-          {!facture && seanceCouverte(r) ? ligne('Facture', 'Couverte par le forfait (payé d’avance)', VERT, [])
+          {!facture && seanceCouverte(r) && devis?.statut !== 'accepte' ? ligne('Facture', 'Couverte par le forfait (payé d’avance)', VERT, [])
             : ligne('Facture', !facture ? 'À émettre' : `${facture.statut === 'payee' ? 'Payée' : 'Émise'} · ${eur(facture.total_ttc)}`,
             !facture ? GRIS : facture.statut === 'payee' ? VERT : AMBRE,
             [!facture ? btn('Facturer', facturer) : btn('Voir', () => ouvrir('/elevage/facturation', 'Factures'))])}
