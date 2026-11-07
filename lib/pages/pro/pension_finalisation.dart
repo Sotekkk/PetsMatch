@@ -55,6 +55,10 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
   bool? _facture;
   bool _aSignature = true, _parEmail = true, _envoi = false;
   String _solde = 'arrivee';
+  // Essai : facturé ou non (Tarifs).
+  bool _essaiFacture = false;
+  double? _essaiPrix;
+  bool get _estEssai => e['essai'] == true;
   double? _arrhes;
   String? _logementNom, _message;
   bool _erreur = false;
@@ -104,6 +108,9 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
     } catch (_) { _facture = false; }
     try {
       final p = await _supa.from('user_profiles').select('tarifs_pension').eq('id', pid).maybeSingle();
+      final ec = ((p?['tarifs_pension'] as Map?)?['essai'] as Map?) ?? {};
+      _essaiFacture = ec['facture'] == true;
+      _essaiPrix = (ec['prix'] as num?)?.toDouble();
       final reg = ((p?['tarifs_pension'] as Map?)?['reglement'] as Map?) ?? {};
       _solde = reg['solde'] == 'depart' ? 'depart' : 'arrivee';
       final a = (reg['arrhes_pct'] as num?)?.toDouble();
@@ -276,8 +283,9 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
         : statut == 'signe' ? 'Signé par les deux parties'
         : c['signe_pro'] == true && c['signe_client'] != true ? 'Signé par vous, en attente du client'
         : statut == 'brouillon' ? 'Brouillon, pas encore envoyé' : 'Envoyé, en attente de signature';
-    final factureAttendue = !widget.arrivee || _solde == 'arrivee' || _arrhes != null;
+    final factureAttendue = _estEssai ? _essaiFacture : !widget.arrivee || _solde == 'arrivee' || _arrhes != null;
     final libFacture = _facture == null ? '…' : _facture! ? 'Facturé'
+        : _estEssai ? (_essaiFacture ? 'Essai à facturer${_essaiPrix != null ? ' (${_essaiPrix!.toStringAsFixed(0)} €)' : ''}' : 'Essai non facturé (réglage Tarifs)')
         : widget.arrivee
             ? (_solde == 'arrivee' ? "Séjour à facturer (solde à l'arrivée)" : _arrhes != null ? 'Acompte de ${_arrhes!.toStringAsFixed(0)} % à facturer' : 'Facturation prévue au départ')
             : 'Séjour à facturer';

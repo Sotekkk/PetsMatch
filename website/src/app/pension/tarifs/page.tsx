@@ -45,6 +45,12 @@ export default function PensionTarifsPage() {
   // Essai obligatoire avant le premier séjour (réservation en ligne).
   const [essaiRequis, setEssaiRequis] = useState(false);
   const [essaiInfo, setEssaiInfo] = useState('');
+  // Essai : facturé ou non (au choix de la pension), et son prix.
+  const [essaiFacture, setEssaiFacture] = useState(false);
+  const [essaiPrix, setEssaiPrix] = useState('');
+  // Durée d'une visite de la pension (RDV « visite », durees_motifs.visite).
+  const [dureeVisite, setDureeVisite] = useState(30);
+  const [dureesMotifs, setDureesMotifs] = useState<Record<string, number>>({});
   // Horaires d'arrivée / de départ (null = pas d'horaires).
   const [horaires, setHoraires] = useState<HorairesPension | null>(null);
   const [erreurHoraires, setErreurHoraires] = useState('');
@@ -133,6 +139,13 @@ export default function PensionTarifsPage() {
     setArrhes((reg?.arrhes_pct ?? 0) > 0);
     if ((reg?.arrhes_pct ?? 0) > 0) setArrhesPct(String(reg!.arrhes_pct));
     setSolde(reg?.solde === 'depart' ? 'depart' : 'arrivee');
+    const cfgEssai = (t as { essai?: { facture?: boolean; prix?: number | null } } | null)?.essai;
+    setEssaiFacture(cfgEssai?.facture === true);
+    setEssaiPrix(cfgEssai?.prix ? String(cfgEssai.prix) : '');
+    const { data: dm } = await supabase.from('user_profiles').select('durees_motifs').eq('id', pid).maybeSingle();
+    const dms = ((dm as { durees_motifs?: Record<string, number> | null } | null)?.durees_motifs ?? {}) as Record<string, number>;
+    setDureesMotifs(dms);
+    setDureeVisite(Number(dms.visite) > 0 ? Number(dms.visite) : 30);
     setReductions(((t?.reductions_long_sejour ?? []) as { min_nuits?: number; pourcentage?: number }[]).map(m => ({
       minNuits: m.min_nuits != null ? String(m.min_nuits) : '',
       pourcentage: m.pourcentage != null ? String(m.pourcentage) : '',
@@ -170,11 +183,13 @@ export default function PensionTarifsPage() {
 
     await supabase.from('user_profiles')
       .update({ tarifs_pension: { especes: especesOut, reductions_long_sejour, afficher_public: afficherPublic,
-        reglement: { arrhes_pct: arrhes ? (num(arrhesPct) ?? 0) : null, solde } } })
+        reglement: { arrhes_pct: arrhes ? (num(arrhesPct) ?? 0) : null, solde },
+        essai: { facture: essaiFacture, prix: essaiFacture ? (num(essaiPrix) ?? 0) : null } } })
       .eq('id', profileId);
     await supabase.from('user_profiles')
       .update({ pension_essai_requis: essaiRequis, pension_essai_info: essaiInfo.trim() || null })
       .eq('id', profileId);
+    await supabase.from('user_profiles').update({ durees_motifs: { ...dureesMotifs, visite: dureeVisite } }).eq('id', profileId);
     const { error: errH } = await supabase.from('user_profiles').update({ pension_horaires: horaires }).eq('id', profileId);
     setErreurHoraires(errH ? `Horaires non enregistrés : ${errH.message}` : '');
 
@@ -222,12 +237,37 @@ export default function PensionTarifsPage() {
           </span>
         </label>
         {essaiRequis && (
-          <input value={essaiInfo} onChange={e => setEssaiInfo(e.target.value)} placeholder="Précisions pour le client (facultatif) : journée de 9 h à 17 h, tarif 20 €"
-            className={`${inputCls} mt-3`} />
+          <>
+            <input value={essaiInfo} onChange={e => setEssaiInfo(e.target.value)} placeholder="Précisions pour le client (facultatif) : journée de 9 h à 17 h, ce que l'essai permet d'observer"
+              className={`${inputCls} mt-3`} />
+            <label className="flex items-center gap-2 mt-3 text-sm font-galey text-[#1E2025]">
+              <input type="checkbox" checked={essaiFacture} onChange={e => setEssaiFacture(e.target.checked)} />
+              Essai facturé
+            </label>
+            {essaiFacture ? (
+              <label className="flex items-center gap-2 mt-2 text-sm font-galey text-[#1E2025]">Prix de l&apos;essai
+                <input type="number" min={0} step={1} value={essaiPrix} onChange={e => setEssaiPrix(e.target.value)} className={`${inputCls} w-24`} /> €
+              </label>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1 font-galey">Essai non facturé : il sert à observer le comportement de l&apos;animal ; il n&apos;apparaît jamais comme « à facturer ».</p>
+            )}
+            <p className="text-xs text-gray-500 mt-1 font-galey">Avec vos horaires d&apos;arrivée, le client choisit aussi l&apos;heure de l&apos;essai.</p>
+          </>
         )}
       </div>
 
       <HorairesPensionForm value={horaires} onChange={setHoraires} />
+      <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100">
+        <label className="flex items-center justify-between gap-3 text-sm font-galey text-[#1E2025]">
+          <span><span className="block font-semibold">Durée d&apos;une visite de la pension</span>
+            <span className="block text-xs text-gray-500">Rendez-vous « visite » pris par un client avant de réserver.</span></span>
+          <span className="flex items-center gap-1.5">
+            <input type="number" min={5} max={240} step={5} value={dureeVisite} onChange={e => setDureeVisite(Math.max(5, Number(e.target.value) || 30))}
+              className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right" />
+            <span className="text-xs text-gray-500">min</span>
+          </span>
+        </label>
+      </div>
 
       {/* Mon contrat d'hébergement : modèle envoyé à la place du contrat PetsMatch. */}
       <div className={`bg-white rounded-2xl shadow-sm p-4 border ${modele ? 'border-[#6E9E57]/40' : 'border-gray-100'} space-y-2`}>

@@ -49,6 +49,9 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
   const [facture, setFacture] = useState<boolean | null>(null);
   const [solde, setSolde] = useState<'arrivee' | 'depart'>('arrivee');
   const [arrhes, setArrhes] = useState<number | null>(null);
+  // Essai : facturé ou non (Tarifs).
+  const [essaiCfg, setEssaiCfg] = useState<{ facture: boolean; prix: number | null }>({ facture: false, prix: null });
+  const estEssai = !!(entree as { essai?: boolean }).essai;
   const [facturer, setFacturer] = useState(false);
   const [logementNom, setLogementNom] = useState<string | null>(null);
   // Contrat de la pension : son modèle (Tarifs) ou un fichier chargé pour ce séjour.
@@ -69,6 +72,8 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
     ]);
     setASignature(!!sig);
     setFacture(factures.has(entree.id) || (legacy ?? []).length > 0);
+    const ec = (prof as { tarifs_pension?: { essai?: { facture?: boolean; prix?: number | null } } } | null)?.tarifs_pension?.essai;
+    setEssaiCfg({ facture: ec?.facture === true, prix: ec?.prix ?? null });
     const reg = ((prof as { tarifs_pension?: { reglement?: { solde?: string; arrhes_pct?: number | null } } } | null)?.tarifs_pension?.reglement) ?? {};
     setSolde(reg.solde === 'depart' ? 'depart' : 'arrivee');
     setArrhes(typeof reg.arrhes_pct === 'number' && reg.arrhes_pct > 0 ? reg.arrhes_pct : null);
@@ -165,8 +170,9 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
     : contrat.statut === 'signe' ? 'Signé par les deux parties'
     : contrat.signe_pro && !contrat.signe_client ? 'Signé par vous, en attente du client'
     : contrat.statut === 'brouillon' ? 'Brouillon, pas encore envoyé' : 'Envoyé, en attente de signature';
-  const factureAttendue = mode === 'depart' || solde === 'arrivee' || !!arrhes;
+  const factureAttendue = estEssai ? essaiCfg.facture : mode === 'depart' || solde === 'arrivee' || !!arrhes;
   const libFacture = facture === null ? '…' : facture ? 'Facturé'
+    : estEssai ? (essaiCfg.facture ? `Essai à facturer${essaiCfg.prix ? ` (${essaiCfg.prix} €)` : ''}` : 'Essai non facturé (réglage Tarifs)')
     : mode === 'arrivee' ? (solde === 'arrivee' ? 'Séjour à facturer (solde à l\'arrivée)' : arrhes ? `Acompte de ${arrhes} % à facturer` : 'Facturation prévue au départ')
     : 'Séjour à facturer';
 

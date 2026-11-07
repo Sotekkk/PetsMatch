@@ -67,8 +67,14 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
         });
       }
       const config = profil?.tarifs_pension as TarifsPension | null;
+      // Essai facturé : prix de l'essai (Tarifs), une journée.
+      const essaiCfg = (config as { essai?: { facture?: boolean; prix?: number | null } } | null)?.essai;
+      if ((entree as { essai?: boolean }).essai && essaiCfg?.facture && (essaiCfg.prix ?? 0) > 0) {
+        setTarif(prev => prev === '' ? Number(essaiCfg.prix).toFixed(2) : prev);
+        setNbNuits('1');
+      }
       // Plein tarif + réduction long séjour à part (visible sur la facture).
-      const sugg = await tarifPensionSuggere(supabase, entree as unknown as Record<string, unknown>, config, nuitsInitiales);
+      const sugg = (entree as { essai?: boolean }).essai ? null : await tarifPensionSuggere(supabase, entree as unknown as Record<string, unknown>, config, nuitsInitiales);
       if (sugg && sugg.prixNuit > 0) {
         setTarif(prev => prev === '' ? sugg.prixNuit.toFixed(2) : prev);
         setReduction(prev => prev === '' ? String(sugg.reductionPct || '') : prev);

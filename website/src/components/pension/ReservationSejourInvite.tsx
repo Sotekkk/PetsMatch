@@ -28,7 +28,7 @@ interface AnimalInvite {
 }
 interface SejourEnAttente {
   pensionProfileId: string; animaux: AnimalInvite[]; arrivee: string; depart: string; essai: string; message: string; savedAt: number;
-  heureArrivee?: string; heureDepart?: string;
+  heureArrivee?: string; heureDepart?: string; heureEssai?: string;
 }
 interface InfosPension { nom: string; essai_requis: boolean; essai_info: string | null; especes?: string[] }
 
@@ -114,6 +114,8 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
   const [creneaux, setCreneaux] = useState<{ arrivee: string[]; depart: string[]; duree_arrivee: number; duree_depart: number } | null>(null);
   const [heureArrivee, setHeureArrivee] = useState('');
   const [heureDepart, setHeureDepart] = useState('');
+  const [creneauxEssai, setCreneauxEssai] = useState<string[] | null>(null);
+  const [heureEssai, setHeureEssai] = useState('');
   const [etape, setEtape] = useState<'form' | 'compte' | 'envoi' | 'ok'>('form');
   const [erreur, setErreur] = useState('');
   const [aujourdhui, setAujourdhui] = useState('');
@@ -130,7 +132,7 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
       return;
     }
     setAnimaux(p.animaux); setArrivee(p.arrivee); setDepart(p.depart); setEssai(p.essai); setMessage(p.message); setCarnetPromis(true);
-    setHeureArrivee(p.heureArrivee ?? ''); setHeureDepart(p.heureDepart ?? '');
+    setHeureArrivee(p.heureArrivee ?? ''); setHeureDepart(p.heureDepart ?? ''); setHeureEssai(p.heureEssai ?? '');
   }, [mode, pensionProfileId]);
 
   const especesCles = animaux.map(a => a.espece).filter(Boolean);
@@ -141,12 +143,13 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
       qs.set('arrivee', arrivee); qs.set('depart', depart); qs.set('nb', String(especesCles.length)); qs.set('especes', especesCles.join(','));
       if (animaux.some(a => a.dejaVenu === false)) qs.set('nouveau', '1');
     }
+    if (essai && animaux.some(a => a.dejaVenu === false)) { qs.set('essai', essai); qs.set('nbEssai', String(animaux.filter(a => a.dejaVenu === false).length)); }
     apiFetch(`/api/pension/sejour?${qs.toString()}`, { cache: 'no-store' })
       .then(r => (r.ok ? r.json() : null))
-      .then(j => { if (j) { setInfos(j.pension as InfosPension); setComplet((j.dispo?.message as string | null | undefined) ?? null); setCreneaux((j.creneaux ?? null) as typeof creneaux); } })
+      .then(j => { if (j) { setInfos(j.pension as InfosPension); setComplet((j.dispo?.message as string | null | undefined) ?? null); setCreneaux((j.creneaux ?? null) as typeof creneaux); setCreneauxEssai((j.creneaux_essai ?? null) as string[] | null); } })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pensionProfileId, arrivee, depart, datesOk, especesCles.join(','), animaux.some(a => a.dejaVenu === false)]);
+  }, [pensionProfileId, arrivee, depart, datesOk, especesCles.join(','), animaux.some(a => a.dejaVenu === false), essai]);
 
   // Espèces proposées : celles accueillies par la pension (sinon toutes).
   const especesProposees = (() => {
@@ -167,6 +170,7 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
     if (joursEntre(arrivee, depart) > 180) return 'Séjour de plus de 6 mois : vérifiez les dates ou contactez directement la pension.';
     if (essaiRequis && (!essai || essai >= arrivee || essai < auj)) return 'Choisissez une date d\'essai entre aujourd\'hui et la veille de l\'arrivée.';
     if (creneaux && (!creneaux.arrivee.includes(heureArrivee) || !creneaux.depart.includes(heureDepart))) return 'Choisissez votre heure d\'arrivée et votre heure de départ.';
+    if (essaiRequis && creneauxEssai && !creneauxEssai.includes(heureEssai)) return 'Choisissez l\'heure de l\'essai.';
     if (!carnetPromis) return 'Cochez l\'engagement à apporter le carnet de santé.';
     if (complet) return complet;
     return null;
@@ -176,7 +180,7 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
     const e = verifier();
     if (e) { setErreur(e); return; }
     setErreur('');
-    const donnees: SejourEnAttente = { pensionProfileId, animaux, arrivee, depart, essai: essaiRequis ? essai : '', message, savedAt: Date.now(), heureArrivee, heureDepart };
+    const donnees: SejourEnAttente = { pensionProfileId, animaux, arrivee, depart, essai: essaiRequis ? essai : '', message, savedAt: Date.now(), heureArrivee, heureDepart, heureEssai };
     try {
       localStorage.setItem(CLE_SEJOUR, JSON.stringify(donnees));
     } catch {
@@ -236,6 +240,7 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
           hebergements: Object.fromEntries(animaux.map((a, i) => [ids[i], a.hebergement ?? '']).filter(([, h]) => h)),
           ...(essaiRequis ? { essaiDate: essai } : {}), message: consignes, ...(pid ? { profileId: pid } : {}),
           ...(creneaux ? { heureArrivee, heureDepart } : {}),
+          ...(essaiRequis && creneauxEssai ? { heureEssai } : {}),
         }),
       });
       const j = await r.json().catch(() => ({})) as { error?: string };
@@ -358,6 +363,9 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Essai avant le premier séjour</label>
                 <p className="text-xs text-gray-500 mb-1">{infos?.essai_info?.trim() || 'Cette pension demande une journée d\'essai avant le premier séjour de votre animal.'}</p>
                 <input type="date" min={aujourdhui} max={arrivee || undefined} value={essai} onChange={e => setEssai(e.target.value)} className={champ} />
+                {essai && creneauxEssai && (
+                  <div className="mt-2"><ChoixHeure titre="Heure de l'essai" heures={creneauxEssai} valeur={heureEssai} onChange={setHeureEssai} couleur={couleur} /></div>
+                )}
               </div>
             )}
             <div>

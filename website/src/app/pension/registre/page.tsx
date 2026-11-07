@@ -90,6 +90,8 @@ export default function RegistrePensionPage() {
   // Planning : logements (espèces, pour changer le logement attribué) et état du contrat par séjour.
   const [logementsListe, setLogementsListe] = useState<{ id: string; nom: string; especes: string[] | null }[]>([]);
   const [contrats, setContrats] = useState<Record<string, string>>({});
+  // Essai facturé ? (Tarifs) — sinon il n'est jamais « à facturer ».
+  const [essaiFacture, setEssaiFacture] = useState(false);
   const [jourMvt, setJourMvt] = useState('');
   useEffect(() => {
     const m = new URLSearchParams(window.location.search).get('mouvement');
@@ -133,6 +135,10 @@ export default function RegistrePensionPage() {
     ]);
     setEntrees((ent ?? []) as PensionEntree[]);
     setLogementsListe((enclos ?? []) as { id: string; nom: string; especes: string[] | null }[]);
+    if (proProfileId) {
+      const { data: tp } = await supabase.from('user_profiles').select('tarifs_pension').eq('id', proProfileId).maybeSingle();
+      setEssaiFacture(((tp as { tarifs_pension?: { essai?: { facture?: boolean } } } | null)?.tarifs_pension?.essai?.facture) === true);
+    }
     // État du contrat d'hébergement des séjours en cours.
     const enCours = ((ent ?? []) as PensionEntree[]).filter(e => e.statut === 'en_pension').map(e => e.id).slice(0, 300);
     if (enCours.length) {
@@ -229,7 +235,7 @@ export default function RegistrePensionPage() {
 
   // Séjours terminés (sortie effective enregistrée) sans aucune facture liée.
   const sejoursNonFactures = entrees.filter(e =>
-    !!e.date_sortie_effective && !entreesFacturees.has(e.id));
+    !!e.date_sortie_effective && !entreesFacturees.has(e.id) && (essaiFacture || !(e as { essai?: boolean }).essai));
 
   // Suivi des impayés : factures envoyées jamais marquées payées.
   const impayees = factures.filter(f => f.statut === 'envoyee');

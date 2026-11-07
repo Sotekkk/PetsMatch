@@ -220,6 +220,12 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
   Map<String, dynamic>? _modele;
   bool _envoiModele = false;
   final _essaiInfo = TextEditingController();
+  // Essai : facturé ou non (au choix de la pension), et son prix.
+  bool _essaiFacture = false;
+  final _essaiPrix = TextEditingController();
+  // Durée d'une visite de la pension (RDV « visite », durees_motifs.visite).
+  int _dureeVisite = 30;
+  Map<String, dynamic> _dureesMotifs = {};
   bool _showAutresEspeces = false;
   // Règlement du séjour (repris dans le contrat) : arrhes à la réservation
   // (facultatives) et moment du solde.
@@ -274,6 +280,18 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
     } catch (_) {}
 
     _afficherPublic = tarifs?['afficher_public'] == true;
+    final essai = tarifs?['essai'];
+    if (essai is Map) {
+      _essaiFacture = essai['facture'] == true;
+      final px = (essai['prix'] as num?)?.toDouble();
+      _essaiPrix.text = px != null && px > 0 ? px.toStringAsFixed(px % 1 == 0 ? 0 : 2) : '';
+    }
+    try {
+      final dm = await _supa.from('user_profiles').select('durees_motifs').eq('id', User_Info.activeProfileId).maybeSingle();
+      if (dm?['durees_motifs'] is Map) _dureesMotifs = Map<String, dynamic>.from(dm!['durees_motifs'] as Map);
+      final v = (_dureesMotifs['visite'] as num?)?.toInt();
+      if (v != null && v > 0) _dureeVisite = v;
+    } catch (_) {}
     final reglement = tarifs?['reglement'];
     if (reglement is Map) {
       final pct = (reglement['arrhes_pct'] as num?)?.toDouble() ?? 0;
@@ -397,8 +415,15 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
             'arrhes_pct': _arrhes ? (double.tryParse(_arrhesPct.text.replaceAll(',', '.')) ?? 0) : null,
             'solde': _solde,
           },
+          'essai': {
+            'facture': _essaiFacture,
+            'prix': _essaiFacture ? (double.tryParse(_essaiPrix.text.replaceAll(',', '.')) ?? 0) : null,
+          },
         },
       }).eq('id', pid);
+      try {
+        await _supa.from('user_profiles').update({'durees_motifs': {..._dureesMotifs, 'visite': _dureeVisite}}).eq('id', pid);
+      } catch (_) {}
       try {
         await _supa.from('user_profiles').update({
           'pension_essai_requis': _essaiRequis,
@@ -537,14 +562,41 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
                     if (_essaiRequis)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                        child: TextField(controller: _essaiInfo, maxLines: 2, minLines: 1,
-                            decoration: const InputDecoration(labelText: 'Précisions pour le client (facultatif)',
-                                hintText: 'Ex : journée de 9 h à 17 h, tarif 20 €', border: OutlineInputBorder(), isDense: true)),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          TextField(controller: _essaiInfo, maxLines: 2, minLines: 1,
+                              decoration: const InputDecoration(labelText: 'Précisions pour le client (facultatif)',
+                                  hintText: "Ex : journée de 9 h à 17 h, ce que l'essai permet d'observer", border: OutlineInputBorder(), isDense: true)),
+                          CheckboxListTile(
+                            value: _essaiFacture, onChanged: (v) => setState(() => _essaiFacture = v ?? false),
+                            dense: true, contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, activeColor: _green,
+                            title: const Text('Essai facturé', style: TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
+                          ),
+                          if (_essaiFacture)
+                            SizedBox(width: 160, child: TextField(controller: _essaiPrix, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                decoration: const InputDecoration(labelText: "Prix de l'essai", suffixText: '€', border: OutlineInputBorder(), isDense: true)))
+                          else
+                            Text("Essai non facturé : il sert à observer le comportement de l'animal ; il n'apparaît jamais comme « à facturer ».",
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+                          const SizedBox(height: 4),
+                          Text("Avec vos horaires d'arrivée, le client choisit aussi l'heure de l'essai.",
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+                        ]),
                       ),
                   ]),
                 ),
                 const SizedBox(height: 12),
                 HorairesPensionForm(valeur: _horaires, onChange: (h) => setState(() => _horaires = h), couleur: _green),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFEEEEEE))),
+                  child: Row(children: [
+                    const Expanded(child: Text("Durée d'une visite de la pension", style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13.5))),
+                    IconButton(icon: const Icon(Icons.remove_circle_outline, size: 20), onPressed: _dureeVisite <= 5 ? null : () => setState(() => _dureeVisite -= 5)),
+                    Text('$_dureeVisite min', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                    IconButton(icon: const Icon(Icons.add_circle_outline, size: 20), onPressed: () => setState(() => _dureeVisite += 5)),
+                  ]),
+                ),
                 const SizedBox(height: 12),
                 _modeleContrat(),
                 const SizedBox(height: 20),

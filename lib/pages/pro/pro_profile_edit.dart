@@ -1289,7 +1289,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   _especesSelector(),
 
                   // ── Durées par prestation ─────────────────────────────────
-                  if (_catPro.isNotEmpty && _catPro != 'referencement') ...[
+                  // Pension : durées dans Tarifs (arrivée, départ, visite).
+                  if (_catPro.isNotEmpty && _catPro != 'referencement' && _catPro != 'pension') ...[
                     const SizedBox(height: 24),
                     _sectionTitle('Durées par prestation (minutes)'),
                     const SizedBox(height: 4),

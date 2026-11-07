@@ -47,6 +47,9 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
   // d'horaires) et heures choisies.
   Map<String, dynamic>? _creneaux;
   String? _heureArrivee, _heureDepart;
+  // Heure de l'essai (créneaux d'arrivée libres le jour de l'essai).
+  List<String>? _creneauxEssai;
+  String? _heureEssai;
   // Équidés : hébergement souhaité ('box' / 'pre').
   /// Équidés : hébergement souhaité pour chaque animal ('box' / 'pre').
   final Map<String, String> _hebergements = {};
@@ -124,6 +127,9 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
           'nb': '${_choisis.isEmpty ? 1 : _choisis.length}',
           if (_nouveaux.isNotEmpty) 'nouveau': '1',
         },
+        if (_essai != null && _nouveaux.isNotEmpty) ...{
+          'essai': f.format(_essai!), 'nbEssai': '${_nouveaux.length}',
+        },
       };
       final r = await http.get(Uri.parse('$kSiteBaseUrl/api/pension/sejour').replace(queryParameters: qs),
           headers: await siteApiHeaders());
@@ -133,6 +139,7 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
         _premiers = {for (final e in ((j['premiers'] as Map?) ?? const {}).entries) e.key.toString(): e.value == true};
         _complet = (j['dispo'] as Map?)?['message']?.toString();
         _creneaux = j['creneaux'] is Map ? Map<String, dynamic>.from(j['creneaux'] as Map) : null;
+        _creneauxEssai = j['creneaux_essai'] is List ? [for (final h in j['creneaux_essai'] as List) h.toString()] : null;
       }
     } catch (_) {}
   }
@@ -187,7 +194,9 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
     }
     final d = await showDatePicker(context: context, firstDate: DateTime(now.year, now.month, now.day), lastDate: fin,
         initialDate: _essai ?? fin, helpText: "Date de l'essai", locale: const Locale('fr', 'FR'));
-    if (d != null) setState(() => _essai = d);
+    if (d == null) return;
+    setState(() { _essai = d; _heureEssai = null; });
+    await _actualiser();
   }
 
   Future<void> _envoyer() async {
@@ -211,6 +220,10 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Choisissez votre heure d'arrivée et votre heure de départ.")));
       return;
     }
+    if (_essaiRequis && _creneauxEssai != null && !_creneauxEssai!.contains(_heureEssai)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Choisissez l'heure de l'essai.")));
+      return;
+    }
     if (_essaiRequis && _essai == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cette pension demande un essai avant le premier séjour : choisissez sa date.")));
       return;
@@ -227,6 +240,7 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
           'hebergements': {for (final a in _equins) if (_hebergements.containsKey(a['id'].toString())) a['id'].toString(): _hebergements[a['id'].toString()]},
         if (_essaiRequis && _essai != null) 'essaiDate': f.format(_essai!),
         if (_creneaux != null) ...{'heureArrivee': _heureArrivee, 'heureDepart': _heureDepart},
+        if (_essaiRequis && _creneauxEssai != null) 'heureEssai': _heureEssai,
         'message': _message.text.trim(),
         if (User_Info.activeProfileId.isNotEmpty) 'profileId': User_Info.activeProfileId,
       }));
@@ -403,6 +417,26 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
                   label: Text(_essai == null ? "Choisir la date de l'essai" : 'Essai le ${f.format(_essai!)}', style: const TextStyle(fontFamily: 'Galey')),
                   style: OutlinedButton.styleFrom(foregroundColor: _c, minimumSize: const Size(double.infinity, 46), alignment: Alignment.centerLeft),
                 ),
+                if (_essai != null && _creneauxEssai != null)
+                  Builder(builder: (_) {
+                    final heures = _creneauxEssai!;
+                    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      _titre("Heure de l'essai"),
+                      if (heures.isEmpty)
+                        const Text("Plus d'heure libre ce jour-là : choisissez une autre date.",
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFB3261E)))
+                      else
+                        Wrap(spacing: 6, runSpacing: 6, children: [
+                          for (final h in heures)
+                            ChoiceChip(
+                              label: Text(h.replaceAll(':', 'h'), style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _heureEssai == h ? Colors.white : _ink)),
+                              selected: _heureEssai == h, showCheckmark: false, selectedColor: _c, backgroundColor: Colors.white,
+                              visualDensity: VisualDensity.compact,
+                              onSelected: (_) => setState(() => _heureEssai = h),
+                            ),
+                        ]),
+                    ]);
+                  }),
               ],
               _titre('Consignes pour le séjour (facultatif)'),
               TextField(controller: _message, maxLines: 3, minLines: 2,

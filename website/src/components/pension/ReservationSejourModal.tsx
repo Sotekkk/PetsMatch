@@ -68,6 +68,9 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
   const [creneaux, setCreneaux] = useState<{ arrivee: string[]; depart: string[]; duree_arrivee: number; duree_depart: number } | null>(null);
   const [heureArrivee, setHeureArrivee] = useState('');
   const [heureDepart, setHeureDepart] = useState('');
+  // Heure de l'essai (créneaux d'arrivée libres le jour de l'essai).
+  const [creneauxEssai, setCreneauxEssai] = useState<string[] | null>(null);
+  const [heureEssai, setHeureEssai] = useState('');
   // Équidés : hébergement souhaité.
   // Équidés : hébergement souhaité pour chaque animal (box / pré).
   const [hebergements, setHebergements] = useState<Record<string, 'box' | 'pre'>>({});
@@ -106,6 +109,7 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
     const qs = new URLSearchParams({ pensionProfileId });
     if (animalIds.length) qs.set('animalIds', animalIds.join(','));
     if (datesOk) { qs.set('arrivee', arrivee); qs.set('depart', depart); qs.set('nb', String(Math.max(1, animalIds.length))); if (nouveauSejour) qs.set('nouveau', '1'); }
+    if (essai && nouveauSejour) { qs.set('essai', essai); qs.set('nbEssai', String(Object.values(dejaVenus).filter(v => v === false).length || 1)); }
     apiFetch(`/api/pension/sejour?${qs.toString()}`, { cache: 'no-store' })
       .then(r => (r.ok ? r.json() : null))
       .then(j => {
@@ -114,9 +118,10 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
         setPremiers((j.premiers ?? {}) as Record<string, boolean>);
         setComplet((j.dispo?.message as string | null | undefined) ?? null);
         setCreneaux((j.creneaux ?? null) as typeof creneaux);
+        setCreneauxEssai((j.creneaux_essai ?? null) as string[] | null);
       })
       .catch(() => {});
-  }, [user, pensionProfileId, animalIds, arrivee, depart, datesOk, nouveauSejour]);
+  }, [user, pensionProfileId, animalIds, arrivee, depart, datesOk, nouveauSejour, essai, dejaVenus]);
 
   // Seuls les animaux d'une espèce acceptée par la pension sont proposés.
   const proposes = animaux.filter(a => especeAcceptee(infos?.especes, a.espece));
@@ -149,6 +154,9 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
     if (jours(aujourdhui, arrivee) > 365) { setErreur('La date d\'arrivée est à plus d\'un an : vérifiez l\'année.'); return; }
     if (jours(arrivee, depart) > 180) { setErreur('Séjour de plus de 6 mois : vérifiez les dates ou contactez directement la pension.'); return; }
     if (complet) { setErreur(complet); return; }
+    if (essaiRequis && creneauxEssai && !creneauxEssai.includes(heureEssai)) {
+      setErreur('Choisissez l\'heure de l\'essai.'); return;
+    }
     if (creneaux && (!creneaux.arrivee.includes(heureArrivee) || !creneaux.depart.includes(heureDepart))) {
       setErreur('Choisissez votre heure d\'arrivée et votre heure de départ.'); return;
     }
@@ -163,6 +171,7 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
         ...(equins.some(a => hebergements[a.id]) ? { hebergements: Object.fromEntries(equins.filter(a => hebergements[a.id]).map(a => [a.id, hebergements[a.id]])) } : {}),
         ...(essaiRequis ? { essaiDate: essai } : {}),
         ...(creneaux ? { heureArrivee, heureDepart } : {}),
+        ...(essaiRequis && creneauxEssai ? { heureEssai } : {}),
         message, ...(pid ? { profileId: pid } : {}) }),
     });
     const j = await r.json().catch(() => ({})) as { error?: string };
@@ -266,6 +275,9 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Essai avant le premier séjour</label>
                 <p className="text-xs text-gray-500 mb-1">{infos?.essai_info?.trim() || 'Cette pension demande une journée d\'essai avant le premier séjour de votre animal.'}{nouveaux.length > 1 ? ` Un seul essai pour ${nouveaux.map(a => a.nom ?? 'Animal').join(', ')}.` : ''}</p>
                 <input type="date" min={aujourdhui} max={arrivee || undefined} value={essai} onChange={e => setEssai(e.target.value)} className={champ} />
+                {essai && creneauxEssai && (
+                  <div className="mt-2"><ChoixHeure titre="Heure de l'essai" heures={creneauxEssai} valeur={heureEssai} onChange={setHeureEssai} couleur={couleur} /></div>
+                )}
               </div>
             )}
             <div>

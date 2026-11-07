@@ -250,12 +250,20 @@ export async function GET(req: NextRequest) {
     const nb = Math.max(1, Math.min(20, Number(sp.get('nb')) || 1));
     creneaux = await heuresLibres(p.uid, p.id, horaires, arrivee, depart, nb, sp.get('nouveau') === '1');
   }
+  // Essai : heures d'arrivée libres le jour de l'essai (durée d'un premier séjour).
+  let creneauxEssai: string[] | null = null;
+  const jourEssai = sp.get('essai') ?? '';
+  if (horaires && horaires.arrivees.length && JOUR.test(jourEssai)) {
+    const nb = Math.max(1, Math.min(20, Number(sp.get('nbEssai')) || 1));
+    const pE = await passagesDuJour(p.uid, p.id, jourEssai, horaires);
+    creneauxEssai = creneauxLibres(horaires, 'arrivee', dureePassage(horaires, 'arrivee', nb, true), [...pE.arrivees, ...pE.departs]);
+  }
   return NextResponse.json({
     // Espèces acceptées (vide = toutes) : le client ne voit que ses animaux concernés.
     pension: { nom: p.nom ?? 'Pension', essai_requis: !!p.pension_essai_requis, essai_info: p.pension_essai_info ?? null, tarifs,
       especes: Array.isArray(p.especes_acceptees) ? p.especes_acceptees : [] },
     premier_sejour: animalId ? await premierSejour(p.uid, animalId) : null,
-    premiers, dispo, horaires: !!horaires, creneaux,
+    premiers, dispo, horaires: !!horaires, creneaux, creneaux_essai: creneauxEssai,
   }, { headers: { 'Cache-Control': 'private, no-store' } });
 }
 
@@ -270,7 +278,7 @@ export async function POST(req: NextRequest) {
     /** Équidés : hébergement souhaité par animal ('box' | 'pre'). */ hebergements?: Record<string, string> | null;
     message?: string; profileId?: string | null; demandeId?: string; demandeIds?: string[]; accepter?: boolean; motif?: string; forcer?: boolean;
     /** Acceptation : logement attribué à chaque demande ({ demandeId: logementId }). */ logements?: Record<string, string> | null;
-    /** Demande : heures choisies par le client ('HH:MM'). */ heureArrivee?: string | null; heureDepart?: string | null;
+    /** Demande : heures choisies par le client ('HH:MM'). */ heureArrivee?: string | null; heureDepart?: string | null; heureEssai?: string | null;
     /** Acceptation : heures et durées prévues, ajustées par la pension. */
     heures?: { arrivee?: string | null; depart?: string | null; dureeArrivee?: number | null; dureeDepart?: number | null } | null;
   };
@@ -407,9 +415,12 @@ export async function POST(req: NextRequest) {
       }
       let essaiId: string | null = null;
       if (d.essai_date) {
-        const { data: es } = await admin.from('pension_entrees').insert({
-          ...base, date_entree: d.essai_date, date_sortie_prevue: d.essai_date, notes: 'Essai avant le premier séjour', essai: true,
-        }).select('id').single();
+        const ligneEssai = { ...base, date_entree: d.essai_date, date_sortie_prevue: d.essai_date, notes: 'Essai avant le premier séjour', essai: true };
+        // Heure de l'essai choisie par le client → arrivée prévue de l'essai.
+        const planEssai = heureValide(d.heure_essai) ? { heure_arrivee_prevue: d.heure_essai,
+          ...(horairesDecision ? { duree_arrivee_min: dureePassage(horairesDecision, 'arrivee', 1, true) } : {}) } : {};
+        let { data: es, error: errEs } = await admin.from('pension_entrees').insert({ ...ligneEssai, ...planEssai }).select('id').single();
+        if (errEs && Object.keys(planEssai).length) ({ data: es, error: errEs } = await admin.from('pension_entrees').insert(ligneEssai).select('id').single());
         essaiId = (es as { id?: string } | null)?.id ?? null;
       }
       await admin.from('pension_demandes').update({ entree_id: (ent as { id: string }).id, essai_entree_id: essaiId }).eq('id', d.id as string);
@@ -502,19 +513,34 @@ export async function POST(req: NextRequest) {
       heureDepart = b.heureDepart as string;
     }
   }
+  // Heure de l'essai (horaires d'arrivée de la pension, jour de l'essai).
+  let heureEssai: string | null = null;
+  if (horaires && horaires.arrivees.length && essai) {
+    const nbE = [...nouveaux.values()].filter(v => v === true).length || 1;
+    const pE = await passagesDuJour(p.uid, p.id, essai, horaires);
+    const libresE = creneauxLibres(horaires, 'arrivee', dureePassage(horaires, 'arrivee', nbE, true), [...pE.arrivees, ...pE.departs]);
+    if (!heureValide(b.heureEssai) || !libresE.includes(b.heureEssai as string)) {
+      return NextResponse.json({ error: libresE.length ? 'Choisissez l\'heure de l\'essai parmi celles proposées.' : 'Plus d\'heure libre le jour de l\'essai : choisissez une autre date.' }, { status: 400 });
+    }
+    heureEssai = b.heureEssai as string;
+  }
   let profil: string | null = null;
   if (b.profileId) {
     const { data } = await admin.from('user_profiles').select('id').eq('id', b.profileId).eq('uid', auth.uid).maybeSingle();
     profil = (data as { id?: string } | null)?.id ?? null;
   }
   const message = (b.message ?? '').trim().slice(0, 1000) || null;
-  const { data: dems, error } = await admin.from('pension_demandes').insert(animalIds.map(id => ({
+  const lignesDemande = (avecEssai: boolean) => animalIds.map(id => ({
     pro_uid: p.uid, pro_profile_id: p.id, client_uid: auth.uid, client_profile_id: profil, animal_id: id,
     animal_nom: infosAnimal.get(id)?.nom ?? null, espece: infosAnimal.get(id)?.espece ?? null, date_arrivee: b.dateArrivee, date_depart: b.dateDepart,
     essai_date: nouveaux.get(id) === true ? essai : null, nouveau_pensionnaire: nouveaux.get(id) ?? null,
     hebergement: (() => { const h = b.hebergements?.[id] ?? b.hebergement; return h === 'box' || h === 'pre' ? h : null; })(), message,
     ...(heureArrivee ? { heure_arrivee: heureArrivee } : {}), ...(heureDepart ? { heure_depart: heureDepart } : {}),
-  }))).select('id');
+    ...(avecEssai && heureEssai && nouveaux.get(id) === true ? { heure_essai: heureEssai } : {}),
+  }));
+  let { data: dems, error } = await admin.from('pension_demandes').insert(lignesDemande(true)).select('id');
+  // Colonne heure_essai absente (migration_pension_heure_essai.sql) : demande sans l'heure de l'essai.
+  if (error && heureEssai) ({ data: dems, error } = await admin.from('pension_demandes').insert(lignesDemande(false)).select('id'));
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const demandeIds = ((dems ?? []) as { id: string }[]).map(d => d.id);
   // La pension consulte la fiche de chaque animal (santé, alimentation) pour préparer le séjour.
@@ -535,7 +561,7 @@ export async function POST(req: NextRequest) {
   };
   await admin.from('notifications').insert({
     uid: p.uid, profile_id: p.id, type: 'pension_demande_sejour', title: animalIds.length > 1 ? `Nouvelle demande de séjour · ${animalIds.length} animaux` : 'Nouvelle demande de séjour',
-    body: `${liste(animalIds.map(nom))} : du ${fr(b.dateArrivee as string)}${heureArrivee ? ` (${heureArrivee.replace(':', 'h')})` : ''} au ${fr(b.dateDepart as string)}${heureDepart ? ` (${heureDepart.replace(':', 'h')})` : ''}${essai ? `, essai proposé le ${fr(essai)}` : ''}.`,
+    body: `${liste(animalIds.map(nom))} : du ${fr(b.dateArrivee as string)}${heureArrivee ? ` (${heureArrivee.replace(':', 'h')})` : ''} au ${fr(b.dateDepart as string)}${heureDepart ? ` (${heureDepart.replace(':', 'h')})` : ''}${essai ? `, essai proposé le ${fr(essai)}${heureEssai ? ` à ${heureEssai.replace(':', 'h')}` : ''}` : ''}.`,
     data: { demande_id: demandeIds[0], demande_ids: demandeIds }, read: false,
   });
   return NextResponse.json({ ok: true, demandeId: demandeIds[0], demandeIds, essai_requis: !!essai });

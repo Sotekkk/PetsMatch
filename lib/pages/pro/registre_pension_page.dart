@@ -57,6 +57,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
   // état du contrat d'hébergement par séjour.
   List<Map<String, dynamic>> _logementsListe = [];
   Map<String, String> _contrats = {};
+  bool _essaiFacture = false;
   bool _loading                            = true;
   String? _filterEspece;
   String? _filterStatut;
@@ -175,8 +176,15 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
         } catch (_) {}
       }
 
+      var essaiFacture = false;
+      try {
+        final tp = await _supa.from('user_profiles').select('tarifs_pension').eq('id', pid).maybeSingle();
+        essaiFacture = (((tp?['tarifs_pension'] as Map?)?['essai'] as Map?)?['facture']) == true;
+      } catch (_) {}
+
       if (!mounted) return;
       setState(() {
+        _essaiFacture     = essaiFacture;
         _logementsListe   = List<Map<String, dynamic>>.from(results[3] as List);
         _contrats         = contrats;
         _entrees          = entrees;
@@ -238,6 +246,8 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
 
   // Séjours terminés (sortie effective enregistrée) sans aucune facture liée.
   List<Map<String, dynamic>> get _sejoursNonFactures => _entrees.where((e) {
+        // Essai non facturé (réglage Tarifs) : jamais « à facturer ».
+        if (e['essai'] == true && !_essaiFacture) return false;
         final sortieEff = e['date_sortie_effective'];
         if (sortieEff == null || (sortieEff as String).isEmpty) return false;
         return !_entreesFacturees.contains(e['id'].toString());
@@ -3671,8 +3681,17 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
       final profil = await Supabase.instance.client.from('user_profiles_complet')
           .select('tarifs_pension').eq('id', pid).maybeSingle();
       final config = profil?['tarifs_pension'];
+      // Essai facturé : prix de l'essai (Tarifs), une journée.
+      final essaiCfg = config is Map ? config['essai'] : null;
+      final estEssai = widget.entree['essai'] == true;
+      if (estEssai && essaiCfg is Map && essaiCfg['facture'] == true && ((essaiCfg['prix'] as num?) ?? 0) > 0 && mounted) {
+        setState(() {
+          if (_tarifCtrl.text.isEmpty) _tarifCtrl.text = (essaiCfg['prix'] as num).toDouble().toStringAsFixed(2);
+          _nbNuitsCtrl.text = '1';
+        });
+      }
       // Plein tarif + réduction long séjour à part (visible sur la facture).
-      final sugg = await tarifPensionSuggere(widget.entree, config, _nbNuits);
+      final sugg = estEssai ? null : await tarifPensionSuggere(widget.entree, config, _nbNuits);
       if (mounted && sugg != null && sugg.prixNuit > 0) {
         setState(() {
           if (_tarifCtrl.text.isEmpty) _tarifCtrl.text = sugg.prixNuit.toStringAsFixed(2);
