@@ -17,6 +17,7 @@ import 'package:PetsMatch/pages/pro/pension_mes_taches_page.dart';
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart';
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show logementAccepteEspece;
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -108,8 +109,11 @@ class _PensionDashboardState extends State<PensionDashboard> {
   DateTime get _jour { final n = DateTime.now(); return DateTime(n.year, n.month, n.day); }
   bool _memeJour(DateTime? a, DateTime b) => a != null && a.year == b.year && a.month == b.month && a.day == b.day;
 
+  // Présent = arrivée enregistrée (un séjour réservé n'est pas une présence).
   List<Map<String, dynamic>> get _presents =>
-      _sejours.where((s) => !(_date(s['date_entree'])?.isAfter(_jour) ?? true)).toList();
+      _sejours.where((s) => !(_date(s['date_entree'])?.isAfter(_jour) ?? true) && s['arrivee_reelle_le'] != null).toList();
+  List<Map<String, dynamic>> get _arriveesManquees =>
+      _sejours.where((s) => (_date(s['date_entree'])?.isBefore(_jour) ?? false) && s['arrivee_reelle_le'] == null).toList();
   List<Map<String, dynamic>> get _arrivees => _sejours.where((s) => _memeJour(_date(s['date_entree']), _jour)).toList();
   List<Map<String, dynamic>> get _departs => _sejours.where((s) => _memeJour(_date(s['date_sortie_prevue']), _jour)).toList();
   List<Map<String, dynamic>> get _aConfirmer =>
@@ -141,6 +145,108 @@ class _PensionDashboardState extends State<PensionDashboard> {
 
   Future<void> _depart(Map<String, dynamic> s) async {
     if (await enregistrerDepartPension(context, s)) _charger();
+  }
+
+  Future<void> _arrivee(Map<String, dynamic> s) async {
+    if (await confirmerArriveePension(context, s)) _charger();
+  }
+
+  /// Accepter une demande (un ou plusieurs animaux) en attribuant un logement
+  /// à chaque animal : logements acceptant son espèce, places libres sur la
+  /// période (pleins grisés). Sans logement configuré : acceptation directe.
+  /// Miroir site : AccepterSejourModal.
+  Future<void> _accepterAvecLogements(List<Map<String, dynamic>> g) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final d0 = g.first;
+    final arrivee = d0['date_arrivee'].toString().substring(0, 10);
+    final depart = d0['date_depart'].toString().substring(0, 10);
+    List<Map<String, dynamic>> logements = [], occupations = [];
+    try {
+      logements = _liste(await _supa.from('enclos_chenil').select('id, nom, type, capacite, especes').eq('uid_eleveur', uid).order('nom'));
+      occupations = _liste(await _supa.from('pension_entrees').select('date_entree, date_sortie_prevue, logement_id')
+          .eq('pro_uid', uid).eq('statut', 'en_pension').not('logement_id', 'is', null).lte('date_entree', depart));
+    } catch (_) {}
+    if (!mounted) return;
+    if (logements.isEmpty) { await _decider(g, true); return; }
+    // Nuits du séjour (jour du départ exclu ; séjour d'un jour = ce jour).
+    final nuits = <String>[];
+    for (var d = DateTime.parse(arrivee); d.isBefore(DateTime.parse(depart)) && nuits.length < 400; d = d.add(const Duration(days: 1))) {
+      nuits.add(DateFormat('yyyy-MM-dd').format(d));
+    }
+    if (nuits.isEmpty) nuits.add(arrivee);
+    bool occupe(Map<String, dynamic> e, String j) {
+      final de = e['date_entree'].toString().substring(0, 10);
+      final ds = e['date_sortie_prevue']?.toString();
+      final fin = ds?.substring(0, 10);
+      return de.compareTo(j) <= 0 && (fin == null || fin.compareTo(j) > 0 || (fin == de && j == de));
+    }
+    final choix = <String, String>{};
+    int pris(Map<String, dynamic> l, String sauf) {
+      final autres = choix.entries.where((e) => e.value == l['id'].toString() && e.key != sauf).length;
+      var max = 0;
+      for (final j in nuits) {
+        final n = occupations.where((o) => o['logement_id'].toString() == l['id'].toString() && occupe(o, j)).length;
+        if (n > max) max = n;
+      }
+      return max + autres;
+    }
+    /// Logement proposé : places libres au pire jour, grisé s'il est plein.
+    DropdownMenuItem<String> item(Map<String, dynamic> l, int n) {
+      final cap = (l['capacite'] as num?)?.toInt() ?? 1;
+      final plein = n >= cap;
+      return DropdownMenuItem<String>(
+        value: l['id'].toString(), enabled: !plein,
+        child: Text('${l['nom']}${(l['type'] ?? '').toString().isNotEmpty ? ' (${l['type']})' : ''} — '
+            '${plein ? 'complet' : '${cap - n} place${cap - n > 1 ? 's' : ''} libre${cap - n > 1 ? 's' : ''}'}',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: plein ? Colors.grey : null)),
+      );
+    }
+    final ok = await showModalBottomSheet<bool>(
+      context: context, isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) => SafeArea(child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(g.length > 1 ? 'Accepter les ${g.length} séjours' : 'Accepter le séjour',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 17)),
+          Text('Du ${_jm(arrivee)} au ${_jm(depart)} · attribuez un logement à chaque animal',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),
+          const SizedBox(height: 12),
+          for (final d in g) Builder(builder: (_) {
+            final id = d['id'].toString();
+            final proposes = [for (final l in logements) if (logementAccepteEspece(l['especes'] as List?, d['espece']?.toString())) l];
+            final titre = 'Logement pour ${d['animal_nom'] ?? "l'animal"}${(d['espece']?.toString() ?? '').isNotEmpty ? ' (${d['espece']})' : ''}'
+                '${d['hebergement'] == 'pre' ? ' · pré souhaité' : d['hebergement'] == 'box' ? ' · box souhaité' : ''}';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: proposes.isEmpty
+                  ? Text("$titre : aucun logement n'accepte cette espèce (cochez-la dans Chenil / logements).",
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFB45309)))
+                  : DropdownButtonFormField<String>(
+                      initialValue: choix[id], isExpanded: true,
+                      decoration: InputDecoration(labelText: titre, border: const OutlineInputBorder(), isDense: true),
+                      items: [for (final l in proposes) item(l, pris(l, id))],
+                      onChanged: (v) => setM(() { if (v != null) choix[id] = v; }),
+                    ),
+            );
+          }),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _vert, padding: const EdgeInsets.symmetric(vertical: 13)),
+            onPressed: () {
+              final manque = g.any((d) => !choix.containsKey(d['id'].toString()));
+              if (manque) {
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Attribuez un logement à chaque animal.')));
+                return;
+              }
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Accepter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          ),
+        ]),
+      ))),
+    );
+    if (ok == true && mounted) await _decider(g, true, logements: choix);
   }
 
   // ── UI ──────────────────────────────────────────────────────────────────
@@ -218,7 +324,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
     return m.values.toList();
   }
 
-  Future<void> _decider(List<Map<String, dynamic>> g, bool accepter, {bool forcer = false}) async {
+  Future<void> _decider(List<Map<String, dynamic>> g, bool accepter, {bool forcer = false, Map<String, String>? logements}) async {
     final d = g.first;
     if (_decisionEnCours == d['id'].toString() && !forcer) return;
     String? motif;
@@ -240,7 +346,8 @@ class _PensionDashboardState extends State<PensionDashboard> {
     try {
       final r = await http.post(Uri.parse('$kSiteBaseUrl/api/pension/sejour'), headers: await siteApiHeaders(),
           body: jsonEncode({'action': 'decider', 'demandeId': d['id'], 'demandeIds': [for (final x in g) x['id']],
-              'accepter': accepter, if (motif != null) 'motif': motif, if (forcer) 'forcer': true}));
+              'accepter': accepter, if (motif != null) 'motif': motif, if (forcer) 'forcer': true,
+              if (logements != null && logements.isNotEmpty) 'logements': logements}));
       if (!mounted) return;
       setState(() => _decisionEnCours = null);
       // Hébergements pleins sur une partie du séjour : accepter quand même ?
@@ -256,7 +363,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
               TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Accepter quand même')),
             ],
           ));
-          if (ok == true) await _decider(g, true, forcer: true);
+          if (ok == true) await _decider(g, true, forcer: true, logements: logements);
           return;
         }
       }
@@ -304,7 +411,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
               if ((d['message']?.toString() ?? '').isNotEmpty)
                 Text('« ${d['message']} »', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _muted)),
               Row(children: [
-                FilledButton(onPressed: _decisionEnCours == d['id'].toString() ? null : () => _decider(g, true), style: FilledButton.styleFrom(backgroundColor: _vert, visualDensity: VisualDensity.compact),
+                FilledButton(onPressed: _decisionEnCours == d['id'].toString() ? null : () => _accepterAvecLogements(g), style: FilledButton.styleFrom(backgroundColor: _vert, visualDensity: VisualDensity.compact),
                     child: Text(g.length > 1 ? 'Accepter les ${g.length}' : 'Accepter', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600))),
                 const SizedBox(width: 8),
                 TextButton(onPressed: () => _decider(g, false), child: const Text('Refuser', style: TextStyle(fontFamily: 'Galey'))),
@@ -323,6 +430,8 @@ class _PensionDashboardState extends State<PensionDashboard> {
   Widget _alertesSection() {
     final retard = _taches.where((t) => (_date(t['date'])?.isBefore(_jour) ?? false)).toList();
     final alertes = <(IconData, String, VoidCallback)>[
+      for (final s in _arriveesManquees)
+        (Icons.login_rounded, 'Arrivée prévue le ${_jm(s['date_entree'])} non enregistrée — ${_nom(s)}', () => _arrivee(s)),
       for (final s in _aCloturer)
         (Icons.logout_rounded, 'Départ prévu le ${_jm(s['date_sortie_prevue'])} non clôturé — ${_nom(s)}', () => _depart(s)),
       if (retard.isNotEmpty)

@@ -158,7 +158,7 @@ export default function PensionEntreeSortiePage() {
           placeholder="Rechercher par animal, race, propriétaire…"
           className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300" />
         <div className="flex gap-2 flex-wrap">
-          {([['tous', 'Tous'], ['en_pension', 'Présents'], ['sorti', 'Sortis']] as const).map(([val, label]) => (
+          {([['tous', 'Tous'], ['en_pension', 'En cours'], ['sorti', 'Sortis']] as const).map(([val, label]) => (
             <button key={val} onClick={() => setFiltreStatut(val)}
               className={`px-4 py-1.5 rounded-full text-sm font-galey font-medium border transition-colors ${
                 filtreStatut === val ? 'bg-teal-700 text-white border-teal-700' : 'bg-white text-gray-600 border-gray-200'
@@ -191,7 +191,7 @@ export default function PensionEntreeSortiePage() {
                 <tr key={e.id} onClick={() => setSelected(e)} className="hover:bg-gray-50 cursor-pointer transition-colors">
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-lg text-xs font-semibold ${e.statut === 'sorti' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
-                      {e.statut === 'sorti' ? 'Sorti' : 'Présent'}
+                      {e.statut === 'sorti' ? 'Sorti' : (e as { arrivee_reelle_le?: string | null }).arrivee_reelle_le ? 'Présent' : 'Attendu'}
                     </span>
                   </td>
                   <td className="px-4 py-3 font-semibold text-[#1F2A2E]">{e.animal_nom}</td>
@@ -222,7 +222,7 @@ export default function PensionEntreeSortiePage() {
             <div className="flex items-center justify-between">
               <h3 className="font-bold font-galey text-teal-800 text-lg">{selected.animal_nom}</h3>
               <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${selected.statut === 'sorti' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
-                {selected.statut === 'sorti' ? 'Sorti' : 'Présent'}
+                {selected.statut === 'sorti' ? 'Sorti' : (selected as { arrivee_reelle_le?: string | null }).arrivee_reelle_le ? 'Présent' : 'Attendu'}
               </span>
             </div>
             {[

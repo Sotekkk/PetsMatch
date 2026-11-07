@@ -5,12 +5,14 @@
 // lib/pages/pro/pension_arrivee_depart.dart.
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { logementAccepteEspece } from '@/lib/pension-especes';
 
 const TEAL = '#0C5C6C';
 
 export interface SejourPension {
   id: string; animal_id?: string | null; animal_nom?: string | null; proprietaire_nom?: string | null;
   logement_id?: string | null; effets_personnels?: string | null; consignes_sejour?: string | null;
+  espece?: string | null; arrivee_reelle_le?: string | null;
 }
 
 const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -19,7 +21,9 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
   sejour: SejourPension; mode: 'arrivee' | 'depart'; uid: string; onClose: () => void; onDone: () => void;
 }) {
   const [connus, setConnus] = useState<string[]>([]);
-  const [logements, setLogements] = useState<{ id: string; nom: string; type: string | null }[]>([]);
+  const [logements, setLogements] = useState<{ id: string; nom: string; type: string | null; especes?: string[] | null }[]>([]);
+  // Espèce de l'animal : seuls les logements qui l'acceptent sont proposés.
+  const [espece, setEspece] = useState<string | null>(sejour.espece ?? null);
   const [heure, setHeure] = useState(() => hhmm(new Date()));
   const [personne, setPersonne] = useState('');
   const [logementId, setLogementId] = useState(sejour.logement_id ?? '');
@@ -37,23 +41,37 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
     let annule = false;
     (async () => {
       const noms: string[] = sejour.proprietaire_nom?.trim() ? [sejour.proprietaire_nom.trim()] : [];
+      let esp: string | null = sejour.espece ?? null;
       if (sejour.animal_id) {
-        const { data } = await supabase.from('animaux').select('personnes_autorisees').eq('id', sejour.animal_id).maybeSingle();
-        for (const c of ((data as { personnes_autorisees?: { nom?: string }[] } | null)?.personnes_autorisees ?? [])) {
+        const { data } = await supabase.from('animaux').select('personnes_autorisees, espece').eq('id', sejour.animal_id).maybeSingle();
+        const a = data as { personnes_autorisees?: { nom?: string }[]; espece?: string | null } | null;
+        for (const c of (a?.personnes_autorisees ?? [])) {
           const n = c?.nom?.trim(); if (n && !noms.includes(n)) noms.push(n);
         }
+        esp = esp || a?.espece || null;
       }
-      const { data: l } = await supabase.from('enclos_chenil').select('id, nom, type').eq('uid_eleveur', uid).order('nom');
+      const { data: l } = await supabase.from('enclos_chenil').select('id, nom, type, especes').eq('uid_eleveur', uid).order('nom');
       if (annule) return;
       setConnus(noms); setPersonne(noms[0] ?? '');
-      setLogements((l ?? []) as { id: string; nom: string; type: string | null }[]);
+      setEspece(esp);
+      setLogements((l ?? []) as { id: string; nom: string; type: string | null; especes?: string[] | null }[]);
     })();
     return () => { annule = true; };
-  }, [sejour.animal_id, sejour.proprietaire_nom, uid]);
+  }, [sejour.animal_id, sejour.proprietaire_nom, sejour.espece, uid]);
 
   const autorise = connus.some(n => n.toLowerCase() === personne.trim().toLowerCase());
 
   async function valider() {
+    // Arrivée déjà enregistrée (autre appareil, double clic) : pas de second enregistrement.
+    if (mode === 'arrivee') {
+      const { data: deja } = await supabase.from('pension_entrees').select('arrivee_reelle_le').eq('id', sejour.id).maybeSingle();
+      const le = (deja as { arrivee_reelle_le?: string | null } | null)?.arrivee_reelle_le;
+      if (le) {
+        window.alert(`L'arrivée est déjà enregistrée (le ${new Date(le).toLocaleDateString('fr-FR')} à ${hhmm(new Date(le))}).`);
+        onDone();
+        return;
+      }
+    }
     setSaving(true);
     const [h, m] = heure.split(':').map(Number);
     const d = new Date(); d.setHours(h || 0, m || 0, 0, 0);
@@ -107,12 +125,21 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
         )}
         {mode === 'arrivee' ? (
           <>
-            {logements.length > 0 && (
-              <select value={logementId} onChange={e => setLogementId(e.target.value)} className={`${champ} bg-white`}>
-                <option value="">Sans hébergement attribué</option>
-                {logements.map(l => <option key={l.id} value={l.id}>{l.nom}{l.type ? ` (${l.type})` : ''}</option>)}
-              </select>
-            )}
+            {logements.length > 0 && (() => {
+              // Logements qui acceptent l'espèce de l'animal (+ celui déjà attribué).
+              const proposes = logements.filter(l => logementAccepteEspece(l.especes, espece) || l.id === logementId);
+              return (
+                <>
+                  <select value={logementId} onChange={e => setLogementId(e.target.value)} className={`${champ} bg-white`}>
+                    <option value="">Sans hébergement attribué</option>
+                    {proposes.map(l => <option key={l.id} value={l.id}>{l.nom}{l.type ? ` (${l.type})` : ''}{logementAccepteEspece(l.especes, espece) ? '' : ' — espèce non prévue'}</option>)}
+                  </select>
+                  {proposes.length === 0 && (
+                    <p className="text-xs text-[#B45309]">Aucun logement n&apos;accepte cette espèce : cochez-la sur un logement (Chenil / logements).</p>
+                  )}
+                </>
+              );
+            })()}
             <input value={alim} onChange={e => setAlim(e.target.value)} placeholder="Alimentation apportée" className={champ} />
             <input value={trait} onChange={e => setTrait(e.target.value)} placeholder="Traitements apportés" className={champ} />
             <input value={effets} onChange={e => setEffets(e.target.value)} placeholder="Effets personnels (panier, laisse, jouets…)" className={champ} />

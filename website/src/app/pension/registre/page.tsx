@@ -230,8 +230,8 @@ export default function RegistrePensionPage() {
   let filtered = entrees;
   if (tab !== 'tous') filtered = filtered.filter(e => e.statut === tab);
   if (filterEspece) filtered = filtered.filter(e => e.espece === filterEspece);
-  // Présents : en pension et déjà arrivés (les séjours réservés à venir sont exclus).
-  if (mouvement === 'presents' && jourMvt) filtered = filtered.filter(e => e.statut === 'en_pension' && (e.date_entree ?? '').slice(0, 10) <= jourMvt);
+  // Présents : en pension et arrivée enregistrée (les séjours réservés ou pas encore arrivés sont exclus).
+  if (mouvement === 'presents' && jourMvt) filtered = filtered.filter(e => e.statut === 'en_pension' && (e.date_entree ?? '').slice(0, 10) <= jourMvt && !!(e as { arrivee_reelle_le?: string | null }).arrivee_reelle_le);
   if (mouvement === 'arrivees' && jourMvt) filtered = filtered.filter(e => (e.date_entree ?? '').startsWith(jourMvt));
   if (mouvement === 'departs' && jourMvt) filtered = filtered.filter(e => (e.date_sortie_prevue ?? '').startsWith(jourMvt) || (e.date_sortie_effective ?? '').startsWith(jourMvt));
 

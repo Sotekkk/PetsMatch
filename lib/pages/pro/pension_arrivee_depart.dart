@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show logementAccepteEspece;
 
 const _teal = Color(0xFF0C5C6C);
 
@@ -71,11 +72,35 @@ Future<bool> confirmerArriveePension(BuildContext context, Map<String, dynamic> 
   final uid = FirebaseAuth.instance.currentUser?.uid;
   if (uid == null) return false;
   final supa = Supabase.instance.client;
+  // Arrivée déjà enregistrée (autre appareil, double appui) : pas de second enregistrement.
+  try {
+    final deja = await supa.from('pension_entrees').select('arrivee_reelle_le').eq('id', entree['id'].toString()).maybeSingle();
+    final le = DateTime.tryParse(deja?['arrivee_reelle_le']?.toString() ?? '')?.toLocal();
+    if (le != null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+            "L'arrivée est déjà enregistrée (le ${DateFormat('dd/MM').format(le)} à ${hmFr(le)}).", style: const TextStyle(fontFamily: 'Galey'))));
+      }
+      return false;
+    }
+  } catch (_) {}
   final connus = await _personnesConnues(entree);
   List<Map<String, dynamic>> logements = [];
   try {
-    logements = List<Map<String, dynamic>>.from(await supa.from('enclos_chenil').select('id, nom, type').eq('uid_eleveur', uid).order('nom'));
+    logements = List<Map<String, dynamic>>.from(await supa.from('enclos_chenil').select('id, nom, type, especes').eq('uid_eleveur', uid).order('nom'));
   } catch (_) {}
+  // Espèce de l'animal : seuls les logements qui l'acceptent sont proposés
+  // (+ celui déjà attribué).
+  String? espece = entree['espece']?.toString();
+  if ((espece ?? '').isEmpty && entree['animal_id'] != null) {
+    try {
+      final a = await supa.from('animaux').select('espece').eq('id', entree['animal_id'].toString()).maybeSingle();
+      espece = a?['espece']?.toString();
+    } catch (_) {}
+  }
+  final dejaAttribue = entree['logement_id']?.toString();
+  final logementsTous = logements;
+  logements = [for (final l in logementsTous) if (logementAccepteEspece(l['especes'] as List?, espece) || l['id'].toString() == dejaAttribue) l];
   if (!context.mounted) return false;
   var heure = DateTime.now();
   final deposeCtrl = TextEditingController(text: connus.isNotEmpty ? connus.first : '');
@@ -114,6 +139,12 @@ Future<bool> confirmerArriveePension(BuildContext context, Map<String, dynamic> 
                 onPressed: () => setS(() => deposeCtrl.text = n)),
           ]),
         _champ(deposeCtrl, 'Déposé par'),
+        if (logementsTous.isNotEmpty && logements.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 10),
+            child: Text("Aucun logement n'accepte cette espèce : cochez-la sur un logement (Chenil / logements).",
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFFB45309))),
+          ),
         if (logements.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
@@ -123,7 +154,8 @@ Future<bool> confirmerArriveePension(BuildContext context, Map<String, dynamic> 
                 const DropdownMenuItem(value: null, child: Text('Sans hébergement attribué', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
                 for (final l in logements)
                   DropdownMenuItem(value: l['id'].toString(),
-                      child: Text('${l['nom']}${(l['type'] ?? '').toString().isNotEmpty ? ' (${l['type']})' : ''}',
+                      child: Text('${l['nom']}${(l['type'] ?? '').toString().isNotEmpty ? ' (${l['type']})' : ''}'
+                          '${logementAccepteEspece(l['especes'] as List?, espece) ? '' : ' — espèce non prévue'}',
                           style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
               ],
               onChanged: (v) => setS(() => logementId = v),

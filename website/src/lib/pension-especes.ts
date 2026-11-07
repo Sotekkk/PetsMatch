@@ -176,3 +176,21 @@ export interface TarifsPension {
   tranches_poids?: { poids_max: number | null; prix_seul: number; prix_partage: number }[];
   reductions_long_sejour?: { min_nuits: number; pourcentage: number }[];
 }
+
+/** Clé d'espèce commune (animal, logement, séjour) ; '' = inconnue. */
+export function cleEspecePension(e?: string | null): string {
+  const s = (e ?? '').trim();
+  if (!s) return '';
+  return pensionTarifKeyForEspece(s) ?? s.toLowerCase();
+}
+
+/** Le logement (enclos_chenil.especes) accepte l'espèce de l'animal : aucune
+ *  espèce cochée = toutes ; « NAC » accepte un lapin, « Équidés » un âne.
+ *  Espèce de l'animal inconnue : accepté. Miroir appli :
+ *  pension_tarifs_page.dart logementAccepteEspece. */
+export function logementAccepteEspece(especesLogement: string[] | null | undefined, espece?: string | null): boolean {
+  const k = cleEspecePension(espece);
+  const liste = especesLogement ?? [];
+  if (!k || !liste.length) return true;
+  return liste.some(x => { const c = cleEspecePension(x); return c === k || pensionGroupe(c) === pensionGroupe(k); });
+}

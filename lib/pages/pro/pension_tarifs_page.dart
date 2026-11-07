@@ -637,3 +637,20 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
     ]),
   );
 }
+
+/// Clé d'espèce commune (animal, logement, séjour) ; '' = inconnue.
+String cleEspecePension(String? e) {
+  final s = (e ?? '').trim();
+  if (s.isEmpty) return '';
+  return pensionTarifKeyForEspece(s) ?? s.toLowerCase();
+}
+
+/// Le logement (enclos_chenil.especes) accepte l'espèce de l'animal : aucune
+/// espèce cochée = toutes ; « NAC » accepte un lapin, « Équidés » un âne.
+/// Espèce inconnue : accepté. Miroir site : lib/pension-especes.ts.
+bool logementAccepteEspece(List? especesLogement, String? espece) {
+  final k = cleEspecePension(espece);
+  final liste = [for (final e in especesLogement ?? const []) e.toString()];
+  if (k.isEmpty || liste.isEmpty) return true;
+  return liste.any((x) { final c = cleEspecePension(x); return c == k || pensionGroupe(c) == pensionGroupe(k); });
+}

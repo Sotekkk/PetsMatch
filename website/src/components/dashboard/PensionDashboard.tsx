@@ -11,6 +11,7 @@ import { apiFetch } from '@/lib/api-fetch';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import ArriveeDepartModal, { type SejourPension } from '@/components/pension/ArriveeDepartModal';
+import AccepterSejourModal from '@/components/pension/AccepterSejourModal';
 import { Kpi, Section, EnteteAccueil, Tuile, Icone } from '@/components/dashboard/kit';
 
 const TEAL = '#0C5C6C';
@@ -23,7 +24,7 @@ interface Sejour extends SejourPension {
   date_entree: string; date_sortie_prevue: string | null; statut: string; pro_profile_id?: string | null;
   arrivee_reelle_le?: string | null;
 }
-interface Demande { id: string; client_uid?: string | null; client_profile_id?: string | null; animal_id: string; animal_nom: string | null; nouveau_pensionnaire?: boolean | null; hebergement?: string | null; date_arrivee: string; date_depart: string; essai_date: string | null; message: string | null }
+interface Demande { id: string; client_uid?: string | null; client_profile_id?: string | null; animal_id: string; animal_nom: string | null; espece?: string | null; nouveau_pensionnaire?: boolean | null; hebergement?: string | null; date_arrivee: string; date_depart: string; essai_date: string | null; message: string | null }
 interface Logement { id: string; nom: string; capacite: number | null }
 interface Tache { id: string; titre: string | null; date: string; animal_id: string | null; animal_nom: string | null }
 interface Animal { id: string; nom: string | null; photo_url: string | null }
@@ -46,6 +47,8 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
   // Demandes de séjour des clients (à accepter / refuser).
   const [demandes, setDemandes] = useState<Demande[]>([]);
   const [decision, setDecision] = useState('');
+  // Acceptation : logement attribué à chaque animal (AccepterSejourModal).
+  const [aAccepter, setAAccepter] = useState<Demande[] | null>(null);
 
   const charger = useCallback(async () => {
     if (!uid) return;
@@ -54,7 +57,7 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
     let tq = supabase.from('taches_elevage').select('id, titre, date, animal_id, animal_nom').eq('profil_source', 'pension')
       .neq('statut', 'fait').lte('date', iso(jour));
     tq = pid ? tq.eq('eleveur_profile_id', pid) : tq.eq('uid_eleveur', uid);
-    let dq = supabase.from('pension_demandes').select('id, client_uid, client_profile_id, animal_id, animal_nom, date_arrivee, date_depart, essai_date, message, nouveau_pensionnaire, hebergement')
+    let dq = supabase.from('pension_demandes').select('id, client_uid, client_profile_id, animal_id, animal_nom, espece, date_arrivee, date_depart, essai_date, message, nouveau_pensionnaire, hebergement')
       .eq('pro_uid', uid).eq('statut', 'demande');
     if (pid) dq = dq.eq('pro_profile_id', pid);
     const dRes = await dq.order('date_arrivee');
@@ -114,7 +117,9 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
   }
 
   const jour = iso(now);
-  const presents = sejours.filter(s => s.date_entree <= jour);
+  // Présent = arrivée enregistrée (un séjour réservé n'est pas une présence).
+  const presents = sejours.filter(s => s.date_entree <= jour && !!s.arrivee_reelle_le);
+  const arriveesManquees = sejours.filter(s => s.date_entree < jour && !s.arrivee_reelle_le);
   const arrivees = sejours.filter(s => s.date_entree === jour);
   const departs = sejours.filter(s => s.date_sortie_prevue === jour);
   const aConfirmer = arrivees.filter(s => !s.arrivee_reelle_le);
@@ -125,6 +130,7 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
   const reserves = new Set(sejours.filter(s => s.date_entree > jour && s.logement_id && !occupes.has(s.logement_id)).map(s => s.logement_id as string));
   const capacite = logements.reduce((t, l) => t + (l.capacite ?? 1), 0);
   const alertes = [
+    ...arriveesManquees.map(s => ({ cle: `a${s.id}`, texte: `Arrivée prévue le ${jm(s.date_entree)} non enregistrée — ${nomA(s)}`, onClick: () => setAction({ sejour: s, mode: 'arrivee' }) })),
     ...aCloturer.map(s => ({ cle: `d${s.id}`, texte: `Départ prévu le ${jm(s.date_sortie_prevue)} non clôturé — ${nomA(s)}`, onClick: () => setAction({ sejour: s, mode: 'depart' }) })),
     ...(enRetard.length ? [{ cle: 'taches', texte: `${enRetard.length} tâche${enRetard.length > 1 ? 's' : ''} en retard (soins, traitements…)`, href: '/mes-taches' }] : []),
     ...incidents.map(i => ({ cle: `i${i.id}`, texte: `Incident signalé${i.note ? ` : ${i.note}` : ''}`, href: '/pension/registre' })),
@@ -178,7 +184,7 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
                       </div>
                       {g.length === 1 && <Link href={`/pension/fiche/${d.animal_id}`} className="text-xs font-semibold text-[#0C5C6C]">Fiche</Link>}
                       <button disabled={decision === d.id} onClick={() => decider(g, false)} className="text-xs font-semibold text-gray-500 px-2 py-1">Refuser</button>
-                      <button disabled={decision === d.id} onClick={() => decider(g, true)}
+                      <button disabled={decision === d.id} onClick={() => setAAccepter(g)}
                         className="text-xs font-bold text-white rounded-full px-3 py-1.5 disabled:opacity-50" style={{ background: VERT }}>{g.length > 1 ? `Accepter les ${g.length}` : 'Accepter'}</button>
                     </div>
                     );
@@ -246,6 +252,10 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
           </>
         )}
       </div>
+      {aAccepter && uid && (
+        <AccepterSejourModal groupe={aAccepter} uid={uid} couleur={VERT}
+          onClose={() => setAAccepter(null)} onDone={() => { setAAccepter(null); charger(); }} />
+      )}
       {action && (
         <ArriveeDepartModal sejour={action.sejour} mode={action.mode} uid={uid}
           onClose={() => setAction(null)} onDone={() => { setAction(null); charger(); }} />

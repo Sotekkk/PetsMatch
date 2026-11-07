@@ -172,12 +172,12 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
 
   List<Map<String, dynamic>> get _filtered {
     var list = _entrees;
-    // Présents : en pension et déjà arrivés (les séjours réservés à venir sont exclus).
+    // Présents : en pension et arrivée enregistrée (réservés / pas encore arrivés exclus).
     if (_mouvement == 'presents') {
       final auj = DateFormat('yyyy-MM-dd').format(DateTime.now());
       list = list.where((d) {
         final e = d['date_entree']?.toString() ?? '';
-        return d['statut'] == 'en_pension' && e.isNotEmpty && e.substring(0, e.length < 10 ? e.length : 10).compareTo(auj) <= 0;
+        return d['statut'] == 'en_pension' && d['arrivee_reelle_le'] != null && e.isNotEmpty && e.substring(0, e.length < 10 ? e.length : 10).compareTo(auj) <= 0;
       }).toList();
     } else if (_mouvement == 'arrivees') {
       list = list.where((d) => (d['date_entree']?.toString() ?? '').startsWith(_jourIso)).toList();

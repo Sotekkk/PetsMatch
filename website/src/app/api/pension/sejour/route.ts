@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireUser } from '@/lib/server-auth';
-import { PENSION_ESPECES, pensionGroupe, pensionTarifKeyForEspece } from '@/lib/pension-especes';
+import { PENSION_ESPECES, cleEspecePension, logementAccepteEspece } from '@/lib/pension-especes';
 
 // Pension — réservation de séjour par le client (demande à accepter).
 // Plusieurs animaux : une demande (pension_demandes) par animal, mêmes dates,
@@ -18,7 +18,7 @@ import { PENSION_ESPECES, pensionGroupe, pensionTarifKeyForEspece } from '@/lib/
 //       venu ; l'essai n'est exigé que pour un nouveau pensionnaire. 409
 //       { complet } si les hébergements n'ont plus assez de places pour le
 //       nombre d'animaux.
-//  POST { action: 'decider', demandeIds | demandeId, accepter, motif?, forcer? }
+//  POST { action: 'decider', demandeIds | demandeId, accepter, motif?, forcer?, logements? }
 //       (pension) → séjours (+ essais) créés dans pension_entrees, ou refus ;
 //       client prévenu une fois. Sans `forcer`, 409 { complet, jours } si un
 //       jour du séjour dépasse la capacité des hébergements (enclos_chenil).
@@ -48,17 +48,10 @@ async function estProprio(uid: string, animalId: string) {
 
 /** Clé d'espèce commune (animal, hébergement, séjour) ; '' = espèce inconnue
  *  (acceptée partout). */
-function cleEsp(e?: string | null) {
-  const s = (e ?? '').trim();
-  if (!s) return '';
-  return pensionTarifKeyForEspece(s) ?? s.toLowerCase();
-}
+const cleEsp = cleEspecePension;
 /** Un hébergement accepte l'espèce : aucune espèce cochée = toutes ; « NAC »
  *  accepte un lapin, « Équidés » un âne (pensionGroupe). */
-function accepte(especesLogement: string[], k: string) {
-  if (!k || !especesLogement.length) return true;
-  return especesLogement.some(x => { const c = cleEsp(x); return c === k || pensionGroupe(c) === pensionGroupe(k); });
-}
+const accepte = (especesLogement: string[], k: string) => logementAccepteEspece(especesLogement, k);
 // Pluriels irréguliers (« chevaux », pas « chevals »).
 const PLURIELS: Record<string, string> = { cheval: 'chevaux', ane: 'ânes', oiseau: 'oiseaux', nac: 'NAC', volaille: 'volailles', lapin: 'lapins', chien: 'chiens', chat: 'chats' };
 function libelleEspeces(cles: string[]) {
@@ -208,6 +201,7 @@ export async function POST(req: NextRequest) {
     dejaVenu?: boolean | null; dejaVenus?: Record<string, boolean> | null; hebergement?: string | null;
     /** Équidés : hébergement souhaité par animal ('box' | 'pre'). */ hebergements?: Record<string, string> | null;
     message?: string; profileId?: string | null; demandeId?: string; demandeIds?: string[]; accepter?: boolean; motif?: string; forcer?: boolean;
+    /** Acceptation : logement attribué à chaque demande ({ demandeId: logementId }). */ logements?: Record<string, string> | null;
   };
   const maintenant = new Date().toISOString();
 
@@ -255,6 +249,42 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: texteComplet(capacite, complets, ouvertes.length), complet: true, capacite, jours: complets }, { status: 409 });
       }
     }
+    // Logements attribués : à la pension, acceptant l'espèce de l'animal, et
+    // (sans `forcer`) avec de la place sur toute la période.
+    const choixLogement = new Map<string, string>();
+    for (const d of ouvertes) { const l = b.logements?.[d.id as string]; if (l) choixLogement.set(d.id as string, String(l)); }
+    if (choixLogement.size) {
+      const { data: lgs } = await admin.from('enclos_chenil').select('id, nom, capacite, especes').eq('uid_eleveur', d0.pro_uid as string).in('id', [...new Set(choixLogement.values())]);
+      const parId = new Map(((lgs ?? []) as { id: string; nom: string; capacite: number | null; especes: string[] | null }[]).map(l => [String(l.id), l]));
+      for (const d of ouvertes) {
+        const lid = choixLogement.get(d.id as string);
+        if (!lid) continue;
+        const l = parId.get(lid);
+        if (!l) return NextResponse.json({ error: 'Logement introuvable.' }, { status: 400 });
+        if (!logementAccepteEspece(l.especes, d.espece)) {
+          return NextResponse.json({ error: `${l.nom} n'accueille pas l'espèce de ${d.animal_nom ?? 'cet animal'}.` }, { status: 400 });
+        }
+      }
+      if (!b.forcer) {
+        const tousJours = [...new Set(ouvertes.flatMap(d => nuitsDuSejour(d.date_arrivee as string, d.date_depart as string)))].sort();
+        const { data: occ } = await admin.from('pension_entrees').select('date_entree, date_sortie_prevue, logement_id')
+          .eq('pro_uid', d0.pro_uid as string).eq('statut', 'en_pension').in('logement_id', [...parId.keys()]).lte('date_entree', tousJours[tousJours.length - 1]);
+        const occupations = (occ ?? []) as { date_entree: string; date_sortie_prevue: string | null; logement_id: string }[];
+        const occupeJour = (e: { date_entree: string; date_sortie_prevue: string | null }, j: string) =>
+          e.date_entree <= j && (!e.date_sortie_prevue || e.date_sortie_prevue > j || (e.date_sortie_prevue === e.date_entree && j === e.date_entree));
+        for (const [lid, l] of parId) {
+          const demandesIci = ouvertes.filter(d => choixLogement.get(d.id as string) === lid);
+          for (const j of tousJours) {
+            const ici = demandesIci.filter(d => nuitsDuSejour(d.date_arrivee as string, d.date_depart as string).includes(j)).length;
+            if (!ici) continue;
+            const deja = occupations.filter(o => String(o.logement_id) === lid && occupeJour(o, j)).length;
+            if (deja + ici > (l.capacite ?? 1)) {
+              return NextResponse.json({ error: `${l.nom} est complet le ${fr(j)} (${l.capacite ?? 1} place${(l.capacite ?? 1) > 1 ? 's' : ''}).`, complet: true }, { status: 409 });
+            }
+          }
+        }
+      }
+    }
     // Verrou : un seul « Accepter » passe (double clic, deux appareils).
     const { data: verrou } = await admin.from('pension_demandes').update({ statut: 'acceptee', decide_le: maintenant })
       .in('id', ouvertes.map(d => d.id as string)).eq('statut', 'demande').select('id');
@@ -271,6 +301,7 @@ export async function POST(req: NextRequest) {
       // Séjour (et essai) dans le registre, avec la fiche et les coordonnées du client.
       const { data: an } = await admin.from('animaux').select('nom, espece, race, identification, photo_url').eq('id', d.animal_id as string).maybeSingle();
       const a = an as { nom?: string | null; espece?: string | null; race?: string | null; identification?: string | null; photo_url?: string | null } | null;
+      const logementId = choixLogement.get(d.id as string) ?? null;
       const base = {
         pro_uid: d.pro_uid, pro_profile_id: d.pro_profile_id, animal_id: d.animal_id,
         animal_nom: a?.nom ?? d.animal_nom ?? 'Animal', espece: a?.espece ?? d.espece, race: a?.race ?? null, puce: a?.identification ?? null,
@@ -279,6 +310,7 @@ export async function POST(req: NextRequest) {
         proprietaire_contact: c?.phone_number ?? null, proprietaire_email: c?.email_contact ?? null,
         proprietaire_adresse: [c?.rue, c?.code_postal, c?.ville].filter(Boolean).join(' ') || null,
         statut: 'en_pension',
+        ...(logementId ? { logement_id: logementId } : {}),
       };
       const { data: ent, error } = await admin.from('pension_entrees').insert({
         ...base, date_entree: d.date_arrivee, date_sortie_prevue: d.date_depart,

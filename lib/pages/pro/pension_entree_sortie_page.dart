@@ -213,7 +213,7 @@ class _PensionEntreeSortiePageState extends State<PensionEntreeSortiePage> {
           (e['proprietaire_nom'] as String?) ?? '—',
           _fmtDate(e['date_entree'] as String?),
           _fmtDate((statut == 'sorti' ? e['date_sortie_effective'] : e['date_sortie_prevue']) as String?),
-          statut == 'sorti' ? 'Sorti' : 'Présent',
+          statut == 'sorti' ? 'Sorti' : (e['arrivee_reelle_le'] != null ? 'Présent' : 'Attendu'),
         ];
       }).toList();
 
@@ -315,7 +315,7 @@ class _PensionEntreeSortiePageState extends State<PensionEntreeSortiePage> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Row(children: [
-                    for (final f in const [['tous', 'Tous'], ['en_pension', 'Présents'], ['sorti', 'Sortis']])
+                    for (final f in const [['tous', 'Tous'], ['en_pension', 'En cours'], ['sorti', 'Sortis']])
                       Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: ChoiceChip(
@@ -374,7 +374,7 @@ class _PensionEntreeSortiePageState extends State<PensionEntreeSortiePage> {
               decoration: BoxDecoration(
                   color: statut == 'sorti' ? Colors.blue.shade50 : Colors.green.shade50,
                   borderRadius: BorderRadius.circular(20)),
-              child: Text(statut == 'sorti' ? 'Sorti' : 'Présent',
+              child: Text(statut == 'sorti' ? 'Sorti' : (e['arrivee_reelle_le'] != null ? 'Présent' : 'Attendu'),
                   style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700,
                       color: statut == 'sorti' ? Colors.blue.shade700 : _green)),
             ),
@@ -472,7 +472,7 @@ class _EntreeSortieCard extends StatelessWidget {
                     decoration: BoxDecoration(
                         color: inPension ? Colors.green.shade50 : Colors.blue.shade50,
                         borderRadius: BorderRadius.circular(20)),
-                    child: Text(inPension ? 'Présent' : 'Sorti',
+                    child: Text(inPension ? (entree['arrivee_reelle_le'] != null ? 'Présent' : 'Attendu') : 'Sorti',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700,
                             color: inPension ? _green : Colors.blue.shade700)),
                   ),
