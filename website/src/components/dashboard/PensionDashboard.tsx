@@ -168,6 +168,7 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
 
             {demandes.length > 0 && (
               <Section titre="Demandes de séjour" icone={<Icone nom="calendrier" taille={18} />} compteur={demandes.length}>
+                <Link href="/pension/sejours" className="block text-xs font-semibold text-[#0C5C6C] mb-1">Gérer toutes les demandes (arrhes, essais) →</Link>
                 <div className="divide-y divide-gray-100">
                   {groupes.map(g => {
                     const d = g[0];
@@ -248,6 +249,7 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <Tuile href="/pension/registre" icone="plus" label="Nouvelle réservation" />
                 <Tuile href="/pension/planning" icone="calendrier" label="Planning des hébergements" />
+                <Tuile href="/pension/sejours" icone="calendrier" label="Demandes de séjour" />
                 <Tuile href="/pension/registre?mouvement=a_enregistrer" icone="calendrier" label="Arrivées à enregistrer" />
                 <Tuile href="/pension/entree-sortie" icone="fleche" label="Entrées / sorties" />
                 <Tuile href="/pension/registre" icone="patte" label="Animaux présents" teinte={VERT} />

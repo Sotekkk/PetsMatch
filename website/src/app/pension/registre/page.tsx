@@ -111,7 +111,7 @@ export default function RegistrePensionPage() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    let qEnt = supabase.from('pension_entrees').select('*').eq('pro_uid', user.uid).order('date_entree', { ascending: false });
+    let qEnt = supabase.from('pension_entrees').select('*').eq('pro_uid', user.uid).neq('statut', 'annule').order('date_entree', { ascending: false });
     if (activeProfileId) qEnt = qEnt.eq('pro_profile_id', activeProfileId) as typeof qEnt;
 
     let proProfileId = activeProfileId || null;

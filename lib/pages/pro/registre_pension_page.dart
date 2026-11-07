@@ -84,7 +84,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
     setState(() => _loading = true);
     try {
       final pid = User_Info.activeProfileId;
-      var qEntrees = _supa.from('pension_entrees').select().eq('pro_uid', _uid);
+      var qEntrees = _supa.from('pension_entrees').select().eq('pro_uid', _uid).neq('statut', 'annule');
       qEntrees = qEntrees.eq('pro_profile_id', pid);
       var qAcces = _supa.from('animal_access').select('animal_id').eq('pro_profile_id', pid).eq('statut', 'active');
       // Factures pension : anciennes (table dédiée, envoyées avant la

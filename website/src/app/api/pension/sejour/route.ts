@@ -23,6 +23,8 @@ import { creneauxLibres, dureePassage, heureValide, lireHoraires, type HorairesP
 //       (pension) → séjours (+ essais) créés dans pension_entrees, ou refus ;
 //       client prévenu une fois. Sans `forcer`, 409 { complet, jours } si un
 //       jour du séjour dépasse la capacité des hébergements (enclos_chenil).
+//  POST { action: 'essai', demandeIds, concluant, motif? } (pension) → résultat
+//       de l'essai ; non concluant = séjour annulé (place libérée), client prévenu.
 //  POST { action: 'annuler', demandeId } (client) → demande annulée.
 const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY ?? '', { auth: { persistSession: false } });
 const JOUR = /^\d{4}-\d{2}-\d{2}$/;
@@ -279,6 +281,7 @@ export async function POST(req: NextRequest) {
     message?: string; profileId?: string | null; demandeId?: string; demandeIds?: string[]; accepter?: boolean; motif?: string; forcer?: boolean;
     /** Acceptation : logement attribué à chaque demande ({ demandeId: logementId }). */ logements?: Record<string, string> | null;
     /** Demande : heures choisies par le client ('HH:MM'). */ heureArrivee?: string | null; heureDepart?: string | null; heureEssai?: string | null;
+    /** Essai : résultat donné par la pension. */ concluant?: boolean;
     /** Acceptation : heures et durées prévues, ajustées par la pension. */
     heures?: { arrivee?: string | null; depart?: string | null; dureeArrivee?: number | null; dureeDepart?: number | null } | null;
   };
@@ -432,6 +435,39 @@ export async function POST(req: NextRequest) {
     await notifClient('pension_sejour_accepte', 'Séjour confirmé',
       `${liste(n)} ${n.length > 1 ? 'sont attendus' : 'est attendu'} du ${fr(acceptes[0].date_arrivee as string)} au ${fr(acceptes[0].date_depart as string)}.${essais.length ? ` Essai le ${essais.map(fr).join(', ')}.` : ''}`);
     return NextResponse.json({ ok: true, acceptees: acceptes.length, ...(erreur ? { erreur } : {}) });
+  }
+
+  // ── Essai validé par la pension (concluant / non concluant) ──
+  // Non concluant : le séjour réservé est annulé (place libérée), demande
+  // « annulee », client prévenu. Concluant : client prévenu, séjour maintenu.
+  if (b.action === 'essai') {
+    const ids = [...new Set([...(Array.isArray(b.demandeIds) ? b.demandeIds : []), ...(b.demandeId ? [b.demandeId] : [])].map(String))].slice(0, 20);
+    const { data } = await admin.from('pension_demandes').select('*').in('id', ids);
+    const ds = (data ?? []) as Demande[];
+    if (!ds.length) return NextResponse.json({ error: 'Demande introuvable' }, { status: 404 });
+    const d0 = ds[0];
+    if (!(await estGestionnaire(d0.pro_uid as string, auth.uid))) return NextResponse.json({ error: 'Réservé à la pension' }, { status: 403 });
+    const concluant = b.concluant === true;
+    const motif = (b.motif ?? '').trim().slice(0, 500) || null;
+    const { error: errR } = await admin.from('pension_demandes').update({ essai_resultat: concluant ? 'concluant' : 'non_concluant', essai_valide_le: maintenant })
+      .in('id', ds.map(d => d.id as string));
+    if (errR) return NextResponse.json({ error: "Résultat de l'essai non enregistré (migration_pension_essai_resultat.sql à passer)." }, { status: 500 });
+    const noms = liste(ds.map(d => d.animal_nom ?? 'Animal'));
+    if (!concluant) {
+      const sejours = ds.map(d => d.entree_id).filter(Boolean) as string[];
+      if (sejours.length) await admin.from('pension_entrees').update({ statut: 'annule' }).in('id', sejours).is('arrivee_reelle_le', null);
+      await admin.from('pension_demandes').update({ statut: 'annulee', motif_refus: motif ?? 'Essai non concluant', decide_le: maintenant }).in('id', ds.map(d => d.id as string));
+    }
+    await admin.from('notifications').insert({
+      uid: d0.client_uid, ...(d0.client_profile_id ? { profile_id: d0.client_profile_id } : {}),
+      type: concluant ? 'pension_sejour_accepte' : 'pension_sejour_refuse',
+      title: concluant ? 'Essai concluant' : "Séjour annulé après l'essai",
+      body: concluant
+        ? `L'essai de ${noms} s'est bien passé : le séjour du ${fr(d0.date_arrivee as string)} au ${fr(d0.date_depart as string)} est confirmé.`
+        : `Après l'essai, la pension ne peut pas accueillir ${noms} pour le séjour du ${fr(d0.date_arrivee as string)} au ${fr(d0.date_depart as string)}.${motif ? ` ${motif}` : ''}`,
+      data: { demande_id: d0.id, demande_ids: ds.map(d => d.id) }, read: false,
+    });
+    return NextResponse.json({ ok: true });
   }
 
   // ── Annulation par le client ──
