@@ -10,6 +10,7 @@ import { PensionJournal } from '@/components/PensionJournal';
 import ArriveeDepartModal from '@/components/pension/ArriveeDepartModal';
 import { PensionFacturationModal } from '@/components/PensionFacturationModal';
 import { sejoursFactures } from '@/lib/pension-facture-groupee';
+import { logementAccepteEspece } from '@/lib/pension-especes';
 import { thumbUrl } from '@/lib/upload-media';
 import { apiFetch } from '@/lib/api-fetch';
 
@@ -82,14 +83,17 @@ export default function RegistrePensionPage() {
   const [facturesSejours, setFacturesSejours] = useState<Set<string>>(new Set());
   // Mouvements d'un jour (cartes « Arrivées / Départs aujourd'hui » de
   // l'accueil, ?mouvement=arrivees|departs) : '' = tous les séjours.
-  const [mouvement, setMouvement] = useState<'' | 'presents' | 'arrivees' | 'departs'>('');
+  const [mouvement, setMouvement] = useState<'' | 'presents' | 'arrivees' | 'departs' | 'a_enregistrer'>('');
+  // Planning : logements (espèces, pour changer le logement attribué) et état du contrat par séjour.
+  const [logementsListe, setLogementsListe] = useState<{ id: string; nom: string; especes: string[] | null }[]>([]);
+  const [contrats, setContrats] = useState<Record<string, string>>({});
   const [jourMvt, setJourMvt] = useState('');
   useEffect(() => {
     const m = new URLSearchParams(window.location.search).get('mouvement');
     const d = new Date();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setJourMvt(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
-    if (m === 'presents' || m === 'arrivees' || m === 'departs') { setMouvement(m); setTab('tous'); }
+    if (m === 'presents' || m === 'arrivees' || m === 'departs' || m === 'a_enregistrer') { setMouvement(m); setTab('tous'); }
   }, []);
 
 
@@ -122,9 +126,17 @@ export default function RegistrePensionPage() {
         ? supabase.from('animal_access').select('animal_id').eq('pro_profile_id', proProfileId).eq('statut', 'active')
         : Promise.resolve({ data: [] as { animal_id: string }[] }),
       qFact,
-      supabase.from('enclos_chenil').select('id, nom').eq('uid_eleveur', user.uid),
+      supabase.from('enclos_chenil').select('id, nom, especes').eq('uid_eleveur', user.uid),
     ]);
     setEntrees((ent ?? []) as PensionEntree[]);
+    setLogementsListe((enclos ?? []) as { id: string; nom: string; especes: string[] | null }[]);
+    // État du contrat d'hébergement des séjours en cours.
+    const enCours = ((ent ?? []) as PensionEntree[]).filter(e => e.statut === 'en_pension').map(e => e.id).slice(0, 300);
+    if (enCours.length) {
+      const { data: docs } = await supabase.from('documents_animaux').select('pension_entree_id, statut')
+        .eq('type', 'contrat_hebergement').in('pension_entree_id', enCours);
+      setContrats(Object.fromEntries(((docs ?? []) as { pension_entree_id: string; statut: string | null }[]).map(d => [d.pension_entree_id, d.statut ?? 'brouillon'])));
+    } else setContrats({});
     setFactures((fact ?? []) as PensionFacture[]);
     if (proProfileId) sejoursFactures(supabase, proProfileId).then(setFacturesSejours).catch(() => {});
     setLogementNoms(Object.fromEntries(
@@ -234,6 +246,20 @@ export default function RegistrePensionPage() {
   if (mouvement === 'presents' && jourMvt) filtered = filtered.filter(e => e.statut === 'en_pension' && (e.date_entree ?? '').slice(0, 10) <= jourMvt && !!(e as { arrivee_reelle_le?: string | null }).arrivee_reelle_le);
   if (mouvement === 'arrivees' && jourMvt) filtered = filtered.filter(e => (e.date_entree ?? '').startsWith(jourMvt));
   if (mouvement === 'departs' && jourMvt) filtered = filtered.filter(e => (e.date_sortie_prevue ?? '').startsWith(jourMvt) || (e.date_sortie_effective ?? '').startsWith(jourMvt));
+  // À enregistrer : arrivées pas encore faites (retards compris) jusqu'à 14 jours.
+  if (mouvement === 'a_enregistrer' && jourMvt) {
+    const d = new Date(`${jourMvt}T12:00:00`); d.setDate(d.getDate() + 14);
+    const limite = d.toISOString().slice(0, 10);
+    filtered = filtered.filter(e => e.statut === 'en_pension' && !(e as Planning).arrivee_reelle_le && (e.date_entree ?? '').slice(0, 10) <= limite);
+  }
+  // Planning : par jour puis par heure prévue.
+  if (mouvement === 'arrivees' || mouvement === 'a_enregistrer') {
+    filtered = [...filtered].sort((a, b) => `${(a.date_entree ?? '').slice(0, 10)} ${(a as Planning).heure_arrivee_prevue ?? '99'}`
+      .localeCompare(`${(b.date_entree ?? '').slice(0, 10)} ${(b as Planning).heure_arrivee_prevue ?? '99'}`));
+  }
+  if (mouvement === 'departs') {
+    filtered = [...filtered].sort((a, b) => ((a as Planning).heure_depart_prevue ?? '99').localeCompare((b as Planning).heure_depart_prevue ?? '99'));
+  }
 
   const counts = {
     en_pension: entrees.filter(e => e.statut === 'en_pension').length,
@@ -310,7 +336,7 @@ export default function RegistrePensionPage() {
       {/* Contenu */}
       <div style={{ maxWidth: 900, margin: '24px auto', padding: '0 16px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 16, fontFamily: 'Galey, sans-serif' }}>
-          {([['', 'Tous les séjours'], ['presents', 'Présents'], ['arrivees', 'Arrivées'], ['departs', 'Départs']] as const).map(([v, lib]) => (
+          {([['', 'Tous les séjours'], ['a_enregistrer', 'Arrivées à enregistrer'], ['presents', 'Présents'], ['arrivees', 'Arrivées'], ['departs', 'Départs']] as const).map(([v, lib]) => (
             <button key={v} onClick={() => { setMouvement(v); if (v) setTab('tous'); }}
               style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
                 border: `1px solid ${mouvement === v ? TEAL : '#D1D5DB'}`,
@@ -376,6 +402,13 @@ export default function RegistrePensionPage() {
                   proNom={userData?.nameElevage || userData?.firstname || 'Votre pension'}
                   isFacture={entreesFacturees.has(e.id)}
                   logementNom={e.logement_id ? logementNoms[e.logement_id] : undefined}
+                  logements={logementsListe}
+                  contratStatut={contrats[e.id] ?? null}
+                  onLogement={async lid => {
+                    const { error } = await supabase.from('pension_entrees').update({ logement_id: lid || null }).eq('id', e.id);
+                    if (error) { window.alert(`Logement non enregistré : ${error.message}`); return; }
+                    load();
+                  }}
                   onEdit={() => setEditEntree(e)}
                   onArrivee={e.statut === 'en_pension' && !(e as { arrivee_reelle_le?: string | null }).arrivee_reelle_le
                     ? () => setArriveeDepart({ entree: e, mode: 'arrivee' }) : undefined}
@@ -526,8 +559,19 @@ export default function RegistrePensionPage() {
 
 // ── Carte entrée ──────────────────────────────────────────────────────────────
 
-function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, logementNom, onEdit, onArrivee, onSorti, onJournal, onFacturer, onContrat }: {
+/** Champs du planning des arrivées / départs (migration_pension_horaires.sql). */
+type Planning = { arrivee_reelle_le?: string | null; heure_arrivee_prevue?: string | null; heure_depart_prevue?: string | null;
+  duree_arrivee_min?: number | null; duree_depart_min?: number | null; notes?: string | null };
+const LIBELLE_CONTRAT: Record<string, [string, string]> = {
+  brouillon: ['Contrat en brouillon', '#B45309'], en_attente: ['Contrat envoyé, à signer', '#B45309'],
+  partiellement_signe: ['Contrat signé en partie', '#B45309'], signe: ['Contrat signé', '#2E7D5E'],
+};
+
+function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, logementNom, logements, contratStatut, onLogement, onEdit, onArrivee, onSorti, onJournal, onFacturer, onContrat }: {
   onArrivee?: () => void;
+  logements: { id: string; nom: string; especes: string[] | null }[];
+  contratStatut: string | null;
+  onLogement: (logementId: string) => void;
   entree: PensionEntree;
   animalId?: string;
   photoUrl?: string;
@@ -676,8 +720,36 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, log
             )}
           </div>
 
+          {/* Planning : heures prévues, hébergement souhaité, contrat, logement */}
+          {inPension && (() => {
+            const pl = entree as PensionEntree & Planning;
+            const souhait = /Hébergement souhaité : (box|pré)/.exec(pl.notes ?? '')?.[1];
+            const [libContrat, coulContrat] = contratStatut ? (LIBELLE_CONTRAT[contratStatut] ?? ['Contrat', '#6b7280']) : ['Contrat à faire', '#B3261E'];
+            const proposes = logements.filter(l => logementAccepteEspece(l.especes, entree.espece) || l.id === entree.logement_id);
+            return (
+              <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 12px', fontFamily: 'Galey, sans-serif', fontSize: 12 }}
+                onClick={e => e.stopPropagation()}>
+                {pl.heure_arrivee_prevue && !pl.arrivee_reelle_le && (
+                  <span style={{ fontWeight: 700, color: TEAL }}>Arrivée prévue {pl.heure_arrivee_prevue.replace(':', 'h')}{pl.duree_arrivee_min ? ` (${pl.duree_arrivee_min} min)` : ''}</span>
+                )}
+                {pl.heure_depart_prevue && (
+                  <span style={{ fontWeight: 700, color: TEAL }}>Départ prévu {pl.heure_depart_prevue.replace(':', 'h')}{pl.duree_depart_min ? ` (${pl.duree_depart_min} min)` : ''}</span>
+                )}
+                {souhait && <span style={{ color: '#374151' }}>{souhait === 'pré' ? 'Pré' : 'Box'} souhaité</span>}
+                <span style={{ fontWeight: 700, color: coulContrat }}>{libContrat}</span>
+                {proposes.length > 0 && (
+                  <select value={entree.logement_id ?? ''} onChange={e => onLogement(e.target.value)}
+                    style={{ padding: '3px 8px', borderRadius: 8, border: '1px solid #D1D5DB', fontSize: 12, background: 'white' }}>
+                    <option value="">Logement à attribuer</option>
+                    {proposes.map(l => <option key={l.id} value={l.id}>{l.nom}</option>)}
+                  </select>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Logement affecté */}
-          {logementNom && (
+          {logementNom && !inPension && (
             <div style={{ marginTop: 6 }}>
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,

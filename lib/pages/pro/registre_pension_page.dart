@@ -2,6 +2,7 @@ import 'package:PetsMatch/utils/animal_proprietaire.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show logementAccepteEspece;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -50,6 +51,10 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
   Map<String, String> _puceToAnimalId      = {}; // puce normalisée → animal_id
   Map<String, String> _puceToPhotoUrl      = {}; // puce normalisée → photo_url
   Map<String, String> _logementNoms        = {}; // logement_id → nom
+  // Planning : logements (espèces, pour changer le logement attribué) et
+  // état du contrat d'hébergement par séjour.
+  List<Map<String, dynamic>> _logementsListe = [];
+  Map<String, String> _contrats = {};
   bool _loading                            = true;
   String? _filterEspece;
   String? _filterStatut;
@@ -88,7 +93,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
         qEntrees.order('date_entree', ascending: false),
         qAcces,
         qFacturesLegacy,
-        _supa.from('enclos_chenil').select('id, nom').eq('uid_eleveur', _uid),
+        _supa.from('enclos_chenil').select('id, nom, especes').eq('uid_eleveur', _uid),
         qFacturesNew,
       ]);
 
@@ -147,8 +152,23 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
         }
       }
 
+      // État du contrat d'hébergement des séjours en cours.
+      final contrats = <String, String>{};
+      final enCours = [for (final e in entrees) if (e['statut'] == 'en_pension') e['id'].toString()].take(300).toList();
+      if (enCours.isNotEmpty) {
+        try {
+          final docs = await _supa.from('documents_animaux').select('pension_entree_id, statut')
+              .eq('type', 'contrat_hebergement').inFilter('pension_entree_id', enCours);
+          for (final d in docs as List) {
+            contrats[d['pension_entree_id'].toString()] = (d['statut'] ?? 'brouillon').toString();
+          }
+        } catch (_) {}
+      }
+
       if (!mounted) return;
       setState(() {
+        _logementsListe   = List<Map<String, dynamic>>.from(results[3] as List);
+        _contrats         = contrats;
         _entrees          = entrees;
         _entreesFacturees = entreesFacturees;
         _debiteurs        = debiteurs;
@@ -184,6 +204,22 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
     } else if (_mouvement == 'departs') {
       list = list.where((d) => (d['date_sortie_prevue']?.toString() ?? '').startsWith(_jourIso)
           || (d['date_sortie_effective']?.toString() ?? '').startsWith(_jourIso)).toList();
+    } else if (_mouvement == 'a_enregistrer') {
+      // Arrivées pas encore faites (retards compris) jusqu'à 14 jours.
+      final limite = DateFormat('yyyy-MM-dd').format(DateTime.now().add(const Duration(days: 14)));
+      list = list.where((d) {
+        final e = d['date_entree']?.toString() ?? '';
+        return d['statut'] == 'en_pension' && d['arrivee_reelle_le'] == null && e.isNotEmpty
+            && e.substring(0, e.length < 10 ? e.length : 10).compareTo(limite) <= 0;
+      }).toList();
+    }
+    // Planning : par jour puis par heure prévue.
+    String jour(Object? v) { final t = v?.toString() ?? ''; return t.length >= 10 ? t.substring(0, 10) : t; }
+    if (_mouvement == 'arrivees' || _mouvement == 'a_enregistrer') {
+      list = [...list]..sort((a, b) => '${jour(a['date_entree'])} ${a['heure_arrivee_prevue'] ?? '99'}'
+          .compareTo('${jour(b['date_entree'])} ${b['heure_arrivee_prevue'] ?? '99'}'));
+    } else if (_mouvement == 'departs') {
+      list = [...list]..sort((a, b) => (a['heure_depart_prevue']?.toString() ?? '99').compareTo(b['heure_depart_prevue']?.toString() ?? '99'));
     }
     if (_filterEspece != null) list = list.where((d) => d['espece'] == _filterEspece).toList();
     if (_filterStatut != null) list = list.where((d) => d['statut'] == _filterStatut).toList();
@@ -1008,6 +1044,8 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                         onFacture: () => _genererFacture(e),
                         factureFaite: _entreesFacturees.contains(e['id'].toString()),
                         logementNom: _logementNoms[e['logement_id']?.toString()],
+                        contratStatut: _contrats[e['id'].toString()],
+                        onLogement: e['statut'] == 'en_pension' ? () => _changerLogement(e) : null,
                       );
                     },
                   ),
@@ -1025,6 +1063,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
         _filterChip('Tous les séjours', null, _mouvement, (v) => setState(() => _mouvement = v)),
+        _filterChip('Arrivées à enregistrer', 'a_enregistrer', _mouvement, (v) => setState(() => _mouvement = v)),
         _filterChip('Présents', 'presents', _mouvement, (v) => setState(() => _mouvement = v)),
         _filterChip('Arrivées', 'arrivees', _mouvement, (v) => setState(() => _mouvement = v)),
         _filterChip('Départs', 'departs', _mouvement, (v) => setState(() => _mouvement = v)),
@@ -1203,6 +1242,41 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
     ]),
   );
 
+  /// Logement du séjour : seuls ceux qui acceptent l'espèce de l'animal.
+  Future<void> _changerLogement(Map<String, dynamic> e) async {
+    final proposes = [for (final l in _logementsListe)
+      if (logementAccepteEspece(l['especes'] as List?, e['espece']?.toString()) || l['id'].toString() == e['logement_id']?.toString()) l];
+    if (proposes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Aucun logement n'accepte cette espèce : cochez-la dans Chenil / logements.")));
+      return;
+    }
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: ListView(shrinkWrap: true, children: [
+        Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Text('Logement de ${e['animal_nom'] ?? "l'animal"}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+        for (final l in proposes)
+          ListTile(
+            title: Text(l['nom']?.toString() ?? 'Logement', style: const TextStyle(fontFamily: 'Galey')),
+            trailing: l['id'].toString() == e['logement_id']?.toString() ? const Icon(Icons.check, color: _teal) : null,
+            onTap: () => Navigator.pop(ctx, l['id'].toString()),
+          ),
+        ListTile(
+          title: const Text('Sans logement attribué', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+          onTap: () => Navigator.pop(ctx, ''),
+        ),
+      ])),
+    );
+    if (choix == null) return;
+    try {
+      await _supa.from('pension_entrees').update({'logement_id': choix.isEmpty ? null : choix}).eq('id', e['id'].toString());
+      await _load();
+    } catch (err) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Logement non enregistré : $err')));
+    }
+  }
+
   Future<void> _genererFacture(Map<String, dynamic> entree) async {
     await showModalBottomSheet(
       context: context,
@@ -1269,6 +1343,10 @@ class _PensionCard extends StatelessWidget {
   final VoidCallback? onEnvoyerLien;
   final VoidCallback? onJournal;
   final String? logementNom;
+  /// État du contrat d'hébergement (null = pas encore fait).
+  final String? contratStatut;
+  /// Changer le logement attribué (logements de l'espèce).
+  final VoidCallback? onLogement;
 
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
@@ -1290,6 +1368,8 @@ class _PensionCard extends StatelessWidget {
     this.onEnvoyerLien,
     this.onJournal,
     this.logementNom,
+    this.contratStatut,
+    this.onLogement,
   });
 
   bool get _hasActions =>
@@ -1492,6 +1572,34 @@ class _PensionCard extends StatelessWidget {
                         fmtIso(entree['date_sortie_effective'] as String?)),
                   ],
                 ]),
+                // Planning : heures prévues, hébergement souhaité, contrat, logement.
+                if (inPension) ...[
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 10, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                    if (entree['heure_arrivee_prevue'] != null && entree['arrivee_reelle_le'] == null)
+                      Text('Arrivée prévue ${entree['heure_arrivee_prevue'].toString().replaceAll(':', 'h')}'
+                          '${entree['duree_arrivee_min'] != null ? ' (${entree['duree_arrivee_min']} min)' : ''}',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700, color: _teal)),
+                    if (entree['heure_depart_prevue'] != null)
+                      Text('Départ prévu ${entree['heure_depart_prevue'].toString().replaceAll(':', 'h')}'
+                          '${entree['duree_depart_min'] != null ? ' (${entree['duree_depart_min']} min)' : ''}',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700, color: _teal)),
+                    if (RegExp(r'Hébergement souhaité : (box|pré)').firstMatch(entree['notes']?.toString() ?? '') case final m?)
+                      Text('${m.group(1) == 'pré' ? 'Pré' : 'Box'} souhaité',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF374151))),
+                    Text(switch (contratStatut) {
+                          null => 'Contrat à faire', 'signe' => 'Contrat signé', 'en_attente' => 'Contrat envoyé, à signer',
+                          'partiellement_signe' => 'Contrat signé en partie', _ => 'Contrat en brouillon' },
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700,
+                            color: contratStatut == 'signe' ? _green : contratStatut == null ? const Color(0xFFB3261E) : const Color(0xFFB45309))),
+                    if (onLogement != null)
+                      InkWell(
+                        onTap: onLogement,
+                        child: Text((logementNom ?? '').isEmpty ? 'Attribuer un logement' : 'Changer de logement',
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700, color: _teal, decoration: TextDecoration.underline)),
+                      ),
+                  ]),
+                ],
                 if ((logementNom ?? '').isNotEmpty) ...[
                   const SizedBox(height: 5),
                   Container(

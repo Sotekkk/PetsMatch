@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/pension_horaires.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
@@ -212,6 +213,8 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
   bool _afficherPublic = false;
   // Essai obligatoire avant le premier séjour (réservation en ligne).
   bool _essaiRequis = false;
+  // Horaires d'arrivée / de départ (null = pas d'horaires).
+  Map<String, dynamic>? _horaires;
   final _essaiInfo = TextEditingController();
   bool _showAutresEspeces = false;
   // Règlement du séjour (repris dans le contrat) : arrhes à la réservation
@@ -247,6 +250,11 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
           final e = await _supa.from('user_profiles').select('pension_essai_requis, pension_essai_info').eq('id', pid).maybeSingle();
           _essaiRequis = e?['pension_essai_requis'] == true;
           _essaiInfo.text = e?['pension_essai_info']?.toString() ?? '';
+        } catch (_) {}
+        // Colonne absente tant que migration_pension_horaires.sql n'est pas passée.
+        try {
+          final h = await _supa.from('user_profiles').select('pension_horaires').eq('id', pid).maybeSingle();
+          _horaires = lireHorairesPension(h?['pension_horaires']);
         } catch (_) {}
         final data = row?['tarifs_pension'];
         if (data is Map) tarifs = Map<String, dynamic>.from(data);
@@ -388,6 +396,13 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
           'pension_essai_info': _essaiInfo.text.trim().isEmpty ? null : _essaiInfo.text.trim(),
         }).eq('id', pid);
       } catch (_) {}
+      try {
+        await _supa.from('user_profiles').update({'pension_horaires': _horaires}).eq('id', pid);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Horaires non enregistrés : $e')));
+        }
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -464,6 +479,8 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
                       ),
                   ]),
                 ),
+                const SizedBox(height: 12),
+                HorairesPensionForm(valeur: _horaires, onChange: (h) => setState(() => _horaires = h), couleur: _green),
                 const SizedBox(height: 20),
                 const Text('Prix par espèce',
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),

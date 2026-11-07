@@ -25,6 +25,27 @@ function especeAcceptee(acceptees: string[] | undefined, espece: string | null) 
   return acceptees.some(x => { const c = cle(x); return c === k || pensionGroupe(c) === pensionGroupe(k); });
 }
 
+/** Heures proposées (créneaux libres) sous forme de pastilles. */
+function ChoixHeure({ titre, heures, valeur, onChange, couleur, duree }: { titre: string; heures: string[]; valeur: string; onChange: (h: string) => void; couleur: string; duree?: number }) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gray-600 mb-1">{titre}{duree ? ` · environ ${duree} min` : ''}</label>
+      {heures.length === 0 ? (
+        <p className="text-xs font-semibold text-[#B3261E]">Plus d&apos;heure libre ce jour-là : choisissez une autre date.</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {heures.map(h => (
+            <button key={h} type="button" onClick={() => onChange(h)} className="px-2.5 py-1 rounded-full text-xs border"
+              style={valeur === h ? { background: couleur, color: '#fff', borderColor: couleur } : { borderColor: '#E5E7EB', color: '#1F2A2E' }}>
+              {h.replace(':', 'h')}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ReservationSejourModal({ pensionProfileId, pensionNom, couleur, onClose, onVisite }: {
   pensionProfileId: string; pensionNom: string; couleur: string; onClose: () => void; onVisite?: () => void;
 }) {
@@ -43,6 +64,10 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
   const [dejaVenus, setDejaVenus] = useState<Record<string, boolean>>({});
   // Places libres aux dates choisies pour le nombre d'animaux (message si complet).
   const [complet, setComplet] = useState<string | null>(null);
+  // Horaires de la pension : heures libres d'arrivée / de départ, et l'heure choisie.
+  const [creneaux, setCreneaux] = useState<{ arrivee: string[]; depart: string[]; duree_arrivee: number; duree_depart: number } | null>(null);
+  const [heureArrivee, setHeureArrivee] = useState('');
+  const [heureDepart, setHeureDepart] = useState('');
   // Équidés : hébergement souhaité.
   // Équidés : hébergement souhaité pour chaque animal (box / pré).
   const [hebergements, setHebergements] = useState<Record<string, 'box' | 'pre'>>({});
@@ -74,11 +99,13 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
   }, [user, pid, rechargement]);
 
   const datesOk = !!arrivee && !!depart && depart >= arrivee;
+  // Premier séjour d'au moins un animal : arrivée plus longue (horaires de la pension).
+  const nouveauSejour = Object.entries(dejaVenus).some(([id, v]) => v === false && animalIds.includes(id));
   useEffect(() => {
     if (!user) return;
     const qs = new URLSearchParams({ pensionProfileId });
     if (animalIds.length) qs.set('animalIds', animalIds.join(','));
-    if (datesOk) { qs.set('arrivee', arrivee); qs.set('depart', depart); qs.set('nb', String(Math.max(1, animalIds.length))); }
+    if (datesOk) { qs.set('arrivee', arrivee); qs.set('depart', depart); qs.set('nb', String(Math.max(1, animalIds.length))); if (nouveauSejour) qs.set('nouveau', '1'); }
     apiFetch(`/api/pension/sejour?${qs.toString()}`, { cache: 'no-store' })
       .then(r => (r.ok ? r.json() : null))
       .then(j => {
@@ -86,9 +113,10 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
         setInfos(j.pension as InfosPension);
         setPremiers((j.premiers ?? {}) as Record<string, boolean>);
         setComplet((j.dispo?.message as string | null | undefined) ?? null);
+        setCreneaux((j.creneaux ?? null) as typeof creneaux);
       })
       .catch(() => {});
-  }, [user, pensionProfileId, animalIds, arrivee, depart, datesOk]);
+  }, [user, pensionProfileId, animalIds, arrivee, depart, datesOk, nouveauSejour]);
 
   // Seuls les animaux d'une espèce acceptée par la pension sont proposés.
   const proposes = animaux.filter(a => especeAcceptee(infos?.especes, a.espece));
@@ -121,6 +149,9 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
     if (jours(aujourdhui, arrivee) > 365) { setErreur('La date d\'arrivée est à plus d\'un an : vérifiez l\'année.'); return; }
     if (jours(arrivee, depart) > 180) { setErreur('Séjour de plus de 6 mois : vérifiez les dates ou contactez directement la pension.'); return; }
     if (complet) { setErreur(complet); return; }
+    if (creneaux && (!creneaux.arrivee.includes(heureArrivee) || !creneaux.depart.includes(heureDepart))) {
+      setErreur('Choisissez votre heure d\'arrivée et votre heure de départ.'); return;
+    }
     const sansReponse = aQuestionner.find(a => typeof dejaVenus[a.id] !== 'boolean');
     if (sansReponse) { setErreur(`Indiquez si ${sansReponse.nom ?? 'votre animal'} est déjà venu dans cette pension.`); return; }
     if (essaiRequis && (!essai || essai >= arrivee)) { setErreur('Choisissez une date d\'essai avant l\'arrivée.'); return; }
@@ -131,6 +162,7 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
         ...(aQuestionner.length ? { dejaVenus: Object.fromEntries(aQuestionner.map(a => [a.id, dejaVenus[a.id]])) } : {}),
         ...(equins.some(a => hebergements[a.id]) ? { hebergements: Object.fromEntries(equins.filter(a => hebergements[a.id]).map(a => [a.id, hebergements[a.id]])) } : {}),
         ...(essaiRequis ? { essaiDate: essai } : {}),
+        ...(creneaux ? { heureArrivee, heureDepart } : {}),
         message, ...(pid ? { profileId: pid } : {}) }),
     });
     const j = await r.json().catch(() => ({})) as { error?: string };
@@ -222,6 +254,12 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
                 <input type="date" min={arrivee || aujourdhui} value={depart} onChange={e => setDepart(e.target.value)} className={champ} /></div>
             </div>
             {nuits > 0 && <p className="text-xs text-gray-500">{nuits} nuit{nuits > 1 ? 's' : ''}{estimation ? ` · estimation : ${estimation}` : ''}</p>}
+            {creneaux && !complet && (
+              <div className="space-y-2">
+                <ChoixHeure titre="Heure d'arrivée" heures={creneaux.arrivee} valeur={heureArrivee} onChange={setHeureArrivee} couleur={couleur} duree={creneaux.duree_arrivee} />
+                <ChoixHeure titre="Heure de départ" heures={creneaux.depart} valeur={heureDepart} onChange={setHeureDepart} couleur={couleur} duree={creneaux.duree_depart} />
+              </div>
+            )}
             {complet && <p className="text-sm font-semibold text-[#B3261E]">{complet} Choisissez d&apos;autres dates{choisis.length > 1 ? ' ou moins d\'animaux' : ''}.</p>}
             {essaiRequis && (
               <div>

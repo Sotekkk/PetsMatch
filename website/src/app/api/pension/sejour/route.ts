@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireUser } from '@/lib/server-auth';
 import { PENSION_ESPECES, cleEspecePension, logementAccepteEspece } from '@/lib/pension-especes';
+import { creneauxLibres, dureePassage, heureValide, lireHoraires, type HorairesPension, type Passage } from '@/lib/pension-horaires';
 
 // Pension — réservation de séjour par le client (demande à accepter).
 // Plusieurs animaux : une demande (pension_demandes) par animal, mêmes dates,
@@ -32,6 +33,65 @@ async function pension(pid: string) {
   const { data } = await admin.from('user_profiles').select('id, uid, nom, profile_type, pension_essai_requis, pension_essai_info, tarifs_pension, especes_acceptees').eq('id', pid).maybeSingle();
   const p = data as { id: string; uid: string; nom: string | null; profile_type: string | null; pension_essai_requis?: boolean; pension_essai_info?: string | null; tarifs_pension?: Record<string, unknown> | null; especes_acceptees?: string[] | null } | null;
   return p && p.profile_type === 'pension' ? p : null;
+}
+
+/** Horaires d'arrivée / départ de la pension (null = pas d'horaires ; colonne
+ *  absente tant que migration_pension_horaires.sql n'est pas passée). */
+async function horairesDe(pid: string): Promise<HorairesPension | null> {
+  const { data, error } = await admin.from('user_profiles').select('pension_horaires').eq('id', pid).maybeSingle();
+  if (error) return null;
+  return lireHoraires((data as { pension_horaires?: unknown } | null)?.pension_horaires);
+}
+
+/** Arrivées et départs déjà prévus un jour donné (séjours acceptés + demandes
+ *  en attente), un client compté une fois par heure. `sauf` : demandes à
+ *  ignorer (celles qu'on est en train de décider). */
+async function passagesDuJour(proUid: string, proProfileId: string, jour: string, h: HorairesPension, sauf: string[] = []) {
+  const arrivees: Passage[] = [], departs: Passage[] = [];
+  const { data: en, error } = await admin.from('pension_entrees')
+    .select('id, date_entree, date_sortie_prevue, heure_arrivee_prevue, heure_depart_prevue, duree_arrivee_min, duree_depart_min, proprietaire_email, proprietaire_nom, pro_profile_id, arrivee_reelle_le')
+    .eq('pro_uid', proUid).eq('statut', 'en_pension').or(`date_entree.eq.${jour},date_sortie_prevue.eq.${jour}`);
+  if (error) return { arrivees, departs };
+  for (const e of (en ?? []) as Record<string, string | number | null>[]) {
+    if (e.pro_profile_id && e.pro_profile_id !== proProfileId) continue;
+    const client = String(e.proprietaire_email || e.proprietaire_nom || e.id);
+    if (e.date_entree === jour && heureValide(e.heure_arrivee_prevue as string) && !e.arrivee_reelle_le) {
+      arrivees.push({ heure: e.heure_arrivee_prevue as string, duree: Number(e.duree_arrivee_min) || h.duree_arrivee_habitue, client });
+    }
+    if (e.date_sortie_prevue === jour && heureValide(e.heure_depart_prevue as string)) {
+      departs.push({ heure: e.heure_depart_prevue as string, duree: Number(e.duree_depart_min) || h.duree_depart, client });
+    }
+  }
+  const { data: dm } = await admin.from('pension_demandes')
+    .select('id, client_uid, date_arrivee, date_depart, heure_arrivee, heure_depart, nouveau_pensionnaire')
+    .eq('pro_profile_id', proProfileId).eq('statut', 'demande').or(`date_arrivee.eq.${jour},date_depart.eq.${jour}`);
+  const groupes = new Map<string, { type: 'arrivee' | 'depart'; heure: string; client: string; nb: number; nouveau: boolean }>();
+  for (const d of (dm ?? []) as Record<string, string | boolean | null>[]) {
+    if (sauf.includes(String(d.id))) continue;
+    for (const [type, date, heure] of [['arrivee', d.date_arrivee, d.heure_arrivee], ['depart', d.date_depart, d.heure_depart]] as const) {
+      if (date !== jour || !heureValide(heure as string)) continue;
+      const cle = `${type}|${heure}|${d.client_uid}`;
+      const g = groupes.get(cle) ?? { type, heure: heure as string, client: `d:${d.client_uid}`, nb: 0, nouveau: false };
+      g.nb += 1; g.nouveau = g.nouveau || d.nouveau_pensionnaire === true;
+      groupes.set(cle, g);
+    }
+  }
+  for (const g of groupes.values()) {
+    (g.type === 'arrivee' ? arrivees : departs).push({ heure: g.heure, duree: dureePassage(h, g.type, g.nb, g.nouveau), client: g.client });
+  }
+  return { arrivees, departs };
+}
+
+/** Heures d'arrivée (jour d'arrivée) et de départ (jour de départ) encore libres. */
+async function heuresLibres(proUid: string, proProfileId: string, h: HorairesPension, arrivee: string, depart: string, nb: number, nouveau: boolean, sauf: string[] = []) {
+  const dA = dureePassage(h, 'arrivee', nb, nouveau), dD = dureePassage(h, 'depart', nb, false);
+  const pA = await passagesDuJour(proUid, proProfileId, arrivee, h, sauf);
+  const pD = depart === arrivee ? pA : await passagesDuJour(proUid, proProfileId, depart, h, sauf);
+  return {
+    arrivee: creneauxLibres(h, 'arrivee', dA, [...pA.arrivees, ...pA.departs]),
+    depart: creneauxLibres(h, 'depart', dD, [...pD.arrivees, ...pD.departs]),
+    duree_arrivee: dA, duree_depart: dD,
+  };
 }
 
 async function premierSejour(proUid: string, animalId: string) {
@@ -182,12 +242,20 @@ export async function GET(req: NextRequest) {
     const { capacite, complets } = await joursComplets(p.uid, p.id, nuitsDuSejour(arrivee, depart), () => especes);
     dispo = { capacite, complets: complets.map(c => ({ jour: c.jour, restantes: c.restantes })), message: complets.length ? texteComplet(capacite, complets, nb) : null };
   }
+  // Horaires de la pension : heures d'arrivée / de départ encore libres pour
+  // ce nombre d'animaux (premier séjour : arrivée plus longue).
+  const horaires = await horairesDe(p.id);
+  let creneaux: Awaited<ReturnType<typeof heuresLibres>> | null = null;
+  if (horaires && JOUR.test(arrivee) && JOUR.test(depart) && depart >= arrivee) {
+    const nb = Math.max(1, Math.min(20, Number(sp.get('nb')) || 1));
+    creneaux = await heuresLibres(p.uid, p.id, horaires, arrivee, depart, nb, sp.get('nouveau') === '1');
+  }
   return NextResponse.json({
     // Espèces acceptées (vide = toutes) : le client ne voit que ses animaux concernés.
     pension: { nom: p.nom ?? 'Pension', essai_requis: !!p.pension_essai_requis, essai_info: p.pension_essai_info ?? null, tarifs,
       especes: Array.isArray(p.especes_acceptees) ? p.especes_acceptees : [] },
     premier_sejour: animalId ? await premierSejour(p.uid, animalId) : null,
-    premiers, dispo,
+    premiers, dispo, horaires: !!horaires, creneaux,
   }, { headers: { 'Cache-Control': 'private, no-store' } });
 }
 
@@ -202,6 +270,9 @@ export async function POST(req: NextRequest) {
     /** Équidés : hébergement souhaité par animal ('box' | 'pre'). */ hebergements?: Record<string, string> | null;
     message?: string; profileId?: string | null; demandeId?: string; demandeIds?: string[]; accepter?: boolean; motif?: string; forcer?: boolean;
     /** Acceptation : logement attribué à chaque demande ({ demandeId: logementId }). */ logements?: Record<string, string> | null;
+    /** Demande : heures choisies par le client ('HH:MM'). */ heureArrivee?: string | null; heureDepart?: string | null;
+    /** Acceptation : heures et durées prévues, ajustées par la pension. */
+    heures?: { arrivee?: string | null; depart?: string | null; dureeArrivee?: number | null; dureeDepart?: number | null } | null;
   };
   const maintenant = new Date().toISOString();
 
@@ -296,6 +367,7 @@ export async function POST(req: NextRequest) {
       : { data: null };
     const c = cp as Record<string, string | null> | null;
     const acceptes: Demande[] = [];
+    const horairesDecision = await horairesDe(d0.pro_profile_id ?? '');
     let erreur: string | null = null;
     for (const d of aTraiter) {
       // Séjour (et essai) dans le registre, avec la fiche et les coordonnées du client.
@@ -312,12 +384,22 @@ export async function POST(req: NextRequest) {
         statut: 'en_pension',
         ...(logementId ? { logement_id: logementId } : {}),
       };
-      const { data: ent, error } = await admin.from('pension_entrees').insert({
+      // Heures prévues : celles ajustées par la pension, sinon celles du client.
+      const hA = heureValide(b.heures?.arrivee) ? b.heures!.arrivee! : heureValide(d.heure_arrivee) ? d.heure_arrivee : null;
+      const hD = heureValide(b.heures?.depart) ? b.heures!.depart! : heureValide(d.heure_depart) ? d.heure_depart : null;
+      const planning = {
+        ...(hA ? { heure_arrivee_prevue: hA, duree_arrivee_min: Number(b.heures?.dureeArrivee) || (horairesDecision ? dureePassage(horairesDecision, 'arrivee', aTraiter.length, aTraiter.some(x => String(x.nouveau_pensionnaire) === 'true')) : null) } : {}),
+        ...(hD ? { heure_depart_prevue: hD, duree_depart_min: Number(b.heures?.dureeDepart) || (horairesDecision ? dureePassage(horairesDecision, 'depart', aTraiter.length, false) : null) } : {}),
+      };
+      const ligne = {
         ...base, date_entree: d.date_arrivee, date_sortie_prevue: d.date_depart,
         // Consignes du client (traitement, habitudes…) → consignes du séjour.
         ...(d.message ? { consignes_sejour: d.message } : {}),
         notes: [d.hebergement ? `Hébergement souhaité : ${d.hebergement === 'pre' ? 'pré' : 'box'}` : '', d.message ? `Message du client : ${d.message}` : ''].filter(Boolean).join('\n') || null,
-      }).select('id').single();
+      };
+      let { data: ent, error } = await admin.from('pension_entrees').insert({ ...ligne, ...planning }).select('id').single();
+      // Colonnes du planning absentes (migration_pension_horaires.sql) : séjour sans heures.
+      if (error && Object.keys(planning).length) ({ data: ent, error } = await admin.from('pension_entrees').insert(ligne).select('id').single());
       if (error) {
         await admin.from('pension_demandes').update({ statut: 'demande', decide_le: null }).eq('id', d.id as string);
         erreur = error.message;
@@ -402,6 +484,24 @@ export async function POST(req: NextRequest) {
   if (complets.length) {
     return NextResponse.json({ error: `${texteComplet(capacite, complets, animalIds.length)} Choisissez d'autres dates${animalIds.length > 1 ? ' ou moins d\'animaux' : ''}.`, complet: true, jours: complets }, { status: 409 });
   }
+  // Horaires de la pension : heures d'arrivée / de départ choisies parmi les libres.
+  const horaires = await horairesDe(p.id);
+  let heureArrivee: string | null = null, heureDepart: string | null = null;
+  if (horaires) {
+    const libres = await heuresLibres(p.uid, p.id, horaires, b.dateArrivee as string, b.dateDepart as string, animalIds.length, [...nouveaux.values()].some(v => v === true));
+    if (horaires.arrivees.length) {
+      if (!heureValide(b.heureArrivee) || !libres.arrivee.includes(b.heureArrivee as string)) {
+        return NextResponse.json({ error: libres.arrivee.length ? 'Choisissez une heure d\'arrivée parmi celles proposées.' : 'Plus d\'heure d\'arrivée libre ce jour-là : choisissez une autre date.' }, { status: 400 });
+      }
+      heureArrivee = b.heureArrivee as string;
+    }
+    if (horaires.departs.length) {
+      if (!heureValide(b.heureDepart) || !libres.depart.includes(b.heureDepart as string)) {
+        return NextResponse.json({ error: libres.depart.length ? 'Choisissez une heure de départ parmi celles proposées.' : 'Plus d\'heure de départ libre ce jour-là : choisissez une autre date.' }, { status: 400 });
+      }
+      heureDepart = b.heureDepart as string;
+    }
+  }
   let profil: string | null = null;
   if (b.profileId) {
     const { data } = await admin.from('user_profiles').select('id').eq('id', b.profileId).eq('uid', auth.uid).maybeSingle();
@@ -413,6 +513,7 @@ export async function POST(req: NextRequest) {
     animal_nom: infosAnimal.get(id)?.nom ?? null, espece: infosAnimal.get(id)?.espece ?? null, date_arrivee: b.dateArrivee, date_depart: b.dateDepart,
     essai_date: nouveaux.get(id) === true ? essai : null, nouveau_pensionnaire: nouveaux.get(id) ?? null,
     hebergement: (() => { const h = b.hebergements?.[id] ?? b.hebergement; return h === 'box' || h === 'pre' ? h : null; })(), message,
+    ...(heureArrivee ? { heure_arrivee: heureArrivee } : {}), ...(heureDepart ? { heure_depart: heureDepart } : {}),
   }))).select('id');
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const demandeIds = ((dems ?? []) as { id: string }[]).map(d => d.id);
@@ -434,7 +535,7 @@ export async function POST(req: NextRequest) {
   };
   await admin.from('notifications').insert({
     uid: p.uid, profile_id: p.id, type: 'pension_demande_sejour', title: animalIds.length > 1 ? `Nouvelle demande de séjour · ${animalIds.length} animaux` : 'Nouvelle demande de séjour',
-    body: `${liste(animalIds.map(nom))} : du ${fr(b.dateArrivee as string)} au ${fr(b.dateDepart as string)}${essai ? `, essai proposé le ${fr(essai)}` : ''}.`,
+    body: `${liste(animalIds.map(nom))} : du ${fr(b.dateArrivee as string)}${heureArrivee ? ` (${heureArrivee.replace(':', 'h')})` : ''} au ${fr(b.dateDepart as string)}${heureDepart ? ` (${heureDepart.replace(':', 'h')})` : ''}${essai ? `, essai proposé le ${fr(essai)}` : ''}.`,
     data: { demande_id: demandeIds[0], demande_ids: demandeIds }, read: false,
   });
   return NextResponse.json({ ok: true, demandeId: demandeIds[0], demandeIds, essai_requis: !!essai });

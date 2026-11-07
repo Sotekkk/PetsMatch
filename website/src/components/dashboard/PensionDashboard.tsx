@@ -24,7 +24,7 @@ interface Sejour extends SejourPension {
   date_entree: string; date_sortie_prevue: string | null; statut: string; pro_profile_id?: string | null;
   arrivee_reelle_le?: string | null;
 }
-interface Demande { id: string; client_uid?: string | null; client_profile_id?: string | null; animal_id: string; animal_nom: string | null; espece?: string | null; nouveau_pensionnaire?: boolean | null; hebergement?: string | null; date_arrivee: string; date_depart: string; essai_date: string | null; message: string | null }
+interface Demande { id: string; client_uid?: string | null; client_profile_id?: string | null; animal_id: string; animal_nom: string | null; espece?: string | null; heure_arrivee?: string | null; heure_depart?: string | null; nouveau_pensionnaire?: boolean | null; hebergement?: string | null; date_arrivee: string; date_depart: string; essai_date: string | null; message: string | null }
 interface Logement { id: string; nom: string; capacite: number | null }
 interface Tache { id: string; titre: string | null; date: string; animal_id: string | null; animal_nom: string | null }
 interface Animal { id: string; nom: string | null; photo_url: string | null }
@@ -57,7 +57,7 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
     let tq = supabase.from('taches_elevage').select('id, titre, date, animal_id, animal_nom').eq('profil_source', 'pension')
       .neq('statut', 'fait').lte('date', iso(jour));
     tq = pid ? tq.eq('eleveur_profile_id', pid) : tq.eq('uid_eleveur', uid);
-    let dq = supabase.from('pension_demandes').select('id, client_uid, client_profile_id, animal_id, animal_nom, espece, date_arrivee, date_depart, essai_date, message, nouveau_pensionnaire, hebergement')
+    let dq = supabase.from('pension_demandes').select('*')
       .eq('pro_uid', uid).eq('statut', 'demande');
     if (pid) dq = dq.eq('pro_profile_id', pid);
     const dRes = await dq.order('date_arrivee');
@@ -179,7 +179,7 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
                             {x.hebergement && <span className="font-normal text-xs text-gray-500"> · {x.hebergement === 'pre' ? 'pré' : 'box'} souhaité</span>}
                           </p>
                         ))}
-                        <p className="text-xs text-gray-500">{g.length > 1 ? `${g.length} animaux · ` : ''}Du {jm(d.date_arrivee)} au {jm(d.date_depart)}{d.essai_date ? ` · essai le ${jm(d.essai_date)}` : ''}</p>
+                        <p className="text-xs text-gray-500">{g.length > 1 ? `${g.length} animaux · ` : ''}Du {jm(d.date_arrivee)}{d.heure_arrivee ? ` (${d.heure_arrivee.replace(':', 'h')})` : ''} au {jm(d.date_depart)}{d.heure_depart ? ` (${d.heure_depart.replace(':', 'h')})` : ''}{d.essai_date ? ` · essai le ${jm(d.essai_date)}` : ''}</p>
                         {d.message && <p className="text-xs text-gray-500 italic">« {d.message} »</p>}
                       </div>
                       {g.length === 1 && <Link href={`/pension/fiche/${d.animal_id}`} className="text-xs font-semibold text-[#0C5C6C]">Fiche</Link>}
@@ -245,6 +245,7 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <Tuile href="/pension/registre" icone="plus" label="Nouvelle réservation" />
                 <Tuile href="/pension/planning" icone="calendrier" label="Planning des hébergements" />
+                <Tuile href="/pension/registre?mouvement=a_enregistrer" icone="calendrier" label="Arrivées à enregistrer" />
                 <Tuile href="/pension/entree-sortie" icone="fleche" label="Entrées / sorties" />
                 <Tuile href="/pension/registre" icone="patte" label="Animaux présents" teinte={VERT} />
               </div>
@@ -253,7 +254,7 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
         )}
       </div>
       {aAccepter && uid && (
-        <AccepterSejourModal groupe={aAccepter} uid={uid} couleur={VERT}
+        <AccepterSejourModal groupe={aAccepter} uid={uid} proProfileId={pid || null} couleur={VERT}
           onClose={() => setAAccepter(null)} onDone={() => { setAAccepter(null); charger(); }} />
       )}
       {action && (

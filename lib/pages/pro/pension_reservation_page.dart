@@ -43,6 +43,10 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
   final Map<String, bool> _dejaVenus = {};
   // Places libres aux dates choisies pour le nombre d'animaux (message si complet).
   String? _complet;
+  // Horaires de la pension : heures libres d'arrivée / de départ (null = pas
+  // d'horaires) et heures choisies.
+  Map<String, dynamic>? _creneaux;
+  String? _heureArrivee, _heureDepart;
   // Équidés : hébergement souhaité ('box' / 'pre').
   /// Équidés : hébergement souhaité pour chaque animal ('box' / 'pre').
   final Map<String, String> _hebergements = {};
@@ -118,6 +122,7 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
         if (_dates != null) ...{
           'arrivee': f.format(_dates!.start), 'depart': f.format(_dates!.end),
           'nb': '${_choisis.isEmpty ? 1 : _choisis.length}',
+          if (_nouveaux.isNotEmpty) 'nouveau': '1',
         },
       };
       final r = await http.get(Uri.parse('$kSiteBaseUrl/api/pension/sejour').replace(queryParameters: qs),
@@ -127,6 +132,7 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
         _pension = Map<String, dynamic>.from(j['pension'] as Map);
         _premiers = {for (final e in ((j['premiers'] as Map?) ?? const {}).entries) e.key.toString(): e.value == true};
         _complet = (j['dispo'] as Map?)?['message']?.toString();
+        _creneaux = j['creneaux'] is Map ? Map<String, dynamic>.from(j['creneaux'] as Map) : null;
       }
     } catch (_) {}
   }
@@ -201,6 +207,10 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
         return;
       }
     }
+    if (_creneaux != null && (!_heures('arrivee').contains(_heureArrivee) || !_heures('depart').contains(_heureDepart))) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Choisissez votre heure d'arrivée et votre heure de départ.")));
+      return;
+    }
     if (_essaiRequis && _essai == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cette pension demande un essai avant le premier séjour : choisissez sa date.")));
       return;
@@ -216,6 +226,7 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
         if (_equins.any((a) => _hebergements.containsKey(a['id'].toString())))
           'hebergements': {for (final a in _equins) if (_hebergements.containsKey(a['id'].toString())) a['id'].toString(): _hebergements[a['id'].toString()]},
         if (_essaiRequis && _essai != null) 'essaiDate': f.format(_essai!),
+        if (_creneaux != null) ...{'heureArrivee': _heureArrivee, 'heureDepart': _heureDepart},
         'message': _message.text.trim(),
         if (User_Info.activeProfileId.isNotEmpty) 'profileId': User_Info.activeProfileId,
       }));
@@ -246,6 +257,30 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))));
       }
     }
+  }
+
+  List<String> _heures(String type) => [for (final h in (_creneaux?[type] as List?) ?? const []) h.toString()];
+
+  /// Heures libres (créneaux) sous forme de pastilles.
+  Widget _choixHeure(String titre, String type, String? valeur, ValueChanged<String> onChange) {
+    final heures = _heures(type);
+    final duree = _creneaux?['duree_$type'];
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _titre('$titre${duree != null ? ' · environ $duree min' : ''}'),
+      if (heures.isEmpty)
+        const Text("Plus d'heure libre ce jour-là : choisissez une autre date.",
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFB3261E)))
+      else
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          for (final h in heures)
+            ChoiceChip(
+              label: Text(h.replaceAll(':', 'h'), style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: valeur == h ? Colors.white : _ink)),
+              selected: valeur == h, showCheckmark: false, selectedColor: _c, backgroundColor: Colors.white,
+              visualDensity: VisualDensity.compact,
+              onSelected: (_) => onChange(h),
+            ),
+        ]),
+    ]);
   }
 
   Widget _titre(String t) => Padding(padding: const EdgeInsets.only(top: 18, bottom: 8),
@@ -310,7 +345,10 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
                     ChoiceChip(
                       label: Text(lib, style: TextStyle(fontFamily: 'Galey', color: _dejaVenus[a['id'].toString()] == v ? Colors.white : _ink)),
                       selected: _dejaVenus[a['id'].toString()] == v, showCheckmark: false, selectedColor: _c, backgroundColor: Colors.white,
-                      onSelected: (_) => setState(() => _dejaVenus[a['id'].toString()] = v),
+                      onSelected: (_) async {
+                        setState(() => _dejaVenus[a['id'].toString()] = v);
+                        await _actualiser();
+                      },
                     ),
                 ]),
               ],
@@ -347,6 +385,10 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
                 Padding(padding: const EdgeInsets.only(top: 8), child: Text(
                     "$_complet Choisissez d'autres dates${_choisis.length > 1 ? " ou moins d'animaux" : ''}.",
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFB3261E)))),
+              if (_creneaux != null && _complet == null) ...[
+                _choixHeure("Heure d'arrivée", 'arrivee', _heureArrivee, (h) => setState(() => _heureArrivee = h)),
+                _choixHeure('Heure de départ', 'depart', _heureDepart, (h) => setState(() => _heureDepart = h)),
+              ],
               if (_essaiRequis) ...[
                 _titre("Essai avant le premier séjour"),
                 Text('${(_pension?['essai_info']?.toString() ?? '').trim().isNotEmpty

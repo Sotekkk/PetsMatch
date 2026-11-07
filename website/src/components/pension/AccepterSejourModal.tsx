@@ -10,10 +10,12 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
 import { logementAccepteEspece } from '@/lib/pension-especes';
+import { dureePassage, heureValide, lireHoraires, type HorairesPension } from '@/lib/pension-horaires';
 
 export interface DemandeSejour {
   id: string; animal_id: string; animal_nom: string | null; espece?: string | null;
   date_arrivee: string; date_depart: string; essai_date: string | null; hebergement?: string | null;
+  heure_arrivee?: string | null; heure_depart?: string | null; nouveau_pensionnaire?: boolean | null;
 }
 interface Logement { id: string; nom: string; type: string | null; capacite: number | null; especes: string[] | null }
 interface Occupation { date_entree: string; date_sortie_prevue: string | null; logement_id: string | null }
@@ -29,8 +31,8 @@ function nuits(arrivee: string, depart: string) {
 const occupe = (e: Occupation, j: string) =>
   e.date_entree <= j && (!e.date_sortie_prevue || e.date_sortie_prevue > j || (e.date_sortie_prevue === e.date_entree && j === e.date_entree));
 
-export default function AccepterSejourModal({ groupe, uid, couleur, onClose, onDone }: {
-  groupe: DemandeSejour[]; uid: string; couleur: string; onClose: () => void; onDone: () => void;
+export default function AccepterSejourModal({ groupe, uid, proProfileId, couleur, onClose, onDone }: {
+  groupe: DemandeSejour[]; uid: string; proProfileId?: string | null; couleur: string; onClose: () => void; onDone: () => void;
 }) {
   const [logements, setLogements] = useState<Logement[] | null>(null);
   const [occupations, setOccupations] = useState<Occupation[]>([]);
@@ -39,6 +41,24 @@ export default function AccepterSejourModal({ groupe, uid, couleur, onClose, onD
   const [erreur, setErreur] = useState('');
   const d0 = groupe[0];
   const jours = nuits(d0.date_arrivee, d0.date_depart);
+  // Heures prévues : celles demandées par le client, ajustables (nombre
+  // d'animaux, premier séjour…), avec la durée de l'arrivée / du départ.
+  const [horaires, setHoraires] = useState<HorairesPension | null>(null);
+  const [hA, setHA] = useState(d0.heure_arrivee ?? '');
+  const [hD, setHD] = useState(d0.heure_depart ?? '');
+  const [dA, setDA] = useState<number | ''>('');
+  const [dD, setDD] = useState<number | ''>('');
+  useEffect(() => {
+    if (!proProfileId) return;
+    supabase.from('user_profiles').select('pension_horaires').eq('id', proProfileId).maybeSingle().then(({ data }) => {
+      const h = lireHoraires((data as { pension_horaires?: unknown } | null)?.pension_horaires);
+      setHoraires(h);
+      if (h) {
+        setDA(dureePassage(h, 'arrivee', groupe.length, groupe.some(d => d.nouveau_pensionnaire === true)));
+        setDD(dureePassage(h, 'depart', groupe.length, false));
+      }
+    });
+  }, [proProfileId, groupe]);
 
   useEffect(() => {
     (async () => {
@@ -63,7 +83,9 @@ export default function AccepterSejourModal({ groupe, uid, couleur, onClose, onD
     if (logements?.length && groupe.some(d => !choix[d.id])) { setErreur('Attribuez un logement à chaque animal.'); return; }
     setEnvoi(true);
     const r = await apiFetch('/api/pension/sejour', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'decider', demandeId: d0.id, demandeIds: groupe.map(d => d.id), accepter: true, logements: choix, ...(forcer ? { forcer: true } : {}) }) });
+      body: JSON.stringify({ action: 'decider', demandeId: d0.id, demandeIds: groupe.map(d => d.id), accepter: true, logements: choix,
+        heures: { arrivee: heureValide(hA) ? hA : null, depart: heureValide(hD) ? hD : null, dureeArrivee: dA || null, dureeDepart: dD || null },
+        ...(forcer ? { forcer: true } : {}) }) });
     const j = await r.json().catch(() => ({})) as { error?: string; complet?: boolean };
     setEnvoi(false);
     if (r.status === 409 && j.complet && !forcer) {
@@ -82,6 +104,23 @@ export default function AccepterSejourModal({ groupe, uid, couleur, onClose, onD
           <p className="font-bold text-lg text-[#1F2A2E]">Accepter {groupe.length > 1 ? `les ${groupe.length} séjours` : 'le séjour'}</p>
           <p className="text-sm text-gray-500">Du {new Date(`${d0.date_arrivee}T12:00:00`).toLocaleDateString('fr-FR')} au {new Date(`${d0.date_depart}T12:00:00`).toLocaleDateString('fr-FR')}</p>
         </div>
+        {(horaires || d0.heure_arrivee || d0.heure_depart) && (
+          <div className="grid grid-cols-2 gap-2 border border-gray-100 rounded-xl p-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Arrivée prévue{d0.heure_arrivee ? ` (demandée : ${d0.heure_arrivee.replace(':', 'h')})` : ''}</label>
+              <input type="time" step={900} value={hA} onChange={e => setHA(e.target.value)} className={champ} />
+              <label className="block text-[11px] text-gray-500 mt-1">Durée (min)</label>
+              <input type="number" min={5} max={240} step={5} value={dA} onChange={e => setDA(e.target.value ? Number(e.target.value) : '')} className={champ} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Départ prévu{d0.heure_depart ? ` (demandé : ${d0.heure_depart.replace(':', 'h')})` : ''}</label>
+              <input type="time" step={900} value={hD} onChange={e => setHD(e.target.value)} className={champ} />
+              <label className="block text-[11px] text-gray-500 mt-1">Durée (min)</label>
+              <input type="number" min={5} max={240} step={5} value={dD} onChange={e => setDD(e.target.value ? Number(e.target.value) : '')} className={champ} />
+            </div>
+            <p className="col-span-2 text-[11px] text-gray-500">{groupe.length} animal{groupe.length > 1 ? 'aux' : ''}{groupe.some(d => d.nouveau_pensionnaire === true) ? ' · premier séjour' : ''} : ajustez l&apos;heure et la durée si besoin.</p>
+          </div>
+        )}
         {logements === null ? (
           <p className="text-sm text-gray-500">Chargement des logements…</p>
         ) : logements.length === 0 ? (

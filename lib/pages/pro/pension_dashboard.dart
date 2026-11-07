@@ -18,6 +18,7 @@ import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show logementAccepteEspece;
+import 'package:PetsMatch/utils/pension_horaires.dart';
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -167,8 +168,23 @@ class _PensionDashboardState extends State<PensionDashboard> {
       occupations = _liste(await _supa.from('pension_entrees').select('date_entree, date_sortie_prevue, logement_id')
           .eq('pro_uid', uid).eq('statut', 'en_pension').not('logement_id', 'is', null).lte('date_entree', depart));
     } catch (_) {}
+    // Heures prévues : celles demandées par le client, ajustables (nombre
+    // d'animaux, premier séjour…), avec la durée de l'arrivée / du départ.
+    Map<String, dynamic>? horaires;
+    final pid = User_Info.activeProfileId;
+    if (pid.isNotEmpty) {
+      try {
+        final r = await _supa.from('user_profiles').select('pension_horaires').eq('id', pid).maybeSingle();
+        horaires = lireHorairesPension(r?['pension_horaires']);
+      } catch (_) {}
+    }
+    final nouveau = g.any((d) => d['nouveau_pensionnaire'] == true);
+    String? hA = d0['heure_arrivee']?.toString(), hD = d0['heure_depart']?.toString();
+    int? dA = horaires == null ? null : dureePassagePension(horaires, depart: false, nbAnimaux: g.length, nouveau: nouveau);
+    int? dD = horaires == null ? null : dureePassagePension(horaires, depart: true, nbAnimaux: g.length, nouveau: false);
+    final avecHeures = horaires != null || hA != null || hD != null;
     if (!mounted) return;
-    if (logements.isEmpty) { await _decider(g, true); return; }
+    if (logements.isEmpty && !avecHeures) { await _decider(g, true); return; }
     // Nuits du séjour (jour du départ exclu ; séjour d'un jour = ce jour).
     final nuits = <String>[];
     for (var d = DateTime.parse(arrivee); d.isBefore(DateTime.parse(depart)) && nuits.length < 400; d = d.add(const Duration(days: 1))) {
@@ -213,7 +229,41 @@ class _PensionDashboardState extends State<PensionDashboard> {
           Text('Du ${_jm(arrivee)} au ${_jm(depart)} · attribuez un logement à chaque animal',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),
           const SizedBox(height: 12),
-          for (final d in g) Builder(builder: (_) {
+          if (avecHeures) ...[
+            for (final (lib, depart) in [('Arrivée prévue', false), ('Départ prévu', true)])
+              Builder(builder: (_) {
+                final h = depart ? hD : hA;
+                final duree = depart ? dD : dA;
+                final demande = depart ? d0['heure_depart'] : d0['heure_arrivee'];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(children: [
+                    Expanded(child: Text('$lib${demande != null ? ' (demandé ${demande.toString().replaceAll(':', 'h')})' : ''}',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                    OutlinedButton(
+                      onPressed: () async {
+                        final m = heureValidePension(h) ? int.parse(h!.substring(0, 2)) * 60 + int.parse(h.substring(3)) : 9 * 60;
+                        final t = await showTimePicker(context: ctx, initialTime: TimeOfDay(hour: m ~/ 60, minute: m % 60));
+                        if (t == null) return;
+                        final v = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+                        setM(() { if (depart) { hD = v; } else { hA = v; } });
+                      },
+                      style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                      child: Text(h == null ? '--h--' : h.replaceAll(':', 'h'), style: const TextStyle(fontFamily: 'Galey')),
+                    ),
+                    IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.remove_circle_outline, size: 20),
+                        onPressed: (duree ?? 15) <= 5 ? null : () => setM(() { if (depart) { dD = (dD ?? 15) - 5; } else { dA = (dA ?? 15) - 5; } })),
+                    Text('${duree ?? 15} min', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700)),
+                    IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.add_circle_outline, size: 20),
+                        onPressed: () => setM(() { if (depart) { dD = (dD ?? 15) + 5; } else { dA = (dA ?? 15) + 5; } })),
+                  ]),
+                );
+              }),
+            Text("${g.length} animal${g.length > 1 ? 'aux' : ''}${nouveau ? ' · premier séjour' : ''} : ajustez l'heure et la durée si besoin.",
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _muted)),
+            const Divider(height: 20),
+          ],
+          if (logements.isNotEmpty) for (final d in g) Builder(builder: (_) {
             final id = d['id'].toString();
             final proposes = [for (final l in logements) if (logementAccepteEspece(l['especes'] as List?, d['espece']?.toString())) l];
             final titre = 'Logement pour ${d['animal_nom'] ?? "l'animal"}${(d['espece']?.toString() ?? '').isNotEmpty ? ' (${d['espece']})' : ''}'
@@ -234,7 +284,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: _vert, padding: const EdgeInsets.symmetric(vertical: 13)),
             onPressed: () {
-              final manque = g.any((d) => !choix.containsKey(d['id'].toString()));
+              final manque = logements.isNotEmpty && g.any((d) => !choix.containsKey(d['id'].toString()));
               if (manque) {
                 ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Attribuez un logement à chaque animal.')));
                 return;
@@ -246,7 +296,10 @@ class _PensionDashboardState extends State<PensionDashboard> {
         ]),
       ))),
     );
-    if (ok == true && mounted) await _decider(g, true, logements: choix);
+    if (ok == true && mounted) {
+      await _decider(g, true, logements: choix, heures: avecHeures
+          ? {'arrivee': hA, 'depart': hD, 'dureeArrivee': dA, 'dureeDepart': dD} : null);
+    }
   }
 
   // ── UI ──────────────────────────────────────────────────────────────────
@@ -324,7 +377,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
     return m.values.toList();
   }
 
-  Future<void> _decider(List<Map<String, dynamic>> g, bool accepter, {bool forcer = false, Map<String, String>? logements}) async {
+  Future<void> _decider(List<Map<String, dynamic>> g, bool accepter, {bool forcer = false, Map<String, String>? logements, Map<String, dynamic>? heures}) async {
     final d = g.first;
     if (_decisionEnCours == d['id'].toString() && !forcer) return;
     String? motif;
@@ -347,7 +400,8 @@ class _PensionDashboardState extends State<PensionDashboard> {
       final r = await http.post(Uri.parse('$kSiteBaseUrl/api/pension/sejour'), headers: await siteApiHeaders(),
           body: jsonEncode({'action': 'decider', 'demandeId': d['id'], 'demandeIds': [for (final x in g) x['id']],
               'accepter': accepter, if (motif != null) 'motif': motif, if (forcer) 'forcer': true,
-              if (logements != null && logements.isNotEmpty) 'logements': logements}));
+              if (logements != null && logements.isNotEmpty) 'logements': logements,
+              if (heures != null) 'heures': heures}));
       if (!mounted) return;
       setState(() => _decisionEnCours = null);
       // Hébergements pleins sur une partie du séjour : accepter quand même ?
@@ -363,7 +417,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
               TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Accepter quand même')),
             ],
           ));
-          if (ok == true) await _decider(g, true, forcer: true, logements: logements);
+          if (ok == true) await _decider(g, true, forcer: true, logements: logements, heures: heures);
           return;
         }
       }
@@ -404,7 +458,8 @@ class _PensionDashboardState extends State<PensionDashboard> {
                       '${x['hebergement'] == 'box' ? ' · box souhaité' : x['hebergement'] == 'pre' ? ' · pré souhaité' : ''}',
                       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                 ),
-              Text('${g.length > 1 ? '${g.length} animaux · ' : ''}Du ${_jm(d['date_arrivee'])} au ${_jm(d['date_depart'])}'
+              Text('${g.length > 1 ? '${g.length} animaux · ' : ''}Du ${_jm(d['date_arrivee'])}${d['heure_arrivee'] != null ? ' (${d['heure_arrivee'].toString().replaceAll(':', 'h')})' : ''}'
+                  ' au ${_jm(d['date_depart'])}${d['heure_depart'] != null ? ' (${d['heure_depart'].toString().replaceAll(':', 'h')})' : ''}'
                   '${d['essai_date'] != null ? ' · essai le ${_jm(d['essai_date'])}' : ''}'
                   '',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),
@@ -551,6 +606,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
             tuile(Icons.add_circle_outline, 'Nouvelle réservation', () => _go(const RegistrePensionPage())),
             tuile(Icons.calendar_view_week_outlined, 'Planning des hébergements', () => _go(const PensionPlanningPage())),
             tuile(Icons.swap_horiz_rounded, 'Entrées / sorties', () => _go(const PensionEntreeSortiePage())),
+            tuile(Icons.login_rounded, 'Arrivées à enregistrer', () => _go(const RegistrePensionPage(initialMouvement: 'a_enregistrer'))),
             tuile(Icons.pets_outlined, 'Animaux présents', () => _go(const RegistrePensionPage(initialMouvement: 'presents'))),
           ],
         );

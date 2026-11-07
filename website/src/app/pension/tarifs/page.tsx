@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
+import HorairesPensionForm from '@/components/pension/HorairesPensionForm';
+import { lireHoraires, type HorairesPension } from '@/lib/pension-horaires';
 import { PENSION_ESPECES, pensionGroupe, pensionTarifAccepte, pensionTarifEquin, type TarifsPension } from '@/lib/pension-especes';
 
 interface EspeceRow {
@@ -42,6 +44,9 @@ export default function PensionTarifsPage() {
   // Essai obligatoire avant le premier séjour (réservation en ligne).
   const [essaiRequis, setEssaiRequis] = useState(false);
   const [essaiInfo, setEssaiInfo] = useState('');
+  // Horaires d'arrivée / de départ (null = pas d'horaires).
+  const [horaires, setHoraires] = useState<HorairesPension | null>(null);
+  const [erreurHoraires, setErreurHoraires] = useState('');
   const [showAutres, setShowAutres] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -72,6 +77,9 @@ export default function PensionTarifsPage() {
     const { data: es } = await supabase.from('user_profiles').select('pension_essai_requis, pension_essai_info').eq('id', pid).maybeSingle();
     setEssaiRequis((es as { pension_essai_requis?: boolean } | null)?.pension_essai_requis === true);
     setEssaiInfo((es as { pension_essai_info?: string | null } | null)?.pension_essai_info ?? '');
+    // Colonne absente tant que migration_pension_horaires.sql n'est pas passée.
+    const { data: hr } = await supabase.from('user_profiles').select('pension_horaires').eq('id', pid).maybeSingle();
+    setHoraires(lireHoraires((hr as { pension_horaires?: unknown } | null)?.pension_horaires));
 
     // Prix déjà saisis, par key.
     const prixByKey: Record<string, { seul: string; partage: string }> = {};
@@ -160,6 +168,8 @@ export default function PensionTarifsPage() {
     await supabase.from('user_profiles')
       .update({ pension_essai_requis: essaiRequis, pension_essai_info: essaiInfo.trim() || null })
       .eq('id', profileId);
+    const { error: errH } = await supabase.from('user_profiles').update({ pension_horaires: horaires }).eq('id', profileId);
+    setErreurHoraires(errH ? `Horaires non enregistrés : ${errH.message}` : '');
 
     setSaving(false);
     setSaved(true);
@@ -209,6 +219,9 @@ export default function PensionTarifsPage() {
             className={`${inputCls} mt-3`} />
         )}
       </div>
+
+      <HorairesPensionForm value={horaires} onChange={setHoraires} />
+      {erreurHoraires && <p className="text-sm text-[#B3261E] font-galey">{erreurHoraires}</p>}
 
       <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-teal-100">
         <div>

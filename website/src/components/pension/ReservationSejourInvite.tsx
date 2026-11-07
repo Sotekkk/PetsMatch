@@ -28,6 +28,7 @@ interface AnimalInvite {
 }
 interface SejourEnAttente {
   pensionProfileId: string; animaux: AnimalInvite[]; arrivee: string; depart: string; essai: string; message: string; savedAt: number;
+  heureArrivee?: string; heureDepart?: string;
 }
 interface InfosPension { nom: string; essai_requis: boolean; essai_info: string | null; especes?: string[] }
 
@@ -75,6 +76,27 @@ async function compresser(file: File): Promise<string> {
   } finally { URL.revokeObjectURL(url); }
 }
 
+/** Heures proposées (créneaux libres) sous forme de pastilles. */
+function ChoixHeure({ titre, heures, valeur, onChange, couleur, duree }: { titre: string; heures: string[]; valeur: string; onChange: (h: string) => void; couleur: string; duree?: number }) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gray-600 mb-1">{titre}{duree ? ` · environ ${duree} min` : ''}</label>
+      {heures.length === 0 ? (
+        <p className="text-xs font-semibold text-[#B3261E]">Plus d&apos;heure libre ce jour-là : choisissez une autre date.</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {heures.map(h => (
+            <button key={h} type="button" onClick={() => onChange(h)} className="px-2.5 py-1 rounded-full text-xs border"
+              style={valeur === h ? { background: couleur, color: '#fff', borderColor: couleur } : { borderColor: '#E5E7EB', color: '#1F2A2E' }}>
+              {h.replace(':', 'h')}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ReservationSejourInvite({ mode, pensionProfileId, pensionNom, couleur, telephone, suite, onClose }: {
   mode: 'invite' | 'reprise'; pensionProfileId: string; pensionNom: string; couleur: string;
   telephone?: string | null; /** Chemin de retour après inscription / connexion. */ suite: string; onClose: () => void;
@@ -89,6 +111,9 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
   const [message, setMessage] = useState('');
   const [carnetPromis, setCarnetPromis] = useState(false);
   const [complet, setComplet] = useState<string | null>(null);
+  const [creneaux, setCreneaux] = useState<{ arrivee: string[]; depart: string[]; duree_arrivee: number; duree_depart: number } | null>(null);
+  const [heureArrivee, setHeureArrivee] = useState('');
+  const [heureDepart, setHeureDepart] = useState('');
   const [etape, setEtape] = useState<'form' | 'compte' | 'envoi' | 'ok'>('form');
   const [erreur, setErreur] = useState('');
   const [aujourdhui, setAujourdhui] = useState('');
@@ -105,19 +130,23 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
       return;
     }
     setAnimaux(p.animaux); setArrivee(p.arrivee); setDepart(p.depart); setEssai(p.essai); setMessage(p.message); setCarnetPromis(true);
+    setHeureArrivee(p.heureArrivee ?? ''); setHeureDepart(p.heureDepart ?? '');
   }, [mode, pensionProfileId]);
 
   const especesCles = animaux.map(a => a.espece).filter(Boolean);
   const datesOk = !!arrivee && !!depart && depart >= arrivee;
   useEffect(() => {
     const qs = new URLSearchParams({ pensionProfileId });
-    if (datesOk && especesCles.length) { qs.set('arrivee', arrivee); qs.set('depart', depart); qs.set('nb', String(especesCles.length)); qs.set('especes', especesCles.join(',')); }
+    if (datesOk && especesCles.length) {
+      qs.set('arrivee', arrivee); qs.set('depart', depart); qs.set('nb', String(especesCles.length)); qs.set('especes', especesCles.join(','));
+      if (animaux.some(a => a.dejaVenu === false)) qs.set('nouveau', '1');
+    }
     apiFetch(`/api/pension/sejour?${qs.toString()}`, { cache: 'no-store' })
       .then(r => (r.ok ? r.json() : null))
-      .then(j => { if (j) { setInfos(j.pension as InfosPension); setComplet((j.dispo?.message as string | null | undefined) ?? null); } })
+      .then(j => { if (j) { setInfos(j.pension as InfosPension); setComplet((j.dispo?.message as string | null | undefined) ?? null); setCreneaux((j.creneaux ?? null) as typeof creneaux); } })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pensionProfileId, arrivee, depart, datesOk, especesCles.join(',')]);
+  }, [pensionProfileId, arrivee, depart, datesOk, especesCles.join(','), animaux.some(a => a.dejaVenu === false)]);
 
   // Espèces proposées : celles accueillies par la pension (sinon toutes).
   const especesProposees = (() => {
@@ -137,6 +166,7 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
     if (depart < arrivee) return 'La date de départ doit suivre l\'arrivée.';
     if (joursEntre(arrivee, depart) > 180) return 'Séjour de plus de 6 mois : vérifiez les dates ou contactez directement la pension.';
     if (essaiRequis && (!essai || essai >= arrivee || essai < auj)) return 'Choisissez une date d\'essai entre aujourd\'hui et la veille de l\'arrivée.';
+    if (creneaux && (!creneaux.arrivee.includes(heureArrivee) || !creneaux.depart.includes(heureDepart))) return 'Choisissez votre heure d\'arrivée et votre heure de départ.';
     if (!carnetPromis) return 'Cochez l\'engagement à apporter le carnet de santé.';
     if (complet) return complet;
     return null;
@@ -146,7 +176,7 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
     const e = verifier();
     if (e) { setErreur(e); return; }
     setErreur('');
-    const donnees: SejourEnAttente = { pensionProfileId, animaux, arrivee, depart, essai: essaiRequis ? essai : '', message, savedAt: Date.now() };
+    const donnees: SejourEnAttente = { pensionProfileId, animaux, arrivee, depart, essai: essaiRequis ? essai : '', message, savedAt: Date.now(), heureArrivee, heureDepart };
     try {
       localStorage.setItem(CLE_SEJOUR, JSON.stringify(donnees));
     } catch {
@@ -205,6 +235,7 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
           dejaVenus: Object.fromEntries(animaux.map((a, i) => [ids[i], !!a.dejaVenu])),
           hebergements: Object.fromEntries(animaux.map((a, i) => [ids[i], a.hebergement ?? '']).filter(([, h]) => h)),
           ...(essaiRequis ? { essaiDate: essai } : {}), message: consignes, ...(pid ? { profileId: pid } : {}),
+          ...(creneaux ? { heureArrivee, heureDepart } : {}),
         }),
       });
       const j = await r.json().catch(() => ({})) as { error?: string };
@@ -315,6 +346,12 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
               <div><label className="block text-xs font-semibold text-gray-600 mb-1">Départ</label>
                 <input type="date" min={arrivee || aujourdhui} value={depart} onChange={e => setDepart(e.target.value)} className={champ} /></div>
             </div>
+            {creneaux && !complet && (
+              <div className="space-y-2">
+                <ChoixHeure titre="Heure d'arrivée" heures={creneaux.arrivee} valeur={heureArrivee} onChange={setHeureArrivee} couleur={couleur} duree={creneaux.duree_arrivee} />
+                <ChoixHeure titre="Heure de départ" heures={creneaux.depart} valeur={heureDepart} onChange={setHeureDepart} couleur={couleur} duree={creneaux.duree_depart} />
+              </div>
+            )}
             {complet && <p className="text-sm font-semibold text-[#B3261E]">{complet} Choisissez d&apos;autres dates{animaux.length > 1 ? ' ou moins d\'animaux' : ''}.</p>}
             {essaiRequis && (
               <div>
