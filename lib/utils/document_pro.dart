@@ -79,6 +79,31 @@ Future<Uint8List?> choisirDocumentPdf(BuildContext context) async {
   return _photoEnPdf(await x.readAsBytes());
 }
 
+/// Dépôt d'un PDF dans le stockage des documents des pros (modèle de contrat…).
+Future<String> deposerDocumentPro(Uint8List pdf) => _deposer(pdf);
+
+/// Pension : contrat de la pension (son modèle ou un fichier chargé) rattaché
+/// au séjour (pension_entree_id), à signer en ligne par le client. Miroir site :
+/// creerContratProSejour (lib/document-pro.ts).
+Future<({String id, String token})> creerContratProSejour({
+  required String entreeId, String? animalId, String? proProfileId, required String titre,
+  required String clientNom, String? clientEmail, String? clientUid, String? clientProfileId,
+  String? url, Uint8List? pdf,
+}) async {
+  final lien = (url ?? '').isNotEmpty ? url! : pdf != null ? await _deposer(pdf) : null;
+  if (lien == null) throw Exception('Aucun contrat à envoyer');
+  final row = await Supabase.instance.client.from('documents_animaux').insert({
+    'uid_eleveur': FirebaseAuth.instance.currentUser?.uid,
+    if ((proProfileId ?? '').isNotEmpty) 'pro_profile_id': proProfileId,
+    'animal_id': animalId, 'pension_entree_id': entreeId,
+    'type': kTypeContratPro, 'titre': titre, 'statut': 'en_attente', 'url': lien, 'pdf_original_url': lien,
+    if ((clientUid ?? '').isNotEmpty) ...{'uid_acquereur': clientUid, 'acquereur_profile_id': clientProfileId},
+    'metadata': {'document_pro': true, 'client_nom': clientNom, 'client_uid': clientUid,
+        'client_profile_id': clientProfileId, 'client_email': clientEmail},
+  }).select('id, token').single();
+  return (id: row['id'].toString(), token: row['token'].toString());
+}
+
 Future<String> _deposer(Uint8List pdf) async {
   final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
   return uploadDocumentBytes(pdf, 'documents-pro/$uid/${DateTime.now().microsecondsSinceEpoch}.pdf');

@@ -48,6 +48,10 @@ export async function fichierEnPdf(f: File): Promise<Blob> {
   return doc.output('blob');
 }
 
+export async function deposerDocumentPro(blob: Blob, uid: string): Promise<string> {
+  return deposer(blob, uid);
+}
+
 async function deposer(blob: Blob, uid: string): Promise<string> {
   const path = `documents-pro/${uid}/${crypto.randomUUID()}.pdf`;
   const { error } = await supabase.storage.from('documents').upload(path, blob, { contentType: 'application/pdf', upsert: true });
@@ -89,6 +93,27 @@ export async function creerContratPro(blob: Blob, o: {
     // client_uid / client_profile_id / client_email : le contrat remonte dans « Mes contrats » du client.
     metadata: { document_pro: true, client_nom: o.clientNom, client_uid: o.rdv.client_uid ?? null,
       client_profile_id: o.rdv.client_profile_id ?? null, client_email: o.clientEmail },
+  }).select('id, token').single();
+  if (error) throw new Error(error.message);
+  return { id: String(data.id), token: String(data.token) };
+}
+
+/** Pension : contrat de la pension (son modèle ou un fichier chargé) rattaché
+ *  au séjour (pension_entree_id), à signer en ligne par le client. `url` :
+ *  modèle déjà déposé ; sinon `blob` est déposé. */
+export async function creerContratProSejour(o: {
+  entreeId: string; animalId: string | null; uid: string; proProfileId: string | null; titre: string;
+  clientNom: string; clientEmail: string | null; clientUid: string | null; clientProfileId: string | null;
+  url?: string | null; blob?: Blob | null;
+}): Promise<{ id: string; token: string }> {
+  const url = o.url || (o.blob ? await deposer(o.blob, o.uid) : null);
+  if (!url) throw new Error('Aucun contrat à envoyer');
+  const { data, error } = await supabase.from('documents_animaux').insert({
+    uid_eleveur: o.uid, ...(o.proProfileId ? { pro_profile_id: o.proProfileId } : {}),
+    animal_id: o.animalId, pension_entree_id: o.entreeId, type: TYPE_CONTRAT_PRO, titre: o.titre, statut: 'en_attente',
+    url, pdf_original_url: url,
+    ...(o.clientUid ? { uid_acquereur: o.clientUid, acquereur_profile_id: o.clientProfileId } : {}),
+    metadata: { document_pro: true, client_nom: o.clientNom, client_uid: o.clientUid, client_profile_id: o.clientProfileId, client_email: o.clientEmail },
   }).select('id, token').single();
   if (error) throw new Error(error.message);
   return { id: String(data.id), token: String(data.token) };

@@ -12,6 +12,7 @@ import { pensionPrixNuit, pensionTarifKeyForEspece, pensionTarifPourKey, type Ta
 // page de signature et le PDF de l'appli lisent ces données sans dépendre de
 // pension_entrees (illisible pour le client). Les signatures déjà posées sont
 // conservées. `transmettre` : statut en_attente + notification au client.
+// Réponse : id, token, statut, client_email / client_nom, signe_pro / signe_client.
 const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY ?? '', { auth: { persistSession: false } });
 
 type Ligne = Record<string, unknown>;
@@ -121,5 +122,12 @@ export async function POST(req: NextRequest) {
       data: { token, url: `/signer-contrat/${token}` }, read: false,
     });
   }
-  return NextResponse.json({ ok: true, id, token, statut, client_notifie: !!(b.transmettre && clientUid) });
+  // Signature de la pension déjà posée ? (finalisation : signer d'office avec la signature enregistrée)
+  const { data: apres } = await admin.from('documents_animaux').select('metadata, statut').eq('id', id).maybeSingle();
+  const meta = ((apres as { metadata?: Ligne | null } | null)?.metadata ?? {}) as Ligne;
+  return NextResponse.json({
+    ok: true, id, token, statut: (apres as { statut?: string } | null)?.statut ?? statut, client_notifie: !!(b.transmettre && clientUid),
+    client_email: clientEmail, client_nom: clientNom, client_a_compte: !!clientUid,
+    signe_pro: !!txt(meta.signature_eleveur), signe_client: !!txt(meta.signature_acquereur),
+  });
 }

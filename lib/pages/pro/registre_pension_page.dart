@@ -25,6 +25,8 @@ import 'package:PetsMatch/utils/client_pension.dart';
 import 'package:PetsMatch/utils/pension_facture_groupee.dart';
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart' show confirmerArriveePension, enregistrerDepartPension;
+import 'package:PetsMatch/pages/pro/pension_finalisation.dart' show finaliserSejourPension;
+import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show signerContratAvecSignaturePro;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
     show pensionTarifKeyForEspece, pensionTarifPourKey, especeMatchesLogement, pensionPrixNuit,
         pensionLogementTypeLabel, pensionAlimentationSejourApplicable;
@@ -158,7 +160,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       if (enCours.isNotEmpty) {
         try {
           final docs = await _supa.from('documents_animaux').select('pension_entree_id, statut')
-              .eq('type', 'contrat_hebergement').inFilter('pension_entree_id', enCours);
+              .inFilter('type', ['contrat_hebergement', 'contrat_document_pro']).inFilter('pension_entree_id', enCours);
           for (final d in docs as List) {
             contrats[d['pension_entree_id'].toString()] = (d['statut'] ?? 'brouillon').toString();
           }
@@ -365,62 +367,20 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
     if (!await confirmerArriveePension(context, entree) || !mounted) return;
     await _load();
     if (!mounted) return;
-    final suite = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
-          child: Align(alignment: Alignment.centerLeft, child: Text(
-              'Arrivée de ${entree['animal_nom'] ?? "l'animal"} enregistrée',
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
-        ),
-        for (final (cle, icone, lib) in [
-          ('signature', Icons.draw_outlined, 'Faire signer le contrat'),
-          ('contrat', Icons.description_outlined, 'Contrat PDF'),
-          ('facture', Icons.receipt_long_outlined, 'Facturer (acompte ou séjour)'),
-        ])
-          ListTile(
-            leading: Icon(icone, color: _teal),
-            title: Text(lib, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-            onTap: () => Navigator.pop(ctx, cle),
-          ),
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Plus tard', style: TextStyle(fontFamily: 'Galey'))),
-        const SizedBox(height: 8),
-      ])),
-    );
-    if (!mounted) return;
-    if (suite == 'signature') {
-      _genererContratSignature(entree);
-    } else if (suite == 'contrat') {
-      _genererContrat(entree);
-    } else if (suite == 'facture') {
-      _genererFacture(entree);
-    }
+    // Finalisation par étapes : contrat signé d'office et envoyé, facture.
+    await finaliserSejourPension(context, entree, arrivee: true);
+    if (mounted) await _load();
   }
 
   /// Sortie : fiche de départ (heure, personne qui récupère, restitutions,
   /// règlement), puis facture du séjour si pas encore faite, puis accès à la fiche.
   Future<void> _marquerSorti(Map<String, dynamic> entree) async {
     if (!await enregistrerDepartPension(context, entree) || !mounted) return;
-    if (!_entreesFacturees.contains(entree['id'].toString())) {
-      final facturer = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Facturer le séjour ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-          content: Text('Le séjour de ${entree['animal_nom'] ?? "l'animal"} n\'est pas encore facturé.',
-              style: const TextStyle(fontFamily: 'Galey')),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Plus tard')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true),
-                style: FilledButton.styleFrom(backgroundColor: _teal), child: const Text('Facturer')),
-          ],
-        ),
-      );
-      if (facturer == true && mounted) await _genererFacture(entree);
-      if (!mounted) return;
-    }
+    // Finalisation par étapes : contrat (relance), facture du séjour.
+    await finaliserSejourPension(context, entree, arrivee: false);
+    if (!mounted) return;
+    await _load();
+    if (!mounted) return;
 
     // Proposer de révoquer l'accès lecture
     final puce     = (entree['puce'] ?? '').toString().replaceAll(RegExp(r'[\s\-]'), '');
@@ -573,7 +533,11 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       final token = await _preparerContrat(e);
       if (token == null) return;
       // Transmis au client : à signer + notification (sur son profil).
-      final doc = await _supa.from('documents_animaux').select('statut, metadata').eq('token', token).maybeSingle();
+      final doc = await _supa.from('documents_animaux').select('id, statut, metadata').eq('token', token).maybeSingle();
+      // Signé d'avance avec la signature enregistrée de la pension.
+      if (doc != null && ((doc['metadata'] as Map?)?['signature_eleveur']?.toString() ?? '').isEmpty && mounted) {
+        await signerContratAvecSignaturePro(context, doc['id'].toString());
+      }
       if (doc?['statut'] == 'brouillon') {
         await _supa.from('documents_animaux').update({'statut': 'en_attente'}).eq('token', token);
       }
@@ -1283,7 +1247,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _FacturationSheet(entree: entree),
+      builder: (_) => PensionFacturationSheet(entree: entree),
     );
   }
 
@@ -3638,15 +3602,15 @@ class _AutreSejour {
   double get red => (double.tryParse(reduction.text.replaceAll(',', '.')) ?? 0).clamp(0, 100).toDouble();
 }
 
-class _FacturationSheet extends StatefulWidget {
+class PensionFacturationSheet extends StatefulWidget {
   final Map<String, dynamic> entree;
-  const _FacturationSheet({required this.entree});
+  const PensionFacturationSheet({super.key, required this.entree});
 
   @override
-  State<_FacturationSheet> createState() => _FacturationSheetState();
+  State<PensionFacturationSheet> createState() => _FacturationSheetState();
 }
 
-class _FacturationSheetState extends State<_FacturationSheet> {
+class _FacturationSheetState extends State<PensionFacturationSheet> {
   static const _teal   = Color(0xFF0C5C6C);
 
   late final TextEditingController _tarifCtrl;

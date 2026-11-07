@@ -6,6 +6,7 @@ import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
 import HorairesPensionForm from '@/components/pension/HorairesPensionForm';
+import { ACCEPT_DOCUMENT_PRO, deposerDocumentPro, fichierEnPdf } from '@/lib/document-pro';
 import { lireHoraires, type HorairesPension } from '@/lib/pension-horaires';
 import { PENSION_ESPECES, pensionGroupe, pensionTarifAccepte, pensionTarifEquin, type TarifsPension } from '@/lib/pension-especes';
 
@@ -47,6 +48,9 @@ export default function PensionTarifsPage() {
   // Horaires d'arrivée / de départ (null = pas d'horaires).
   const [horaires, setHoraires] = useState<HorairesPension | null>(null);
   const [erreurHoraires, setErreurHoraires] = useState('');
+  // Modèle de contrat de la pension (envoyé à la place du contrat PetsMatch).
+  const [modele, setModele] = useState<{ url: string; nom: string; le?: string } | null>(null);
+  const [envoiModele, setEnvoiModele] = useState('');
   const [showAutres, setShowAutres] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -80,6 +84,9 @@ export default function PensionTarifsPage() {
     // Colonne absente tant que migration_pension_horaires.sql n'est pas passée.
     const { data: hr } = await supabase.from('user_profiles').select('pension_horaires').eq('id', pid).maybeSingle();
     setHoraires(lireHoraires((hr as { pension_horaires?: unknown } | null)?.pension_horaires));
+    const { data: md } = await supabase.from('user_profiles').select('pension_contrat_modele').eq('id', pid).maybeSingle();
+    const m = (md as { pension_contrat_modele?: { url?: string; nom?: string; le?: string } | null } | null)?.pension_contrat_modele;
+    setModele(m?.url ? { url: m.url, nom: m.nom || 'Mon contrat', le: m.le } : null);
 
     // Prix déjà saisis, par key.
     const prixByKey: Record<string, { seul: string; partage: string }> = {};
@@ -221,6 +228,36 @@ export default function PensionTarifsPage() {
       </div>
 
       <HorairesPensionForm value={horaires} onChange={setHoraires} />
+
+      {/* Mon contrat d'hébergement : modèle envoyé à la place du contrat PetsMatch. */}
+      <div className={`bg-white rounded-2xl shadow-sm p-4 border ${modele ? 'border-[#6E9E57]/40' : 'border-gray-100'} space-y-2`}>
+        <p className="font-galey font-semibold text-sm text-[#1E2025]">Mon contrat d&apos;hébergement</p>
+        <p className="font-galey text-xs text-gray-500">Vous avez votre propre contrat ? Chargez-le (PDF ou photo) : à l&apos;arrivée, vous pourrez l&apos;envoyer à la place du contrat PetsMatch. Il est signé en ligne par le client, avec votre signature enregistrée.</p>
+        {modele ? (
+          <div className="flex flex-wrap items-center gap-3 text-sm font-galey">
+            <a href={modele.url} target="_blank" rel="noopener" className="font-semibold text-[#0C5C6C]">{modele.nom}</a>
+            <button type="button" onClick={async () => {
+              if (!profileId || !window.confirm('Retirer votre modèle de contrat ?')) return;
+              const { error } = await supabase.from('user_profiles').update({ pension_contrat_modele: null }).eq('id', profileId);
+              if (error) { setEnvoiModele(`Erreur : ${error.message}`); return; }
+              setModele(null);
+            }} className="text-xs font-semibold text-[#B3261E]">Retirer</button>
+          </div>
+        ) : null}
+        <input type="file" accept={ACCEPT_DOCUMENT_PRO} className="block w-full text-xs text-gray-600" onChange={async e => {
+          const f = e.target.files?.[0]; e.target.value = '';
+          if (!f || !user || !profileId) return;
+          setEnvoiModele('Envoi…');
+          try {
+            const url = await deposerDocumentPro(await fichierEnPdf(f), user.uid);
+            const m = { url, nom: f.name.replace(/\.[^.]+$/, '') || 'Mon contrat', le: new Date().toISOString() };
+            const { error } = await supabase.from('user_profiles').update({ pension_contrat_modele: m }).eq('id', profileId);
+            if (error) throw new Error(error.message);
+            setModele(m); setEnvoiModele('Modèle enregistré.');
+          } catch (err) { setEnvoiModele(`Erreur : ${err instanceof Error ? err.message : String(err)}`); }
+        }} />
+        {envoiModele && <p className="text-xs font-galey text-gray-600">{envoiModele}</p>}
+      </div>
       {erreurHoraires && <p className="text-sm text-[#B3261E] font-galey">{erreurHoraires}</p>}
 
       <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-teal-100">

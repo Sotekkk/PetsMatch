@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/pension_horaires.dart';
+import 'package:PetsMatch/utils/document_pro.dart' show choisirDocumentPdf, deposerDocumentPro;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
@@ -215,6 +216,9 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
   bool _essaiRequis = false;
   // Horaires d'arrivée / de départ (null = pas d'horaires).
   Map<String, dynamic>? _horaires;
+  // Modèle de contrat de la pension (envoyé à la place du contrat PetsMatch).
+  Map<String, dynamic>? _modele;
+  bool _envoiModele = false;
   final _essaiInfo = TextEditingController();
   bool _showAutresEspeces = false;
   // Règlement du séjour (repris dans le contrat) : arrhes à la réservation
@@ -255,6 +259,11 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
         try {
           final h = await _supa.from('user_profiles').select('pension_horaires').eq('id', pid).maybeSingle();
           _horaires = lireHorairesPension(h?['pension_horaires']);
+        } catch (_) {}
+        try {
+          final md = await _supa.from('user_profiles').select('pension_contrat_modele').eq('id', pid).maybeSingle();
+          final m = md?['pension_contrat_modele'];
+          _modele = m is Map && (m['url']?.toString() ?? '').isNotEmpty ? Map<String, dynamic>.from(m) : null;
         } catch (_) {}
         final data = row?['tarifs_pension'];
         if (data is Map) tarifs = Map<String, dynamic>.from(data);
@@ -422,6 +431,61 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
     }
   }
 
+  /// Mon contrat d'hébergement : modèle (PDF ou photo) envoyé à la place du
+  /// contrat PetsMatch, signé en ligne par le client. Enregistré tout de suite.
+  Widget _modeleContrat() {
+    final pid = User_Info.activeProfileId;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _modele != null ? _green.withValues(alpha: 0.4) : const Color(0xFFEEEEEE))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text("Mon contrat d'hébergement", style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+        const SizedBox(height: 2),
+        Text("Vous avez votre propre contrat ? Chargez-le (PDF ou photo) : à l'arrivée, vous pourrez l'envoyer à la place du contrat PetsMatch. Il est signé en ligne par le client, avec votre signature enregistrée.",
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        if (_modele != null)
+          Row(children: [
+            const Icon(Icons.description_outlined, size: 18, color: _green),
+            const SizedBox(width: 6),
+            Expanded(child: Text(_modele!['nom']?.toString() ?? 'Mon contrat', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600))),
+            TextButton(
+              onPressed: () async {
+                try {
+                  await _supa.from('user_profiles').update({'pension_contrat_modele': null}).eq('id', pid);
+                  setState(() => _modele = null);
+                } catch (e) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+                }
+              },
+              child: const Text('Retirer', style: TextStyle(fontFamily: 'Galey', color: Color(0xFFB3261E))),
+            ),
+          ]),
+        TextButton.icon(
+          onPressed: _envoiModele ? null : () async {
+            final pdf = await choisirDocumentPdf(context);
+            if (pdf == null || !mounted) return;
+            setState(() => _envoiModele = true);
+            try {
+              final url = await deposerDocumentPro(pdf);
+              final m = {'url': url, 'nom': 'Mon contrat', 'le': DateTime.now().toUtc().toIso8601String()};
+              await _supa.from('user_profiles').update({'pension_contrat_modele': m}).eq('id', pid);
+              setState(() => _modele = m);
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Modèle de contrat enregistré.')));
+            } catch (e) {
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Modèle non enregistré : $e')));
+            }
+            if (mounted) setState(() => _envoiModele = false);
+          },
+          icon: const Icon(Icons.upload_file, size: 18),
+          label: Text(_envoiModele ? 'Envoi…' : _modele != null ? 'Remplacer le modèle' : 'Charger mon contrat',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          style: TextButton.styleFrom(foregroundColor: _green, padding: EdgeInsets.zero),
+        ),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -481,6 +545,8 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
                 ),
                 const SizedBox(height: 12),
                 HorairesPensionForm(valeur: _horaires, onChange: (h) => setState(() => _horaires = h), couleur: _green),
+                const SizedBox(height: 12),
+                _modeleContrat(),
                 const SizedBox(height: 20),
                 const Text('Prix par espèce',
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),

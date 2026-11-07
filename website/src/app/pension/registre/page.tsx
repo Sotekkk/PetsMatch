@@ -11,6 +11,8 @@ import ArriveeDepartModal from '@/components/pension/ArriveeDepartModal';
 import { PensionFacturationModal } from '@/components/PensionFacturationModal';
 import { sejoursFactures } from '@/lib/pension-facture-groupee';
 import { logementAccepteEspece } from '@/lib/pension-especes';
+import FinalisationSejourModal from '@/components/pension/FinalisationSejourModal';
+import { signerContratAvecSignaturePro } from '@/lib/signature-pro';
 import { thumbUrl } from '@/lib/upload-media';
 import { apiFetch } from '@/lib/api-fetch';
 
@@ -76,7 +78,8 @@ export default function RegistrePensionPage() {
   const [journalFor, setJournalFor]     = useState<PensionEntree | null>(null);
   // Arrivée / sortie : fiche complète, puis suite (contrat, facture).
   const [arriveeDepart, setArriveeDepart] = useState<{ entree: PensionEntree; mode: 'arrivee' | 'depart' } | null>(null);
-  const [suiteArrivee, setSuiteArrivee] = useState<PensionEntree | null>(null);
+  // Après l'arrivée / le départ : finalisation par étapes (contrat signé et envoyé, facture).
+  const [finalisation, setFinalisation] = useState<{ entree: PensionEntree; mode: 'arrivee' | 'depart' } | null>(null);
   const [facturationFor, setFacturationFor] = useState<PensionEntree | null>(null);
   const [showNonFacturees, setShowNonFacturees] = useState(false);
   // Séjours facturés par le moteur commun (factures), groupées comprises.
@@ -134,7 +137,7 @@ export default function RegistrePensionPage() {
     const enCours = ((ent ?? []) as PensionEntree[]).filter(e => e.statut === 'en_pension').map(e => e.id).slice(0, 300);
     if (enCours.length) {
       const { data: docs } = await supabase.from('documents_animaux').select('pension_entree_id, statut')
-        .eq('type', 'contrat_hebergement').in('pension_entree_id', enCours);
+        .in('type', ['contrat_hebergement', 'contrat_document_pro']).in('pension_entree_id', enCours);
       setContrats(Object.fromEntries(((docs ?? []) as { pension_entree_id: string; statut: string | null }[]).map(d => [d.pension_entree_id, d.statut ?? 'brouillon'])));
     } else setContrats({});
     setFactures((fact ?? []) as PensionFacture[]);
@@ -168,8 +171,12 @@ export default function RegistrePensionPage() {
   // Contrat du séjour (créé / mis à jour côté serveur) ouvert dans la page du contrat.
   async function ouvrirContrat(e: PensionEntree) {
     const r = await apiFetch('/api/pension/contrat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entreeId: e.id }) });
-    const j = await r.json().catch(() => ({})) as { token?: string; error?: string };
+    const j = await r.json().catch(() => ({})) as { token?: string; id?: string; signe_pro?: boolean; error?: string };
     if (!r.ok || !j.token) { alert(j.error ?? 'Contrat impossible'); return; }
+    // Signé d'avance avec la signature enregistrée de la pension (sinon elle signe sur la page).
+    if (j.id && !j.signe_pro && user) {
+      await signerContratAvecSignaturePro(j.id, user.uid, `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'La pension', null, true).catch(() => false);
+    }
     router.push(`/signer-contrat/${j.token}`);
   }
 
@@ -179,10 +186,7 @@ export default function RegistrePensionPage() {
     setArriveeDepart(null);
     load();
     if (!ad) return;
-    if (ad.mode === 'arrivee') { setSuiteArrivee(ad.entree); return; }
-    if (!entreesFacturees.has(ad.entree.id) && window.confirm(`Le séjour de ${ad.entree.animal_nom} n'est pas encore facturé. Facturer maintenant ?`)) {
-      setFacturationFor(ad.entree);
-    }
+    setFinalisation({ entree: ad.entree, mode: ad.mode });
   }
 
   // Export CSV
@@ -445,18 +449,10 @@ export default function RegistrePensionPage() {
         <ArriveeDepartModal sejour={arriveeDepart.entree} mode={arriveeDepart.mode} uid={user.uid}
           onClose={() => setArriveeDepart(null)} onDone={apresArriveeDepart} />
       )}
-      {suiteArrivee && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000 }}
-          onClick={e => e.target === e.currentTarget && setSuiteArrivee(null)}>
-          <div style={{ background: 'white', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 480, padding: '16px 8px 24px', fontFamily: 'Galey, sans-serif' }}>
-            <p style={{ margin: '0 16px 8px', fontWeight: 700, fontSize: 15, color: '#1E2025' }}>Arrivée de {suiteArrivee.animal_nom} enregistrée</p>
-            <ActionRow icon="" label="Faire signer le contrat" color={PURPLE}
-              onClick={() => { const e = suiteArrivee; setSuiteArrivee(null); void ouvrirContrat(e); }} />
-            <ActionRow icon="" label="Facturer (acompte ou séjour)" color={TEAL}
-              onClick={() => { const e = suiteArrivee; setSuiteArrivee(null); setFacturationFor(e); }} />
-            <ActionRow icon="" label="Plus tard" color="#6b7280" onClick={() => setSuiteArrivee(null)} />
-          </div>
-        </div>
+      {finalisation && (
+        <FinalisationSejourModal entree={finalisation.entree} mode={finalisation.mode} proProfileId={activeProfileId || null}
+          pensionNom={userData?.nameElevage || userData?.firstname || 'Votre pension'}
+          onClose={() => { setFinalisation(null); load(); }} />
       )}
       {journalFor && (
         <PensionJournal

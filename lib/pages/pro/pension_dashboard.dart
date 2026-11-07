@@ -17,6 +17,7 @@ import 'package:PetsMatch/pages/pro/pension_mes_taches_page.dart';
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart';
+import 'package:PetsMatch/pages/pro/pension_finalisation.dart' show finaliserSejourPension;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show logementAccepteEspece;
 import 'package:PetsMatch/utils/pension_horaires.dart';
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
@@ -145,11 +146,15 @@ class _PensionDashboardState extends State<PensionDashboard> {
   }
 
   Future<void> _depart(Map<String, dynamic> s) async {
-    if (await enregistrerDepartPension(context, s)) _charger();
+    if (!await enregistrerDepartPension(context, s) || !mounted) return;
+    await finaliserSejourPension(context, s, arrivee: false);
+    _charger();
   }
 
   Future<void> _arrivee(Map<String, dynamic> s) async {
-    if (await confirmerArriveePension(context, s)) _charger();
+    if (!await confirmerArriveePension(context, s) || !mounted) return;
+    await finaliserSejourPension(context, s, arrivee: true);
+    _charger();
   }
 
   /// Accepter une demande (un ou plusieurs animaux) en attribuant un logement
