@@ -514,7 +514,9 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
           return x.isNotEmpty ? x : (entree?[entreeKey ?? metaKey]?.toString() ?? '').trim();
         }
         double d(String k) => double.tryParse(m(k).replaceAll(',', '.')) ?? 0;
-        final esp = v('espece'), race = v('race');
+        // Contrat groupé (plusieurs animaux) : espèces déjà dans le nom.
+        final groupe = (_doc?['metadata'] as Map?)?['entree_ids'] != null;
+        final esp = groupe ? m('espece') : v('espece'), race = groupe ? m('race') : v('race');
         var animal = v('animal_nom');
         if (animal.isNotEmpty && esp.isNotEmpty) animal = '$animal ($esp${race.isNotEmpty ? ' — $race' : ''})';
         final contact = [m('client_tel'), m('client_email').isNotEmpty ? m('client_email') : (entree?['proprietaire_contact']?.toString() ?? '')]

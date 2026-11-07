@@ -18,6 +18,7 @@ import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart';
 import 'package:PetsMatch/pages/pro/pension_finalisation.dart' show finaliserSejourPension;
+import 'package:PetsMatch/pages/pro/registre_pension_page.dart' show PensionFacturationSheet;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show logementAccepteEspece;
 import 'package:PetsMatch/utils/pension_horaires.dart';
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
@@ -147,13 +148,47 @@ class _PensionDashboardState extends State<PensionDashboard> {
 
   Future<void> _depart(Map<String, dynamic> s) async {
     if (!await enregistrerDepartPension(context, s) || !mounted) return;
-    await finaliserSejourPension(context, s, arrivee: false);
+    await finaliserSejourPension(context, s, arrivee: false,
+        autresIds: dernierGroupePension.where((i) => i != s['id'].toString()).toList());
     _charger();
+  }
+
+  /// Après acceptation : la place est bloquée au planning (séjour créé, sans
+  /// arrivée) ; si le règlement prévoit des arrhes, facture d'acompte proposée.
+  Future<void> _proposerArrhes(List<Map<String, dynamic>> g) async {
+    final pid = User_Info.activeProfileId;
+    int? pct;
+    try {
+      final p = await _supa.from('user_profiles').select('tarifs_pension').eq('id', pid).maybeSingle();
+      final a = (((p?['tarifs_pension'] as Map?)?['reglement'] as Map?)?['arrhes_pct'] as num?)?.round();
+      pct = a != null && a > 0 ? a : null;
+    } catch (_) {}
+    if (pct == null || !mounted) return;
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text("Facture d'arrhes", style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: Text("La place est bloquée au planning. Envoyer maintenant la facture d'arrhes ($pct %)${g.length > 1 ? ' pour les ${g.length} animaux' : ''} ?",
+          style: const TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Plus tard')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Facturer les arrhes')),
+      ],
+    ));
+    if (ok != true || !mounted) return;
+    try {
+      final dm = await _supa.from('pension_demandes').select('entree_id').eq('id', g.first['id'].toString()).maybeSingle();
+      final eid = dm?['entree_id']?.toString();
+      if (eid == null) return;
+      final en = await _supa.from('pension_entrees').select().eq('id', eid).maybeSingle();
+      if (en == null || !mounted) return;
+      await showModalBottomSheet(context: context, isScrollControlled: true, useSafeArea: true, backgroundColor: Colors.transparent,
+          builder: (_) => PensionFacturationSheet(entree: Map<String, dynamic>.from(en), acompte: pct));
+    } catch (_) {}
   }
 
   Future<void> _arrivee(Map<String, dynamic> s) async {
     if (!await confirmerArriveePension(context, s) || !mounted) return;
-    await finaliserSejourPension(context, s, arrivee: true);
+    await finaliserSejourPension(context, s, arrivee: true,
+        autresIds: dernierGroupePension.where((i) => i != s['id'].toString()).toList());
     _charger();
   }
 
@@ -434,6 +469,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(accepter
           ? '${g.length > 1 ? 'Séjours acceptés : ils sont' : 'Séjour accepté : il est'} au planning et le client est prévenu' : 'Demande refusée, le client est prévenu')));
+      if (accepter) await _proposerArrhes(g);
       setState(() => _loading = true);
       _charger();
     } catch (e) {

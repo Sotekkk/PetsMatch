@@ -17,11 +17,13 @@ const num = (v: string) => parseFloat(v.replace(',', '.')) || 0;
 /** Séjour d'un autre animal du même client, ajoutable à la facture. */
 interface AutreSejour { entree: Record<string, unknown>; nuits: string; tarif: string; reduction: string; inclus: boolean }
 
-export function PensionFacturationModal({ entree, proProfileId, pensionNom, onClose }: {
+export function PensionFacturationModal({ entree, proProfileId, pensionNom, onClose, acompte }: {
   entree: PensionEntree;
   proProfileId: string | null;
   pensionNom: string;
   onClose: () => void;
+  /** Arrhes à la réservation : facture d'acompte pré-cochée, au pourcentage donné. */
+  acompte?: number | null;
 }) {
   const router = useRouter();
   const dateEntree = entree.date_entree ? new Date(entree.date_entree) : null;
@@ -37,8 +39,8 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
   const [suppDesc, setSuppDesc] = useState('');
   const [suppMontant, setSuppMontant] = useState('');
   const [avecTVA, setAvecTVA] = useState(false);
-  const [isAcompte, setIsAcompte] = useState(false);
-  const [acomptePct, setAcomptePct] = useState('30');
+  const [isAcompte, setIsAcompte] = useState(!!acompte);
+  const [acomptePct, setAcomptePct] = useState(acompte ? String(acompte) : '30');
   const [error, setError] = useState('');
   const [emetteur, setEmetteur] = useState<PensionFactureEmetteur | null>(null);
   const [reduction, setReduction] = useState('');
@@ -78,7 +80,8 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
         const n = nuitsSejour(x);
         const sx = await tarifPensionSuggere(supabase, x, config, n);
         liste.push({ entree: x, nuits: String(n), tarif: sx && sx.prixNuit > 0 ? sx.prixNuit.toFixed(2) : '',
-          reduction: sx?.reductionPct ? String(sx.reductionPct) : '', inclus: false });
+          // Animaux du même client : inclus d'office (arrivée groupée, facture unique), décochables.
+          reduction: sx?.reductionPct ? String(sx.reductionPct) : '', inclus: true });
       }
       setAutres(liste);
     })();
@@ -195,7 +198,7 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
           </div>
         </div>
 
-        {autres.length > 0 && !isAcompte && (
+        {autres.length > 0 && (
           <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
             <p style={{ margin: '0 0 6px', fontFamily: 'Galey, sans-serif', fontSize: 13, fontWeight: 700, color: '#374151' }}>
               Autres animaux de ce client sur la période

@@ -227,8 +227,9 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         generatedHtml = generateContratHebergementHTML(
           {
             animal_nom: s('animal_nom') ?? entree?.animal_nom ?? '',
-            espece: s('espece') ?? entree?.espece ?? undefined,
-            race: s('race') ?? entree?.race ?? undefined,
+            // Contrat groupé (plusieurs animaux) : espèces déjà dans le nom.
+            espece: s('espece') ?? ((meta as Record<string, unknown>).entree_ids ? undefined : entree?.espece ?? undefined),
+            race: s('race') ?? ((meta as Record<string, unknown>).entree_ids ? undefined : entree?.race ?? undefined),
             proprietaire_nom: s('client_nom') ?? entree?.proprietaire_nom ?? undefined,
             proprietaire_contact: entree?.proprietaire_contact ?? undefined,
             date_entree: s('date_entree') ?? entree?.date_entree ?? undefined,

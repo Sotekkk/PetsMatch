@@ -79,7 +79,7 @@ export default function RegistrePensionPage() {
   // Arrivée / sortie : fiche complète, puis suite (contrat, facture).
   const [arriveeDepart, setArriveeDepart] = useState<{ entree: PensionEntree; mode: 'arrivee' | 'depart' } | null>(null);
   // Après l'arrivée / le départ : finalisation par étapes (contrat signé et envoyé, facture).
-  const [finalisation, setFinalisation] = useState<{ entree: PensionEntree; mode: 'arrivee' | 'depart' } | null>(null);
+  const [finalisation, setFinalisation] = useState<{ entree: PensionEntree; mode: 'arrivee' | 'depart'; autres?: string[] } | null>(null);
   const [facturationFor, setFacturationFor] = useState<PensionEntree | null>(null);
   const [showNonFacturees, setShowNonFacturees] = useState(false);
   // Séjours facturés par le moteur commun (factures), groupées comprises.
@@ -138,7 +138,14 @@ export default function RegistrePensionPage() {
     if (enCours.length) {
       const { data: docs } = await supabase.from('documents_animaux').select('pension_entree_id, statut')
         .in('type', ['contrat_hebergement', 'contrat_document_pro']).in('pension_entree_id', enCours);
-      setContrats(Object.fromEntries(((docs ?? []) as { pension_entree_id: string; statut: string | null }[]).map(d => [d.pension_entree_id, d.statut ?? 'brouillon'])));
+      const etat: Record<string, string> = Object.fromEntries(((docs ?? []) as { pension_entree_id: string; statut: string | null }[]).map(d => [d.pension_entree_id, d.statut ?? 'brouillon']));
+      // Contrats groupés (plusieurs animaux) : l'état vaut pour chaque séjour couvert.
+      const { data: grp } = await supabase.from('documents_animaux').select('statut, metadata')
+        .eq('uid_eleveur', user.uid).in('type', ['contrat_hebergement', 'contrat_document_pro']).not('metadata->entree_ids', 'is', null);
+      for (const g of (grp ?? []) as { statut: string | null; metadata: { entree_ids?: string[] } | null }[]) {
+        for (const id of g.metadata?.entree_ids ?? []) if (!etat[id]) etat[id] = g.statut ?? 'brouillon';
+      }
+      setContrats(etat);
     } else setContrats({});
     setFactures((fact ?? []) as PensionFacture[]);
     if (proProfileId) sejoursFactures(supabase, proProfileId).then(setFacturesSejours).catch(() => {});
@@ -181,12 +188,12 @@ export default function RegistrePensionPage() {
   }
 
   // Après l'arrivée : contrat / facture ; après la sortie : facture si pas encore faite.
-  function apresArriveeDepart() {
+  function apresArriveeDepart(ids?: string[]) {
     const ad = arriveeDepart;
     setArriveeDepart(null);
     load();
     if (!ad) return;
-    setFinalisation({ entree: ad.entree, mode: ad.mode });
+    setFinalisation({ entree: ad.entree, mode: ad.mode, autres: (ids ?? []).filter(i => i !== ad.entree.id) });
   }
 
   // Export CSV
@@ -450,7 +457,7 @@ export default function RegistrePensionPage() {
           onClose={() => setArriveeDepart(null)} onDone={apresArriveeDepart} />
       )}
       {finalisation && (
-        <FinalisationSejourModal entree={finalisation.entree} mode={finalisation.mode} proProfileId={activeProfileId || null}
+        <FinalisationSejourModal entree={finalisation.entree} mode={finalisation.mode} autresIds={finalisation.autres} proProfileId={activeProfileId || null}
           pensionNom={userData?.nameElevage || userData?.firstname || 'Votre pension'}
           onClose={() => { setFinalisation(null); load(); }} />
       )}

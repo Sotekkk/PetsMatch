@@ -51,7 +51,7 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
   // Acceptation : logement attribué à chaque animal (AccepterSejourModal).
   const [aAccepter, setAAccepter] = useState<Demande[] | null>(null);
   // Après l'arrivée / le départ : finalisation par étapes (contrat, facture).
-  const [finalisation, setFinalisation] = useState<{ sejour: Sejour; mode: 'arrivee' | 'depart' } | null>(null);
+  const [finalisation, setFinalisation] = useState<{ sejour: Sejour; mode: 'arrivee' | 'depart'; autres?: string[] } | null>(null);
 
   const charger = useCallback(async () => {
     if (!uid) return;
@@ -262,10 +262,10 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
       )}
       {action && (
         <ArriveeDepartModal sejour={action.sejour} mode={action.mode} uid={uid}
-          onClose={() => setAction(null)} onDone={() => { setFinalisation({ sejour: action.sejour, mode: action.mode }); setAction(null); charger(); }} />
+          onClose={() => setAction(null)} onDone={ids => { setFinalisation({ sejour: action.sejour, mode: action.mode, autres: (ids ?? []).filter(i => i !== action.sejour.id) }); setAction(null); charger(); }} />
       )}
       {finalisation && (
-        <FinalisationSejourModal entree={finalisation.sejour as unknown as Parameters<typeof FinalisationSejourModal>[0]['entree']} mode={finalisation.mode}
+        <FinalisationSejourModal entree={finalisation.sejour as unknown as Parameters<typeof FinalisationSejourModal>[0]['entree']} mode={finalisation.mode} autresIds={finalisation.autres}
           proProfileId={pid || null} pensionNom={nom || 'Votre pension'} onClose={() => { setFinalisation(null); charger(); }} />
       )}
     </div>

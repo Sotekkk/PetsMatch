@@ -11,6 +11,8 @@ import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
 import { logementAccepteEspece } from '@/lib/pension-especes';
 import { dureePassage, heureValide, lireHoraires, type HorairesPension } from '@/lib/pension-horaires';
+import { PensionFacturationModal } from '@/components/PensionFacturationModal';
+import type { PensionEntree } from '@/components/PensionEntreeModal';
 
 export interface DemandeSejour {
   id: string; animal_id: string; animal_nom: string | null; espece?: string | null;
@@ -38,6 +40,11 @@ export default function AccepterSejourModal({ groupe, uid, proProfileId, couleur
   const [occupations, setOccupations] = useState<Occupation[]>([]);
   const [choix, setChoix] = useState<Record<string, string>>({});
   const [envoi, setEnvoi] = useState(false);
+  // Après acceptation : séjour réservé au planning ; facture d'arrhes proposée.
+  const [accepte, setAccepte] = useState(false);
+  const [arrhesPct, setArrhesPct] = useState<number | null>(null);
+  const [sejourArrhes, setSejourArrhes] = useState<PensionEntree | null>(null);
+  const [pensionNom, setPensionNom] = useState('Votre pension');
   const [erreur, setErreur] = useState('');
   const d0 = groupe[0];
   const jours = nuits(d0.date_arrivee, d0.date_depart);
@@ -93,10 +100,50 @@ export default function AccepterSejourModal({ groupe, uid, proProfileId, couleur
       return;
     }
     if (!r.ok) { setErreur(j.error ?? 'Acceptation impossible'); return; }
-    onDone();
+    // Arrhes prévues au règlement : facture d'acompte proposée tout de suite.
+    let pct: number | null = null;
+    if (proProfileId) {
+      const { data: p } = await supabase.from('user_profiles').select('nom, tarifs_pension').eq('id', proProfileId).maybeSingle();
+      const reg = (p as { tarifs_pension?: { reglement?: { arrhes_pct?: number | null } } } | null)?.tarifs_pension?.reglement;
+      pct = reg?.arrhes_pct && reg.arrhes_pct > 0 ? reg.arrhes_pct : null;
+      setPensionNom((p as { nom?: string | null } | null)?.nom || 'Votre pension');
+    }
+    if (!pct) { onDone(); return; }
+    setArrhesPct(pct);
+    setAccepte(true);
+  }
+
+  /** Séjour créé à l'acceptation (pension_demandes.entree_id) : facture d'arrhes. */
+  async function facturerArrhes() {
+    const { data: dm } = await supabase.from('pension_demandes').select('entree_id').eq('id', d0.id).maybeSingle();
+    const eid = (dm as { entree_id?: string | null } | null)?.entree_id;
+    if (!eid) { setErreur('Séjour introuvable : facturez depuis le registre.'); return; }
+    const { data: en } = await supabase.from('pension_entrees').select('*').eq('id', eid).maybeSingle();
+    if (en) setSejourArrhes(en as PensionEntree);
   }
 
   const champ = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white';
+  if (accepte) {
+    return (
+      <>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={onDone}>
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 space-y-3" onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
+            <p className="font-bold text-lg text-[#1F2A2E]">{groupe.length > 1 ? 'Séjours acceptés' : 'Séjour accepté'}</p>
+            <p className="text-sm text-gray-600">La place est bloquée au planning, le client est prévenu. Envoyez maintenant la facture d&apos;arrhes ({arrhesPct} %){groupe.length > 1 ? ` pour les ${groupe.length} animaux` : ''} ?</p>
+            {erreur && <p className="text-sm text-[#B3261E]">{erreur}</p>}
+            <div className="flex gap-2">
+              <button onClick={onDone} className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600">Plus tard</button>
+              <button onClick={() => { void facturerArrhes(); }} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: couleur }}>Facturer les arrhes</button>
+            </div>
+          </div>
+        </div>
+        {sejourArrhes && (
+          <PensionFacturationModal entree={sejourArrhes} proProfileId={proProfileId ?? null} pensionNom={pensionNom} acompte={arrhesPct}
+            onClose={() => { setSejourArrhes(null); onDone(); }} />
+        )}
+      </>
+    );
+  }
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={onClose}>
       <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 max-h-[92vh] overflow-y-auto space-y-3" onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>

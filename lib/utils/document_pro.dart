@@ -89,6 +89,8 @@ Future<({String id, String token})> creerContratProSejour({
   required String entreeId, String? animalId, String? proProfileId, required String titre,
   required String clientNom, String? clientEmail, String? clientUid, String? clientProfileId,
   String? url, Uint8List? pdf,
+  /// Plusieurs animaux du même client : séjours couverts par ce contrat.
+  List<String> entreeIds = const [],
 }) async {
   final lien = (url ?? '').isNotEmpty ? url! : pdf != null ? await _deposer(pdf) : null;
   if (lien == null) throw Exception('Aucun contrat à envoyer');
@@ -99,7 +101,8 @@ Future<({String id, String token})> creerContratProSejour({
     'type': kTypeContratPro, 'titre': titre, 'statut': 'en_attente', 'url': lien, 'pdf_original_url': lien,
     if ((clientUid ?? '').isNotEmpty) ...{'uid_acquereur': clientUid, 'acquereur_profile_id': clientProfileId},
     'metadata': {'document_pro': true, 'client_nom': clientNom, 'client_uid': clientUid,
-        'client_profile_id': clientProfileId, 'client_email': clientEmail},
+        'client_profile_id': clientProfileId, 'client_email': clientEmail,
+        if (entreeIds.length > 1) 'entree_ids': entreeIds},
   }).select('id, token').single();
   return (id: row['id'].toString(), token: row['token'].toString());
 }

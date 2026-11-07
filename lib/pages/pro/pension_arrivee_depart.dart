@@ -67,8 +67,75 @@ Future<void> _maj(BuildContext context, String id, Map<String, dynamic> complet,
   }
 }
 
+/// Séjours enregistrés lors de la dernière arrivée / du dernier départ (cet
+/// animal + ceux du même client cochés) : finalisation groupée.
+List<String> dernierGroupePension = [];
+
+/// Autres animaux du même client (e-mail ou nom), même pension : attendus le
+/// même jour (arrivée) ou présents et partant le même jour (départ).
+Future<List<Map<String, dynamic>>> _compagnons(Map<String, dynamic> entree, {required bool arrivee}) async {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return [];
+  final supa = Supabase.instance.client;
+  try {
+    final moi = await supa.from('pension_entrees').select('proprietaire_email, proprietaire_nom, date_entree, date_sortie_prevue, pro_profile_id')
+        .eq('id', entree['id'].toString()).maybeSingle();
+    final email = (moi?['proprietaire_email']?.toString() ?? '').trim(), nom = (moi?['proprietaire_nom']?.toString() ?? '').trim();
+    if (email.isEmpty && nom.isEmpty) return [];
+    var q = supa.from('pension_entrees').select('id, animal_nom, espece, logement_id, date_entree, date_sortie_prevue, arrivee_reelle_le, pro_profile_id')
+        .eq('pro_uid', uid).eq('statut', 'en_pension').neq('id', entree['id'].toString());
+    q = email.isNotEmpty ? q.eq('proprietaire_email', email) : q.eq('proprietaire_nom', nom);
+    q = arrivee ? q.isFilter('arrivee_reelle_le', null).eq('date_entree', moi?['date_entree']?.toString() ?? '') : q.not('arrivee_reelle_le', 'is', null);
+    final pid = moi?['pro_profile_id']?.toString() ?? '';
+    return [
+      for (final c in await q)
+        if ((pid.isEmpty || (c['pro_profile_id']?.toString() ?? '').isEmpty || c['pro_profile_id'].toString() == pid)
+            && (arrivee || moi?['date_sortie_prevue'] == null || c['date_sortie_prevue'] == moi?['date_sortie_prevue']))
+          Map<String, dynamic>.from(c),
+    ];
+  } catch (_) {
+    return [];
+  }
+}
+
+/// Arrivée / départ groupé : cases à cocher des autres animaux du même client
+/// (logement de chacun à l'arrivée, selon son espèce).
+Widget _blocCompagnons(List<Map<String, dynamic>> compagnons, Map<String, bool> coches, Map<String, String?> logs,
+    List<Map<String, dynamic>> logements, void Function(void Function()) setS, {required bool arrivee}) {
+  if (compagnons.isEmpty) return const SizedBox.shrink();
+  return Container(
+    margin: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+    decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFE4E7E2))),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(arrivee ? 'Arrivent aussi (même client)' : 'Partent aussi (même client)',
+          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+      for (final c in compagnons) Row(children: [
+        Checkbox(value: coches[c['id'].toString()] ?? false, activeColor: _teal, visualDensity: VisualDensity.compact,
+            onChanged: (v) => setS(() => coches[c['id'].toString()] = v ?? false)),
+        Expanded(child: Text(c['animal_nom']?.toString() ?? 'Animal', style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5))),
+        if (arrivee && (coches[c['id'].toString()] ?? false) && logements.isNotEmpty)
+          SizedBox(width: 150, child: DropdownButton<String?>(
+            value: logs[c['id'].toString()], isExpanded: true, isDense: true,
+            hint: const Text('Logement…', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+            items: [
+              for (final l in logements)
+                if (logementAccepteEspece(l['especes'] as List?, c['espece']?.toString()) || l['id'].toString() == logs[c['id'].toString()])
+                  DropdownMenuItem(value: l['id'].toString(), child: Text(l['nom']?.toString() ?? 'Logement', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5))),
+            ],
+            onChanged: (v) => setS(() => logs[c['id'].toString()] = v),
+          )),
+      ]),
+      if (arrivee)
+        Text("Même heure et même personne ; les apports ci-dessous concernent cet animal.",
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+    ]),
+  );
+}
+
 /// Arrivée : heure réelle, déposant, hébergement, apports, consignes.
 Future<bool> confirmerArriveePension(BuildContext context, Map<String, dynamic> entree) async {
+  dernierGroupePension = [];
   final uid = FirebaseAuth.instance.currentUser?.uid;
   if (uid == null) return false;
   final supa = Supabase.instance.client;
@@ -100,6 +167,9 @@ Future<bool> confirmerArriveePension(BuildContext context, Map<String, dynamic> 
   }
   final dejaAttribue = entree['logement_id']?.toString();
   final logementsTous = logements;
+  final compagnons = await _compagnons(entree, arrivee: true);
+  final coches = {for (final c in compagnons) c['id'].toString(): true};
+  final logsComp = <String, String?>{for (final c in compagnons) c['id'].toString(): c['logement_id']?.toString()};
   logements = [for (final l in logementsTous) if (logementAccepteEspece(l['especes'] as List?, espece) || l['id'].toString() == dejaAttribue) l];
   if (!context.mounted) return false;
   var heure = DateTime.now();
@@ -139,6 +209,7 @@ Future<bool> confirmerArriveePension(BuildContext context, Map<String, dynamic> 
                 onPressed: () => setS(() => deposeCtrl.text = n)),
           ]),
         _champ(deposeCtrl, 'Déposé par'),
+        _blocCompagnons(compagnons, coches, logsComp, logementsTous, setS, arrivee: true),
         if (logementsTous.isNotEmpty && logements.isEmpty)
           const Padding(
             padding: EdgeInsets.only(bottom: 10),
@@ -172,7 +243,8 @@ Future<bool> confirmerArriveePension(BuildContext context, Map<String, dynamic> 
           style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 13),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-          child: const Text("Enregistrer l'arrivée", style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          child: Text("Enregistrer l'arrivée${coches.values.any((v) => v) ? ' (${1 + coches.values.where((v) => v).length} animaux)' : ''}",
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         )),
       ])),
     )),
@@ -193,13 +265,32 @@ Future<bool> confirmerArriveePension(BuildContext context, Map<String, dynamic> 
     'consignes_sejour': consignes.isEmpty ? null : consignes,
     'observations_arrivee': t(obsCtrl),
   }, {'logement_id': logementId});
+  // Autres animaux du même client cochés : même heure, même personne, leur logement.
+  final ids = [entree['id'].toString()];
+  for (final c in compagnons) {
+    final id = c['id'].toString();
+    if (coches[id] != true) continue;
+    try {
+      final deja = await supa.from('pension_entrees').select('arrivee_reelle_le').eq('id', id).maybeSingle();
+      if (deja?['arrivee_reelle_le'] != null) continue;
+      await supa.from('pension_entrees').update({
+        'statut': 'en_pension', 'arrivee_reelle_le': heure.toUtc().toIso8601String(),
+        'depose_par': t(deposeCtrl), 'logement_id': logsComp[id],
+      }).eq('id', id);
+      ids.add(id);
+    } catch (_) {}
+  }
+  dernierGroupePension = ids;
   return true;
 }
 
 /// Départ : heure réelle, personne qui récupère (autorisée ?), restitutions,
 /// observations finales, règlement — puis séjour clôturé (statut sorti).
 Future<bool> enregistrerDepartPension(BuildContext context, Map<String, dynamic> entree) async {
+  dernierGroupePension = [];
   final connus = await _personnesConnues(entree);
+  final compagnons = await _compagnons(entree, arrivee: false);
+  final coches = {for (final c in compagnons) c['id'].toString(): true};
   if (!context.mounted) return false;
   var heure = DateTime.now();
   final recupCtrl = TextEditingController(text: connus.isNotEmpty ? connus.first : '');
@@ -218,6 +309,7 @@ Future<bool> enregistrerDepartPension(BuildContext context, Map<String, dynamic>
           Text("Départ — ${entree['animal_nom'] ?? 'Animal'}",
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 17, color: _teal)),
           const SizedBox(height: 12),
+          _blocCompagnons(compagnons, coches, const {}, const [], setS, arrivee: false),
           ListTile(
             contentPadding: EdgeInsets.zero, dense: true,
             leading: const Icon(Icons.schedule, color: _teal),
@@ -276,12 +368,24 @@ Future<bool> enregistrerDepartPension(BuildContext context, Map<String, dynamic>
     if (!reglement) 'Règlement non vérifié au départ.',
   ].join('\n');
   final dateStr = DateFormat('yyyy-MM-dd').format(heure);
-  await _maj(context, entree['id'].toString(), {
+  final depart = {
     'statut': 'sorti',
     'date_sortie_effective': dateStr,
     'depart_reel_le': heure.toUtc().toIso8601String(),
     'recupere_par': recupCtrl.text.trim().isEmpty ? null : recupCtrl.text.trim(),
     'observations_depart': obs.isEmpty ? null : obs,
-  }, {'statut': 'sorti', 'date_sortie_effective': dateStr});
+  };
+  await _maj(context, entree['id'].toString(), depart, {'statut': 'sorti', 'date_sortie_effective': dateStr});
+  // Autres animaux du même client cochés : même départ.
+  final ids = [entree['id'].toString()];
+  for (final c in compagnons) {
+    final id = c['id'].toString();
+    if (coches[id] != true) continue;
+    try {
+      await Supabase.instance.client.from('pension_entrees').update(depart).eq('id', id);
+      ids.add(id);
+    } catch (_) {}
+  }
+  dernierGroupePension = ids;
   return true;
 }

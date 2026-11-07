@@ -17,9 +17,19 @@ export interface SejourPension {
 
 const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 
+/** Autre animal du même client, attendu (arrivée) ou présent (départ) : arrivée / départ groupé. */
+interface Compagnon { id: string; animal_nom: string | null; espece: string | null; logement_id: string | null }
+
 export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone }: {
-  sejour: SejourPension; mode: 'arrivee' | 'depart'; uid: string; onClose: () => void; onDone: () => void;
+  sejour: SejourPension; mode: 'arrivee' | 'depart'; uid: string; onClose: () => void;
+  /** `ids` : séjours enregistrés (cet animal + ceux du même client cochés). */
+  onDone: (ids?: string[]) => void;
 }) {
+  // Arrivée / départ groupé : autres animaux du même client, cochés d'office,
+  // avec leur logement (espèce) à l'arrivée.
+  const [compagnons, setCompagnons] = useState<Compagnon[]>([]);
+  const [coches, setCoches] = useState<Record<string, boolean>>({});
+  const [logCompagnon, setLogCompagnon] = useState<Record<string, string>>({});
   const [connus, setConnus] = useState<string[]>([]);
   const [logements, setLogements] = useState<{ id: string; nom: string; type: string | null; especes?: string[] | null }[]>([]);
   // Espèce de l'animal : seuls les logements qui l'acceptent sont proposés.
@@ -55,9 +65,28 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
       setConnus(noms); setPersonne(noms[0] ?? '');
       setEspece(esp);
       setLogements((l ?? []) as { id: string; nom: string; type: string | null; especes?: string[] | null }[]);
+      // Même client (e-mail ou nom), même pension : attendus le même jour (arrivée) ou présents (départ).
+      const { data: moi } = await supabase.from('pension_entrees').select('proprietaire_email, proprietaire_nom, date_entree, date_sortie_prevue, pro_profile_id').eq('id', sejour.id).maybeSingle();
+      const m = moi as { proprietaire_email?: string | null; proprietaire_nom?: string | null; date_entree?: string | null; date_sortie_prevue?: string | null; pro_profile_id?: string | null } | null;
+      const cle = m?.proprietaire_email?.trim() ? { col: 'proprietaire_email', val: m.proprietaire_email.trim() } : m?.proprietaire_nom?.trim() ? { col: 'proprietaire_nom', val: m.proprietaire_nom.trim() } : null;
+      if (cle && !annule) {
+        let q = supabase.from('pension_entrees').select('id, animal_nom, espece, logement_id, date_entree, date_sortie_prevue, arrivee_reelle_le, pro_profile_id')
+          .eq('pro_uid', uid).eq('statut', 'en_pension').eq(cle.col, cle.val).neq('id', sejour.id);
+        q = mode === 'arrivee' ? q.is('arrivee_reelle_le', null).eq('date_entree', m?.date_entree ?? '') : q.not('arrivee_reelle_le', 'is', null);
+        const { data: cs } = await q;
+        const liste = ((cs ?? []) as (Compagnon & { date_sortie_prevue?: string | null; pro_profile_id?: string | null })[])
+          .filter(c => !m?.pro_profile_id || !c.pro_profile_id || c.pro_profile_id === m.pro_profile_id)
+          // Départ : ceux qui partent le même jour.
+          .filter(c => mode === 'arrivee' || !m?.date_sortie_prevue || c.date_sortie_prevue === m.date_sortie_prevue);
+        if (!annule) {
+          setCompagnons(liste);
+          setCoches(Object.fromEntries(liste.map(c => [c.id, true])));
+          setLogCompagnon(Object.fromEntries(liste.map(c => [c.id, c.logement_id ?? ''])));
+        }
+      }
     })();
     return () => { annule = true; };
-  }, [sejour.animal_id, sejour.proprietaire_nom, sejour.espece, uid]);
+  }, [sejour.animal_id, sejour.proprietaire_nom, sejour.espece, sejour.id, mode, uid]);
 
   const autorise = connus.some(n => n.toLowerCase() === personne.trim().toLowerCase());
 
@@ -98,8 +127,21 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
       await supabase.from('pension_entrees').update(minimal).eq('id', sejour.id);
       alert('Enregistré sans le détail (migration_pension_fiche.sql à passer).');
     }
+    // Autres animaux du même client cochés : même heure, même personne (logement propre à chacun).
+    const ids = [sejour.id];
+    for (const c of compagnons.filter(x => coches[x.id])) {
+      const maj = mode === 'arrivee'
+        ? { statut: 'en_pension', arrivee_reelle_le: d.toISOString(), depose_par: v(personne), logement_id: logCompagnon[c.id] || null }
+        : { ...complet };
+      if (mode === 'arrivee') {
+        const { data: deja } = await supabase.from('pension_entrees').select('arrivee_reelle_le').eq('id', c.id).maybeSingle();
+        if ((deja as { arrivee_reelle_le?: string | null } | null)?.arrivee_reelle_le) continue;
+      }
+      const { error: e2 } = await supabase.from('pension_entrees').update(maj).eq('id', c.id);
+      if (!e2) ids.push(c.id);
+    }
     setSaving(false);
-    onDone();
+    onDone(ids);
   }
 
   const champ = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm';
@@ -122,6 +164,27 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
         <input value={personne} onChange={e => setPersonne(e.target.value)} placeholder={mode === 'arrivee' ? 'Déposé par' : 'Récupéré par'} className={champ} />
         {mode === 'depart' && personne.trim() && !autorise && (
           <p className="text-xs text-red-700">Cette personne n&apos;est ni le propriétaire ni une personne autorisée : vérifiez son identité.</p>
+        )}
+        {compagnons.length > 0 && (
+          <div className="border border-gray-100 rounded-xl p-2.5 space-y-1.5">
+            <p className="text-xs font-semibold text-gray-600">{mode === 'arrivee' ? 'Arrivent aussi (même client)' : 'Partent aussi (même client)'}</p>
+            {compagnons.map(c => (
+              <div key={c.id} className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-2 text-sm flex-1 min-w-[120px]">
+                  <input type="checkbox" checked={!!coches[c.id]} onChange={e => setCoches(x => ({ ...x, [c.id]: e.target.checked }))} />
+                  {c.animal_nom ?? 'Animal'}
+                </label>
+                {mode === 'arrivee' && coches[c.id] && logements.length > 0 && (
+                  <select value={logCompagnon[c.id] ?? ''} onChange={e => setLogCompagnon(x => ({ ...x, [c.id]: e.target.value }))}
+                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white">
+                    <option value="">Logement…</option>
+                    {logements.filter(l => logementAccepteEspece(l.especes, c.espece) || l.id === logCompagnon[c.id]).map(l => <option key={l.id} value={l.id}>{l.nom}</option>)}
+                  </select>
+                )}
+              </div>
+            ))}
+            {mode === 'arrivee' && <p className="text-[11px] text-gray-500">Même heure et même personne ; les apports ci-dessous concernent {sejour.animal_nom ?? 'cet animal'}.</p>}
+          </div>
         )}
         {mode === 'arrivee' ? (
           <>
@@ -160,7 +223,7 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
         <div className="flex gap-2 pt-1">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Annuler</button>
           <button onClick={valider} disabled={saving} className="flex-[2] py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ background: TEAL }}>
-            {saving ? '…' : mode === 'arrivee' ? "Enregistrer l'arrivée" : 'Enregistrer le départ'}
+            {saving ? '…' : `${mode === 'arrivee' ? "Enregistrer l'arrivée" : 'Enregistrer le départ'}${compagnons.some(c => coches[c.id]) ? ` (${1 + compagnons.filter(c => coches[c.id]).length} animaux)` : ''}`}
           </button>
         </div>
       </div>

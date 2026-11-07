@@ -24,7 +24,7 @@ import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/utils/client_pension.dart';
 import 'package:PetsMatch/utils/pension_facture_groupee.dart';
 import 'package:PetsMatch/utils/site_api.dart';
-import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart' show confirmerArriveePension, enregistrerDepartPension;
+import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart' show confirmerArriveePension, enregistrerDepartPension, dernierGroupePension;
 import 'package:PetsMatch/pages/pro/pension_finalisation.dart' show finaliserSejourPension;
 import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show signerContratAvecSignaturePro;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
@@ -163,6 +163,14 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
               .inFilter('type', ['contrat_hebergement', 'contrat_document_pro']).inFilter('pension_entree_id', enCours);
           for (final d in docs as List) {
             contrats[d['pension_entree_id'].toString()] = (d['statut'] ?? 'brouillon').toString();
+          }
+          // Contrats groupés (plusieurs animaux) : l'état vaut pour chaque séjour couvert.
+          final grp = await _supa.from('documents_animaux').select('statut, metadata')
+              .eq('uid_eleveur', _uid).inFilter('type', ['contrat_hebergement', 'contrat_document_pro']).not('metadata->entree_ids', 'is', null);
+          for (final g in grp as List) {
+            for (final id in ((g['metadata'] as Map?)?['entree_ids'] as List?) ?? const []) {
+              contrats.putIfAbsent(id.toString(), () => (g['statut'] ?? 'brouillon').toString());
+            }
           }
         } catch (_) {}
       }
@@ -368,7 +376,8 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
     await _load();
     if (!mounted) return;
     // Finalisation par étapes : contrat signé d'office et envoyé, facture.
-    await finaliserSejourPension(context, entree, arrivee: true);
+    await finaliserSejourPension(context, entree, arrivee: true,
+        autresIds: dernierGroupePension.where((i) => i != entree['id'].toString()).toList());
     if (mounted) await _load();
   }
 
@@ -377,7 +386,8 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
   Future<void> _marquerSorti(Map<String, dynamic> entree) async {
     if (!await enregistrerDepartPension(context, entree) || !mounted) return;
     // Finalisation par étapes : contrat (relance), facture du séjour.
-    await finaliserSejourPension(context, entree, arrivee: false);
+    await finaliserSejourPension(context, entree, arrivee: false,
+        autresIds: dernierGroupePension.where((i) => i != entree['id'].toString()).toList());
     if (!mounted) return;
     await _load();
     if (!mounted) return;
@@ -3592,7 +3602,8 @@ class _AccessRequestSheetState extends State<_AccessRequestSheet> {
 class _AutreSejour {
   final Map<String, dynamic> entree;
   final TextEditingController nuits, tarif, reduction;
-  bool inclus = false;
+  // Animaux du même client : inclus d'office (arrivée groupée, facture unique), décochables.
+  bool inclus = true;
   _AutreSejour(this.entree, int n, double prixNuit, double reductionPct)
       : nuits = TextEditingController(text: '$n'),
         tarif = TextEditingController(text: prixNuit > 0 ? prixNuit.toStringAsFixed(2) : ''),
@@ -3604,7 +3615,9 @@ class _AutreSejour {
 
 class PensionFacturationSheet extends StatefulWidget {
   final Map<String, dynamic> entree;
-  const PensionFacturationSheet({super.key, required this.entree});
+  /// Arrhes à la réservation : facture d'acompte pré-cochée, au pourcentage donné.
+  final int? acompte;
+  const PensionFacturationSheet({super.key, required this.entree, this.acompte});
 
   @override
   State<PensionFacturationSheet> createState() => _FacturationSheetState();
@@ -3643,7 +3656,8 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
     _nbNuitsCtrl     = TextEditingController(text: '$nbNuits');
     _suppDescCtrl    = TextEditingController();
     _suppMontantCtrl = TextEditingController();
-    _acomptePctCtrl  = TextEditingController(text: '30');
+    _acomptePctCtrl  = TextEditingController(text: '${widget.acompte ?? 30}');
+    if (widget.acompte != null) _isAcompte = true;
     _suggererTarif();
   }
 
@@ -3695,7 +3709,7 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
   int    get _nbNuits   => int.tryParse(_nbNuitsCtrl.text)                             ?? 1;
   double get _supp      => double.tryParse(_suppMontantCtrl.text.replaceAll(',', '.')) ?? 0;
   double get _reduction => (double.tryParse(_reductionCtrl.text.replaceAll(',', '.')) ?? 0).clamp(0, 100).toDouble();
-  List<_AutreSejour> get _autresInclus => _isAcompte ? const [] : _autres.where((a) => a.inclus).toList();
+  List<_AutreSejour> get _autresInclus => _autres.where((a) => a.inclus).toList();
   /// Pension d'un animal, réduction long séjour déduite (arrondie au centime).
   double _pension(double tarifNuit, int nuits, double red) => (tarifNuit * nuits * (1 - red / 100) * 100).roundToDouble() / 100;
   double get _sousTotal => _pension(_tarif, _nbNuits, _reduction)
@@ -3790,7 +3804,7 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
                 _field(_reductionCtrl, 'Réduction long séjour (%)', '0',
                     type: const TextInputType.numberWithOptions(decimal: true), suffix: '%'),
                 const SizedBox(height: 12),
-                if (_autres.isNotEmpty && !_isAcompte) ...[
+                if (_autres.isNotEmpty) ...[
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade200)),
@@ -4048,8 +4062,10 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
           );
       final lignes = <FacturePrefillLigne>[
         if (_isAcompte)
-          FacturePrefillLigne(designation: 'Acompte $_acomptePct% — $desc',
-              prixHT: _montantFacture, tauxTVA: tauxTVA, animalId: animalId, animalNom: e['animal_nom']?.toString())
+          FacturePrefillLigne(designation: 'Acompte $_acomptePct% — $desc'
+                  '${_autresInclus.isNotEmpty ? ' — ${[e['animal_nom'], ..._autresInclus.map((a) => a.entree['animal_nom'])].where((x) => (x?.toString() ?? '').isNotEmpty).join(', ')}' : ''}',
+              prixHT: _montantFacture, tauxTVA: tauxTVA,
+              animalId: _autresInclus.isEmpty ? animalId : null, animalNom: _autresInclus.isEmpty ? e['animal_nom']?.toString() : null)
         else ...[
           lignePension(e, _tarif, _nbNuits, _reduction),
           if (_supp > 0)

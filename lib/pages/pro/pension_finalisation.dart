@@ -32,17 +32,19 @@ const _vert = Color(0xFF2E7D5E);
 const _orange = Color(0xFFB45309);
 
 /// Ouvre la finalisation (après l'enregistrement de l'arrivée ou du départ).
-Future<void> finaliserSejourPension(BuildContext context, Map<String, dynamic> entree, {required bool arrivee}) =>
+Future<void> finaliserSejourPension(BuildContext context, Map<String, dynamic> entree, {required bool arrivee, List<String> autresIds = const []}) =>
     showModalBottomSheet<void>(
       context: context, isScrollControlled: true, useSafeArea: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _FinalisationSheet(entree: entree, arrivee: arrivee),
+      builder: (_) => _FinalisationSheet(entree: entree, arrivee: arrivee, autresIds: autresIds),
     );
 
 class _FinalisationSheet extends StatefulWidget {
   final Map<String, dynamic> entree;
   final bool arrivee;
-  const _FinalisationSheet({required this.entree, required this.arrivee});
+  /// Arrivée / départ groupé : autres séjours du même client (un seul contrat, facture groupée).
+  final List<String> autresIds;
+  const _FinalisationSheet({required this.entree, required this.arrivee, this.autresIds = const []});
   @override
   State<_FinalisationSheet> createState() => _FinalisationSheetState();
 }
@@ -62,6 +64,8 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
   Uint8List? _fichier;
 
   Map<String, dynamic> get e => widget.entree;
+  List<String> get _tousIds => [e['id'].toString(), ...widget.autresIds.where((i) => i != e['id'].toString())];
+  List<String> _nomsGroupe = [];
 
   @override
   void initState() {
@@ -73,7 +77,7 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
     final pid = User_Info.activeProfileId;
     try {
       final doc = await _supa.from('documents_animaux').select('id, token, statut, metadata')
-          .eq('pension_entree_id', e['id'].toString()).inFilter('type', ['contrat_hebergement', kTypeContratPro])
+          .inFilter('pension_entree_id', _tousIds).inFilter('type', ['contrat_hebergement', kTypeContratPro])
           .order('created_at', ascending: false).limit(1).maybeSingle();
       if (doc != null) {
         final m = (doc['metadata'] as Map?) ?? {};
@@ -86,6 +90,12 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
       }
     } catch (_) {}
     _aSignature = await maSignaturePro() != null;
+    if (_tousIds.length > 1) {
+      try {
+        final gs = await _supa.from('pension_entrees').select('animal_nom').inFilter('id', _tousIds);
+        _nomsGroupe = [for (final g in gs) g['animal_nom']?.toString() ?? 'Animal'];
+      } catch (_) {}
+    }
     try {
       final f = await _supa.from('factures').select('source_pension_entree_id, lignes, statut, type_facture')
           .eq('profile_id', pid).not('source_pension_entree_id', 'is', null);
@@ -132,7 +142,7 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
         entreeId: e['id'].toString(), animalId: e['animal_id']?.toString(), proProfileId: User_Info.activeProfileId,
         titre: titre, clientNom: clientNom, clientEmail: client.email.isEmpty ? null : client.email,
         clientUid: client.uid, clientProfileId: client.profileId,
-        url: _fichier == null && _modele != null ? _modele!['url'].toString() : null, pdf: _fichier,
+        url: _fichier == null && _modele != null ? _modele!['url'].toString() : null, pdf: _fichier, entreeIds: _tousIds,
       );
       if (mounted) await signerContratAvecSignaturePro(context, doc.id);
       final d = await _supa.from('documents_animaux').select('metadata').eq('id', doc.id).maybeSingle();
@@ -197,7 +207,7 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
     setState(() { _envoi = true; _message = null; _erreur = false; });
     try {
       final r = await http.post(Uri.parse('$kSiteBaseUrl/api/pension/contrat'), headers: await siteApiHeaders(),
-          body: jsonEncode({'entreeId': e['id'], 'transmettre': true}));
+          body: jsonEncode({'entreeId': e['id'], 'entreeIds': _tousIds, 'transmettre': true}));
       final c = jsonDecode(r.body) as Map<String, dynamic>;
       if (r.statusCode != 200 || c['token'] == null) throw Exception(c['error'] ?? 'Contrat impossible');
       var signe = c['signe_pro'] == true;
@@ -277,7 +287,9 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text(widget.arrivee ? "Finaliser l'arrivée" : 'Finaliser le départ',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 18)),
-        Text('${e['animal_nom'] ?? 'Animal'}${(e['proprietaire_nom']?.toString() ?? '').isNotEmpty ? ' · ${e['proprietaire_nom']}' : ''}', style: _petit),
+        Text('${_nomsGroupe.length > 1 ? _nomsGroupe.join(', ') : e['animal_nom'] ?? 'Animal'}${(e['proprietaire_nom']?.toString() ?? '').isNotEmpty ? ' · ${e['proprietaire_nom']}' : ''}', style: _petit),
+        if (_nomsGroupe.length > 1)
+          Text('Un seul contrat et une facture groupée pour les ${_nomsGroupe.length} animaux.', style: _petit),
         const SizedBox(height: 16),
         _etape(1, widget.arrivee ? 'Arrivée enregistrée' : 'Départ enregistré', true, [
           Text(widget.arrivee ? (_logementNom != null ? 'Logement : $_logementNom' : 'Sans logement attribué')

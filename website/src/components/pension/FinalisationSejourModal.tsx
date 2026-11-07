@@ -31,10 +31,15 @@ function Pastille({ ok }: { ok: boolean }) {
   );
 }
 
-export default function FinalisationSejourModal({ entree, mode, proProfileId, pensionNom, onClose }: {
+export default function FinalisationSejourModal({ entree, mode, proProfileId, pensionNom, onClose, autresIds = [] }: {
   entree: PensionEntree & { arrivee_reelle_le?: string | null; depart_reel_le?: string | null };
   mode: 'arrivee' | 'depart'; proProfileId: string | null; pensionNom: string; onClose: () => void;
+  /** Arrivée / départ groupé : autres séjours du même client (un seul contrat, facture groupée). */
+  autresIds?: string[];
 }) {
+  const tousIds = [entree.id, ...autresIds.filter(i => i !== entree.id)];
+  const cleIds = tousIds.join(',');
+  const [nomsGroupe, setNomsGroupe] = useState<string[]>([]);
   const { user, userData } = useAuth();
   const [contrat, setContrat] = useState<Contrat | null>(null);
   const [etatContrat, setEtatContrat] = useState<'' | 'envoi' | 'ok' | 'erreur'>('');
@@ -54,7 +59,7 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
   const charger = useCallback(async () => {
     if (!user) return;
     const [{ data: doc }, sig, factures, { data: legacy }, { data: prof }, { data: lg }] = await Promise.all([
-      supabase.from('documents_animaux').select('id, token, statut, metadata, type').eq('pension_entree_id', entree.id)
+      supabase.from('documents_animaux').select('id, token, statut, metadata, type').in('pension_entree_id', tousIds)
         .in('type', ['contrat_hebergement', TYPE_CONTRAT_PRO]).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       maSignaturePro(user.uid).catch(() => null),
       proProfileId ? sejoursFactures(supabase, proProfileId).catch(() => new Set<string>()) : Promise.resolve(new Set<string>()),
@@ -68,6 +73,10 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
     setSolde(reg.solde === 'depart' ? 'depart' : 'arrivee');
     setArrhes(typeof reg.arrhes_pct === 'number' && reg.arrhes_pct > 0 ? reg.arrhes_pct : null);
     setLogementNom((lg as { nom?: string } | null)?.nom ?? null);
+    if (tousIds.length > 1) {
+      const { data: gs } = await supabase.from('pension_entrees').select('id, animal_nom').in('id', tousIds);
+      setNomsGroupe(((gs ?? []) as { animal_nom: string | null }[]).map(g => g.animal_nom ?? 'Animal'));
+    }
     if (proProfileId) {
       const { data: md } = await supabase.from('user_profiles').select('pension_contrat_modele').eq('id', proProfileId).maybeSingle();
       const m = (md as { pension_contrat_modele?: { url?: string; nom?: string } | null } | null)?.pension_contrat_modele;
@@ -80,7 +89,8 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
         client_nom: (m.client_nom as string) ?? entree.proprietaire_nom ?? null, client_a_compte: !!m.client_uid,
         signe_pro: !!m.signature_eleveur, signe_client: !!m.signature_acquereur });
     }
-  }, [user, entree.id, entree.logement_id, entree.proprietaire_email, entree.proprietaire_nom, proProfileId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, entree.id, entree.logement_id, entree.proprietaire_email, entree.proprietaire_nom, proProfileId, cleIds]);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void charger(); }, [charger]);
 
@@ -97,7 +107,7 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
         entreeId: entree.id, animalId: entree.animal_id ?? null, uid: user.uid, proProfileId,
         titre: `Contrat d'hébergement — ${entree.animal_nom ?? ''}`, clientNom, clientEmail: client.email || null,
         clientUid: client.uid, clientProfileId: client.profileId,
-        url: fichier ? null : modele?.url ?? null, blob: fichier ? await fichierEnPdf(fichier) : null,
+        url: fichier ? null : modele?.url ?? null, blob: fichier ? await fichierEnPdf(fichier) : null, entreeIds: tousIds,
       });
       const nom = `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || pensionNom;
       const signe = await signerContratAvecSignaturePro(doc.id, user.uid, nom, null, true).catch(() => false);
@@ -129,7 +139,7 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
     if (choixContrat === 'mien' && !contrat) { await monContratSigneEtEnvoye(); return; }
     setEtatContrat('envoi'); setMessageContrat('');
     const r = await apiFetch('/api/pension/contrat', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entreeId: entree.id, transmettre: true }) });
+      body: JSON.stringify({ entreeId: entree.id, entreeIds: tousIds, transmettre: true }) });
     const c = await r.json().catch(() => ({})) as Contrat & { error?: string };
     if (!r.ok || !c.token) { setEtatContrat('erreur'); setMessageContrat(c.error ?? 'Contrat impossible'); return; }
     const nom = `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || pensionNom;
@@ -166,7 +176,8 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
       <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 max-h-[92vh] overflow-y-auto space-y-4" onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
         <div>
           <p className="font-bold text-lg text-[#1F2A2E]">{mode === 'arrivee' ? 'Finaliser l\'arrivée' : 'Finaliser le départ'}</p>
-          <p className="text-sm text-gray-500">{entree.animal_nom}{entree.proprietaire_nom ? ` · ${entree.proprietaire_nom}` : ''}</p>
+          <p className="text-sm text-gray-500">{nomsGroupe.length > 1 ? nomsGroupe.join(', ') : entree.animal_nom}{entree.proprietaire_nom ? ` · ${entree.proprietaire_nom}` : ''}</p>
+          {nomsGroupe.length > 1 && <p className="text-xs text-gray-500">Un seul contrat et une facture groupée pour les {nomsGroupe.length} animaux.</p>}
         </div>
 
         {/* 1. Arrivée / départ */}

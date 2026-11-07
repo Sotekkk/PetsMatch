@@ -105,6 +105,8 @@ export async function creerContratProSejour(o: {
   entreeId: string; animalId: string | null; uid: string; proProfileId: string | null; titre: string;
   clientNom: string; clientEmail: string | null; clientUid: string | null; clientProfileId: string | null;
   url?: string | null; blob?: Blob | null;
+  /** Plusieurs animaux du même client : séjours couverts par ce contrat. */
+  entreeIds?: string[];
 }): Promise<{ id: string; token: string }> {
   const url = o.url || (o.blob ? await deposer(o.blob, o.uid) : null);
   if (!url) throw new Error('Aucun contrat à envoyer');
@@ -113,7 +115,8 @@ export async function creerContratProSejour(o: {
     animal_id: o.animalId, pension_entree_id: o.entreeId, type: TYPE_CONTRAT_PRO, titre: o.titre, statut: 'en_attente',
     url, pdf_original_url: url,
     ...(o.clientUid ? { uid_acquereur: o.clientUid, acquereur_profile_id: o.clientProfileId } : {}),
-    metadata: { document_pro: true, client_nom: o.clientNom, client_uid: o.clientUid, client_profile_id: o.clientProfileId, client_email: o.clientEmail },
+    metadata: { document_pro: true, client_nom: o.clientNom, client_uid: o.clientUid, client_profile_id: o.clientProfileId, client_email: o.clientEmail,
+      ...(o.entreeIds && o.entreeIds.length > 1 ? { entree_ids: o.entreeIds } : {}) },
   }).select('id, token').single();
   if (error) throw new Error(error.message);
   return { id: String(data.id), token: String(data.token) };
