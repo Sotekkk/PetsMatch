@@ -34,6 +34,8 @@ String cibleSejourLabel(Object? brut) {
   if (races.isNotEmpty) p.add('races : ${races.join(', ')}');
   if (types.isNotEmpty) p.add('logements : ${types.join(', ')}');
   if (ids.isNotEmpty) p.add('${ids.length} logement(s) choisi(s)');
+  if (brut['places'] == 'individuel') p.add('logements individuels');
+  if (brut['places'] == 'partage') p.add('logements partagés');
   if (brut['sejour'] == 'essai') p.add('essais seulement');
   if (brut['sejour'] == 'sejour') p.add('séjours (hors essai)');
   if (brut['nouveau'] == 'nouveau') p.add('nouveaux pensionnaires');
@@ -87,7 +89,7 @@ Future<({int taches, List<String> protocoles})> appliquerProtocolesSejour(List<S
     final templates = [for (final tp in await q)
       if (pid.isEmpty || _t(tp['eleveur_profile_id']).isEmpty || _t(tp['eleveur_profile_id']) == pid) Map<String, dynamic>.from(tp)];
     if (templates.isEmpty) return (taches: 0, protocoles: noms);
-    final logements = {for (final l in await supa.from('enclos_chenil').select('id, nom, type, especes').eq('uid_eleveur', proUid)) _t(l['id']): l};
+    final logements = {for (final l in await supa.from('enclos_chenil').select('id, nom, type, especes, capacite').eq('uid_eleveur', proUid)) _t(l['id']): l};
     final dms = await supa.from('pension_demandes').select('entree_id, essai_entree_id, nouveau_pensionnaire')
         .or(entreeIds.map((id) => 'entree_id.eq.$id,essai_entree_id.eq.$id').join(','));
     bool? nouveauDe(String id) {
@@ -113,6 +115,9 @@ Future<({int taches, List<String> protocoles})> appliquerProtocolesSejour(List<S
         if (lIds.isNotEmpty && !lIds.contains(_t(e['logement_id']))) continue;
         if (lTypes.isNotEmpty && !lTypes.contains(_t(lg?['type']))) continue;
         if (!especeCibleOk(cible['especes'] as List?, e['espece'], lg?['especes'])) continue;
+        final places = (lg?['capacite'] as num?)?.toInt() ?? 1;
+        if (cible['places'] == 'individuel' && (lg == null || places > 1)) continue;
+        if (cible['places'] == 'partage' && (lg == null || places <= 1)) continue;
         if (cible['sejour'] == 'essai' && e['essai'] != true) continue;
         if (cible['sejour'] == 'sejour' && e['essai'] == true) continue;
         final nv = nouveauDe(_t(e['id']));
@@ -175,6 +180,61 @@ Future<({int taches, List<String> protocoles})> appliquerProtocolesSejour(List<S
     }
   } catch (_) {}
   return (taches: total, protocoles: noms);
+}
+
+/// Départ enregistré : les tâches « au départ » se recalent sur le vrai jour du
+/// départ ; une tâche de logement dont le logement reste occupé par un autre
+/// pensionnaire passe au départ de celui-ci ; les autres tâches non faites
+/// après le départ sont retirées. Miroir site : terminerTachesSejour.
+Future<void> terminerTachesSejour(List<String> entreeIds, String dateDepart) async {
+  if (entreeIds.isEmpty) return;
+  final supa = Supabase.instance.client;
+  try {
+    final tts = await supa.from('plan_taches')
+        .select('id, etape_id, date_prevue, box_id, plan_template_etapes(sejour_moment, jour_offset), plans_actifs(plan_templates(cible_type))')
+        .inFilter('pension_entree_id', entreeIds).neq('statut', 'fait');
+    bool estLocaux(Map x) => _t(((x['plans_actifs'] as Map?)?['plan_templates'] as Map?)?['cible_type']) == 'locaux';
+    bool estDepart(Map x) => _t((x['plan_template_etapes'] as Map?)?['sejour_moment']) == 'depart';
+    final taches = [for (final x in tts) if (estDepart(x)) x];
+    // Tâches quotidiennes d'un logement encore occupé : elles continuent pour l'autre pensionnaire.
+    final quotidiennes = [for (final x in tts) if (!estDepart(x) && estLocaux(x) && _t(x['date_prevue']).compareTo(dateDepart) > 0) x];
+    final boxes = {for (final x in [...taches, ...quotidiennes]) if (_t(x['box_id']).isNotEmpty) _t(x['box_id'])}.toList();
+    final autres = boxes.isEmpty ? const [] : await supa.from('pension_entrees').select('id, logement_id, date_sortie_prevue')
+        .eq('statut', 'en_pension').inFilter('logement_id', boxes);
+    final restants = [for (final o in autres) if (!entreeIds.contains(_t(o['id']))) o];
+    for (final x in quotidiennes) {
+      final d = _t(x['date_prevue']);
+      for (final o in restants) {
+        final fin = _t(o['date_sortie_prevue']);
+        if (_t(o['logement_id']) == _t(x['box_id']) && (fin.length < 10 || d.compareTo(fin.substring(0, 10)) <= 0)) {
+          await supa.from('plan_taches').update({'pension_entree_id': _t(o['id'])}).eq('id', _t(x['id']));
+          break;
+        }
+      }
+    }
+    for (final x in taches) {
+      final off = ((x['plan_template_etapes'] as Map)['jour_offset'] as num?)?.toInt() ?? 0;
+      final locaux = estLocaux(x);
+      final memeBox = locaux ? ([for (final o in restants) if (_t(o['logement_id']) == _t(x['box_id'])) o]
+        ..sort((a, b) => _t(b['date_sortie_prevue']).compareTo(_t(a['date_sortie_prevue'])))) : const [];
+      if (memeBox.isNotEmpty) {
+        final reste = memeBox.first;
+        final finTxt = _t(reste['date_sortie_prevue']);
+        final date = _decaler(finTxt.length >= 10 ? finTxt.substring(0, 10) : dateDepart, -off);
+        final dbl = await supa.from('plan_taches').select('id').eq('box_id', _t(x['box_id'])).eq('etape_id', _t(x['etape_id']))
+            .eq('date_prevue', date).neq('id', _t(x['id'])).limit(1);
+        if (dbl.isNotEmpty) {
+          await supa.from('plan_taches').delete().eq('id', _t(x['id']));
+        } else {
+          await supa.from('plan_taches').update({'pension_entree_id': _t(reste['id']), 'date_prevue': date}).eq('id', _t(x['id']));
+        }
+      } else {
+        final date = _decaler(dateDepart, -off);
+        if (_t(x['date_prevue']) != date) await supa.from('plan_taches').update({'date_prevue': date}).eq('id', _t(x['id']));
+      }
+    }
+  } catch (_) {}
+  await retirerTachesSejour(entreeIds, dateDepart);
 }
 
 /// Séjour terminé plus tôt / annulé : tâches non faites après [apres] retirées.

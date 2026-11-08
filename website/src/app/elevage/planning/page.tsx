@@ -1663,6 +1663,14 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
+                    <label className={libelleCls}>Logements</label>
+                    <select value={cible.places ?? 'tous'} onChange={e => setCible(c => ({ ...c, places: e.target.value as PensionCible['places'] }))} className={champCls}>
+                      <option value="tous">Individuels et partagés</option>
+                      <option value="individuel">Individuels seulement (1 place)</option>
+                      <option value="partage">Partagés seulement (plusieurs places)</option>
+                    </select>
+                  </div>
+                  <div>
                     <label className={libelleCls}>Séjours</label>
                     <select value={cible.sejour ?? 'tous'} onChange={e => setCible(c => ({ ...c, sejour: e.target.value as PensionCible['sejour'] }))} className={champCls}>
                       <option value="tous">Séjours et essais</option>

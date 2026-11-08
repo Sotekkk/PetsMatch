@@ -16,6 +16,8 @@ export interface PensionCible {
   /** Espèces concernées (clés pension) : pensionnaires de ces espèces, ou
    *  logements de ces espèces (protocoles « locaux »). Vide = toutes. */
   especes?: string[];
+  /** Logements individuels (1 place) ou partagés seulement. */
+  places?: 'tous' | 'individuel' | 'partage';
   sejour?: 'tous' | 'sejour' | 'essai'; nouveau?: 'tous' | 'nouveau' | 'habitue';
 }
 export type MomentSejour = 'chaque_jour' | 'arrivee' | 'depart';
@@ -40,6 +42,8 @@ export function cibleLabel(c?: PensionCible | null): string {
   if (c.races?.length) p.push(`races : ${c.races.join(', ')}`);
   if (c.logement_types?.length) p.push(`logements : ${c.logement_types.join(', ')}`);
   if (c.logement_ids?.length) p.push(`${c.logement_ids.length} logement(s) choisi(s)`);
+  if (c.places === 'individuel') p.push('logements individuels');
+  if (c.places === 'partage') p.push('logements partagés');
   if (c.sejour === 'essai') p.push('essais seulement');
   if (c.sejour === 'sejour') p.push('séjours (hors essai)');
   if (c.nouveau === 'nouveau') p.push('nouveaux pensionnaires');
@@ -94,7 +98,7 @@ export async function appliquerProtocolesSejour(sb: SupabaseClient, entreeIds: s
   if (error || !tpls?.length) return res;
   const templates = (tpls as Ligne[]).filter(tp => !pid || !t(tp.eleveur_profile_id) || t(tp.eleveur_profile_id) === pid);
   // Logements (nom, type) et demandes (nouveau pensionnaire).
-  const { data: lgs } = await sb.from('enclos_chenil').select('id, nom, type, especes').eq('uid_eleveur', proUid);
+  const { data: lgs } = await sb.from('enclos_chenil').select('id, nom, type, especes, capacite').eq('uid_eleveur', proUid);
   const logements = new Map(((lgs ?? []) as Ligne[]).map(l => [t(l.id), l]));
   const { data: dms } = await sb.from('pension_demandes').select('entree_id, essai_entree_id, nouveau_pensionnaire')
     .or(entreeIds.map(id => `entree_id.eq.${id},essai_entree_id.eq.${id}`).join(','));
@@ -117,6 +121,8 @@ export async function appliquerProtocolesSejour(sb: SupabaseClient, entreeIds: s
       if (cible?.logement_ids?.length && !cible.logement_ids.includes(t(e.logement_id))) continue;
       if (cible?.logement_types?.length && !cible.logement_types.includes(t(lg?.type))) continue;
       if (!especeCibleOk(cible?.especes, e.espece, lg?.especes)) continue;
+      if (cible?.places === 'individuel' && (!lg || (Number(lg.capacite) || 1) > 1)) continue;
+      if (cible?.places === 'partage' && (!lg || (Number(lg.capacite) || 1) <= 1)) continue;
       if (cible?.sejour === 'essai' && e.essai !== true) continue;
       if (cible?.sejour === 'sejour' && e.essai === true) continue;
       const nv = nouveauDe(t(e.id));
@@ -175,6 +181,53 @@ export async function appliquerProtocolesSejour(sb: SupabaseClient, entreeIds: s
 export async function retirerTachesSejour(sb: SupabaseClient, entreeIds: string[], apres: string) {
   if (!entreeIds.length) return;
   await sb.from('plan_taches').delete().in('pension_entree_id', entreeIds).neq('statut', 'fait').gt('date_prevue', apres);
+}
+
+/**
+ * Départ enregistré : les tâches « au départ » se recalent sur le vrai jour du
+ * départ (départ avancé ou retardé) ; une tâche de logement (nettoyage,
+ * désinfection) dont le logement reste occupé par un autre pensionnaire passe
+ * au départ de celui-ci ; les autres tâches non faites après le départ sont
+ * retirées.
+ */
+export async function terminerTachesSejour(sb: SupabaseClient, entreeIds: string[], dateDepart: string) {
+  if (!entreeIds.length) return;
+  const { data: tts } = await sb.from('plan_taches')
+    .select('id, etape_id, date_prevue, box_id, plan_template_etapes(sejour_moment, jour_offset), plans_actifs(plan_templates(cible_type))')
+    .in('pension_entree_id', entreeIds).neq('statut', 'fait');
+  const estLocaux = (x: Ligne) => t(((x.plans_actifs as Ligne | null)?.plan_templates as Ligne | null)?.cible_type) === 'locaux';
+  const estDepart = (x: Ligne) => t((x.plan_template_etapes as Ligne | null)?.sejour_moment) === 'depart';
+  const toutes = (tts ?? []) as Ligne[];
+  const taches = toutes.filter(estDepart);
+  // Tâches quotidiennes d'un logement encore occupé : elles continuent pour l'autre pensionnaire.
+  const quotidiennes = toutes.filter(x => !estDepart(x) && estLocaux(x) && t(x.date_prevue) > dateDepart);
+  const boxes = [...new Set([...taches, ...quotidiennes].map(x => t(x.box_id)).filter(Boolean))];
+  const { data: autres } = boxes.length
+    ? await sb.from('pension_entrees').select('id, logement_id, date_sortie_prevue').eq('statut', 'en_pension').in('logement_id', boxes)
+    : { data: [] };
+  const restants = ((autres ?? []) as Ligne[]).filter(o => !entreeIds.includes(t(o.id)));
+  for (const x of quotidiennes) {
+    const reste = restants.find(o => t(o.logement_id) === t(x.box_id) && t(x.date_prevue) <= (t(o.date_sortie_prevue).slice(0, 10) || t(x.date_prevue)));
+    if (reste) await sb.from('plan_taches').update({ pension_entree_id: t(reste.id) }).eq('id', t(x.id));
+  }
+  for (const x of taches) {
+    const off = Number((x.plan_template_etapes as Ligne).jour_offset) || 0;
+    const locaux = estLocaux(x);
+    const reste = locaux ? restants.filter(o => t(o.logement_id) === t(x.box_id))
+      .sort((a, b) => t(b.date_sortie_prevue).localeCompare(t(a.date_sortie_prevue)))[0] : undefined;
+    if (reste) {
+      // Logement encore occupé : la tâche suit le dernier pensionnaire qui part.
+      const fin = t(reste.date_sortie_prevue).slice(0, 10) || dateDepart;
+      const date = decaler(fin, -off);
+      const { data: dbl } = await sb.from('plan_taches').select('id').eq('box_id', t(x.box_id)).eq('etape_id', t(x.etape_id)).eq('date_prevue', date).neq('id', t(x.id)).limit(1);
+      if (dbl?.length) await sb.from('plan_taches').delete().eq('id', t(x.id));
+      else await sb.from('plan_taches').update({ pension_entree_id: t(reste.id), date_prevue: date }).eq('id', t(x.id));
+    } else {
+      const date = decaler(dateDepart, -off);
+      if (t(x.date_prevue) !== date) await sb.from('plan_taches').update({ date_prevue: date }).eq('id', t(x.id));
+    }
+  }
+  await sb.from('plan_taches').delete().in('pension_entree_id', entreeIds).neq('statut', 'fait').gt('date_prevue', dateDepart);
 }
 
 export const aujourdhuiIso = () => jour(new Date());

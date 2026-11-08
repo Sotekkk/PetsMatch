@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { logementAccepteEspece } from '@/lib/pension-especes';
-import { appliquerProtocolesSejour, retirerTachesSejour } from '@/lib/pension-protocoles';
+import { appliquerProtocolesSejour, terminerTachesSejour } from '@/lib/pension-protocoles';
 
 const TEAL = '#0C5C6C';
 
@@ -146,7 +146,7 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
     try {
       const jourMaj = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       if (mode === 'arrivee') await appliquerProtocolesSejour(supabase, ids);
-      else await retirerTachesSejour(supabase, ids, jourMaj);
+      else await terminerTachesSejour(supabase, ids, jourMaj);
     } catch { /* protocoles : jamais bloquant */ }
     setSaving(false);
     onDone(ids);
