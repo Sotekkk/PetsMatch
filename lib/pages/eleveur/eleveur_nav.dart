@@ -82,6 +82,7 @@ import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/pages/settings/avertissements_page.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/pro/pension_demandes_page.dart' show PensionDemandesPage;
 import 'package:PetsMatch/widgets/menu_annonces.dart';
 import 'package:PetsMatch/widgets/menu_pro.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_achats_page.dart';
@@ -1160,6 +1161,16 @@ class _EleveurNavState extends State<EleveurNav> {
                     icon: Icons.cottage_outlined,
                     label: 'Ma Pension',
                     children: [
+                      _DrawerSubItem(
+                        label: 'Demandes de séjour',
+                        icon: Icons.mark_email_unread_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const PensionDemandesPage(),
+                          ));
+                        },
+                      ),
                       _DrawerSubItem(
                         label: 'Nos pensionnaires',
                         icon: Icons.home_work_outlined,

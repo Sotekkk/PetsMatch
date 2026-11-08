@@ -14,6 +14,7 @@ import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_galeries_page.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/pro/pension_demandes_page.dart' show PensionDemandesPage;
 import 'package:PetsMatch/pages/annonces/annonces_objets_feed_page.dart';
 import 'package:PetsMatch/pages/annonces/mes_annonces_objets_page.dart';
 import 'package:PetsMatch/pages/annonces/publier_annonce_page.dart';
@@ -538,6 +539,12 @@ List<QuickAction> _all(BuildContext ctx) => [
   ),
 
   // ── Pension ────────────────────────────────────────────────────────────────
+  QuickAction(
+    label: 'Demandes de séjour',
+    keywords: ['réservations', 'demandes pension', 'arrhes', 'essai', 'accepter un séjour'],
+    icon: Icons.mark_email_unread_outlined, group: 'Ma pension',
+    visible: () => _catPro == 'pension', open: (c) => _push(c, const PensionDemandesPage()),
+  ),
   QuickAction(
     label: 'Nos pensionnaires',
     keywords: ['registre pension', 'animaux en pension', 'séjours en cours'],

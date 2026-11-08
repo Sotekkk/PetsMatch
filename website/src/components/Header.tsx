@@ -354,6 +354,7 @@ const MENU_PENSION = [
     section: 'Ma Pension',
     icon: '🏡',
     items: [
+      { href: '/pension/sejours',   label: 'Demandes de séjour',   icon: '📨' },
       { href: '/pension/registre',  label: 'Nos pensionnaires',    icon: '📋' },
       { href: '/pension/demandes',  label: 'Accès fiche pensionnaire', icon: '🔑' },
       { href: '/elevage/planning?profilSource=pension', label: 'Protocoles', icon: '📋', pro: true },
@@ -751,6 +752,7 @@ const SEARCH_KEYWORDS: Record<string, string[]> = {
   // Pension
   '/pension/registre': ['pensionnaires', 'reservations pension', 'sejours', 'nos pensionnaires'],
   '/pension/demandes': ['acces fiche', 'demandes acces pensionnaire'],
+  '/pension/sejours': ['demandes de sejour', 'reservations', 'arrhes', 'essai', 'demandes pension'],
   '/pension/chenil': ['logements', 'boxes', 'chenil', 'chatterie'],
   '/pension/planning': ['occupation', 'planning pension', 'disponibilites pension'],
   '/pension/entree-sortie': ['arrivees', 'departs', 'check-in', 'check-out', 'entree sortie pension'],
