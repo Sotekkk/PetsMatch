@@ -9,10 +9,13 @@
 // annulé. Miroir appli : lib/utils/pension_protocoles.dart.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { acteLabel } from '@/lib/protocoles';
-import { cleEspecePension, pensionGroupe } from '@/lib/pension-especes';
+import { cleEspecePension, pensionGroupe, PENSION_ESPECES } from '@/lib/pension-especes';
 
 export interface PensionCible {
   races?: string[]; logement_ids?: string[]; logement_types?: string[];
+  /** Espèces concernées (clés pension) : pensionnaires de ces espèces, ou
+   *  logements de ces espèces (protocoles « locaux »). Vide = toutes. */
+  especes?: string[];
   sejour?: 'tous' | 'sejour' | 'essai'; nouveau?: 'tous' | 'nouveau' | 'habitue';
 }
 export type MomentSejour = 'chaque_jour' | 'arrivee' | 'depart';
@@ -33,6 +36,7 @@ export function momentLabel(m?: string | null, offset = 0): string {
 export function cibleLabel(c?: PensionCible | null): string {
   if (!c) return 'Tous les pensionnaires';
   const p: string[] = [];
+  if (c.especes?.length) p.push(`espèces : ${c.especes.map(k => PENSION_ESPECES.find(x => x.key === k)?.label ?? k).join(', ')}`);
   if (c.races?.length) p.push(`races : ${c.races.join(', ')}`);
   if (c.logement_types?.length) p.push(`logements : ${c.logement_types.join(', ')}`);
   if (c.logement_ids?.length) p.push(`${c.logement_ids.length} logement(s) choisi(s)`);
@@ -61,6 +65,16 @@ function especeOk(tplEspece: unknown, espece: unknown) {
   return !a || !b || a === b || pensionGroupe(a) === pensionGroupe(b);
 }
 
+/** Ciblage par espèce : espèce du pensionnaire, ou à défaut espèces du logement. */
+export function especeCibleOk(cibles: string[] | undefined, espece: unknown, especesLogement: unknown): boolean {
+  if (!cibles?.length) return true;
+  const proche = (a: string, b: string) => a === b || pensionGroupe(a) === pensionGroupe(b);
+  const k = cleEspecePension(t(espece));
+  if (k) return cibles.some(c => proche(cleEspecePension(c), k));
+  const liste = Array.isArray(especesLogement) ? especesLogement.map(x => cleEspecePension(t(x))).filter(Boolean) : [];
+  return !liste.length || liste.some(l => cibles.some(c => proche(cleEspecePension(c), l)));
+}
+
 /**
  * Applique les protocoles de séjour aux séjours donnés (arrivée enregistrée).
  * `templateIds` : limiter à certains protocoles ; `depuis` : ne créer que les
@@ -80,7 +94,7 @@ export async function appliquerProtocolesSejour(sb: SupabaseClient, entreeIds: s
   if (error || !tpls?.length) return res;
   const templates = (tpls as Ligne[]).filter(tp => !pid || !t(tp.eleveur_profile_id) || t(tp.eleveur_profile_id) === pid);
   // Logements (nom, type) et demandes (nouveau pensionnaire).
-  const { data: lgs } = await sb.from('enclos_chenil').select('id, nom, type').eq('uid_eleveur', proUid);
+  const { data: lgs } = await sb.from('enclos_chenil').select('id, nom, type, especes').eq('uid_eleveur', proUid);
   const logements = new Map(((lgs ?? []) as Ligne[]).map(l => [t(l.id), l]));
   const { data: dms } = await sb.from('pension_demandes').select('entree_id, essai_entree_id, nouveau_pensionnaire')
     .or(entreeIds.map(id => `entree_id.eq.${id},essai_entree_id.eq.${id}`).join(','));
@@ -102,6 +116,7 @@ export async function appliquerProtocolesSejour(sb: SupabaseClient, entreeIds: s
       const lg = logements.get(t(e.logement_id));
       if (cible?.logement_ids?.length && !cible.logement_ids.includes(t(e.logement_id))) continue;
       if (cible?.logement_types?.length && !cible.logement_types.includes(t(lg?.type))) continue;
+      if (!especeCibleOk(cible?.especes, e.espece, lg?.especes)) continue;
       if (cible?.sejour === 'essai' && e.essai !== true) continue;
       if (cible?.sejour === 'sejour' && e.essai === true) continue;
       const nv = nouveauDe(t(e.id));

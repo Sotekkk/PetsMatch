@@ -1,6 +1,7 @@
 'use client';
 
 import { MOMENTS_SEJOUR, momentLabel, cibleLabel, appliquerProtocolesSejour, aujourdhuiIso, type PensionCible } from '@/lib/pension-protocoles';
+import { PENSION_ESPECES, cleEspecePension, logementAccepteEspece } from '@/lib/pension-especes';
 import { pensionLogementTypeLabel } from '@/lib/pension-logements';
 import { ACTES_CARNET, validerTachesProtocole } from '@/lib/carnet-depuis-tache';
 import { Suspense, useEffect, useState, useCallback } from 'react';
@@ -1276,11 +1277,11 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
   // Pension, protocole de séjour : ciblage.
   const [cible, setCible] = useState<PensionCible>(existing?.pension_cible ?? {});
   const [racesTxt, setRacesTxt] = useState((existing?.pension_cible?.races ?? []).join(', '));
-  const [logementsPension, setLogementsPension] = useState<{ id: string; nom: string; type: string | null }[]>([]);
+  const [logementsPension, setLogementsPension] = useState<{ id: string; nom: string; type: string | null; especes: string[] | null }[]>([]);
   useEffect(() => {
     if (profilSource !== 'pension') return;
-    supabase.from('enclos_chenil').select('id, nom, type').eq('uid_eleveur', uid).order('nom')
-      .then(({ data }) => setLogementsPension((data ?? []) as { id: string; nom: string; type: string | null }[]));
+    supabase.from('enclos_chenil').select('id, nom, type, especes').eq('uid_eleveur', uid).order('nom')
+      .then(({ data }) => setLogementsPension((data ?? []) as { id: string; nom: string; type: string | null; especes: string[] | null }[]));
   }, [profilSource, uid]);
   const [animalIds, setAnimalIds] = useState<string[]>(existing?.default_animal_ids ?? []);
   const [showAnimalPicker, setShowAnimalPicker] = useState(false);
@@ -1594,6 +1595,30 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
                     <input value={racesTxt} onChange={e => setRacesTxt(e.target.value)} placeholder="Ex : Berger australien, Border collie" className={champCls} />
                   </div>
                 )}
+                {perimetre === 'locaux' && (() => {
+                  // Espèces des logements de la pension (sinon toutes les espèces pension).
+                  const cles = new Set(logementsPension.flatMap(l => (l.especes ?? []).map(x => cleEspecePension(x))).filter(Boolean));
+                  const liste = cles.size ? PENSION_ESPECES.filter(x => cles.has(x.key)) : PENSION_ESPECES;
+                  return (
+                    <div>
+                      <label className={libelleCls}>Espèces (aucune cochée = toutes)</label>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                        {liste.map(sp => (
+                          <label key={sp.key} className="flex items-center gap-1.5 text-sm">
+                            <input type="checkbox" checked={!!cible.especes?.includes(sp.key)}
+                              onChange={e => setCible(c => {
+                                const especes = e.target.checked ? [...(c.especes ?? []), sp.key] : (c.especes ?? []).filter(x => x !== sp.key);
+                                // Logements cochés qui ne sont plus d'une espèce choisie : décochés.
+                                const garder = (id: string) => !especes.length || especes.some(k => logementAccepteEspece(logementsPension.find(l => l.id === id)?.especes, k));
+                                return { ...c, especes, logement_ids: (c.logement_ids ?? []).filter(garder) };
+                              })} />
+                            {sp.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
                 {logementsPension.length > 0 && (
                   <div>
                     <label className={libelleCls}>Types de logement (aucun coché = tous)</label>
@@ -1607,15 +1632,33 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
                       ))}
                     </div>
                     <label className={`${libelleCls} mt-2`}>Logements précis (aucun coché = tous)</label>
-                    <div className="flex flex-wrap gap-2">
-                      {logementsPension.map(l => (
-                        <label key={l.id} className="flex items-center gap-1.5 text-sm">
-                          <input type="checkbox" checked={!!cible.logement_ids?.includes(l.id)}
-                            onChange={e => setCible(c => ({ ...c, logement_ids: e.target.checked ? [...(c.logement_ids ?? []), l.id] : (c.logement_ids ?? []).filter(x => x !== l.id) }))} />
-                          {l.nom}
-                        </label>
-                      ))}
-                    </div>
+                    {(() => {
+                      // Logements rangés par espèce (ceux des espèces cochées seulement).
+                      const choisies = cible.especes ?? [];
+                      const groupes: { titre: string; lgs: typeof logementsPension }[] = [];
+                      for (const sp of PENSION_ESPECES) {
+                        if (choisies.length && !choisies.includes(sp.key)) continue;
+                        const lgs = logementsPension.filter(l => (l.especes ?? []).some(x => cleEspecePension(x) === sp.key));
+                        if (lgs.length) groupes.push({ titre: sp.label, lgs });
+                      }
+                      const sansEspece = logementsPension.filter(l => !(l.especes ?? []).length);
+                      if (sansEspece.length) groupes.push({ titre: 'Toutes espèces', lgs: sansEspece });
+                      const unSeul = groupes.length === 1 && groupes[0].titre === 'Toutes espèces';
+                      return groupes.map(g => (
+                        <div key={g.titre} className="mt-1">
+                          {!unSeul && <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">{g.titre}</p>}
+                          <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                            {g.lgs.map(l => (
+                              <label key={l.id} className="flex items-center gap-1.5 text-sm">
+                                <input type="checkbox" checked={!!cible.logement_ids?.includes(l.id)}
+                                  onChange={e => setCible(c => ({ ...c, logement_ids: e.target.checked ? [...new Set([...(c.logement_ids ?? []), l.id])] : (c.logement_ids ?? []).filter(x => x !== l.id) }))} />
+                                {l.nom}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ));
+                    })()}
                   </div>
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

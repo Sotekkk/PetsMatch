@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/pension_protocoles.dart' show kMomentsSejour;
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces, cleEspecePension, logementAccepteEspece;
 import 'package:flutter/services.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/planning_service.dart';
@@ -104,7 +105,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     final uid = widget.employerUid ?? FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final r = await Supabase.instance.client.from('enclos_chenil').select('id, nom, type').eq('uid_eleveur', uid).order('nom');
+      final r = await Supabase.instance.client.from('enclos_chenil').select('id, nom, type, especes').eq('uid_eleveur', uid).order('nom');
       if (mounted) setState(() => _logementsPension = List<Map<String, dynamic>>.from(r));
     } catch (_) {}
   }
@@ -115,6 +116,36 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     if (oui) { if (!l.contains(v)) l.add(v); } else { l.remove(v); }
     _cibleSejour = {..._cibleSejour, cle: l};
   });
+
+  /// Espèces des logements de la pension (sinon toutes les espèces pension).
+  List<Map<String, String>> _especesLogements() {
+    final cles = {for (final l in _logementsPension) for (final x in (l['especes'] as List?) ?? const []) cleEspecePension(x.toString())}
+      ..remove('');
+    return cles.isEmpty ? kPensionEspeces : [for (final sp in kPensionEspeces) if (cles.contains(sp['key'])) sp];
+  }
+
+  /// Logements précis rangés par espèce (ceux des espèces cochées seulement).
+  List<Widget> _logementsParEspece(Widget Function(String, List<(String, String)>) cases) {
+    final choisies = _liste('especes');
+    final groupes = <(String, List<Map<String, dynamic>>)>[];
+    for (final sp in kPensionEspeces) {
+      if (choisies.isNotEmpty && !choisies.contains(sp['key'])) continue;
+      final lgs = [for (final l in _logementsPension)
+        if (((l['especes'] as List?) ?? const []).any((x) => cleEspecePension(x.toString()) == sp['key'])) l];
+      if (lgs.isNotEmpty) groupes.add((sp['label']!, lgs));
+    }
+    final sans = [for (final l in _logementsPension) if (((l['especes'] as List?) ?? const []).isEmpty) l];
+    if (sans.isNotEmpty) groupes.add(('Toutes espèces', sans));
+    final unSeul = groupes.length == 1 && groupes.first.$1 == 'Toutes espèces';
+    return [
+      for (final (titre, lgs) in groupes) ...[
+        if (!unSeul)
+          Padding(padding: const EdgeInsets.only(top: 4),
+              child: Text(titre.toUpperCase(), style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w800, color: Colors.grey.shade600))),
+        cases('logement_ids', [for (final l in lgs) (l['id'].toString(), l['nom']?.toString() ?? 'Logement')]),
+      ],
+    ];
+  }
 
   /// Ciblage d'un protocole de séjour (pension).
   Widget _cibleSejourBloc() {
@@ -138,12 +169,32 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
         if (_perimetre != 'locaux')
           TextField(controller: _racesCtrl, style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
               decoration: _dec('Races (facultatif, séparées par des virgules)', hint: 'Ex : Berger australien, Border collie')),
+        if (_perimetre == 'locaux') ...[
+          const SizedBox(height: 8),
+          const Text('Espèces (aucune cochée = toutes)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+          Wrap(spacing: 4, children: [
+            for (final sp in _especesLogements())
+              FilterChip(
+                label: Text(sp['label']!, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                selected: _liste('especes').contains(sp['key']), selectedColor: _teal.withValues(alpha: 0.15), checkmarkColor: _teal,
+                onSelected: (o) => setState(() {
+                  final esp = _liste('especes');
+                  if (o) { if (!esp.contains(sp['key'])) esp.add(sp['key']!); } else { esp.remove(sp['key']); }
+                  // Logements cochés qui ne sont plus d'une espèce choisie : décochés.
+                  final ids = [for (final id in _liste('logement_ids'))
+                    if (esp.isEmpty || esp.any((k) => logementAccepteEspece(
+                        _logementsPension.firstWhere((l) => l['id'].toString() == id, orElse: () => const {})['especes'] as List?, k))) id];
+                  _cibleSejour = {..._cibleSejour, 'especes': esp, 'logement_ids': ids};
+                }),
+              ),
+          ]),
+        ],
         if (types.isNotEmpty) ...[
           const SizedBox(height: 8),
           const Text('Types de logement (aucun = tous)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
           cases('logement_types', [for (final t in types) (t, t[0].toUpperCase() + t.substring(1))]),
           const Text('Logements précis (aucun = tous)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
-          cases('logement_ids', [for (final l in _logementsPension) (l['id'].toString(), l['nom']?.toString() ?? 'Logement')]),
+          ..._logementsParEspece(cases),
         ],
         const SizedBox(height: 8),
         _select<String>('Séjours', _cibleSejour['sejour']?.toString() ?? 'tous',

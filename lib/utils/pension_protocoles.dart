@@ -6,7 +6,7 @@
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/protocoles.dart' show acteLabel;
-import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show cleEspecePension, pensionGroupe;
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show cleEspecePension, pensionGroupe, kPensionEspeces;
 
 const kMomentsSejour = <(String, String)>[
   ('chaque_jour', 'Chaque jour du séjour'),
@@ -27,6 +27,10 @@ String cibleSejourLabel(Object? brut) {
   final races = (brut['races'] as List?) ?? const [];
   final types = (brut['logement_types'] as List?) ?? const [];
   final ids = (brut['logement_ids'] as List?) ?? const [];
+  final esp = (brut['especes'] as List?) ?? const [];
+  if (esp.isNotEmpty) {
+    p.add('espèces : ${esp.map((k) => kPensionEspeces.firstWhere((x) => x['key'] == k, orElse: () => {'label': k.toString()})['label']).join(', ')}');
+  }
   if (races.isNotEmpty) p.add('races : ${races.join(', ')}');
   if (types.isNotEmpty) p.add('logements : ${types.join(', ')}');
   if (ids.isNotEmpty) p.add('${ids.length} logement(s) choisi(s)');
@@ -53,6 +57,17 @@ bool _especeOk(Object? tpl, Object? esp) {
   return a.isEmpty || b.isEmpty || a == b || pensionGroupe(a) == pensionGroupe(b);
 }
 
+/// Ciblage par espèce : espèce du pensionnaire, ou à défaut espèces du logement.
+bool especeCibleOk(List? cibles, Object? espece, Object? especesLogement) {
+  final cs = [for (final c in cibles ?? const []) cleEspecePension(c.toString())];
+  if (cs.isEmpty) return true;
+  bool proche(String a, String b) => a == b || pensionGroupe(a) == pensionGroupe(b);
+  final k = cleEspecePension(_t(espece));
+  if (k.isNotEmpty) return cs.any((c) => proche(c, k));
+  final liste = [for (final x in especesLogement is List ? especesLogement : const []) cleEspecePension(x.toString())]..removeWhere((x) => x.isEmpty);
+  return liste.isEmpty || liste.any((l) => cs.any((c) => proche(c, l)));
+}
+
 /// Applique les protocoles de séjour aux séjours donnés (arrivée enregistrée).
 /// Renvoie le nombre de tâches créées et les protocoles appliqués.
 Future<({int taches, List<String> protocoles})> appliquerProtocolesSejour(List<String> entreeIds,
@@ -72,7 +87,7 @@ Future<({int taches, List<String> protocoles})> appliquerProtocolesSejour(List<S
     final templates = [for (final tp in await q)
       if (pid.isEmpty || _t(tp['eleveur_profile_id']).isEmpty || _t(tp['eleveur_profile_id']) == pid) Map<String, dynamic>.from(tp)];
     if (templates.isEmpty) return (taches: 0, protocoles: noms);
-    final logements = {for (final l in await supa.from('enclos_chenil').select('id, nom, type').eq('uid_eleveur', proUid)) _t(l['id']): l};
+    final logements = {for (final l in await supa.from('enclos_chenil').select('id, nom, type, especes').eq('uid_eleveur', proUid)) _t(l['id']): l};
     final dms = await supa.from('pension_demandes').select('entree_id, essai_entree_id, nouveau_pensionnaire')
         .or(entreeIds.map((id) => 'entree_id.eq.$id,essai_entree_id.eq.$id').join(','));
     bool? nouveauDe(String id) {
@@ -97,6 +112,7 @@ Future<({int taches, List<String> protocoles})> appliquerProtocolesSejour(List<S
         if (races.isNotEmpty && !races.contains(_t(e['race']).toLowerCase())) continue;
         if (lIds.isNotEmpty && !lIds.contains(_t(e['logement_id']))) continue;
         if (lTypes.isNotEmpty && !lTypes.contains(_t(lg?['type']))) continue;
+        if (!especeCibleOk(cible['especes'] as List?, e['espece'], lg?['especes'])) continue;
         if (cible['sejour'] == 'essai' && e['essai'] != true) continue;
         if (cible['sejour'] == 'sejour' && e['essai'] == true) continue;
         final nv = nouveauDe(_t(e['id']));
