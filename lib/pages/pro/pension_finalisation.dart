@@ -26,6 +26,7 @@ import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show signerC
 import 'package:PetsMatch/utils/document_pro.dart' show choisirDocumentPdf, creerContratProSejour, kTypeContratPro;
 import 'package:PetsMatch/utils/client_pension.dart' show clientDuSejour;
 import 'dart:typed_data';
+import 'package:PetsMatch/utils/pension_impressions.dart' show imprimerFichesBox;
 
 const _teal = Color(0xFF0C5C6C);
 const _vert = Color(0xFF2E7D5E);
@@ -70,6 +71,8 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
   Map<String, dynamic> get e => widget.entree;
   List<String> get _tousIds => [e['id'].toString(), ...widget.autresIds.where((i) => i != e['id'].toString())];
   List<String> _nomsGroupe = [];
+  /// Protocoles du séjour : tâches planifiées (appliquées à l'arrivée) par protocole.
+  Map<String, int>? _protocoles;
 
   @override
   void initState() {
@@ -94,6 +97,16 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
       }
     } catch (_) {}
     _aSignature = await maSignaturePro() != null;
+    try {
+      final tp = await _supa.from('plan_taches').select('plan_id, plans_actifs(template_id, plan_templates(nom))')
+          .inFilter('pension_entree_id', _tousIds).neq('statut', 'fait');
+      final m = <String, int>{};
+      for (final x in tp) {
+        final n = (((x['plans_actifs'] as Map?)?['plan_templates'] as Map?)?['nom'])?.toString() ?? 'Protocole';
+        m[n] = (m[n] ?? 0) + 1;
+      }
+      _protocoles = m;
+    } catch (_) { _protocoles = {}; }
     if (_tousIds.length > 1) {
       try {
         final gs = await _supa.from('pension_entrees').select('animal_nom').inFilter('id', _tousIds);
@@ -362,7 +375,23 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
               child: const Text('Voir le contrat', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
             ),
         ]),
-        _etape(3, 'Facture', _facture == true || !factureAttendue, [
+        if (widget.arrivee)
+          _etape(3, 'Protocoles du séjour', true, [
+            Text(_protocoles == null ? '…' : _protocoles!.isEmpty
+                ? 'Aucun protocole de séjour ne concerne ce pensionnaire (Ma Pension > Protocoles).'
+                : _protocoles!.entries.map((x) => '${x.key} (${x.value} tâche${x.value > 1 ? 's' : ''})').join(' · '), style: _petit),
+            const SizedBox(height: 6),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final p = await _supa.from('user_profiles').select('nom').eq('id', User_Info.activeProfileId).maybeSingle();
+                await imprimerFichesBox(_tousIds, p?['nom']?.toString() ?? 'Pension');
+              },
+              icon: const Icon(Icons.print_outlined, size: 18),
+              label: Text('Imprimer la fiche box${_tousIds.length > 1 ? 's' : ''}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              style: OutlinedButton.styleFrom(foregroundColor: _teal),
+            ),
+          ]),
+        _etape(widget.arrivee ? 4 : 3, 'Facture', _facture == true || !factureAttendue, [
           Text(libFacture, style: _petit),
           if (_facture == false)
             Padding(

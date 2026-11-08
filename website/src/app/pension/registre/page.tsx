@@ -12,6 +12,7 @@ import { PensionFacturationModal } from '@/components/PensionFacturationModal';
 import { sejoursFactures } from '@/lib/pension-facture-groupee';
 import { logementAccepteEspece } from '@/lib/pension-especes';
 import FinalisationSejourModal from '@/components/pension/FinalisationSejourModal';
+import { imprimerFeuilleJour, imprimerFichesBox } from '@/lib/pension-impressions';
 import { signerContratAvecSignaturePro } from '@/lib/signature-pro';
 import { thumbUrl } from '@/lib/upload-media';
 import { apiFetch } from '@/lib/api-fetch';
@@ -303,6 +304,12 @@ export default function RegistrePensionPage() {
                 fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700 }}>
               ⚙ Filtrer{filterEspece ? ' ●' : ''}
             </button>
+            <button onClick={() => { if (user) void imprimerFeuilleJour(supabase, { proUid: user.uid, proProfileId: activeProfileId || null, date: jourMvt || new Date().toISOString().slice(0, 10), pensionNom: userData?.nameElevage || userData?.firstname || 'Votre pension' }); }}
+              style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)',
+                color: 'white', borderRadius: 20, padding: '6px 14px', cursor: 'pointer',
+                fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700 }}>
+              Feuille du jour
+            </button>
             <button onClick={exportCsv} disabled={entrees.length === 0}
               style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)',
                 color: 'white', borderRadius: 20, padding: '6px 14px', cursor: 'pointer',
@@ -433,6 +440,7 @@ export default function RegistrePensionPage() {
                   onJournal={() => setJournalFor(e)}
                   onFacturer={() => setFacturationFor(e)}
                   onContrat={() => { void ouvrirContrat(e); }}
+                  onFicheBox={() => { void imprimerFichesBox(supabase, [e.id], userData?.nameElevage || userData?.firstname || 'Votre pension'); }}
                 />
               );
             })}
@@ -577,11 +585,12 @@ const LIBELLE_CONTRAT: Record<string, [string, string]> = {
   partiellement_signe: ['Contrat signé en partie', '#B45309'], signe: ['Contrat signé', '#2E7D5E'],
 };
 
-function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, logementNom, logements, contratStatut, onLogement, onEdit, onArrivee, onSorti, onJournal, onFacturer, onContrat }: {
+function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, logementNom, logements, contratStatut, onLogement, onFicheBox, onEdit, onArrivee, onSorti, onJournal, onFacturer, onContrat }: {
   onArrivee?: () => void;
   logements: { id: string; nom: string; especes: string[] | null }[];
   contratStatut: string | null;
   onLogement: (logementId: string) => void;
+  onFicheBox: () => void;
   entree: PensionEntree;
   animalId?: string;
   photoUrl?: string;
@@ -747,6 +756,10 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, log
                 )}
                 {souhait && <span style={{ color: '#374151' }}>{souhait === 'pré' ? 'Pré' : 'Box'} souhaité</span>}
                 <span style={{ fontWeight: 700, color: coulContrat }}>{libContrat}</span>
+                <button type="button" onClick={onFicheBox}
+                  style={{ padding: '3px 10px', borderRadius: 8, border: `1px solid ${TEAL}`, color: TEAL, background: 'white', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  Fiche box
+                </button>
                 {proposes.length > 0 && (
                   <select value={entree.logement_id ?? ''} onChange={e => onLogement(e.target.value)}
                     style={{ padding: '3px 8px', borderRadius: 8, border: '1px solid #D1D5DB', fontSize: 12, background: 'white' }}>

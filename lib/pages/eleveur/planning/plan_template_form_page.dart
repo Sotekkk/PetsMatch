@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/pension_protocoles.dart' show kMomentsSejour;
 import 'package:flutter/services.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/planning_service.dart';
@@ -44,6 +45,10 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   String _declencheurAuto = '';
   bool   _saving          = false;
   List<Map<String, dynamic>> _selectedAnimaux = [];
+  // Pension, protocole de séjour : ciblage.
+  final _racesCtrl = TextEditingController();
+  Map<String, dynamic> _cibleSejour = {};
+  List<Map<String, dynamic>> _logementsPension = [];
 
   final List<_EtapeCtrl> _etapes = [];
 
@@ -76,6 +81,9 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       && !(_isPension && (c.$1 == 'bebes' || c.$1 == 'allaitantes'))).toList();
 
   List<(String, String, String)> get _refEventsDispo => kRefEvents.where((r) {
+    // « Séjour » : pension seulement ; pour les locaux de la pension, manuel ou séjour.
+    if (r.$1 == 'sejour') return _isPension;
+    if (_isPension && _perimetre == 'locaux') return r.$1 == 'manuel';
     if ((_isAssociation || _isGarde) && (r.$1 == 'saillie' || r.$1 == 'mise_bas')) return false;
     if ((_isPension || _isGarde) && r.$1 == 'naissance') return false;
     if (_cible == 'gestantes') return ['mise_bas', 'saillie', 'manuel'].contains(r.$1);
@@ -85,9 +93,73 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   }).toList();
 
   void _ajusterRefEvent() {
-    if (_perimetre == 'locaux') { _refEvent = 'manuel'; return; }
+    if (_perimetre == 'locaux' && !_isPension) { _refEvent = 'manuel'; return; }
     final dispo = _refEventsDispo;
-    if (!dispo.any((r) => r.$1 == _refEvent)) _refEvent = dispo.isNotEmpty ? dispo.first.$1 : 'manuel';
+    if (!dispo.any((r) => r.$1 == _refEvent)) _refEvent = _isPension ? 'sejour' : (dispo.isNotEmpty ? dispo.first.$1 : 'manuel');
+  }
+
+  bool get _sejour => _refEvent == 'sejour';
+
+  Future<void> _chargerLogements() async {
+    final uid = widget.employerUid ?? FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final r = await Supabase.instance.client.from('enclos_chenil').select('id, nom, type').eq('uid_eleveur', uid).order('nom');
+      if (mounted) setState(() => _logementsPension = List<Map<String, dynamic>>.from(r));
+    } catch (_) {}
+  }
+
+  List<String> _liste(String cle) => [for (final x in (_cibleSejour[cle] as List?) ?? const []) x.toString()];
+  void _basculer(String cle, String v, bool oui) => setState(() {
+    final l = _liste(cle);
+    if (oui) { if (!l.contains(v)) l.add(v); } else { l.remove(v); }
+    _cibleSejour = {..._cibleSejour, cle: l};
+  });
+
+  /// Ciblage d'un protocole de séjour (pension).
+  Widget _cibleSejourBloc() {
+    final types = {for (final l in _logementsPension) if ((l['type']?.toString() ?? '').isNotEmpty) l['type'].toString()}.toList();
+    Widget cases(String cle, List<(String, String)> items) => Wrap(spacing: 4, children: [
+          for (final (v, lib) in items)
+            FilterChip(
+              label: Text(lib, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+              selected: _liste(cle).contains(v), selectedColor: _teal.withValues(alpha: 0.15), checkmarkColor: _teal,
+              onSelected: (o) => _basculer(cle, v, o),
+            ),
+        ]);
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: _teal.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _teal.withValues(alpha: 0.15))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Pensionnaires concernés', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, color: _teal)),
+        const SizedBox(height: 8),
+        if (_perimetre != 'locaux')
+          TextField(controller: _racesCtrl, style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: _dec('Races (facultatif, séparées par des virgules)', hint: 'Ex : Berger australien, Border collie')),
+        if (types.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          const Text('Types de logement (aucun = tous)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+          cases('logement_types', [for (final t in types) (t, t[0].toUpperCase() + t.substring(1))]),
+          const Text('Logements précis (aucun = tous)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+          cases('logement_ids', [for (final l in _logementsPension) (l['id'].toString(), l['nom']?.toString() ?? 'Logement')]),
+        ],
+        const SizedBox(height: 8),
+        _select<String>('Séjours', _cibleSejour['sejour']?.toString() ?? 'tous',
+            const [('tous', 'Séjours et essais'), ('sejour', 'Séjours seulement'), ('essai', 'Essais seulement')],
+            (v) => setState(() => _cibleSejour = {..._cibleSejour, 'sejour': v})),
+        const SizedBox(height: 8),
+        _select<String>('Pensionnaires', _cibleSejour['nouveau']?.toString() ?? 'tous',
+            const [('tous', 'Tous'), ('nouveau', 'Nouveaux pensionnaires'), ('habitue', 'Habitués')],
+            (v) => setState(() => _cibleSejour = {..._cibleSejour, 'nouveau': v})),
+        const SizedBox(height: 6),
+        Text(_perimetre == 'locaux'
+            ? 'Une tâche par logement occupé (nettoyage du box, désinfection au départ…), même si plusieurs animaux le partagent.'
+            : "Appliqué à l'enregistrement de l'arrivée de chaque pensionnaire concerné.",
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+      ]),
+    );
   }
 
   @override
@@ -105,6 +177,10 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       if (kCategoriesProtocole.any((k) => k.$1 == c)) _categorie = c;
       _refEvent        = e['reference_event'] ?? 'manuel';
       _declencheurAuto = e['declencheur_auto'] ?? '';
+      if (e['pension_cible'] is Map) {
+        _cibleSejour = Map<String, dynamic>.from(e['pension_cible'] as Map);
+        _racesCtrl.text = [for (final r in (_cibleSejour['races'] as List?) ?? const []) r.toString()].join(', ');
+      }
       final etapesData = e['plan_template_etapes'];
       if (etapesData is List) {
         final tri = etapesData.map((x) => Map<String, dynamic>.from(x as Map)).toList()
@@ -119,6 +195,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       }
     }
     if (_etapes.isEmpty) _etapes.add(_EtapeCtrl());
+    if (_isPension) _chargerLogements();
   }
 
   Future<void> _loadDefaultAnimaux(List<String> ids) async {
@@ -147,6 +224,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     _nomCtrl.dispose();
     _descCtrl.dispose();
     _lieuCtrl.dispose();
+    _racesCtrl.dispose();
     for (final e in _etapes) { e.dispose(); }
     super.dispose();
   }
@@ -163,15 +241,20 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     setState(() => _saving = true);
     final locaux = _perimetre == 'locaux';
     final etapesData = [
-      for (var i = 0; i < _etapes.length; i++) _etapes[i].toMap(ordre: i, usesAge: _usesAge),
+      for (var i = 0; i < _etapes.length; i++) {
+        ..._etapes[i].toMap(ordre: i, usesAge: _usesAge),
+        if (_sejour) 'sejour_moment': _etapes[i].sejourMoment,
+      },
     ];
+    final races = _racesCtrl.text.split(',').map((x) => x.trim()).where((x) => x.isNotEmpty).toList();
+    final cibleSejourMap = _sejour ? {..._cibleSejour, 'races': races.isEmpty ? null : races} : null;
     final lieu = locaux && _lieuCtrl.text.trim().isNotEmpty ? _lieuCtrl.text.trim() : null;
-    final auto = (locaux || _declencheurAuto.isEmpty) ? null : _declencheurAuto;
+    final auto = (locaux || _declencheurAuto.isEmpty || _sejour) ? null : _declencheurAuto;
     final defaultIds = (_perimetre == 'animal' && _selectedAnimaux.isNotEmpty)
         ? _selectedAnimaux.map((a) => a['id'].toString()).toList() : null;
     final espece = (locaux || _espece.isEmpty) ? null : _espece;
     final desc = _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim();
-    final refEvent = locaux ? 'manuel' : _refEvent;
+    final refEvent = locaux && !_sejour ? 'manuel' : _refEvent;
 
     Future<void> enregistrer(String cible) async {
       if (widget.existing != null) {
@@ -179,6 +262,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           templateId: widget.existing!['id'] as String, nom: _nomCtrl.text.trim(),
           espece: espece, description: desc, lieu: lieu, cibleType: cible, referenceEvent: refEvent,
           declencheurAuto: auto, defaultAnimalIds: defaultIds, etapes: etapesData,
+          pensionCible: cibleSejourMap, effacerCible: cibleSejourMap == null && widget.existing?['pension_cible'] != null,
         );
       } else {
         final currentUid = FirebaseAuth.instance.currentUser!.uid;
@@ -190,6 +274,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           eleveurProfileIdOverride: widget.employerProfileId,
           createdByUid: currentUid,
           createdByProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+          pensionCible: cibleSejourMap,
         );
       }
     }
@@ -340,7 +425,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
                 accentColor: _teal,
               ),
             ],
-            if (!locaux && !_isGarde) ...[
+            if ((!locaux || _isPension) && !_isGarde) ...[
               const SizedBox(height: 12),
               _select<String>('Calcul des dates à partir de', _refEvent,
                   _refEventsDispo.map((r) => (r.$1, r.$2)).toList(), (v) => setState(() => _refEvent = v)),
@@ -349,9 +434,12 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
                 child: Text(kRefEvents.firstWhere((r) => r.$1 == _refEvent, orElse: () => kRefEvents.first).$3,
                     style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
               ),
-              const SizedBox(height: 10),
-              _select<String>('Application automatique', _declencheurAuto, declencheurs,
-                  (v) => setState(() => _declencheurAuto = v)),
+              if (!_sejour && !locaux) ...[
+                const SizedBox(height: 10),
+                _select<String>('Application automatique', _declencheurAuto, declencheurs,
+                    (v) => setState(() => _declencheurAuto = v)),
+              ],
+              if (_sejour) _cibleSejourBloc(),
             ],
           ]),
 
@@ -363,7 +451,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
                 index: i,
                 total: _etapes.length,
                 ctrl: _etapes[i],
-                refEvent: locaux ? 'manuel' : _refEvent,
+                refEvent: locaux && !_sejour ? 'manuel' : _refEvent,
                 usesAge: _usesAge,
                 onChanged: () => setState(() {}),
                 onMove: (d) => _deplacer(i, d),
@@ -494,6 +582,31 @@ class _EtapeCardState extends State<_EtapeCard> {
               ),
             ),
             const SizedBox(height: 10),
+            if (widget.refEvent == 'sejour')
+              Row(children: [
+                Expanded(child: DropdownButtonFormField<String>(
+                  initialValue: c.sejourMoment, isExpanded: true, decoration: _dec('Pendant le séjour'),
+                  items: [for (final (v, lib) in kMomentsSejour) DropdownMenuItem(value: v, child: Text(lib, style: _ts))],
+                  onChanged: (v) => maj(() => c.sejourMoment = v ?? 'chaque_jour'),
+                )),
+                if (c.sejourMoment != 'chaque_jour') ...[
+                  const SizedBox(width: 8),
+                  SizedBox(width: 70, child: TextFormField(
+                    controller: c.offsetCtrl, style: _ts, textAlign: TextAlign.center, keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly], onChanged: (_) => widget.onChanged(),
+                    decoration: _dec('Jours'))),
+                ],
+                const SizedBox(width: 8),
+                Expanded(child: DropdownButtonFormField<String?>(
+                  initialValue: c.trancheHoraire, isExpanded: true, decoration: _dec('Créneau'),
+                  items: [
+                    DropdownMenuItem<String?>(value: null, child: Text('Non défini', style: _ts)),
+                    ...kTranches.entries.map((t) => DropdownMenuItem<String?>(value: t.key, child: Text(t.value, style: _ts))),
+                  ],
+                  onChanged: (v) => maj(() => c.trancheHoraire = v),
+                )),
+              ])
+            else ...[
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Expanded(child: widget.usesAge
                   ? TextFormField(
@@ -572,6 +685,7 @@ class _EtapeCardState extends State<_EtapeCard> {
                 Text(c.frequence == 'mensuel' ? 'mois' : 'semaines', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
               ],
             ]),
+            ],
             const SizedBox(height: 10),
             if (_details || sanitaire) ...[
               Row(children: [
@@ -609,6 +723,8 @@ class _EtapeCtrl {
   bool    isRecurrent    = false;
   String? trancheHoraire;
   String? existingId;
+  /// Pension, protocole de séjour : chaque_jour | arrivee | depart.
+  String  sejourMoment   = 'chaque_jour';
 
   /// Action saisie librement (ou suggestion) — enregistrée dans type_acte
   final TextEditingController actionCtrl;
@@ -639,6 +755,7 @@ class _EtapeCtrl {
         isRecurrent       = d['is_recurrent'] == true,
         trancheHoraire    = d['tranche_horaire'] as String?,
         existingId        = d['id'] as String?,
+        sejourMoment      = (d['sejour_moment'] as String?) ?? 'chaque_jour',
         actionCtrl        = TextEditingController(text: acteLabel(d['type_acte'] as String?)),
         produitCtrl       = TextEditingController(text: d['produit'] ?? ''),
         dosageCtrl        = TextEditingController(text: d['dosage'] ?? ''),

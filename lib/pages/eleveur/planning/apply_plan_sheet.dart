@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/pension_protocoles.dart' show appliquerProtocolesSejour, cibleSejourLabel;
 import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -192,8 +193,51 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
     }
   }
 
+  bool _appliquantSejour = false;
+  String? _resultatSejour;
+
+  /// Protocole de séjour (pension) : appliqué tout seul à l'arrivée ; ici,
+  /// aux pensionnaires déjà présents (tâches à partir d'aujourd'hui).
+  Widget _sejourBuild(BuildContext context) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(widget.template['nom']?.toString() ?? 'Protocole',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 17, color: _dark)),
+          const SizedBox(height: 8),
+          Text("Ce protocole s'applique tout seul à l'enregistrement de l'arrivée de chaque pensionnaire concerné "
+              '(${cibleSejourLabel(widget.template['pension_cible'])}). Vous pouvez aussi l\'appliquer maintenant aux pensionnaires déjà présents.',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
+          if (_resultatSejour != null)
+            Padding(padding: const EdgeInsets.only(top: 8), child: Text(_resultatSejour!,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF2E7D5E)))),
+          const SizedBox(height: 14),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _green, padding: const EdgeInsets.symmetric(vertical: 13)),
+            onPressed: _appliquantSejour ? null : () async {
+              setState(() => _appliquantSejour = true);
+              final pid = widget.eleveurProfileIdOverride ?? User_Info.activeProfileId;
+              var q = Supabase.instance.client.from('pension_entrees').select('id').eq('pro_uid', widget.uid)
+                  .eq('statut', 'en_pension').not('arrivee_reelle_le', 'is', null);
+              if (pid.isNotEmpty) q = q.eq('pro_profile_id', pid);
+              final ids = [for (final r in await q) r['id'].toString()];
+              final r = await appliquerProtocolesSejour(ids, templateIds: [widget.template['id'].toString()],
+                  depuis: DateFormat('yyyy-MM-dd').format(DateTime.now()));
+              if (!mounted) return;
+              setState(() {
+                _appliquantSejour = false;
+                _resultatSejour = r.taches > 0 ? '${r.taches} tâche(s) créée(s) pour les pensionnaires présents concernés.'
+                    : 'Aucune tâche à créer : pensionnaires présents non concernés, ou déjà fait.';
+              });
+            },
+            child: Text(_appliquantSejour ? 'Application…' : 'Appliquer aux présents', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          ),
+          TextButton(onPressed: () => Navigator.pop(context, _resultatSejour != null), child: const Text('Fermer', style: TextStyle(fontFamily: 'Galey'))),
+        ]),
+      ));
+
   @override
   Widget build(BuildContext context) {
+    if (widget.template['reference_event'] == 'sejour') return _sejourBuild(context);
     final fmt   = DateFormat('d MMM yyyy', 'fr_FR');
     final etapes = (widget.template['plan_template_etapes'] as List? ?? []);
 

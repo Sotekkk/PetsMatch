@@ -73,6 +73,8 @@ const kRefEvents = <(String, String, String)>[
   ('mise_bas',     'Mise bas',                     'J0 = date de mise bas (prévue)'),
   ('naissance',    'Naissance',                    'J0 = date de naissance'),
   ('age_semaines', 'Âge des animaux',              'Chaque étape à un âge en semaines'),
+  // Pension : appliqué tout seul à l'enregistrement de l'arrivée (utils/pension_protocoles.dart).
+  ('sejour',       'Séjour en pension (automatique)', "Appliqué tout seul à l'arrivée de chaque pensionnaire concerné ; chaque étape se place pendant son séjour"),
 ];
 
 String refEventLabel(String v) => kRefEvents.firstWhere((r) => r.$1 == v, orElse: () => (v, v, '')).$2;
@@ -128,6 +130,15 @@ String acteDepuisSaisie(String s) {
 const kTranches = <String, String>{'matin': 'Matin', 'midi': 'Midi', 'apres_midi': 'Après-midi', 'soir': 'Soir'};
 
 String quandLabel(Map<String, dynamic> e, String refEvent) {
+  // Pension, protocole de séjour.
+  if (refEvent == 'sejour') {
+    final off = (e['jour_offset'] as num?)?.toInt() ?? 0;
+    return switch (e['sejour_moment']) {
+      'arrivee' => off > 0 ? "$off j après l'arrivée" : "Jour de l'arrivée",
+      'depart' => off > 0 ? '$off j avant le départ' : 'Jour du départ',
+      _ => 'Chaque jour du séjour',
+    };
+  }
   final age = (e['age_min_semaines'] as num?)?.toInt();
   if (refEvent == 'age_semaines' || (age != null && refEvent == 'naissance')) {
     final a = age ?? 0;
@@ -142,6 +153,8 @@ String quandLabel(Map<String, dynamic> e, String refEvent) {
 }
 
 String frequenceLabel(Map<String, dynamic> e) {
+  // Pension, protocole de séjour : la durée suit le séjour.
+  if (e['sejour_moment'] != null) return e['sejour_moment'] == 'chaque_jour' ? 'Pendant tout le séjour' : 'Une fois';
   final sem = (e['duree_semaines'] as num?)?.toInt() ?? 1;
   final jours = (e['duree_jours'] as num?)?.toInt() ?? 1;
   final nb = (e['nb_fois_semaine'] as num?)?.toInt() ?? 1;

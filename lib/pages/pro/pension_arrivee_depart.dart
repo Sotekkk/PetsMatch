@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/pension_protocoles.dart' show appliquerProtocolesSejour, retirerTachesSejour;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show logementAccepteEspece;
 
 const _teal = Color(0xFF0C5C6C);
@@ -281,6 +282,8 @@ Future<bool> confirmerArriveePension(BuildContext context, Map<String, dynamic> 
     } catch (_) {}
   }
   dernierGroupePension = ids;
+  // Protocoles de séjour : appliqués tout seuls à l'arrivée.
+  await appliquerProtocolesSejour(ids);
   return true;
 }
 
@@ -387,5 +390,7 @@ Future<bool> enregistrerDepartPension(BuildContext context, Map<String, dynamic>
     } catch (_) {}
   }
   dernierGroupePension = ids;
+  // Protocoles de séjour : tâches restantes après le départ retirées.
+  await retirerTachesSejour(ids, dateStr);
   return true;
 }

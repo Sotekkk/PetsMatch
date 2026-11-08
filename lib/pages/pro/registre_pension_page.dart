@@ -2,6 +2,7 @@ import 'package:PetsMatch/utils/animal_proprietaire.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/pension_impressions.dart' show imprimerFeuilleJour, imprimerFichesBox;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show logementAccepteEspece;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -939,6 +940,16 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.print_outlined),
+            tooltip: 'Feuille du jour',
+            onPressed: () async {
+              final p = await _supa.from('user_profiles').select('nom').eq('id', User_Info.activeProfileId).maybeSingle();
+              await imprimerFeuilleJour(proUid: _uid, proProfileId: User_Info.activeProfileId,
+                  date: _mouvement == 'arrivees' || _mouvement == 'departs' ? _jourMvt : DateTime.now(),
+                  pensionNom: p?['nom']?.toString() ?? 'Pension');
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.sensors_rounded),
             tooltip: 'Scanner une puce',
             onPressed: _scanChip,
@@ -1576,6 +1587,11 @@ class _PensionCard extends StatelessWidget {
                           'partiellement_signe' => 'Contrat signé en partie', _ => 'Contrat en brouillon' },
                         style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700,
                             color: contratStatut == 'signe' ? _green : contratStatut == null ? const Color(0xFFB3261E) : const Color(0xFFB45309))),
+                    InkWell(
+                      onTap: () async => imprimerFichesBox([entree['id'].toString()], 'Pension'),
+                      child: const Text('Fiche box',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700, color: _teal, decoration: TextDecoration.underline)),
+                    ),
                     if (onLogement != null)
                       InkWell(
                         onTap: onLogement,

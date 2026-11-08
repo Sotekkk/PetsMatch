@@ -1,5 +1,7 @@
 'use client';
 
+import { MOMENTS_SEJOUR, momentLabel, cibleLabel, appliquerProtocolesSejour, aujourdhuiIso, type PensionCible } from '@/lib/pension-protocoles';
+import { pensionLogementTypeLabel } from '@/lib/pension-logements';
 import { ACTES_CARNET, validerTachesProtocole } from '@/lib/carnet-depuis-tache';
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -34,6 +36,8 @@ interface Etape {
   description: string;
   ordre: number;
   tranche_horaire?: string | null;
+  /** Pension, protocole de séjour : chaque_jour | arrivee | depart. */
+  sejour_moment?: string | null;
 }
 
 interface Template {
@@ -50,6 +54,8 @@ interface Template {
   plan_template_etapes?: Etape[];
   created_by_uid?: string | null;
   created_by_profile_id?: string | null;
+  /** Pension, protocole de séjour : ciblage (races, logements, séjour / essai…). */
+  pension_cible?: PensionCible | null;
 }
 
 interface Tache {
@@ -137,10 +143,12 @@ const ACTE_LABELS: Record<string, string> = {
 function acteLabel(v: string) { return ACTE_LABELS[v] ?? v; }
 
 function etapeTimingLabel(e: Etape): string {
+  if (e.sejour_moment) return momentLabel(e.sejour_moment, e.jour_offset);
   if (e.age_min_semaines != null) return `À ${e.age_min_semaines} semaines`;
   return `${e.offset_direction === 'avant' ? 'Avant' : 'Après'} J0 + ${e.jour_offset}j`;
 }
 function etapeFreqLabel(e: Etape): string {
+  if (e.sejour_moment) return e.sejour_moment === 'chaque_jour' ? 'Pendant tout le séjour' : 'Une fois';
   return e.frequence === 'ponctuel' ? `Ponctuel (${e.duree_jours}j)`
     : e.frequence === 'quotidien' ? `Quotidien (${e.duree_semaines}sem)`
     : e.frequence === 'hebdomadaire' ? `${e.nb_fois_semaine}x/sem × ${e.duree_semaines}sem`
@@ -985,7 +993,7 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
                       )}
                     </div>
                     <p className="text-sm text-gray-500 mt-1">
-                      {perimetreLabel(t, profilSource)} · {nbEtapes} étape{nbEtapes > 1 ? 's' : ''}
+                      {t.reference_event === 'sejour' ? `Séjour en pension · ${cibleLabel(t.pension_cible)}` : perimetreLabel(t, profilSource)} · {nbEtapes} étape{nbEtapes > 1 ? 's' : ''}
                     </p>
                   </button>
                   <div className="relative">
@@ -1265,6 +1273,15 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
     existing && CATEGORIES.some(c => c.value === existing.cible_type) ? existing.cible_type : 'femelles');
   const [refEvent, setRefEvent] = useState(existing?.reference_event ?? 'manuel');
   const [declencheurAuto, setDeclencheurAuto] = useState(existing?.declencheur_auto ?? '');
+  // Pension, protocole de séjour : ciblage.
+  const [cible, setCible] = useState<PensionCible>(existing?.pension_cible ?? {});
+  const [racesTxt, setRacesTxt] = useState((existing?.pension_cible?.races ?? []).join(', '));
+  const [logementsPension, setLogementsPension] = useState<{ id: string; nom: string; type: string | null }[]>([]);
+  useEffect(() => {
+    if (profilSource !== 'pension') return;
+    supabase.from('enclos_chenil').select('id, nom, type').eq('uid_eleveur', uid).order('nom')
+      .then(({ data }) => setLogementsPension((data ?? []) as { id: string; nom: string; type: string | null }[]));
+  }, [profilSource, uid]);
   const [animalIds, setAnimalIds] = useState<string[]>(existing?.default_animal_ids ?? []);
   const [showAnimalPicker, setShowAnimalPicker] = useState(false);
   const [animalSearch, setAnimalSearch] = useState('');
@@ -1316,6 +1333,9 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
     !(profilSource === 'pension' && c.value === 'bebes'));
   const cibleEffective = cibleTypePour(perimetre, categorie);
   const refEventsDispo = REF_EVENTS.filter(r => {
+    // « Séjour » : pension seulement ; pour les locaux de la pension, manuel ou séjour.
+    if (r.value === 'sejour') return profilSource === 'pension';
+    if (profilSource === 'pension' && perimetre === 'locaux') return r.value === 'manuel';
     if ((profilSource === 'association' || profilSource === 'pension' || profilSource === 'garde')
       && (r.value === 'saillie' || r.value === 'mise_bas')) return false;
     if ((profilSource === 'pension' || profilSource === 'garde') && r.value === 'naissance') return false;
@@ -1325,8 +1345,8 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
     return r.value !== 'age_semaines';
   });
   useEffect(() => {
-    if (perimetre === 'locaux') { setRefEvent('manuel'); return; }
-    if (!refEventsDispo.some(r => r.value === refEvent)) setRefEvent(refEventsDispo[0]?.value ?? 'manuel');
+    if (perimetre === 'locaux' && profilSource !== 'pension') { setRefEvent('manuel'); return; }
+    if (!refEventsDispo.some(r => r.value === refEvent)) setRefEvent(profilSource === 'pension' ? 'sejour' : refEventsDispo[0]?.value ?? 'manuel');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perimetre, categorie]);
 
@@ -1354,13 +1374,18 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
         age_min_semaines: refEvent === 'age_semaines' || cibleEffective === 'bebes' ? (e.age_min_semaines ?? 0) : null,
         tranche_horaire: e.tranche_horaire ?? null,
         duree_semaines: e.is_recurrent ? 52 : e.duree_semaines,
+        // Protocole de séjour : moment de l'étape (sinon colonne non envoyée).
+        sejour_moment: refEvent === 'sejour' ? (e.sejour_moment || 'chaque_jour') : undefined,
       }));
+      const racesListe = racesTxt.split(',').map(x => x.trim()).filter(Boolean);
+      const cibleSejour: PensionCible = { ...cible, races: racesListe.length ? racesListe : undefined };
       const templatePayload = {
         nom: nom.trim(), type, espece: locaux ? null : (espece || null), description: description.trim() || null,
         lieu: locaux ? (lieu.trim() || null) : null,
         cible_type: cibleEffective,
-        reference_event: locaux ? 'manuel' : refEvent,
-        declencheur_auto: (locaux || !declencheurAuto) ? null : declencheurAuto,
+        reference_event: locaux && refEvent !== 'sejour' ? 'manuel' : refEvent,
+        ...(refEvent === 'sejour' ? { pension_cible: cibleSejour } : existing?.pension_cible ? { pension_cible: null } : {}),
+        declencheur_auto: (locaux || !declencheurAuto || refEvent === 'sejour') ? null : declencheurAuto,
         default_animal_ids: (perimetre === 'animal' && animalIds.length > 0) ? animalIds : null,
       };
       // Base pas encore migrée (portée / locaux absents de la contrainte
@@ -1541,7 +1566,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
               </div>
             )}
 
-            {perimetre !== 'locaux' && profilSource !== 'garde' && (
+            {(perimetre !== 'locaux' || profilSource === 'pension') && profilSource !== 'garde' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 <div>
                   <label className={libelleCls}>Calcul des dates à partir de</label>
@@ -1550,12 +1575,70 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
                   </select>
                   <p className="text-[11px] text-gray-400 mt-1">{REF_EVENTS.find(r => r.value === refEvent)?.aide}</p>
                 </div>
+                {refEvent !== 'sejour' && perimetre !== 'locaux' && (
                 <div>
                   <label className={libelleCls}>Application automatique</label>
                   <select value={declencheurAuto} onChange={e => setDeclencheurAuto(e.target.value)} className={champCls}>
                     {declencheurs.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
                   </select>
                 </div>
+                )}
+              </div>
+            )}
+            {refEvent === 'sejour' && (
+              <div className="border border-[#0C5C6C]/15 rounded-xl p-3 space-y-3 bg-[#0C5C6C]/[0.03]">
+                <p className="text-xs font-bold text-[#0C5C6C]">Pensionnaires concernés</p>
+                {perimetre !== 'locaux' && (
+                  <div>
+                    <label className={libelleCls}>Races (facultatif, séparées par des virgules)</label>
+                    <input value={racesTxt} onChange={e => setRacesTxt(e.target.value)} placeholder="Ex : Berger australien, Border collie" className={champCls} />
+                  </div>
+                )}
+                {logementsPension.length > 0 && (
+                  <div>
+                    <label className={libelleCls}>Types de logement (aucun coché = tous)</label>
+                    <div className="flex flex-wrap gap-2">
+                      {[...new Set(logementsPension.map(l => l.type).filter(Boolean) as string[])].map(tp => (
+                        <label key={tp} className="flex items-center gap-1.5 text-sm">
+                          <input type="checkbox" checked={!!cible.logement_types?.includes(tp)}
+                            onChange={e => setCible(c => ({ ...c, logement_types: e.target.checked ? [...(c.logement_types ?? []), tp] : (c.logement_types ?? []).filter(x => x !== tp) }))} />
+                          {pensionLogementTypeLabel(tp)}
+                        </label>
+                      ))}
+                    </div>
+                    <label className={`${libelleCls} mt-2`}>Logements précis (aucun coché = tous)</label>
+                    <div className="flex flex-wrap gap-2">
+                      {logementsPension.map(l => (
+                        <label key={l.id} className="flex items-center gap-1.5 text-sm">
+                          <input type="checkbox" checked={!!cible.logement_ids?.includes(l.id)}
+                            onChange={e => setCible(c => ({ ...c, logement_ids: e.target.checked ? [...(c.logement_ids ?? []), l.id] : (c.logement_ids ?? []).filter(x => x !== l.id) }))} />
+                          {l.nom}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className={libelleCls}>Séjours</label>
+                    <select value={cible.sejour ?? 'tous'} onChange={e => setCible(c => ({ ...c, sejour: e.target.value as PensionCible['sejour'] }))} className={champCls}>
+                      <option value="tous">Séjours et essais</option>
+                      <option value="sejour">Séjours seulement</option>
+                      <option value="essai">Essais seulement</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={libelleCls}>Pensionnaires</label>
+                    <select value={cible.nouveau ?? 'tous'} onChange={e => setCible(c => ({ ...c, nouveau: e.target.value as PensionCible['nouveau'] }))} className={champCls}>
+                      <option value="tous">Tous</option>
+                      <option value="nouveau">Nouveaux pensionnaires</option>
+                      <option value="habitue">Habitués</option>
+                    </select>
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500">{perimetre === 'locaux'
+                  ? "Une tâche par logement occupé (nettoyage du box, désinfection au départ…), même si plusieurs animaux le partagent."
+                  : "Appliqué à l'enregistrement de l'arrivée de chaque pensionnaire concerné (espèce choisie plus haut)."}</p>
               </div>
             )}
           </BlocNumerote>
@@ -1565,7 +1648,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
             <div className="space-y-3">
               {etapes.map((e, i) => (
                 <EtapeForm key={e.id ?? `n${i}`} index={i} total={etapes.length} etape={e}
-                  refEvent={perimetre === 'locaux' ? 'manuel' : refEvent}
+                  refEvent={perimetre === 'locaux' && refEvent !== 'sejour' ? 'manuel' : refEvent}
                   usesAge={refEvent === 'age_semaines' || cibleEffective === 'bebes'}
                   onChange={patch => updateEtape(i, patch)}
                   onMove={d => deplacerEtape(i, d)}
@@ -1634,6 +1717,20 @@ function EtapeForm({ index, total, etape, refEvent, usesAge, onChange, onMove, o
           <input value={acteLabel(etape.type_acte)} onChange={e => onChange({ type_acte: e.target.value })} list="actes-protocole"
             placeholder="Ex : Nettoyer les surfaces" className={champCls} />
         </div>
+        {refEvent === 'sejour' ? (
+          <div className="sm:col-span-2">
+            <label className={libelleCls}>Pendant le séjour</label>
+            <div className="flex items-center gap-1.5">
+              <select value={etape.sejour_moment || 'chaque_jour'} onChange={e => onChange({ sejour_moment: e.target.value })} className={champCls}>
+                {MOMENTS_SEJOUR.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+              {(etape.sejour_moment === 'arrivee' || etape.sejour_moment === 'depart') && (
+                <input type="number" min={0} value={etape.jour_offset} onChange={e => onChange({ jour_offset: parseInt(e.target.value) || 0 })}
+                  className={`${champCls} w-16 text-center px-2`} title="Jours" />
+              )}
+            </div>
+          </div>
+        ) : (<>
         <div>
           <label className={libelleCls}>Déclenchement</label>
           {usesAge ? (
@@ -1673,6 +1770,7 @@ function EtapeForm({ index, total, etape, refEvent, usesAge, onChange, onMove, o
             <option value="mensuel_an">Chaque mois (1 an)</option>
           </select>
         </div>
+        </>)}
         <div>
           <label className={libelleCls}>Créneau</label>
           <select value={etape.tranche_horaire ?? ''} onChange={e => onChange({ tranche_horaire: e.target.value || null })} className={champCls}>
@@ -1683,7 +1781,7 @@ function EtapeForm({ index, total, etape, refEvent, usesAge, onChange, onMove, o
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-600">
-        {etape.frequence === 'ponctuel' && (
+        {refEvent !== 'sejour' && etape.frequence === 'ponctuel' && (
           <label className="flex items-center gap-1.5">Durée
             <input type="number" min={1} value={etape.duree_jours} onChange={e => onChange({ duree_jours: parseInt(e.target.value) || 1 })}
               className="w-14 border border-gray-200 rounded-lg px-2 py-1 text-center" /> jour(s) de suite
@@ -1742,6 +1840,8 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
   template: Template; uid: string; profileId: string | null; profilSource?: string; onClose: () => void; onApplied: () => void;
 }) {
   const [dateRef, setDateRef] = useState(toISODate(new Date()));
+  // Protocole de séjour : appliqué tout seul à l'arrivée ; ici, aux pensionnaires déjà présents.
+  const [resultatSejour, setResultatSejour] = useState('');
   const [animalIds, setAnimalIds] = useState<string[]>(template.default_animal_ids ?? []);
   const [showPicker, setShowPicker] = useState(false);
   const [animalSearch, setAnimalSearch] = useState('');
@@ -1972,6 +2072,36 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
       onApplied();
     } catch (e) { console.error(e); setSaving(false); }
   };
+
+  if (template.reference_event === 'sejour') {
+    const appliquerPresents = async () => {
+      setSaving(true); setResultatSejour('');
+      let q = supabase.from('pension_entrees').select('id').eq('pro_uid', uid).eq('statut', 'en_pension').not('arrivee_reelle_le', 'is', null);
+      if (profileId) q = q.eq('pro_profile_id', profileId);
+      const { data } = await q;
+      const ids = ((data ?? []) as { id: string }[]).map(x => x.id);
+      const r = await appliquerProtocolesSejour(supabase, ids, { templateIds: [template.id], depuis: aujourdhuiIso() });
+      setSaving(false);
+      setResultatSejour(r.taches ? `${r.taches} tâche(s) créée(s) pour les pensionnaires présents concernés.` : 'Aucune tâche à créer : pensionnaires présents non concernés, ou déjà fait.');
+      if (r.taches) onApplied();
+    };
+    return (
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={onClose}>
+        <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 space-y-3" onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
+          <p className="font-bold text-lg text-[#1F2A2E]">{template.nom}</p>
+          <p className="text-sm text-gray-600">Ce protocole s&apos;applique tout seul à l&apos;enregistrement de l&apos;arrivée de chaque pensionnaire concerné ({cibleLabel(template.pension_cible)}).</p>
+          <p className="text-sm text-gray-600">Vous pouvez aussi l&apos;appliquer maintenant aux pensionnaires déjà présents (tâches à partir d&apos;aujourd&apos;hui).</p>
+          {resultatSejour && <p className="text-sm font-semibold text-[#2E7D5E]">{resultatSejour}</p>}
+          <div className="flex gap-2">
+            <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600">Fermer</button>
+            <button onClick={() => { void appliquerPresents(); }} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-[#0C5C6C] disabled:opacity-50">
+              {saving ? 'Application…' : 'Appliquer aux présents'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">

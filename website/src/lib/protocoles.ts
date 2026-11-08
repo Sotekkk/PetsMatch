@@ -110,6 +110,8 @@ export const REF_EVENTS: { value: string; label: string; aide: string }[] = [
   { value: 'mise_bas',     label: 'Mise bas',                     aide: 'J0 = date de mise bas (prévue)' },
   { value: 'naissance',    label: 'Naissance',                    aide: 'J0 = date de naissance' },
   { value: 'age_semaines', label: 'Âge des animaux',              aide: 'Chaque étape à un âge en semaines' },
+  // Pension : appliqué tout seul à l'enregistrement de l'arrivée (lib/pension-protocoles.ts).
+  { value: 'sejour',       label: 'Séjour en pension (automatique)', aide: "Appliqué tout seul à l'arrivée de chaque pensionnaire concerné ; chaque étape se place pendant son séjour" },
 ];
 
 export function refEventLabel(v: string): string {

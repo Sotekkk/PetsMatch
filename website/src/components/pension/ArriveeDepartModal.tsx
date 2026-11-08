@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { logementAccepteEspece } from '@/lib/pension-especes';
+import { appliquerProtocolesSejour, retirerTachesSejour } from '@/lib/pension-protocoles';
 
 const TEAL = '#0C5C6C';
 
@@ -140,6 +141,13 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
       const { error: e2 } = await supabase.from('pension_entrees').update(maj).eq('id', c.id);
       if (!e2) ids.push(c.id);
     }
+    // Protocoles de séjour : appliqués tout seuls à l'arrivée ; au départ, les
+    // tâches restantes du séjour (après aujourd'hui) sont retirées.
+    try {
+      const jourMaj = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (mode === 'arrivee') await appliquerProtocolesSejour(supabase, ids);
+      else await retirerTachesSejour(supabase, ids, jourMaj);
+    } catch { /* protocoles : jamais bloquant */ }
     setSaving(false);
     onDone(ids);
   }

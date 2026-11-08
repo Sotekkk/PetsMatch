@@ -60,6 +60,8 @@ class PlanningService {
     String? eleveurProfileIdOverride,
     String? createdByUid,
     String? createdByProfileId,
+    /// Pension, protocole de séjour : ciblage (races, logements, séjour / essai…).
+    Map<String, dynamic>? pensionCible,
   }) async {
     final ownerProfileId = eleveurProfileIdOverride ?? User_Info.activeProfileId;
     final row = await _supa.from('plan_templates').insert({
@@ -77,6 +79,7 @@ class PlanningService {
       if (defaultAnimalIds != null && defaultAnimalIds.isNotEmpty) 'default_animal_ids': defaultAnimalIds,
       if (createdByUid != null) 'created_by_uid': createdByUid,
       if (createdByProfileId != null) 'created_by_profile_id': createdByProfileId,
+      if (pensionCible != null) 'pension_cible': pensionCible,
     }).select('id').single();
 
     final templateId = row['id'] as String;
@@ -96,8 +99,12 @@ class PlanningService {
     String? declencheurAuto,
     List<String>? defaultAnimalIds,
     required List<Map<String, dynamic>> etapes,
+    /// Pension : ciblage d'un protocole de séjour ; `effacerCible` retire un ciblage existant.
+    Map<String, dynamic>? pensionCible,
+    bool effacerCible = false,
   }) async {
     await _supa.from('plan_templates').update({
+      if (pensionCible != null) 'pension_cible': pensionCible else if (effacerCible) 'pension_cible': null,
       'nom':              nom,
       'espece':           espece,
       'description':      description,
@@ -157,6 +164,8 @@ class PlanningService {
     'lieu':             e['lieu'],
     'description':      e['description'],
     'tranche_horaire':  e['tranche_horaire'],
+    // Pension, protocole de séjour : moment de l'étape (colonne non envoyée sinon).
+    if (e['sejour_moment'] != null) 'sejour_moment': e['sejour_moment'],
   };
 
   static Future<void> _insertEtapes(String templateId, List<Map<String, dynamic>> etapes) async {

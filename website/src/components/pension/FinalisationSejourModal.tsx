@@ -20,6 +20,7 @@ import { PensionFacturationModal } from '@/components/PensionFacturationModal';
 import type { PensionEntree } from '@/components/PensionEntreeModal';
 import { ACCEPT_DOCUMENT_PRO, TYPE_CONTRAT_PRO, creerContratProSejour, fichierEnPdf } from '@/lib/document-pro';
 import { clientDuSejour, nomComplet } from '@/lib/client-pension';
+import { imprimerFichesBox } from '@/lib/pension-impressions';
 
 interface Contrat { id: string; token: string; statut: string; client_email: string | null; client_nom: string | null; client_a_compte: boolean; signe_pro: boolean; signe_client: boolean }
 
@@ -54,6 +55,8 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
   const estEssai = !!(entree as { essai?: boolean }).essai;
   const [facturer, setFacturer] = useState(false);
   const [logementNom, setLogementNom] = useState<string | null>(null);
+  // Protocoles du séjour : tâches planifiées (appliquées à l'arrivée) par protocole.
+  const [protocoles, setProtocoles] = useState<{ nom: string; n: number }[] | null>(null);
   // Contrat de la pension : son modèle (Tarifs) ou un fichier chargé pour ce séjour.
   const [modele, setModele] = useState<{ url: string; nom: string } | null>(null);
   const [choixContrat, setChoixContrat] = useState<'petsmatch' | 'mien'>('petsmatch');
@@ -78,6 +81,14 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
     setSolde(reg.solde === 'depart' ? 'depart' : 'arrivee');
     setArrhes(typeof reg.arrhes_pct === 'number' && reg.arrhes_pct > 0 ? reg.arrhes_pct : null);
     setLogementNom((lg as { nom?: string } | null)?.nom ?? null);
+    const { data: tp } = await supabase.from('plan_taches').select('plan_id, plans_actifs(template_id, plan_templates(nom))')
+      .in('pension_entree_id', tousIds).neq('statut', 'fait');
+    const parNom = new Map<string, number>();
+    for (const x of (tp ?? []) as { plans_actifs?: { plan_templates?: { nom?: string } | null } | null }[]) {
+      const n = x.plans_actifs?.plan_templates?.nom ?? 'Protocole';
+      parNom.set(n, (parNom.get(n) ?? 0) + 1);
+    }
+    setProtocoles([...parNom].map(([nom, n]) => ({ nom, n })));
     if (tousIds.length > 1) {
       const { data: gs } = await supabase.from('pension_entrees').select('id, animal_nom').in('id', tousIds);
       setNomsGroupe(((gs ?? []) as { animal_nom: string | null }[]).map(g => g.animal_nom ?? 'Animal'));
@@ -241,6 +252,23 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
             {contrat && <a href={`/signer-contrat/${contrat.token}`} target="_blank" rel="noopener" className="text-xs font-semibold text-[#0C5C6C]">Voir le contrat</a>}
           </div>
         </div>
+
+        {/* Protocoles du séjour (appliqués tout seuls à l'arrivée) + fiche box */}
+        {mode === 'arrivee' && (
+          <div className="flex gap-3">
+            <Pastille ok />
+            <div className="flex-1 space-y-1.5">
+              <p className="text-sm font-bold text-[#1F2A2E]">Protocoles du séjour</p>
+              <p className="text-xs text-gray-500">{protocoles === null ? '…' : protocoles.length
+                ? protocoles.map(p => `${p.nom} (${p.n} tâche${p.n > 1 ? 's' : ''})`).join(' · ')
+                : 'Aucun protocole de séjour ne concerne ce pensionnaire (Ma Pension > Protocoles).'}</p>
+              <button onClick={() => { void imprimerFichesBox(supabase, tousIds, pensionNom); }}
+                className="w-full py-2 rounded-xl text-sm font-semibold border border-[#0C5C6C] text-[#0C5C6C]">
+                Imprimer la fiche box{tousIds.length > 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 3. Facture */}
         <div className="flex gap-3">

@@ -470,7 +470,11 @@ export async function POST(req: NextRequest) {
     const arrhesEssai = concluant ? await arrhesDe(d0.pro_profile_id ?? '') : null;
     if (!concluant) {
       const sejours = ds.map(d => d.entree_id).filter(Boolean) as string[];
-      if (sejours.length) await admin.from('pension_entrees').update({ statut: 'annule' }).in('id', sejours).is('arrivee_reelle_le', null);
+      if (sejours.length) {
+        await admin.from('pension_entrees').update({ statut: 'annule' }).in('id', sejours).is('arrivee_reelle_le', null);
+        // Protocoles du séjour : tâches non faites retirées.
+        await admin.from('plan_taches').delete().in('pension_entree_id', sejours).neq('statut', 'fait');
+      }
       await admin.from('pension_demandes').update({ statut: 'annulee', motif_refus: motif ?? 'Essai non concluant', decide_le: maintenant }).in('id', ds.map(d => d.id as string));
     }
     await admin.from('notifications').insert({
