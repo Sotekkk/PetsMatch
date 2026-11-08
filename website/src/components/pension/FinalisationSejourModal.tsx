@@ -262,6 +262,7 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
     </div>
     {facturer && (
       <PensionFacturationModal entree={entree} proProfileId={proProfileId} pensionNom={pensionNom}
+        retour={typeof window !== 'undefined' ? window.location.pathname + window.location.search : undefined}
         onClose={() => { setFacturer(false); void charger(); }} />
     )}
     </>

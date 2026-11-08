@@ -509,6 +509,7 @@ export default function RegistrePensionPage() {
       {facturationFor && (
         <PensionFacturationModal
           entree={facturationFor}
+          retour="/pension/registre"
           proProfileId={activeProfileId || null}
           pensionNom={userData?.nameElevage || userData?.firstname || 'Votre pension'}
           onClose={() => setFacturationFor(null)}

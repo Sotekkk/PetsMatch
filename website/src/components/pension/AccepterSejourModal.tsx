@@ -108,7 +108,8 @@ export default function AccepterSejourModal({ groupe, uid, proProfileId, couleur
       pct = reg?.arrhes_pct && reg.arrhes_pct > 0 ? reg.arrhes_pct : null;
       setPensionNom((p as { nom?: string | null } | null)?.nom || 'Votre pension');
     }
-    if (!pct) { onDone(); return; }
+    // Avec essai : arrhes demandées après un essai concluant (page Demandes de séjour).
+    if (!pct || groupe.some(d => !!d.essai_date)) { onDone(); return; }
     setArrhesPct(pct);
     setAccepte(true);
   }
@@ -139,6 +140,7 @@ export default function AccepterSejourModal({ groupe, uid, proProfileId, couleur
         </div>
         {sejourArrhes && (
           <PensionFacturationModal entree={sejourArrhes} proProfileId={proProfileId ?? null} pensionNom={pensionNom} acompte={arrhesPct}
+            retour={typeof window !== 'undefined' ? window.location.pathname + window.location.search : undefined}
             onClose={() => { setSejourArrhes(null); onDone(); }} />
         )}
       </>

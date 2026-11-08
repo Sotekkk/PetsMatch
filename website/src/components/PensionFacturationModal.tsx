@@ -17,13 +17,15 @@ const num = (v: string) => parseFloat(v.replace(',', '.')) || 0;
 /** Séjour d'un autre animal du même client, ajoutable à la facture. */
 interface AutreSejour { entree: Record<string, unknown>; nuits: string; tarif: string; reduction: string; inclus: boolean }
 
-export function PensionFacturationModal({ entree, proProfileId, pensionNom, onClose, acompte }: {
+export function PensionFacturationModal({ entree, proProfileId, pensionNom, onClose, acompte, retour }: {
   entree: PensionEntree;
   proProfileId: string | null;
   pensionNom: string;
   onClose: () => void;
   /** Arrhes à la réservation : facture d'acompte pré-cochée, au pourcentage donné. */
   acompte?: number | null;
+  /** Page où revenir après l'émission de la facture (ex. /pension/sejours). */
+  retour?: string;
 }) {
   const router = useRouter();
   const dateEntree = entree.date_entree ? new Date(entree.date_entree) : null;
@@ -163,6 +165,8 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
         : '',
       lignes,
       sourcePensionEntreeId: entree.id,
+      // Après l'émission : retour à la page d'où la facture est partie.
+      ...(retour?.startsWith('/') ? { retour } : {}),
     };
     try {
       sessionStorage.setItem('pm_facture_prefill', JSON.stringify(prefill));

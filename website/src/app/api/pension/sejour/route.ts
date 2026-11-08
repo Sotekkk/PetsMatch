@@ -96,6 +96,14 @@ async function heuresLibres(proUid: string, proProfileId: string, h: HorairesPen
   };
 }
 
+/** Arrhes prévues au règlement de la pension (Tarifs), en %, ou null. */
+async function arrhesDe(pid: string): Promise<number | null> {
+  if (!pid) return null;
+  const { data } = await admin.from('user_profiles').select('tarifs_pension').eq('id', pid).maybeSingle();
+  const a = Number((data as { tarifs_pension?: { reglement?: { arrhes_pct?: number | null } } } | null)?.tarifs_pension?.reglement?.arrhes_pct);
+  return Number.isFinite(a) && a > 0 ? a : null;
+}
+
 async function premierSejour(proUid: string, animalId: string) {
   const { count } = await admin.from('pension_entrees').select('id', { count: 'exact', head: true }).eq('pro_uid', proUid).eq('animal_id', animalId);
   return !count;
@@ -432,8 +440,14 @@ export async function POST(req: NextRequest) {
     if (!acceptes.length) return NextResponse.json({ error: erreur ?? 'Acceptation impossible' }, { status: 500 });
     const n = acceptes.map(d => d.animal_nom ?? 'Votre animal');
     const essais = [...new Set(acceptes.map(d => d.essai_date).filter(Boolean) as string[])];
-    await notifClient('pension_sejour_accepte', 'Séjour confirmé',
-      `${liste(n)} ${n.length > 1 ? 'sont attendus' : 'est attendu'} du ${fr(acceptes[0].date_arrivee as string)} au ${fr(acceptes[0].date_depart as string)}.${essais.length ? ` Essai le ${essais.map(fr).join(', ')}.` : ''}`);
+    // Arrhes prévues au règlement : sans essai, le séjour est confirmé à leur
+    // réception ; avec essai, après l'essai (les arrhes sont demandées ensuite).
+    const arrhesPct = await arrhesDe(d0.pro_profile_id ?? '');
+    const suite = essais.length
+      ? ` Essai le ${essais.map(fr).join(', ')} : le séjour sera confirmé après l'essai.`
+      : arrhesPct ? ` Le séjour sera confirmé à réception des arrhes (${arrhesPct} %), la facture vous est envoyée.` : '';
+    await notifClient('pension_sejour_accepte', essais.length || arrhesPct ? 'Séjour accepté' : 'Séjour confirmé',
+      `${liste(n)} ${n.length > 1 ? 'sont attendus' : 'est attendu'} du ${fr(acceptes[0].date_arrivee as string)} au ${fr(acceptes[0].date_depart as string)}.${suite}`);
     return NextResponse.json({ ok: true, acceptees: acceptes.length, ...(erreur ? { erreur } : {}) });
   }
 
@@ -453,6 +467,7 @@ export async function POST(req: NextRequest) {
       .in('id', ds.map(d => d.id as string));
     if (errR) return NextResponse.json({ error: "Résultat de l'essai non enregistré (migration_pension_essai_resultat.sql à passer)." }, { status: 500 });
     const noms = liste(ds.map(d => d.animal_nom ?? 'Animal'));
+    const arrhesEssai = concluant ? await arrhesDe(d0.pro_profile_id ?? '') : null;
     if (!concluant) {
       const sejours = ds.map(d => d.entree_id).filter(Boolean) as string[];
       if (sejours.length) await admin.from('pension_entrees').update({ statut: 'annule' }).in('id', sejours).is('arrivee_reelle_le', null);
@@ -463,7 +478,7 @@ export async function POST(req: NextRequest) {
       type: concluant ? 'pension_sejour_accepte' : 'pension_sejour_refuse',
       title: concluant ? 'Essai concluant' : "Séjour annulé après l'essai",
       body: concluant
-        ? `L'essai de ${noms} s'est bien passé : le séjour du ${fr(d0.date_arrivee as string)} au ${fr(d0.date_depart as string)} est confirmé.`
+        ? `L'essai de ${noms} s'est bien passé : le séjour du ${fr(d0.date_arrivee as string)} au ${fr(d0.date_depart as string)} ${arrhesEssai ? `sera confirmé à réception des arrhes (${arrhesEssai} %), la facture vous est envoyée.` : 'est confirmé.'}`
         : `Après l'essai, la pension ne peut pas accueillir ${noms} pour le séjour du ${fr(d0.date_arrivee as string)} au ${fr(d0.date_depart as string)}.${motif ? ` ${motif}` : ''}`,
       data: { demande_id: d0.id, demande_ids: ds.map(d => d.id) }, read: false,
     });

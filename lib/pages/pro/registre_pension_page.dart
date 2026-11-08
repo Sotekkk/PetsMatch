@@ -4096,8 +4096,11 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
       ];
 
       if (!mounted) return;
-      Navigator.pop(context); // ferme la feuille de saisie
-      await Navigator.push(context, MaterialPageRoute(
+      // La facture s'ouvre par-dessus la feuille, qui se ferme au retour :
+      // l'écran d'origine (demandes de séjour, registre…) se met à jour après
+      // l'émission et l'on y reste.
+      final nav = Navigator.of(context);
+      await nav.push(MaterialPageRoute(
         builder: (_) => CreerFacturePage(
           clientNom: client.nom.isEmpty ? null : client.nom,
           clientPrenom: client.prenom.isEmpty ? null : client.prenom,
@@ -4117,6 +4120,7 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
           lignesPrefill: lignes,
         ),
       ));
+      if (mounted) nav.pop(); // ferme la feuille de saisie
     } catch (err) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(

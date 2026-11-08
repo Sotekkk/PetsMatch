@@ -49,6 +49,13 @@ export default function DemandesSejourPage() {
   const [facturer, setFacturer] = useState<PensionEntree | null>(null);
   const [enCours, setEnCours] = useState('');
 
+  // Retour de facturation : onglet demandé dans l'adresse.
+  useEffect(() => {
+    const o = new URLSearchParams(window.location.search).get('onglet');
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (o === 'attente' || o === 'avenir' || o === 'historique') setOnglet(o);
+  }, []);
+
   useEffect(() => {
     if (authLoading) return;
     if (!user) { router.push('/connexion'); return; }
@@ -127,7 +134,11 @@ export default function DemandesSejourPage() {
       body: JSON.stringify({ action: 'essai', demandeIds: g.map(d => d.id), concluant, ...(motif ? { motif } : {}) }) });
     setEnCours('');
     if (!r.ok) { const j = await r.json().catch(() => ({})) as { error?: string }; window.alert(j.error ?? 'Action impossible'); return; }
-    void charger();
+    await charger();
+    // Essai concluant : place aux arrhes (si le règlement en prévoit).
+    if (concluant && arrhesPct && window.confirm(`Essai concluant, le client est prévenu. Envoyer maintenant la facture d'arrhes (${arrhesPct} %) ?`)) {
+      await ouvrirFacturationArrhes(g);
+    }
   }
 
   async function ouvrirFacturationArrhes(g: Demande[]) {
@@ -193,7 +204,8 @@ export default function DemandesSejourPage() {
         {/* Arrhes + contrat (séjours acceptés) */}
         {d.statut === 'acceptee' && !arrive(g) && (
           <div className="flex flex-wrap items-center gap-3 border-t border-gray-100 pt-2">
-            {fact ? lib(fact.endsWith(':payee') ? (fact.startsWith('acompte') ? 'Arrhes payées' : 'Séjour payé') : (fact.startsWith('acompte') ? 'Arrhes facturées, en attente de paiement' : 'Séjour facturé'), fact.endsWith(':payee') ? VERT : ORANGE)
+            {essaiD && resultat !== 'concluant' && !fact ? lib('Arrhes demandées après un essai concluant', '#6b7280')
+              : fact ? lib(fact.endsWith(':payee') ? (fact.startsWith('acompte') ? 'Arrhes payées' : 'Séjour payé') : (fact.startsWith('acompte') ? 'Arrhes facturées, en attente de paiement' : 'Séjour facturé'), fact.endsWith(':payee') ? VERT : ORANGE)
               : arrhesPct ? (
                 <>
                   {lib(`Arrhes à facturer (${arrhesPct} %)`, ORANGE)}
@@ -236,7 +248,7 @@ export default function DemandesSejourPage() {
           onClose={() => setAAccepter(null)} onDone={() => { setAAccepter(null); void charger(); }} />
       )}
       {facturer && (
-        <PensionFacturationModal entree={facturer} proProfileId={pid || null} acompte={arrhesPct}
+        <PensionFacturationModal entree={facturer} proProfileId={pid || null} acompte={arrhesPct} retour="/pension/sejours?onglet=avenir"
           pensionNom={userData?.nameElevage || userData?.firstname || 'Votre pension'}
           onClose={() => { setFacturer(null); void charger(); }} />
       )}

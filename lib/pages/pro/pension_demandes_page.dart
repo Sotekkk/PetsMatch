@@ -249,6 +249,8 @@ Future<bool> deciderDemandesPension(BuildContext context, List<Map<String, dynam
 /// arrivée) ; si le règlement prévoit des arrhes, facture d'acompte proposée.
 Future<void> proposerArrhesPension(BuildContext context, List<Map<String, dynamic>> g) async {
   final supa = Supabase.instance.client;
+  // Avec essai : arrhes demandées après un essai concluant (page Demandes de séjour).
+  if (g.any((d) => d['essai_date'] != null)) return;
   final pid = User_Info.activeProfileId;
   int? pct;
   try {
@@ -402,6 +404,18 @@ class _PensionDemandesPageState extends State<PensionDemandesPage> {
     if (!mounted) return;
     setState(() => _enCours = null);
     await _charger();
+    // Essai concluant : place aux arrhes (si le règlement en prévoit).
+    if (concluant && _arrhesPct != null && mounted) {
+      final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Essai concluant', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text("Le client est prévenu. Envoyer maintenant la facture d'arrhes ($_arrhesPct %) ?", style: const TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Plus tard')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Facturer les arrhes')),
+        ],
+      ));
+      if (ok == true && mounted) await _facturerArrhes(g);
+    }
   }
 
   Future<void> _facturerArrhes(List<Map<String, dynamic>> g) async {
@@ -479,7 +493,9 @@ class _PensionDemandesPageState extends State<PensionDemandesPage> {
           if (statut == 'acceptee' && !_arrive(g)) ...[
             const Divider(height: 18),
             Wrap(spacing: 10, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
-              if (fact != null)
+              if (essaiD != null && resultat != 'concluant' && fact == null)
+                _txt('Arrhes demandées après un essai concluant', _muted, gras: false)
+              else if (fact != null)
                 _txt(fact.endsWith(':payee') ? (fact.startsWith('acompte') ? 'Arrhes payées' : 'Séjour payé')
                     : (fact.startsWith('acompte') ? 'Arrhes facturées, en attente de paiement' : 'Séjour facturé'), fact.endsWith(':payee') ? _vert : _orange)
               else if (_arrhesPct != null) ...[
