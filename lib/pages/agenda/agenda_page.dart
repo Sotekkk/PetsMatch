@@ -778,7 +778,7 @@ class _AgendaPageState extends State<AgendaPage> {
           // Filtre uniquement par profile_id (jamais uid_eleveur en plus) —
           // même raison que pour taches_elevage/agenda_events ci-dessus.
           p1 = await _supa.from('plan_taches')
-              .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+              .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,animal_id,etape_id')
               .gte('date_prevue', from).lte('date_prevue', to)
               .eq('profile_id', pid);
           if ((p1 as List).isEmpty) {
@@ -786,12 +786,12 @@ class _AgendaPageState extends State<AgendaPage> {
             final ownerUid = await _effectiveUid();
             p1 = _taskProfilSource == 'eleveur'
                 ? await _supa.from('plan_taches')
-                    .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+                    .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,animal_id,etape_id')
                     .eq('uid_eleveur', ownerUid)
                     .gte('date_prevue', from).lte('date_prevue', to)
                     .or('profil_source.is.null,profil_source.eq.eleveur')
                 : await _supa.from('plan_taches')
-                    .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+                    .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,animal_id,etape_id')
                     .eq('uid_eleveur', ownerUid)
                     .gte('date_prevue', from).lte('date_prevue', to)
                     .eq('profil_source', _taskProfilSource);
@@ -799,12 +799,12 @@ class _AgendaPageState extends State<AgendaPage> {
         } else {
           p1 = _taskProfilSource == 'eleveur'
               ? await _supa.from('plan_taches')
-                  .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+                  .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,animal_id,etape_id')
                   .eq('uid_eleveur', _uid)
                   .gte('date_prevue', from).lte('date_prevue', to)
                   .or('profil_source.is.null,profil_source.eq.eleveur')
               : await _supa.from('plan_taches')
-                  .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+                  .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,animal_id,etape_id')
                   .eq('uid_eleveur', _uid)
                   .gte('date_prevue', from).lte('date_prevue', to)
                   .eq('profil_source', _taskProfilSource);
@@ -813,13 +813,13 @@ class _AgendaPageState extends State<AgendaPage> {
         dynamic p2;
         if (myProfileId != null) {
           p2 = await _supa.from('plan_taches')
-              .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+              .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,animal_id,etape_id')
               .eq('assigned_profile_id', myProfileId)
               .gte('date_prevue', from).lte('date_prevue', to);
         } else {
           // mode particulier ou profil sans UUID : filtre par uid Firebase
           p2 = await _supa.from('plan_taches')
-              .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+              .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,animal_id,etape_id')
               .eq('assigned_to', _uid)
               .gte('date_prevue', from).lte('date_prevue', to);
         }
@@ -834,6 +834,20 @@ class _AgendaPageState extends State<AgendaPage> {
               'titre': m['label'],
               'date': (m['date_prevue'] as String? ?? '').split('T').first,
             });
+          }
+        }
+        // Portée de chaque petit : un groupe par portée dans l'agenda.
+        final idsAnimaux = {for (final t in all) if (t['_source'] == 'protocole' && t['animal_id'] != null) t['animal_id'].toString()};
+        if (idsAnimaux.isNotEmpty) {
+          final anims = await _supa.from('animaux').select('id, portee_id, nom_mere').inFilter('id', idsAnimaux.toList());
+          final parId = {for (final a in anims) a['id'].toString(): a};
+          for (final t in all) {
+            if (t['_source'] != 'protocole') continue;
+            final a = parId[t['animal_id']?.toString()];
+            if (a == null || (a['portee_id']?.toString() ?? '').isEmpty) continue;
+            t['_portee_id'] = a['portee_id'].toString();
+            final mere = a['nom_mere']?.toString() ?? '';
+            t['_portee_label'] = mere.isNotEmpty ? 'Portée de $mere' : 'Portée';
           }
         }
       } catch (_) {}
@@ -1005,6 +1019,12 @@ class _AgendaPageState extends State<AgendaPage> {
     )));
   }
 
+  /// Clé de regroupement d'une tâche de protocole : étape + portée du petit.
+  String _cleGroupe(Map<String, dynamic> t) {
+    final e = t['etape_id'] as String?;
+    return e == null ? 'solo_${t['id']}' : '$e|${t['_portee_id'] ?? ''}';
+  }
+
   Widget _buildDayTasksSection(List<Map<String, dynamic>> tasks, {DateTime? day}) {
     final manuel = tasks.where((t) => t['_source'] != 'protocole').toList();
     final jourCle = DateFormat('yyyy-MM-dd').format(day ?? _selectedDay ?? DateTime.now());
@@ -1013,7 +1033,8 @@ class _AgendaPageState extends State<AgendaPage> {
 
     final protoMap = <String, List<Map<String, dynamic>>>{};
     for (final t in tasks.where((t) => t['_source'] == 'protocole')) {
-      final key = (t['etape_id'] as String?) ?? 'solo_${t['id']}';
+      // Un groupe par portée (« Visite vétérinaire — Portée de Luna »).
+      final key = _cleGroupe(t);
       protoMap.putIfAbsent(key, () => []).add(t);
     }
     final protoGroups = protoMap.values.toList();
@@ -1032,13 +1053,16 @@ class _AgendaPageState extends State<AgendaPage> {
       final done    = groupe.where((t) => t['statut'] == 'fait').length;
       final pct     = total > 0 ? done / total : 0.0;
       final first   = groupe.first;
-      final label   = (first['titre'] ?? first['label'] ?? '') as String;
+      final brut    = (first['titre'] ?? first['label'] ?? '') as String;
+      final base    = groupe.length > 1 ? brut.split(' — ').first : brut;
+      final portee  = first['_portee_label']?.toString();
+      final label   = portee != null && groupe.length > 1 ? '$base — $portee' : base;
       final emoji   = _protoEmoji(first['type_acte']?.toString());
       final allDone = done == total;
-      final selKey  = 'g:${first['etape_id'] ?? 'solo_${first['id']}'}';
+      final selKey  = 'g:${_cleGroupe(first)}';
 
       return GestureDetector(
-        key: ValueKey('proto_${first['etape_id'] ?? first['id']}'),
+        key: ValueKey('proto_${_cleGroupe(first)}'),
         onTap: selectMode
             ? () => basculer(selKey)
             : effectuee
@@ -1343,7 +1367,7 @@ class _AgendaPageState extends State<AgendaPage> {
           ]),
           if (selectMode) Builder(builder: (_) {
             final toutes = [
-              ...protoGroups.map((g) => 'g:${g.first['etape_id'] ?? 'solo_${g.first['id']}'}'),
+              ...protoGroups.map((g) => 'g:${_cleGroupe(g.first)}'),
               ...manuel.map((t) => 't:${t['id']}'),
             ];
             final toutCoche = toutes.isNotEmpty && toutes.every(_selection.contains);
@@ -1428,7 +1452,7 @@ class _AgendaPageState extends State<AgendaPage> {
     if (ok != true) return;
     final routineIds = [
       for (final g in protoGroups)
-        if (_selection.contains('g:${g.first['etape_id'] ?? 'solo_${g.first['id']}'}'))
+        if (_selection.contains('g:${_cleGroupe(g.first)}'))
           ...g.map((t) => t['id']),
     ];
     final tacheIds = _selection.where((k) => k.startsWith('t:')).map((k) => k.substring(2)).toList();

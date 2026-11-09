@@ -67,6 +67,9 @@ interface Task {
   animal_nom?: string;
   etape_id?: string | null;
   animal_id?: string | null;
+  /** Tâche de protocole d'un petit : sa portée (groupe distinct dans l'agenda). */
+  portee_id?: string | null;
+  portee_label?: string;
   profil_source?: string | null;
   /** 'exercice:<id>' : tâche du jour d'un exercice d'éducation. */
   notes?: string | null;
@@ -650,7 +653,7 @@ export default function AgendaPage() {
     const taskFrom = new Date(focusedMonth.year, focusedMonth.month - 1, 1).toISOString().slice(0, 10);
     const taskTo   = new Date(focusedMonth.year, focusedMonth.month + 2, 0).toISOString().slice(0, 10);
     const manuelCols = 'id,titre,date,statut,uid_eleveur,assigne_a,profile_id,profil_source,eleveur_profile_id,animal_id,notes';
-    const protoCols  = 'id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id,profile_id,profil_source,eleveur_profile_id';
+    const protoCols  = 'id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,animal_id,etape_id,profile_id,profil_source,eleveur_profile_id';
 
     let d1Res: { data: unknown[] | null } = { data: [] };
     if (isParticulierView && userData?.profileType === 'particulier') {
@@ -742,10 +745,21 @@ export default function AgendaPage() {
     const seenProto = new Set<string>();
     const protoTasks: Task[] = [];
     for (const t of [...(p1Res.data ?? []), ...(p2Res.data ?? [])]) {
-      const pt = t as { id: string; label: string; date_prevue: string; statut: string; assigned_to: string | null; uid_eleveur: string; type_acte?: string; animal_nom?: string; etape_id?: string | null; eleveur_profile_id?: string | null };
+      const pt = t as { id: string; label: string; date_prevue: string; statut: string; assigned_to: string | null; uid_eleveur: string; type_acte?: string; animal_nom?: string; animal_id?: string | null; etape_id?: string | null; eleveur_profile_id?: string | null };
       if (seenProto.has(pt.id)) continue;
       seenProto.add(pt.id);
-      protoTasks.push({ id: pt.id, titre: pt.label, date: (pt.date_prevue ?? '').split('T')[0], statut: pt.statut, uid_eleveur: pt.uid_eleveur, assigne_a: pt.assigned_to, eleveur_profile_id: pt.eleveur_profile_id, _source: 'protocole', type_acte: pt.type_acte, animal_nom: pt.animal_nom, etape_id: pt.etape_id ?? null });
+      protoTasks.push({ id: pt.id, titre: pt.label, date: (pt.date_prevue ?? '').split('T')[0], statut: pt.statut, uid_eleveur: pt.uid_eleveur, assigne_a: pt.assigned_to, eleveur_profile_id: pt.eleveur_profile_id, _source: 'protocole', type_acte: pt.type_acte, animal_nom: pt.animal_nom, animal_id: pt.animal_id ?? null, etape_id: pt.etape_id ?? null });
+    }
+    // Portée de chaque animal : un groupe par portée dans l'agenda
+    // (« Visite vétérinaire — Portée de Luna »), pas tous les petits mêlés.
+    const idsAnimaux = [...new Set(protoTasks.map(t => t.animal_id).filter((v): v is string => !!v))];
+    if (idsAnimaux.length) {
+      const { data: anims } = await supabase.from('animaux').select('id, portee_id, nom_mere').in('id', idsAnimaux);
+      const parId = new Map(((anims ?? []) as { id: string; portee_id: string | null; nom_mere: string | null }[]).map(a => [a.id, a]));
+      for (const t of protoTasks) {
+        const a = t.animal_id ? parId.get(t.animal_id) : undefined;
+        if (a?.portee_id) { t.portee_id = a.portee_id; t.portee_label = a.nom_mere ? `Portée de ${a.nom_mere}` : 'Portée'; }
+      }
     }
 
     const allTasks = [...manuelTasks, ...protoTasks];
@@ -1253,11 +1267,16 @@ function protoEmoji(typeActe?: string) {
 function groupProtocole(tasks: Task[]): TaskGroupe[] {
   const map = new Map<string, Task[]>();
   for (const t of tasks) {
-    const key = t.etape_id ?? `solo_${t.id}`;
+    const key = t.etape_id ? `${t.etape_id}|${t.portee_id ?? ''}` : `solo_${t.id}`;
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(t);
   }
-  return [...map.entries()].map(([key, ts]) => ({ key, label: ts[0].titre, typeActe: ts[0].type_acte, tasks: ts }));
+  return [...map.entries()].map(([key, ts]) => {
+    // Plusieurs animaux : « Visite vétérinaire — Portée de Luna » (sans « Jour 1/3 »).
+    const base = ts.length > 1 ? ts[0].titre.split(' — ')[0] : ts[0].titre;
+    const label = ts[0].portee_label && ts.length > 1 ? `${base} — ${ts[0].portee_label}` : base;
+    return { key, label, typeActe: ts[0].type_acte, tasks: ts };
+  });
 }
 
 // ── ProtoDetailModal ────────────────────────────────────────────────────────────

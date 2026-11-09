@@ -1,7 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/main.dart';
-import 'package:PetsMatch/utils/protocoles.dart' show perimetreDe, estHorsPriseEnCharge;
+import 'package:PetsMatch/utils/protocoles.dart' show perimetreDe, estHorsPriseEnCharge, petitDePortee;
 
 class PlanningService {
   static final _supa = Supabase.instance.client;
@@ -392,8 +392,10 @@ class PlanningService {
   static Future<List<Map<String, dynamic>>> _resolvePortees(
       List<String> porteeIds, String refEvent, DateTime dateReference) async {
     if (porteeIds.isEmpty) return [];
-    final rows = await _supa.from('animaux').select('id, nom, date_naissance')
-        .inFilter('portee_id', porteeIds).not('statut', 'in', '(sorti,decede)').order('nom');
+    final rows = [for (final a in await _supa.from('animaux').select('id, nom, date_naissance, espece')
+        .inFilter('portee_id', porteeIds).not('statut', 'in', '(sorti,decede)').order('nom'))
+      // Seulement les petits encore « de la portée » (chiot < 13 sem., chaton < 15…).
+      if (petitDePortee(a['date_naissance'], a['espece']?.toString())) a];
     final depuisNaissance = refEvent == 'naissance' || refEvent == 'age_semaines';
     return (rows as List).map((a) => {
       'animal_id': a['id'] as String?,

@@ -33,6 +33,26 @@ const _typesLocaux = ['nettoyage', 'materiel'];
 /// Périmètre effectif. Les anciens protocoles de nettoyage / matériel étaient
 /// enregistrés en « cheptel » (le formulaire l'imposait) alors qu'ils portent
 /// sur les locaux : ils sont lus comme « locaux » (aucun animal).
+/// Petits encore « de la portée » : âge maximum en semaines selon l'espèce
+/// (chiot 13 sem., chaton 15, poulain 6 mois…). Miroir site : protocoles.ts.
+int ageMaxPorteeSemaines(String? espece) {
+  final e = (espece ?? '').toLowerCase();
+  bool d(List<String> l) => l.any(e.startsWith);
+  if (d(['chat'])) return 15;
+  if (d(['lapin', 'furet', 'porc'])) return 12;
+  if (d(['cheval', 'poney', 'âne', 'ane', 'equ', 'équ', 'bovin', 'vache'])) return 26;
+  if (d(['ovin', 'mouton', 'caprin', 'chèvre', 'chevre'])) return 16;
+  if (d(['volaille', 'oiseau', 'poule'])) return 8;
+  return 13; // chien et autres
+}
+
+/// Le petit a-t-il encore l'âge « portée » (date de naissance inconnue : oui) ?
+bool petitDePortee(Object? dateNaissance, String? espece) {
+  final n = DateTime.tryParse(dateNaissance?.toString() ?? '');
+  if (n == null) return true;
+  return DateTime.now().difference(n).inDays / 7 <= ageMaxPorteeSemaines(espece);
+}
+
 String perimetreDe(Map<String, dynamic> t, {String? profilSource}) {
   final c = (t['cible_type'] ?? 'individuel').toString();
   if (c == 'locaux') return 'locaux';

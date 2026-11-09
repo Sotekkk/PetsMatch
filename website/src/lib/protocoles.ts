@@ -70,6 +70,27 @@ const TYPES_LOCAUX = ['nettoyage', 'materiel'];
 /** Périmètre effectif. Les anciens protocoles de nettoyage / matériel étaient
  * enregistrés en « cheptel » (le formulaire l'imposait) alors qu'ils portent
  * sur les locaux : ils sont lus comme « locaux » (aucun animal). */
+/** Petits encore « de la portée » (au sein de l'élevage) : âge maximum en
+ *  semaines selon l'espèce (chiot 13 sem., chaton 15, poulain 6 mois…).
+ *  Miroir appli : lib/utils/protocoles.dart ageMaxPorteeSemaines. */
+export function ageMaxPorteeSemaines(espece?: string | null): number {
+  const e = (espece ?? '').toLowerCase();
+  if (e.startsWith('chat')) return 15;
+  if (e.startsWith('lapin') || e.startsWith('furet') || e.startsWith('porc')) return 12;
+  if (e.startsWith('cheval') || e.startsWith('poney') || e.startsWith('âne') || e.startsWith('ane') || e.startsWith('equ') || e.startsWith('équ') || e.startsWith('bovin') || e.startsWith('vache')) return 26;
+  if (e.startsWith('ovin') || e.startsWith('mouton') || e.startsWith('caprin') || e.startsWith('chèvre') || e.startsWith('chevre')) return 16;
+  if (e.startsWith('volaille') || e.startsWith('oiseau') || e.startsWith('poule')) return 8;
+  return 13; // chien et autres
+}
+
+/** Le petit a-t-il encore l'âge « portée » (date de naissance inconnue : oui) ? */
+export function petitDePortee(dateNaissance?: string | null, espece?: string | null): boolean {
+  if (!dateNaissance) return true;
+  const n = new Date(dateNaissance).getTime();
+  if (isNaN(n)) return true;
+  return (Date.now() - n) / (7 * 86400000) <= ageMaxPorteeSemaines(espece);
+}
+
 export function perimetreDe(t: Pick<ProtocoleBase, 'cible_type' | 'type'>, profilSource?: string): Perimetre {
   if (t.cible_type === 'locaux') return 'locaux';
   if (t.cible_type === 'portee') return 'portee';

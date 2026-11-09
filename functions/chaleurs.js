@@ -124,6 +124,8 @@ exports.sendChaleursNotifications = functions
         const empCache = new Map();
         // Un seul rappel par destinataire et par run (regroupé si plusieurs femelles).
         const rappels = new Map();
+        // Tâches agenda « chaleurs à vérifier » regroupées par élevage.
+        const agenda = new Map();
         const ajouterRappel = (uid, profileId, item) => {
             if (!uid) return;
             const k = `${uid}|${profileId || ""}`;
@@ -326,44 +328,16 @@ exports.sendChaleursNotifications = functions
                 if (e.uid !== assigneA) ajouterRappel(e.uid, e.profileId, item);
             }
 
-            // Tâche agenda à 8h quand chaleurs aujourd'hui ou en retard
+            // Agenda : UNE tâche par jour et par élevage (« Chaleurs à vérifier :
+            // Aiko, Vaïna, Utha »), refaite chaque matin avec les femelles encore
+            // concernées — celle de la veille non validée est retirée.
             if (diff <= 0) {
-                try {
-                    // Tâche « chaleurs » encore à faire pour cette femelle : on la
-                    // remet au jour (une seule tâche), jamais une de plus chaque jour.
-                    const ouvertes = await supabaseSelect("taches_elevage",
-                        `animal_id=eq.${animal.id}&statut=eq.a_faire&titre=ilike.*Chaleurs*&order=date.desc`);
-                    if (ouvertes.length) {
-                        await supabaseRequest("PATCH", `taches_elevage?id=eq.${ouvertes[0].id}`,
-                            {date: todayStr, titre: title, notes: body});
-                        for (const o of ouvertes.slice(1)) {
-                            await supabaseRequest("DELETE", `taches_elevage?id=eq.${o.id}`);
-                        }
-                        throw new Error("__deja__");
-                    }
-                    await supabaseInsert("taches_elevage", [{
-                        uid_eleveur: animal.uid_eleveur,
-                        titre: title,
-                        date: todayStr,
-                        heure: "08:00",
-                        notes: body,
-                        statut: "a_faire",
-                        profil_source: "eleveur",
-                        animal_nom: animal.nom || null,
-                        // Clic sur la tâche → suivi des chaleurs de la chienne
-                        animal_id: animal.id,
-                        ...(assigneA ? {assigne_a: assigneA} : {}),
-                        ...(assigneProfileId ? {assigne_profile_id: assigneProfileId} : {}),
-                        ...(profileIdByAnimal[animal.id] ? {
-                            profile_id: profileIdByAnimal[animal.id],
-                            eleveur_profile_id: profileIdByAnimal[animal.id],
-                        } : {}),
-                    }]);
-                } catch (e) {
-                    if (e.message !== "__deja__") {
-                        console.error(`taches_elevage insert error for animal ${animal.id}:`, e.message);
-                    }
+                const pid = profileIdByAnimal[animal.id] || null;
+                const k = `${animal.uid_eleveur}|${pid || ""}|${assigneA || ""}`;
+                if (!agenda.has(k)) {
+                    agenda.set(k, {uid: animal.uid_eleveur, profileId: pid, assigneA, assigneProfileId, animaux: []});
                 }
+                agenda.get(k).animaux.push({id: animal.id, nom, court});
             }
 
             // Mark as sent (after push + notif, so a failure here won't block future runs)
@@ -371,6 +345,44 @@ exports.sendChaleursNotifications = functions
                 await supabaseInsert("notifs_sent", [{key, sent_at: now.toISOString()}]);
             } catch (e) {
                 console.error(`notifs_sent insert error for ${key}:`, e.message);
+            }
+        }
+
+        // Tâches de la veille (non validées) retirées, puis celle du jour.
+        const vides = new Set();
+        for (const g of agenda.values()) {
+            const ok = `${g.uid}|${g.profileId || ""}`;
+            if (vides.has(ok)) continue;
+            vides.add(ok);
+            try {
+                const titres = encodeURIComponent("(titre.ilike.🌸 Chaleurs*,titre.ilike.Chaleurs à vérifier*)");
+                let del = `taches_elevage?uid_eleveur=eq.${encodeURIComponent(g.uid)}&statut=eq.a_faire&or=${titres}`;
+                del += g.profileId ? `&eleveur_profile_id=eq.${g.profileId}` : "&eleveur_profile_id=is.null";
+                await supabaseRequest("DELETE", del);
+            } catch (e) {
+                console.error(`taches_elevage chaleurs purge ${g.uid}:`, e.message);
+            }
+        }
+        for (const g of agenda.values()) {
+            const seule = g.animaux.length === 1 ? g.animaux[0] : null;
+            try {
+                await supabaseInsert("taches_elevage", [{
+                    uid_eleveur: g.uid,
+                    titre: `Chaleurs à vérifier : ${g.animaux.map((x) => x.nom).join(", ")}`,
+                    date: todayStr,
+                    heure: "08:00",
+                    notes: g.animaux.map((x) => `${x.nom} (${x.court})`).join(" · "),
+                    statut: "a_faire",
+                    profil_source: "eleveur",
+                    animal_nom: g.animaux.map((x) => x.nom).join(", "),
+                    // Une seule femelle : clic sur la tâche → son suivi des chaleurs.
+                    animal_id: seule ? seule.id : null,
+                    ...(g.assigneA ? {assigne_a: g.assigneA} : {}),
+                    ...(g.assigneProfileId ? {assigne_profile_id: g.assigneProfileId} : {}),
+                    ...(g.profileId ? {profile_id: g.profileId, eleveur_profile_id: g.profileId} : {}),
+                }]);
+            } catch (e) {
+                console.error(`taches_elevage chaleurs insert ${g.uid}:`, e.message);
             }
         }
 

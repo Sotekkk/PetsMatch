@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { datesGestationEnCours, dateRefGestation, type DatesGestation } from '@/lib/planning-service';
 import {
   PERIMETRES, CATEGORIES, REF_EVENTS, actesSuggeresPour, TRANCHES_LABELS,
-  perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, estHorsPriseEnCharge, type Perimetre,
+  perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, estHorsPriseEnCharge, type Perimetre, petitDePortee,
 } from '@/lib/protocoles';
 import { ouvrirFicheProtocole } from '@/lib/protocole-pdf';
 import { SANTE_COULEURS, SANTE_COULEUR_ACTE } from '@/lib/sante-couleurs';
@@ -1919,7 +1919,9 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
     if (profileId) q = q.eq('profile_id', profileId) as typeof q;
     q.order('date_naissance', { ascending: false }).then(({ data }) => {
       const map = new Map<string, { id: string; label: string; membres: { id: string; nom: string; date_naissance: string | null }[] }>();
-      for (const a of (data ?? []) as { id: string; nom: string; date_naissance: string | null; portee_id: string; nom_mere: string | null }[]) {
+      // Seulement les petits encore « de la portée » (chiot < 13 sem., chaton < 15…).
+      for (const a of ((data ?? []) as { id: string; nom: string; date_naissance: string | null; portee_id: string; nom_mere: string | null; espece: string | null }[])
+        .filter(x => petitDePortee(x.date_naissance, x.espece ?? template.espece))) {
         if (!map.has(a.portee_id)) {
           const dn = a.date_naissance ? ` — née le ${new Date(a.date_naissance).toLocaleDateString('fr-FR')}` : '';
           map.set(a.portee_id, { id: a.portee_id, label: `${a.nom_mere ? `Portée de ${a.nom_mere}` : 'Portée'}${dn}`, membres: [] });

@@ -71,7 +71,9 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
       final rows = await q;
       if (mounted) {
         setState(() {
-          _portees = porteesDepuis(List<Map<String, dynamic>>.from(rows));
+          // Seulement les petits encore « de la portée » (chiot < 13 sem., chaton < 15…).
+          _portees = porteesDepuis([for (final a in rows)
+            if (petitDePortee(a['date_naissance'], (a['espece'] ?? espece)?.toString())) Map<String, dynamic>.from(a)]);
           _loadingRefs = false;
         });
       }
