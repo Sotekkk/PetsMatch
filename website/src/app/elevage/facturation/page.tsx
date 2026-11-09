@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import ChiffreAffaires from '@/components/ChiffreAffaires';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
@@ -390,6 +391,9 @@ export default function FacturationPage() {
           Attestation de conformité →
         </a>
       </p>
+
+      {/* Chiffre d'affaires du mois / de l'année (factures de ce profil). */}
+      {!fetching && factures.length > 0 && <ChiffreAffaires factures={factures} />}
 
       <div className="flex gap-2 flex-wrap mb-6">
         {[['tous', 'Toutes'], ['emise', 'Émises'], ['payee', 'Payées'], ['annulee', 'Annulées']].map(([val, label]) => (

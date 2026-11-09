@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/chiffre_affaires_card.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -397,9 +398,12 @@ class _FacturationPageState extends State<FacturationPage> {
           }
           return ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
-            itemCount: docs.length,
+            // En tête : chiffre d'affaires du mois / de l'année (ces factures).
+            itemCount: docs.length + 1,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (context, i) {
+            itemBuilder: (context, j) {
+              if (j == 0) return ChiffreAffairesCard(factures: docs);
+              final i = j - 1;
               final d = docs[i];
               final statut = d['statut'] ?? 'emise';
               return _FactureCard(
