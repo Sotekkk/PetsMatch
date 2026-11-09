@@ -1,6 +1,6 @@
 'use client';
 
-import { MOMENTS_SEJOUR, momentLabel, cibleLabel, appliquerProtocolesSejour, aujourdhuiIso, type PensionCible } from '@/lib/pension-protocoles';
+import { MOMENTS_SEJOUR, momentLabel, cibleLabel, appliquerProtocolesSejour, aujourdhuiIso, rafraichirProtocoleSejour, type PensionCible } from '@/lib/pension-protocoles';
 import { PENSION_ESPECES, cleEspecePension, logementAccepteEspece } from '@/lib/pension-especes';
 import { pensionLogementTypeLabel } from '@/lib/pension-logements';
 import { ACTES_CARNET, validerTachesProtocole } from '@/lib/carnet-depuis-tache';
@@ -1486,6 +1486,11 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
         if (toInsert.length > 0) await supabase.from('plan_template_etapes').insert(toInsert);
       } else if (ep.length > 0) {
         await supabase.from('plan_template_etapes').insert(ep.map(({ id: _id, ...e }) => ({ ...e, template_id: templateId })));
+      }
+      // Pension, protocole de séjour : tâches à venir des présents refaites
+      // (nouvelle heure, autre employé…) — jamais bloquant.
+      if (profilSource === 'pension' && refEvent === 'sejour') {
+        try { await rafraichirProtocoleSejour(supabase, templateId, uid, profileId); } catch { /* sans incidence */ }
       }
       onSaved();
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Erreur'); setSaving(false); }

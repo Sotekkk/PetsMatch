@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/widgets/rattachement_picker.dart' show showRattachementSheet, ItemRattachement;
-import 'package:PetsMatch/utils/pension_protocoles.dart' show kMomentsSejour;
+import 'package:PetsMatch/utils/pension_protocoles.dart' show kMomentsSejour, rafraichirProtocoleSejour;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces, cleEspecePension, logementAccepteEspece;
 import 'package:flutter/services.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
@@ -384,6 +384,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     final desc = _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim();
     final refEvent = locaux && !_sejour ? 'manuel' : _refEvent;
 
+    String? templateId = widget.existing?['id']?.toString();
     Future<void> enregistrer(String cible) async {
       if (widget.existing != null) {
         await PlanningService.updateTemplate(
@@ -394,7 +395,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
         );
       } else {
         final currentUid = FirebaseAuth.instance.currentUser!.uid;
-        await PlanningService.createTemplate(
+        templateId = await PlanningService.createTemplate(
           uid: widget.employerUid ?? currentUid, nom: _nomCtrl.text.trim(), type: _type,
           espece: espece, description: desc, lieu: lieu, cibleType: cible, referenceEvent: refEvent,
           declencheurAuto: auto, defaultAnimalIds: defaultIds, etapes: etapesData,
@@ -421,6 +422,12 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           throw 'Pour l’instant, « Locaux / matériel » n’est possible qu’avec un protocole Désinfection ou Matériel.';
         }
         await enregistrer('cheptel');
+      }
+      // Pension, protocole de séjour : tâches à venir des présents refaites
+      // (nouvelle heure, autre employé…) — jamais bloquant.
+      if (_isPension && _sejour && templateId != null) {
+        await rafraichirProtocoleSejour(templateId!, widget.employerUid ?? FirebaseAuth.instance.currentUser!.uid,
+            widget.employerProfileId ?? (User_Info.activeProfileId.isEmpty ? null : User_Info.activeProfileId));
       }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {

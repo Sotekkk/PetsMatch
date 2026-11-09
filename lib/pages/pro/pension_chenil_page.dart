@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/pension_protocoles.dart' show changerLogementSejour;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
@@ -116,6 +117,8 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
 
   Future<void> _assign(String entreeId, String? logementId) async {
     await _supa.from('pension_entrees').update({'logement_id': logementId}).eq('id', entreeId);
+    // Protocoles du séjour : tâches à venir sur le nouveau logement.
+    await changerLogementSejour([entreeId]);
     _load();
   }
 
@@ -177,6 +180,7 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
       final suggestion = _suggestLogement(e);
       if (suggestion == null) continue;
       await _supa.from('pension_entrees').update({'logement_id': suggestion['id']}).eq('id', e['id']);
+      await changerLogementSejour([e['id'].toString()]);
       placed++;
       // Recharger localement pour que les occupations comptent dans les suggestions suivantes
       _entrees = _entrees.map((x) => x['id'] == e['id'] ? {...x, 'logement_id': suggestion['id']} : x).toList();

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
+import { changerLogementSejour } from '@/lib/pension-protocoles';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { PensionEntreeModal, type PensionEntree } from '@/components/PensionEntreeModal';
 import { PensionJournal } from '@/components/PensionJournal';
@@ -431,6 +432,8 @@ export default function RegistrePensionPage() {
                   onLogement={async lid => {
                     const { error } = await supabase.from('pension_entrees').update({ logement_id: lid || null }).eq('id', e.id);
                     if (error) { window.alert(`Logement non enregistré : ${error.message}`); return; }
+                    // Protocoles du séjour : tâches à venir sur le nouveau logement.
+                    try { await changerLogementSejour(supabase, [e.id]); } catch { /* sans incidence */ }
                     load();
                   }}
                   onEdit={() => setEditEntree(e)}

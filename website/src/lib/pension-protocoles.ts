@@ -232,4 +232,50 @@ export async function terminerTachesSejour(sb: SupabaseClient, entreeIds: string
   await sb.from('plan_taches').delete().in('pension_entree_id', entreeIds).neq('statut', 'fait').gt('date_prevue', dateDepart);
 }
 
+/**
+ * Logement changé en cours de séjour : les tâches à venir (non faites, dès
+ * aujourd'hui) sont refaites sur le nouveau logement ; les autres
+ * pensionnaires de l'ancien logement récupèrent ses tâches de locaux.
+ * À appeler APRÈS la mise à jour de pension_entrees.logement_id.
+ */
+export async function changerLogementSejour(sb: SupabaseClient, entreeIds: string[]) {
+  if (!entreeIds.length) return;
+  const auj = jour(new Date());
+  const { data: es } = await sb.from('pension_entrees').select('id, statut, arrivee_reelle_le').in('id', entreeIds);
+  const presents = ((es ?? []) as Ligne[]).filter(e => t(e.statut) === 'en_pension' && e.arrivee_reelle_le).map(e => t(e.id));
+  if (!presents.length) return;
+  // Anciens logements (tâches à venir) : leurs autres occupants à réappliquer.
+  const { data: tts } = await sb.from('plan_taches').select('box_id').in('pension_entree_id', presents)
+    .neq('statut', 'fait').gte('date_prevue', auj);
+  const anciens = [...new Set(((tts ?? []) as Ligne[]).map(x => t(x.box_id)).filter(Boolean))];
+  await retirerTachesSejour(sb, presents, decaler(auj, -1));
+  let voisins: string[] = [];
+  if (anciens.length) {
+    const { data: vs } = await sb.from('pension_entrees').select('id').eq('statut', 'en_pension')
+      .not('arrivee_reelle_le', 'is', null).in('logement_id', anciens);
+    voisins = ((vs ?? []) as Ligne[]).map(v => t(v.id)).filter(id => !presents.includes(id));
+  }
+  await appliquerProtocolesSejour(sb, [...presents, ...voisins], { depuis: auj });
+}
+
+/**
+ * Protocole de séjour créé ou modifié : ses tâches à venir (non faites, dès
+ * aujourd'hui) sont refaites pour les pensionnaires présents — nouvelle
+ * heure, autre employé, étapes ajoutées ou retirées.
+ */
+export async function rafraichirProtocoleSejour(sb: SupabaseClient, templateId: string, proUid: string, proProfileId?: string | null) {
+  const auj = jour(new Date());
+  const { data: et } = await sb.from('plan_template_etapes').select('id').eq('template_id', templateId);
+  const ids = ((et ?? []) as Ligne[]).map(x => t(x.id));
+  if (ids.length) {
+    await sb.from('plan_taches').delete().in('etape_id', ids).neq('statut', 'fait')
+      .gte('date_prevue', auj).not('pension_entree_id', 'is', null);
+  }
+  let q = sb.from('pension_entrees').select('id').eq('pro_uid', proUid).eq('statut', 'en_pension').not('arrivee_reelle_le', 'is', null);
+  if (proProfileId) q = q.eq('pro_profile_id', proProfileId);
+  const { data: es } = await q;
+  const entrees = ((es ?? []) as Ligne[]).map(e => t(e.id));
+  if (entrees.length) await appliquerProtocolesSejour(sb, entrees, { templateIds: [templateId], depuis: auj });
+}
+
 export const aujourdhuiIso = () => jour(new Date());

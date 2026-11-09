@@ -2,6 +2,7 @@ import 'package:PetsMatch/utils/animal_proprietaire.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/pension_protocoles.dart' show changerLogementSejour;
 import 'package:PetsMatch/utils/pension_impressions.dart' show imprimerFeuilleJour, imprimerFichesBox;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show logementAccepteEspece;
 import 'package:flutter/services.dart';
@@ -1266,6 +1267,8 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
     if (choix == null) return;
     try {
       await _supa.from('pension_entrees').update({'logement_id': choix.isEmpty ? null : choix}).eq('id', e['id'].toString());
+      // Protocoles du séjour : tâches à venir sur le nouveau logement.
+      await changerLogementSejour([e['id'].toString()]);
       await _load();
     } catch (err) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Logement non enregistré : $err')));

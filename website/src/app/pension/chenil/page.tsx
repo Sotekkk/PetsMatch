@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
+import { changerLogementSejour } from '@/lib/pension-protocoles';
 import { PENSION_ESPECES } from '@/lib/pension-especes';
 import { PENSION_LOGEMENT_TYPES, LOGEMENT_TYPE_LABEL } from '@/lib/pension-logements';
 
@@ -113,6 +114,8 @@ export default function PensionChenilPage() {
 
   const assign = async (entreeId: string, logementId: string | null) => {
     await supabase.from('pension_entrees').update({ logement_id: logementId }).eq('id', entreeId);
+    // Protocoles du séjour : tâches à venir sur le nouveau logement.
+    try { await changerLogementSejour(supabase, [entreeId]); } catch { /* sans incidence */ }
     setAssigningTo(null);
     load();
   };
@@ -159,6 +162,7 @@ export default function PensionChenilPage() {
       const suggestion = suggestLogement(e);
       if (!suggestion) continue;
       await supabase.from('pension_entrees').update({ logement_id: suggestion.id }).eq('id', e.id);
+      try { await changerLogementSejour(supabase, [e.id]); } catch { /* sans incidence */ }
       placed++;
       localEntrees = localEntrees.map(x => x.id === e.id ? { ...x, logement_id: suggestion.id } : x);
       setEntrees(localEntrees);

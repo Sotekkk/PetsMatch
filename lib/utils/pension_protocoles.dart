@@ -184,6 +184,53 @@ Future<({int taches, List<String> protocoles})> appliquerProtocolesSejour(List<S
   return (taches: total, protocoles: noms);
 }
 
+/// Logement changé en cours de séjour : les tâches à venir (non faites, dès
+/// aujourd'hui) sont refaites sur le nouveau logement ; les autres
+/// pensionnaires de l'ancien logement récupèrent ses tâches de locaux.
+/// À appeler APRÈS la mise à jour de pension_entrees.logement_id.
+Future<void> changerLogementSejour(List<String> entreeIds) async {
+  if (entreeIds.isEmpty) return;
+  final supa = Supabase.instance.client;
+  try {
+    final auj = _f.format(DateTime.now());
+    final es = await supa.from('pension_entrees').select('id, statut, arrivee_reelle_le').inFilter('id', entreeIds);
+    final presents = [for (final e in es) if (_t(e['statut']) == 'en_pension' && e['arrivee_reelle_le'] != null) _t(e['id'])];
+    if (presents.isEmpty) return;
+    final tts = await supa.from('plan_taches').select('box_id').inFilter('pension_entree_id', presents)
+        .neq('statut', 'fait').gte('date_prevue', auj);
+    final anciens = {for (final x in tts) if (_t(x['box_id']).isNotEmpty) _t(x['box_id'])}.toList();
+    await retirerTachesSejour(presents, _decaler(auj, -1));
+    var voisins = <String>[];
+    if (anciens.isNotEmpty) {
+      final vs = await supa.from('pension_entrees').select('id').eq('statut', 'en_pension')
+          .not('arrivee_reelle_le', 'is', null).inFilter('logement_id', anciens);
+      voisins = [for (final v in vs) if (!presents.contains(_t(v['id']))) _t(v['id'])];
+    }
+    await appliquerProtocolesSejour([...presents, ...voisins], depuis: auj);
+  } catch (_) {}
+}
+
+/// Protocole de séjour créé ou modifié : ses tâches à venir (non faites, dès
+/// aujourd'hui) sont refaites pour les pensionnaires présents — nouvelle
+/// heure, autre employé, étapes ajoutées ou retirées. Miroir site.
+Future<void> rafraichirProtocoleSejour(String templateId, String proUid, String? proProfileId) async {
+  final supa = Supabase.instance.client;
+  try {
+    final auj = _f.format(DateTime.now());
+    final et = await supa.from('plan_template_etapes').select('id').eq('template_id', templateId);
+    final ids = [for (final x in et) _t(x['id'])];
+    if (ids.isNotEmpty) {
+      await supa.from('plan_taches').delete().inFilter('etape_id', ids).neq('statut', 'fait')
+          .gte('date_prevue', auj).not('pension_entree_id', 'is', null);
+    }
+    var q = supa.from('pension_entrees').select('id').eq('pro_uid', proUid).eq('statut', 'en_pension')
+        .not('arrivee_reelle_le', 'is', null);
+    if ((proProfileId ?? '').isNotEmpty) q = q.eq('pro_profile_id', proProfileId!);
+    final entrees = [for (final e in await q) _t(e['id'])];
+    if (entrees.isNotEmpty) await appliquerProtocolesSejour(entrees, templateIds: [templateId], depuis: auj);
+  } catch (_) {}
+}
+
 /// Départ enregistré : les tâches « au départ » se recalent sur le vrai jour du
 /// départ ; une tâche de logement dont le logement reste occupé par un autre
 /// pensionnaire passe au départ de celui-ci ; les autres tâches non faites
