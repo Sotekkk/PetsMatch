@@ -21,6 +21,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart' show PublicProfilePage;
 import 'package:PetsMatch/pages/chatScreen.dart' show ChatScreen;
 import 'package:PetsMatch/utils/messaging_helper.dart';
+import 'package:PetsMatch/utils/chat_theme.dart'
+    show ChatTheme, kChatThemes, ChatThemePreview, ChatThemeStore, ChatThemePurchase;
 import 'package:PetsMatch/widgets/mention_hashtag.dart';
 import 'package:PetsMatch/pages/particulier/stories/story_ring.dart';
 import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
@@ -6629,6 +6631,7 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
   late List<String> _ownedBanners;
   late String? _activeRing;
   late String? _activeBanner;
+  Set<String> _ownedChatBgs = {};
   int _solde = 0;
   List<Map<String, dynamic>> _packs = [];
 
@@ -6659,12 +6662,15 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    _tab = TabController(length: 3, vsync: this);
     _ownedRings = List.from(widget.ownedRings);
     _ownedBanners = List.from(widget.ownedBanners);
     _activeRing = widget.activeRing;
     _activeBanner = widget.activeBanner;
     _loadWallet();
+    ChatThemeStore.ownedIds(widget.myUid).then((ids) {
+      if (mounted) setState(() => _ownedChatBgs = ids);
+    });
   }
 
   Future<void> _loadWallet() async {
@@ -6698,6 +6704,92 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
   @override
   void dispose() { _tab.dispose(); super.dispose(); }
 
+  Future<bool?> _confirmPurchase(String label, int cost) {
+    return showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        decoration: const BoxDecoration(
+          color: Color(0xFF0D1F22),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 36, height: 4,
+              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 20),
+          const Icon(Icons.toll_outlined, color: _green, size: 36),
+          const SizedBox(height: 12),
+          Text('Confirmer l\'achat', style: const TextStyle(
+              fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Colors.white)),
+          const SizedBox(height: 8),
+          Text('$label  ·  $cost crédits',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white.withValues(alpha: 0.65))),
+          const SizedBox(height: 24),
+          Row(children: [
+            Expanded(child: GestureDetector(
+              onTap: () => Navigator.pop(context, false),
+              child: Container(
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: const Center(child: Text('Annuler',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                        fontSize: 15, color: Colors.white70))),
+              ),
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: GestureDetector(
+              onTap: () => Navigator.pop(context, true),
+              child: Container(
+                height: 50,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [_tealC, _green]),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [BoxShadow(color: _tealC.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))],
+                ),
+                child: Center(child: Text('Acheter — $cost cr.',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 15, color: Colors.white))),
+              ),
+            )),
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  /// Fond de discussion : acheté pour le compte, puis choisi conversation par
+  /// conversation (menu ⋮ → Thème de la conversation) — rien à "équiper" ici.
+  Future<void> _buyChatBg(ChatTheme t) async {
+    if (_busy || _ownedChatBgs.contains(t.id)) return;
+    final confirmed = await _confirmPurchase(t.name, t.cost);
+    if (confirmed != true || !mounted) return;
+    setState(() => _busy = true);
+    final result = await ChatThemeStore.buy(widget.myUid, t);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (result == ChatThemePurchase.ok) _ownedChatBgs = {..._ownedChatBgs, t.id};
+    });
+    if (result == ChatThemePurchase.ok) _loadWallet();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        switch (result) {
+          ChatThemePurchase.ok => '${t.name} acheté ! Choisissez-le dans une conversation via ⋮ → Thème de la conversation.',
+          ChatThemePurchase.insufficientCredits => 'Crédits insuffisants ($_solde cr. disponibles, ${t.cost} cr. requis)',
+          ChatThemePurchase.error => 'Achat impossible, réessayez.',
+        },
+        style: const TextStyle(fontFamily: 'Galey'),
+      ),
+      backgroundColor: result == ChatThemePurchase.ok ? _tealC : const Color(0xFF1F2A2E),
+      behavior: SnackBarBehavior.floating,
+    ));
+  }
+
   Future<void> _buyOrEquip(Map<String, Object> item) async {
     if (_busy) return;
     final id = item['id'] as String;
@@ -6708,62 +6800,7 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
     final alreadyOwned = owned.contains(id);
 
     if (!alreadyOwned) {
-      // Confirmation avant achat
-      final confirmed = await showModalBottomSheet<bool>(
-        context: context,
-        backgroundColor: Colors.transparent,
-        builder: (_) => Container(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
-          decoration: const BoxDecoration(
-            color: Color(0xFF0D1F22),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 36, height: 4,
-                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 20),
-            const Icon(Icons.toll_outlined, color: _green, size: 36),
-            const SizedBox(height: 12),
-            Text('Confirmer l\'achat', style: const TextStyle(
-                fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Colors.white)),
-            const SizedBox(height: 8),
-            Text('${item['label']}  ·  $cost crédits',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white.withValues(alpha: 0.65))),
-            const SizedBox(height: 24),
-            Row(children: [
-              Expanded(child: GestureDetector(
-                onTap: () => Navigator.pop(context, false),
-                child: Container(
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white24),
-                  ),
-                  child: const Center(child: Text('Annuler',
-                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                          fontSize: 15, color: Colors.white70))),
-                ),
-              )),
-              const SizedBox(width: 12),
-              Expanded(child: GestureDetector(
-                onTap: () => Navigator.pop(context, true),
-                child: Container(
-                  height: 50,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [_tealC, _green]),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [BoxShadow(color: _tealC.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))],
-                  ),
-                  child: Center(child: Text('Acheter — $cost cr.',
-                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                          fontSize: 15, color: Colors.white))),
-                ),
-              )),
-            ]),
-          ]),
-        ),
-      );
+      final confirmed = await _confirmPurchase(item['label'] as String, cost);
       if (confirmed != true) return;
 
       // Acheter
@@ -6861,11 +6898,14 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white38,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13),
-          tabs: const [Tab(text: 'Anneaux avatar'), Tab(text: 'Bannières profil')],
+          isScrollable: true,
+          tabAlignment: TabAlignment.center,
+          tabs: const [Tab(text: 'Anneaux avatar'), Tab(text: 'Bannières profil'), Tab(text: 'Fonds de discussion')],
         ),
         Expanded(child: TabBarView(controller: _tab, children: [
           _itemGrid(rings,   isRing: true),
           _itemGrid(banners, isRing: false),
+          _chatBgGrid(),
         ])),
         Padding(
           padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(context).padding.bottom + 12),
@@ -6925,6 +6965,49 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
                 gradient: _cosmeticBanners[id] ?? _bgGrad,
               )),
       ),
+    );
+  }
+
+  Widget _chatBgGrid() {
+    final themes = kChatThemes.where((t) => t.isPremium).toList();
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2, childAspectRatio: 0.8, crossAxisSpacing: 12, mainAxisSpacing: 12,
+      ),
+      itemCount: themes.length,
+      itemBuilder: (_, i) {
+        final t = themes[i];
+        final owned = _ownedChatBgs.contains(t.id);
+        return GestureDetector(
+          onTap: _busy || owned ? null : () => _buyChatBg(t),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: owned ? _green : Colors.white12, width: owned ? 2.5 : 1),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(15),
+              child: Column(children: [
+                Expanded(child: ChatThemePreview(theme: t, bubbleHeight: 18)),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  color: Colors.white.withValues(alpha: 0.05),
+                  child: Column(children: [
+                    Text('${t.emoji}  ${t.name}', textAlign: TextAlign.center,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white)),
+                    const SizedBox(height: 3),
+                    owned
+                        ? const Text('Acheté ✓', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: _green, fontWeight: FontWeight.w700))
+                        : Text('${t.cost} cr.', style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: _green)),
+                  ]),
+                ),
+              ]),
+            ),
+          ),
+        );
+      },
     );
   }
 

@@ -61,6 +61,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   RealtimeChannel? _channel;
   String _themeId = 'default';
   String? _customBgUrl;
+  Set<String> _ownedThemeIds = {};
   static const _kCustomBgCost = 5; // crédits
   OverlayEntry? _reactionOverlay;
 
@@ -76,6 +77,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _loadMessages().then((_) => _loadReactions());
     _loadTheme();
+    if (_uid.isNotEmpty) {
+      ChatThemeStore.ownedIds(_uid).then((ids) {
+        if (mounted) setState(() => _ownedThemeIds = ids);
+      });
+    }
     _subscribeRealtime();
     _markAsRead();
     _setActiveConversation(widget.conversationId);
@@ -151,6 +157,69 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       await _supa.from('conversations')
           .update({'theme_id': id, 'custom_bg_url': null}).eq('id', widget.conversationId);
     } catch (_) {}
+  }
+
+  /// Thème gratuit ou déjà acheté : appliqué directement. Thème premium non
+  /// acheté : confirmation, débit des crédits, puis application.
+  Future<void> _selectTheme(ChatTheme t) async {
+    if (!t.isPremium || _ownedThemeIds.contains(t.id)) {
+      _saveTheme(t.id);
+      return;
+    }
+    final uid = _uid;
+    if (uid.isEmpty) return;
+    int solde = 0;
+    try {
+      final w = await _supa.from('credit_wallets').select('solde').eq('uid', uid).maybeSingle();
+      solde = (w?['solde'] as int?) ?? 0;
+    } catch (_) {}
+    if (!mounted) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('${t.emoji}  ${t.name}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Fond premium : acheté une fois, utilisable ensuite dans toutes vos conversations.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          const SizedBox(height: 12),
+          Row(children: [
+            const Icon(Icons.toll_outlined, size: 16, color: _teal),
+            const SizedBox(width: 6),
+            Text('Coût : ${t.cost} crédits  •  Solde : $solde',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    color: solde >= t.cost ? Colors.grey.shade600 : Colors.red.shade700,
+                    fontWeight: FontWeight.w600)),
+          ]),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          if (solde >= t.cost)
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: _teal, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Acheter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    final result = await ChatThemeStore.buy(uid, t);
+    if (!mounted) return;
+    if (result == ChatThemePurchase.ok) {
+      setState(() => _ownedThemeIds = {..._ownedThemeIds, t.id});
+      _saveTheme(t.id);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        result == ChatThemePurchase.insufficientCredits ? 'Crédits insuffisants.' : 'Achat impossible, réessayez.',
+        style: const TextStyle(fontFamily: 'Galey'),
+      ),
+      backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
+    ));
   }
 
   Future<void> _pickCustomBackground() async {
@@ -261,20 +330,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => Container(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + MediaQuery.of(context).padding.bottom),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
           const Text('Thème de la conversation',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1E2025))),
           const SizedBox(height: 20),
-          GridView.builder(
+          Flexible(child: GridView.builder(
             shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 0.85),
             itemCount: kChatThemes.length + 1,
@@ -333,15 +402,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               // ── Tuiles thèmes prédéfinis ──
               final t = kChatThemes[i];
               final selected = t.id == _themeId && _customBgUrl == null;
+              final locked = t.isPremium && !_ownedThemeIds.contains(t.id);
               return GestureDetector(
-                onTap: () { Navigator.pop(context); _saveTheme(t.id); },
+                onTap: () { Navigator.pop(context); _selectTheme(t); },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft, end: Alignment.bottomRight,
-                      colors: t.bgGradient,
-                    ),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: selected ? _teal : Colors.grey.shade200,
@@ -349,24 +415,51 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ),
                     boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 6, offset: const Offset(0, 2))],
                   ),
-                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Text(t.emoji, style: const TextStyle(fontSize: 28)),
-                    const SizedBox(height: 6),
-                    Text(t.name, textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600,
-                          color: t.id == 'night' ? Colors.white : const Color(0xFF1E2025),
-                        )),
-                    if (selected)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Icon(Icons.check_circle, size: 14, color: _teal),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(15),
+                    child: Column(children: [
+                      Expanded(
+                        child: Stack(fit: StackFit.expand, children: [
+                          ChatThemePreview(theme: t),
+                          if (locked || selected)
+                            Positioned(
+                              top: 5, right: 5,
+                              child: locked
+                                  ? Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.55),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                        const Icon(Icons.lock_outline, size: 10, color: Colors.white),
+                                        const SizedBox(width: 2),
+                                        Text('${t.cost} cr.',
+                                            style: const TextStyle(fontFamily: 'Galey', fontSize: 9,
+                                                fontWeight: FontWeight.w700, color: Colors.white)),
+                                      ]),
+                                    )
+                                  : const Icon(Icons.check_circle, size: 18, color: _teal),
+                            ),
+                        ]),
                       ),
-                  ]),
+                      Container(
+                        width: double.infinity,
+                        color: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('${t.emoji} ${t.name}',
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                                  fontWeight: FontWeight.w600, color: Color(0xFF1E2025))),
+                        ),
+                      ),
+                    ]),
+                  ),
                 ),
               );
             },
-          ),
+          )),
         ]),
       ),
     );
@@ -1256,20 +1349,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 },
               ),
       ),
-      body: Container(
-        decoration: _customBgUrl != null
-            ? BoxDecoration(
-                image: DecorationImage(
-                  image: NetworkImage(_customBgUrl!),
-                  fit: BoxFit.cover,
-                ),
-              )
-            : BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                  colors: theme.bgGradient,
-                ),
-              ),
+      body: ChatBackground(
+        theme: theme,
+        customBgUrl: _customBgUrl,
         child: Column(children: [
         // Messages
         Expanded(
