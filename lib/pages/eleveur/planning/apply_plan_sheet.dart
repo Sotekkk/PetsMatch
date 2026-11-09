@@ -34,6 +34,10 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
   bool            _loadingRefs = false;
 
   List<Map<String, dynamic>> _animaux = [];
+  /// Protocole saillie / mise bas : gestation en cours de chaque femelle.
+  Map<String, ({DateTime? saillie, DateTime? miseBas})> _gestations = {};
+  bool get _refGestation => _refEvent == 'saillie' || _refEvent == 'mise_bas';
+  DateTime? _dateGest(String id) => PlanningService.dateRefGestation(_refEvent, _gestations[id]);
 
   String get _perimetre => perimetreDe(widget.template, profilSource: widget.profilSourceOverride);
   // Locaux (dont les anciens nettoyages en « cheptel ») : aucun animal.
@@ -122,6 +126,7 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
       final rows = await q.order('nom');
       // Seuls les animaux encore pris en charge (pas adoptés, cédés…).
       final actifs = List<Map<String, dynamic>>.from(rows).where((a) => !estHorsPriseEnCharge(a)).toList();
+      if (_refGestation) _gestations = await PlanningService.datesGestationEnCours([for (final a in actifs) a['id'].toString()]);
       if (mounted) {
         setState(() {
           _animaux = actifs;
@@ -362,8 +367,14 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
                             ),
                             title: Text('${a['nom'] ?? ''} $sexeLabel',
                                 style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-                            subtitle: Text(a['espece']?.toString() ?? '',
-                                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+                            subtitle: !_refGestation
+                                ? Text(a['espece']?.toString() ?? '',
+                                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500))
+                                : _dateGest(id) != null
+                                    ? Text('${_refEvent == 'saillie' ? 'Saillie' : 'Mise bas prévue'} le ${DateFormat('dd/MM/yyyy').format(_dateGest(id)!)} (enregistrée)',
+                                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF2E7D5E), fontWeight: FontWeight.w700))
+                                    : Text('Aucune gestation en cours enregistrée',
+                                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
                             activeColor: _green,
                             controlAffinity: ListTileControlAffinity.leading,
                             dense: true,
@@ -424,6 +435,14 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
                     ]),
                   ),
                 ),
+                if (_refGestation)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(_cibleType == 'individuel'
+                        ? 'La date enregistrée dans la gestation en cours de chaque femelle est reprise ; celle-ci ne sert que pour les femelles sans gestation enregistrée.'
+                        : 'Seules les femelles avec une gestation en cours reçoivent les tâches, à partir de la date enregistrée.',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+                  ),
                 const SizedBox(height: 14),
               ],
 

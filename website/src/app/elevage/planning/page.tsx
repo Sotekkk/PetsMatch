@@ -7,6 +7,7 @@ import { ACTES_CARNET, validerTachesProtocole } from '@/lib/carnet-depuis-tache'
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { datesGestationEnCours, dateRefGestation, type DatesGestation } from '@/lib/planning-service';
 import {
   PERIMETRES, CATEGORIES, REF_EVENTS, actesSuggeresPour, TRANCHES_LABELS,
   perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, estHorsPriseEnCharge, type Perimetre,
@@ -1929,6 +1930,16 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
     });
   }, [isPortee, uid, profileId, template.espece]);
   const selectedAnimaux = animaux.filter(a => animalIds.includes(a.id));
+  // Protocole calculé depuis la saillie / la mise bas : la date enregistrée
+  // dans la gestation en cours de chaque femelle est reprise.
+  const refGestation = template.reference_event === 'saillie' || template.reference_event === 'mise_bas';
+  const [gestations, setGestations] = useState<Map<string, DatesGestation>>(new Map());
+  useEffect(() => {
+    if (!refGestation || !needsAnimal || !animaux.length) return;
+    datesGestationEnCours(animaux.map(a => a.id)).then(setGestations);
+  }, [refGestation, needsAnimal, animaux]);
+  const dateGest = (id: string) => dateRefGestation(template.reference_event, gestations.get(id));
+  const fmtJour = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR');
   const filteredAnimaux = animalSearch.trim()
     ? animaux.filter(a => a.nom.toLowerCase().includes(animalSearch.trim().toLowerCase()))
     : animaux;
@@ -1992,9 +2003,10 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
           }
         }
       } else if (cibleType === 'individuel') {
+        const gm = refGestation ? await datesGestationEnCours(animalIds) : new Map<string, DatesGestation>();
         for (const id of animalIds) {
           const animal = animaux.find(a => a.id === id);
-          targets.push({ animal_id: id, date_base: dateRef, animal_nom: animal?.nom });
+          targets.push({ animal_id: id, date_base: dateRefGestation(template.reference_event, gm.get(id)) ?? dateRef, animal_nom: animal?.nom });
         }
       } else if (cibleType === 'gestantes') {
         // gestations n'a pas de uid_eleveur : on filtre par l'animal. En cours = confirmée,
@@ -2003,18 +2015,20 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
         // clôturée comptait encore (protocole appliqué à toutes les chiennes, 06/11/2026).
         const ilYa = (j: number) => toISODate(addDays(new Date(), -j));
         let qg = supabase.from('gestations')
-          .select('animal_id, date_prevue, animaux!inner(nom, statut, uid_eleveur, profile_id, espece)').eq('animaux.uid_eleveur', uid)
+          .select('animal_id, date, date_prevue, animaux!inner(nom, statut, uid_eleveur, profile_id, espece)').eq('animaux.uid_eleveur', uid)
           .eq('gestation_confirmee', true).is('date_naissance', null).is('date_accouchement', null).is('nb_nes', null)
           .or(`date_prevue.gte.${ilYa(15)},and(date_prevue.is.null,date.gte.${ilYa(75)})`);
         // Animaux du profil actif, ou anciens animaux sans profil enregistré (sinon exclus à tort).
         if (profileId) qg = qg.or(`profile_id.eq.${profileId},profile_id.is.null`, { referencedTable: 'animaux' });
         if (template.espece) qg = qg.eq('animaux.espece', template.espece);
         const { data: gestations } = await qg;
-        for (const g of (gestations ?? []) as unknown as { animal_id: string; date_prevue: string | null; animaux: { nom: string; statut?: string | null }[] | { nom: string; statut?: string | null } | null }[]) {
+        for (const g of (gestations ?? []) as unknown as { animal_id: string; date: string | null; date_prevue: string | null; animaux: { nom: string; statut?: string | null }[] | { nom: string; statut?: string | null } | null }[]) {
           const anim = Array.isArray(g.animaux) ? g.animaux[0] : g.animaux;
           if (anim && estHorsPriseEnCharge(anim)) continue;
           const animalNom = anim?.nom;
-          targets.push({ animal_id: g.animal_id, date_base: g.date_prevue ?? dateRef, animal_nom: animalNom });
+          // J0 = saillie ou mise bas prévue selon le protocole (avant : toujours la mise bas).
+          const j0 = template.reference_event === 'saillie' ? g.date?.slice(0, 10) : g.date_prevue?.slice(0, 10);
+          targets.push({ animal_id: g.animal_id, date_base: j0 ?? dateRef, animal_nom: animalNom });
         }
       } else if (cibleType === 'bebes') {
         const sixMoisAgo = toISODate(addDays(new Date(), -183));
@@ -2034,8 +2048,13 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
         if (profileId) q = q.eq('profile_id', profileId) as typeof q;
         q = profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false') as typeof q;
         const { data: all } = await q;
-        for (const a of ((all ?? []) as { id: string; nom: string; statut?: string | null }[]).filter(x => !estHorsPriseEnCharge(x))) {
-          targets.push({ animal_id: a.id, date_base: dateRef, animal_nom: a.nom });
+        const liste = ((all ?? []) as { id: string; nom: string; statut?: string | null }[]).filter(x => !estHorsPriseEnCharge(x));
+        // Saillie / mise bas sur un groupe : seulement les femelles dont une gestation est en cours.
+        const gm = refGestation ? await datesGestationEnCours(liste.map(a => a.id)) : null;
+        for (const a of liste) {
+          const j0 = gm ? dateRefGestation(template.reference_event, gm.get(a.id)) : dateRef;
+          if (!j0) continue;
+          targets.push({ animal_id: a.id, date_base: j0, animal_nom: a.nom });
         }
       }
 
@@ -2248,6 +2267,9 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
                               <div className="min-w-0">
                                 <p className="text-sm font-semibold text-gray-800 truncate">{a.nom}</p>
                                 {a.espece && <p className="text-xs text-gray-400">{a.espece}</p>}
+                                {refGestation && (dateGest(a.id)
+                                  ? <p className="text-xs text-[#2E7D5E] font-semibold">{template.reference_event === 'saillie' ? 'Saillie' : 'Mise bas prévue'} le {fmtJour(dateGest(a.id)!)} (enregistrée)</p>
+                                  : <p className="text-xs text-gray-400">Aucune gestation en cours enregistrée</p>)}
                               </div>
                             </button>
                           );
@@ -2272,6 +2294,13 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
               </label>
               <input type="date" value={dateRef} onChange={e => setDateRef(e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500" />
+              {refGestation && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {cibleType === 'individuel'
+                    ? 'La date enregistrée dans la gestation en cours de chaque femelle est reprise ; celle-ci ne sert que pour les femelles sans gestation enregistrée.'
+                    : 'Seules les femelles avec une gestation en cours reçoivent les tâches, à partir de la date enregistrée.'}
+                </p>
+              )}
             </div>
           )}
           <button onClick={apply} disabled={saving}

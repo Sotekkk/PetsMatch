@@ -157,6 +157,34 @@ export async function applyTemplateToAnimal(
   }
 }
 
+// ── Gestation en cours de chaque femelle (protocoles saillie / mise bas) ──────
+// En cours = mise bas non saisie ET prévue il y a moins de 15 jours (ou à venir) ;
+// sans date prévue : saillie de moins de 75 jours. Miroir appli :
+// PlanningService.datesGestationEnCours.
+export type DatesGestation = { saillie: string | null; miseBas: string | null };
+export async function datesGestationEnCours(animalIds: string[]): Promise<Map<string, DatesGestation>> {
+  const out = new Map<string, DatesGestation>();
+  if (!animalIds.length) return out;
+  const ilYa = (j: number) => { const d = new Date(); d.setDate(d.getDate() - j); return toISODate(d); };
+  const { data } = await supabase.from('gestations').select('animal_id, date, date_prevue')
+    .in('animal_id', animalIds).is('date_naissance', null).is('date_accouchement', null).is('nb_nes', null)
+    .or(`date_prevue.gte.${ilYa(15)},and(date_prevue.is.null,date.gte.${ilYa(75)})`)
+    .order('date', { ascending: false });
+  for (const g of (data ?? []) as { animal_id: string; date: string | null; date_prevue: string | null }[]) {
+    if (out.has(g.animal_id)) continue; // la plus récente
+    out.set(g.animal_id, { saillie: g.date?.slice(0, 10) ?? null, miseBas: g.date_prevue?.slice(0, 10) ?? null });
+  }
+  return out;
+}
+
+/** J0 d'un protocole « saillie » ou « mise bas » d'après la gestation en cours. */
+export function dateRefGestation(refEvent: string | null | undefined, g: DatesGestation | undefined): string | null {
+  if (!g) return null;
+  if (refEvent === 'saillie') return g.saillie;
+  if (refEvent === 'mise_bas') return g.miseBas;
+  return null;
+}
+
 // ── Déclencher automatiquement les protocoles sur un événement ────────────────
 // Cherche tous les templates avec declencheur_auto == declencheur,
 // filtre par espece, vérifie les doublons, puis applique.
@@ -211,7 +239,14 @@ export async function triggerAutoProtocoles({
 
       // Forcer cible individuelle
       const mod: Template = { ...tpl, cible_type: 'individuel' };
-      total += await applyTemplateToAnimal(uid, mod, animalId, dateEvenement);
+      // Protocole calculé depuis la saillie ou la mise bas : J0 = date de la
+      // gestation enregistrée (avant : toujours la mise bas prévue).
+      let base = dateEvenement;
+      if (tpl.reference_event === 'saillie' || tpl.reference_event === 'mise_bas') {
+        const d = dateRefGestation(tpl.reference_event, (await datesGestationEnCours([animalId])).get(animalId));
+        if (d) base = new Date(`${d}T12:00:00`);
+      }
+      total += await applyTemplateToAnimal(uid, mod, animalId, base);
     }
     return total;
   } catch (e) {

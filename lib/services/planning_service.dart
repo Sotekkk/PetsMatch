@@ -279,6 +279,21 @@ class PlanningService {
                 profileId: ownerProfileId,
               );
 
+    // Protocole calculé depuis la saillie / la mise bas : J0 = date enregistrée
+    // dans la gestation en cours de chaque femelle (avant : la date saisie pour
+    // toutes, ou la mise bas prévue pour les gestantes). Sur un groupe
+    // (femelles…), seules les femelles avec une gestation en cours.
+    if ((refEvent == 'saillie' || refEvent == 'mise_bas') && cibleType != 'locaux' && cibleType != 'portee') {
+      final ids = [for (final c in cibles) if (c['animal_id'] != null) c['animal_id'].toString()];
+      final gm = await datesGestationEnCours(ids);
+      final groupe = cibleType == 'cheptel' || cibleType == 'males' || cibleType == 'femelles';
+      cibles.removeWhere((c) => groupe && dateRefGestation(refEvent, gm[c['animal_id']]) == null);
+      for (final c in cibles) {
+        final d = dateRefGestation(refEvent, gm[c['animal_id']]);
+        if (d != null) c['date_ref'] = d;
+      }
+    }
+
     if (cibles.isEmpty) return 0;
 
     // Créer un plan actif par cible (ou un seul plan si cheptel)
@@ -340,6 +355,36 @@ class PlanningService {
       }
     }
     return tachesCount;
+  }
+
+  // ── Gestation en cours de chaque femelle (protocoles saillie / mise bas) ────
+  // En cours = mise bas non saisie ET prévue il y a moins de 15 jours (ou à
+  // venir) ; sans date prévue : saillie de moins de 75 jours. Miroir site :
+  // lib/planning-service.ts datesGestationEnCours.
+  static Future<Map<String, ({DateTime? saillie, DateTime? miseBas})>> datesGestationEnCours(List<String> animalIds) async {
+    final out = <String, ({DateTime? saillie, DateTime? miseBas})>{};
+    if (animalIds.isEmpty) return out;
+    String ilYa(int j) => DateTime.now().subtract(Duration(days: j)).toIso8601String().substring(0, 10);
+    try {
+      final rows = await _supa.from('gestations').select('animal_id, date, date_prevue')
+          .inFilter('animal_id', animalIds)
+          .filter('date_naissance', 'is', null).filter('date_accouchement', 'is', null).filter('nb_nes', 'is', null)
+          .or('date_prevue.gte.${ilYa(15)},and(date_prevue.is.null,date.gte.${ilYa(75)})')
+          .order('date', ascending: false);
+      for (final g in rows) {
+        final id = g['animal_id'].toString();
+        if (out.containsKey(id)) continue; // la plus récente
+        out[id] = (saillie: DateTime.tryParse(g['date']?.toString() ?? ''), miseBas: DateTime.tryParse(g['date_prevue']?.toString() ?? ''));
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  static DateTime? dateRefGestation(String? refEvent, ({DateTime? saillie, DateTime? miseBas})? g) {
+    if (g == null) return null;
+    if (refEvent == 'saillie') return g.saillie;
+    if (refEvent == 'mise_bas') return g.miseBas;
+    return null;
   }
 
   // ── Petits des portées choisies (date de base = naissance si le protocole
