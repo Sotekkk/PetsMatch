@@ -305,11 +305,24 @@ export async function POST(req: NextRequest) {
       case 'customer.subscription.deleted': {
         const sub = event.data.object as Stripe.Subscription;
         const uid = sub.metadata?.uid;
-        const profileId = sub.metadata?.profile_id ?? null;
+        // Profil et métier de la ligne enregistrée (corrigée si besoin), pas des
+        // métadonnées Stripe : un abonnement pris depuis un autre profil actif ne
+        // doit jamais repasser ce profil-là en gratuit.
+        const { data: ligne } = await supabase.from('abonnements').select('profile_id, profil_type')
+          .eq('stripe_subscription_id', sub.id).limit(1).maybeSingle();
+        const profileId = (ligne?.profile_id as string | null | undefined) ?? sub.metadata?.profile_id ?? null;
         await supabase.from('abonnements')
           .update({ statut: 'annule', updated_at: new Date().toISOString() })
           .eq('stripe_subscription_id', sub.id);
-        if (uid) {
+        // Encore un abonnement actif pour ce métier / ce profil : rien à remettre en gratuit.
+        let encoreActif = false;
+        if (uid && ligne?.profil_type) {
+          let q = supabase.from('abonnements').select('id').eq('uid', uid).eq('profil_type', ligne.profil_type).eq('statut', 'actif');
+          if (profileId) q = q.eq('profile_id', profileId);
+          const { data: autres } = await q.limit(1);
+          encoreActif = !!autres?.length;
+        }
+        if (uid && !encoreActif) {
           // Remettre le plan à free sur le profil concerné
           if (profileId) {
             await supabase.from('user_profiles').update({

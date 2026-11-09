@@ -381,8 +381,7 @@ export function usePlan(): UsePlanResult {
           .eq('profil_type', 'eleveur')
           .eq('statut', 'actif')
           .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
+          .limit(10),
         supabase
           .from('annonces')
           .select('id', { count: 'exact', head: true })
@@ -391,7 +390,8 @@ export function usePlan(): UsePlanResult {
       ]);
       // Code inconnu des formules éleveur (ex. ligne d'un autre métier
       // enregistrée à tort en « eleveur ») → gratuit, jamais de config vide.
-      const code = abo.data?.plan_code as string | undefined;
+      // → on prend la plus récente des lignes à formule éleveur connue.
+      const code = ((abo.data ?? []) as { plan_code: string }[]).map(x => x.plan_code).find(c => c in PLAN_CONFIG);
       setPlan(code && code in PLAN_CONFIG ? (code as PlanCode) : 'free');
       setActiveAnnonces(ann.count ?? 0);
       setLoading(false);

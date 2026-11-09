@@ -903,9 +903,12 @@ class PlanService {
           .eq('profil_type', profilType)
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
-      return (res?['plan_code'] as String?) ?? 'free';
+          .limit(10);
+      final codes = [for (final r in res) (r['plan_code'] as String?) ?? ''];
+      // Éleveur : une ligne d'un autre métier enregistrée à tort en « eleveur »
+      // (formule inconnue, ex. « clinique ») est ignorée. Miroir site : usePlan.
+      if (profilType == 'eleveur') return codes.firstWhere((c) => _fallback.containsKey(c), orElse: () => 'free');
+      return codes.firstWhere((c) => c.isNotEmpty, orElse: () => 'free');
     } catch (_) {
       return 'free';
     }

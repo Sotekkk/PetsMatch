@@ -15,10 +15,23 @@ export async function POST(req: NextRequest) {
     const auth = await requireUser(req);
     if (auth instanceof NextResponse) return auth;
     const uid = auth.uid;
-    const { email, plan, periodicite, annonce_id, produit_code, profile_id, profil_type, returnPath, publier_statut, table: tableDemandee } = await req.json();
+    const { email, plan, periodicite, annonce_id, produit_code, profile_id: profileIdDemande, profil_type, returnPath, publier_statut, table: tableDemandee } = await req.json();
     // Annonce boostée : animal (annonces) ou matériel & équipements (annonces_objets).
     const tableAnnonce = tableDemandee === 'annonces_objets' ? 'annonces_objets' : 'annonces';
     if (!email) return NextResponse.json({ error: 'email requis' }, { status: 400 });
+    let profile_id = profileIdDemande as string | undefined;
+    if (profile_id && plan && periodicite) {
+      // Abonnement d'un métier : le profil payé est celui de CE métier. Le
+      // profil actif peut être un autre (ex. abonnement photographe pris depuis
+      // le profil éleveur) : on prend alors le profil du métier de l'appelant.
+      const type = (profil_type as string | undefined) ?? 'eleveur';
+      const memeMetier = (pt: unknown) => pt === type || (type === 'sante' && pt === 'para_medical');
+      const { data: p0 } = await supabase.from('user_profiles').select('profile_type').eq('id', profile_id).maybeSingle();
+      if (p0 && !memeMetier(p0.profile_type)) {
+        const { data: ps } = await supabase.from('user_profiles').select('id, profile_type').eq('uid', uid);
+        profile_id = (ps ?? []).find(x => memeMetier(x.profile_type))?.id as string | undefined;
+      }
+    }
     if (profile_id) {
       // Le profil payé doit être à l'appelant — ou à un élevage qu'il co-gère.
       const { data: prof } = await supabase.from('user_profiles').select('uid').eq('id', profile_id).maybeSingle();
