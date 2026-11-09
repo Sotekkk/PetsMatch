@@ -27,6 +27,7 @@ import 'package:PetsMatch/services/profile_service.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
+import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/cogerance_page.dart';
@@ -273,6 +274,75 @@ class _NotificationsPageState extends State<NotificationsPage> {
     ));
   }
 
+  /// Fiche d'un animal (onglet Repro pour les chaleurs) ; animal d'un employeur
+  /// ouvert en son nom, comme le rappel « chaleur » simple.
+  Future<void> _ouvrirAnimalNotif(String animalId, {bool repro = false}) async {
+    String? eleveurUidOverride;
+    try {
+      final animal = await Supabase.instance.client.from('animaux').select('uid_eleveur').eq('id', animalId).maybeSingle();
+      final ownerUid = animal?['uid_eleveur'] as String?;
+      final currentUid = FirebaseAuth.instance.currentUser?.uid;
+      if (ownerUid != null && currentUid != null && ownerUid != currentUid) eleveurUidOverride = ownerUid;
+    } catch (_) {}
+    if (!mounted) return;
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => AnimalFichePage(
+        animalId: animalId, readOnly: true, showReproTab: repro,
+        initialTabIndex: repro ? 2 : 0, eleveurUidOverride: eleveurUidOverride,
+      ),
+    ));
+  }
+
+  Future<void> _ouvrirGroupe(Map<String, dynamic> notif, String type, Map<String, dynamic> data) async {
+    const teal = Color(0xFF0C5C6C);
+    final sections = [for (final s in (data['sections'] as List?) ?? const []) if (s is Map) Map<String, dynamic>.from(s)];
+    final chaleurs = type == 'chaleurs_groupe';
+    final source = data['profil_source']?.toString() ?? 'eleveur';
+    final planning = !chaleurs && (source == 'eleveur' || source == 'association');
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.8),
+        child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(16, 16, 16, 12), children: [
+          Text(notif['title']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 16, color: teal)),
+          const SizedBox(height: 4),
+          Text(chaleurs ? 'Touchez une femelle pour ouvrir son suivi des chaleurs.' : "Touchez un animal pour ouvrir sa fiche.",
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
+          for (final s in sections) ...[
+            if ((s['titre']?.toString() ?? '').isNotEmpty)
+              Padding(padding: const EdgeInsets.only(top: 14, bottom: 2),
+                  child: Text(s['titre'].toString(), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 14))),
+            for (final it in [for (final i in (s['items'] as List?) ?? const []) if (i is Map) i])
+              ListTile(
+                dense: true, contentPadding: EdgeInsets.zero,
+                title: Text(it['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+                subtitle: (it['detail']?.toString() ?? '').isEmpty ? null
+                    : Text(it['detail'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                trailing: it['animalId'] == null ? null : const Icon(Icons.chevron_right, color: teal),
+                onTap: it['animalId'] == null ? null : () {
+                  Navigator.pop(ctx);
+                  _ouvrirAnimalNotif(it['animalId'].toString(), repro: chaleurs);
+                },
+              ),
+          ],
+          if (planning) ...[
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => PlanningJourPage(isAssociation: source == 'association')));
+              },
+              style: OutlinedButton.styleFrom(foregroundColor: teal),
+              child: const Text('Voir le planning du jour', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ]),
+      )),
+    );
+  }
+
   Future<void> _handleTap(Map<String, dynamic> notif) async {
     await _markRead(notif);
 
@@ -298,6 +368,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
 
     if (!mounted) return;
+    // Rappels regroupés (protocoles du jour, chaleurs de plusieurs femelles) :
+    // la liste s'ouvre, on choisit l'animal.
+    if ((type == 'protocoles_jour' || type == 'chaleurs_groupe') && data is Map) {
+      await _ouvrirGroupe(notif, type!, Map<String, dynamic>.from(data));
+      return;
+    }
 
     // Message de chat → ouvre directement la conversation plutôt que de
     // rester sur la liste des notifications. Un groupe PetFriends n'a pas
@@ -1447,7 +1523,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'groupe_post_publie': return Icons.check_circle_outline;
       case 'groupe_post_refuse': return Icons.cancel_outlined;
       case 'groupe_signalement': return Icons.flag_outlined;
-      case 'chaleur':       return Icons.spa;
+      case 'chaleur':
+      case 'chaleurs_groupe': return Icons.spa;
+      case 'protocoles_jour': return Icons.checklist_rounded;
       case 'animal_evolution': return Icons.auto_awesome;
       case 'rappel_vaccin': return Icons.vaccines_outlined;
       case 'document_expiration': return Icons.description_outlined;
@@ -1536,7 +1614,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'forum_mention':
       case 'groupe_mention': return const Color(0xFF1565C0);
       case 'forum_reponse':  return const Color(0xFF00ACC1);
-      case 'chaleur':       return const Color(0xFFE91E8C);
+      case 'chaleur':
+      case 'chaleurs_groupe': return const Color(0xFFE91E8C);
+      case 'protocoles_jour': return const Color(0xFF6E9E57);
       case 'rappel_vaccin': return const Color(0xFF26A69A);
       case 'document_expiration': return const Color(0xFFD97706);
       case 'chirurgie_prevue': return const Color(0xFF7B5EA7);

@@ -1125,6 +1125,8 @@ export default function Header() {
   const [unreadByProfile, setUnreadByProfile] = useState<Record<string, number>>({});
   const [pensionDialog, setPensionDialog] = useState<Notif | null>(null);
   const [renewDialog, setRenewDialog] = useState<Notif | null>(null);
+  // Rappels regroupés (protocoles du jour, chaleurs de plusieurs femelles).
+  const [groupeDialog, setGroupeDialog] = useState<Notif | null>(null);
   // Profile switching — utilise directement les profils chargés par AuthContext
   const profiles: UserProfile[] = authProfiles as unknown as UserProfile[];
   const [isFa, setIsFa] = useState(false);
@@ -2189,7 +2191,8 @@ export default function Header() {
                       const isDifferentProfile = notifProfileType && notifProfileType !== effectiveType;
                       const dest = getNotifUrl(n, effectiveType);
                       const isExternal = dest?.startsWith('http') ?? false;
-                      const isActionable = isDifferentProfile || n.type === 'pension_acces' || n.type === 'annonce_expiration' || !!dest;
+                      const estGroupe = n.type === 'protocoles_jour' || n.type === 'chaleurs_groupe';
+                      const isActionable = isDifferentProfile || n.type === 'pension_acces' || n.type === 'annonce_expiration' || estGroupe || !!dest;
 
                       const handleClick = async () => {
                         if (isDifferentProfile) {
@@ -2204,6 +2207,7 @@ export default function Header() {
                         setBellOpen(false);
                         if (n.type === 'pension_acces') { setPensionDialog(n); return; }
                         if (n.type === 'annonce_expiration') { setRenewDialog(n); return; }
+                        if (estGroupe) { setGroupeDialog(n); return; }
                         if (!dest) return;
                         if (isExternal) window.open(dest, '_blank', 'noopener noreferrer');
                         else router.push(dest);
@@ -2521,6 +2525,8 @@ export default function Header() {
         />
       )}
 
+      {groupeDialog && <NotifGroupeDialog notif={groupeDialog} onClose={() => setGroupeDialog(null)} />}
+
       {/* Recherche rapide (loupe) */}
       <QuickSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} items={searchItems} />
     </header>
@@ -2528,6 +2534,53 @@ export default function Header() {
 }
 
 // ── Dialog Renouveler une annonce bientôt expirée ─────────────────────────────
+
+// ── Rappel regroupé : la liste s'ouvre, on choisit l'animal ──────────────────
+// (miroir appli : notifications_page.dart _ouvrirGroupe)
+function NotifGroupeDialog({ notif, onClose }: { notif: Notif; onClose: () => void }) {
+  const router = useRouter();
+  const data = (notif.data ?? {}) as unknown as {
+    sections?: { titre?: string; items?: { animalId?: string; nom?: string; detail?: string }[] }[];
+    profil_source?: string;
+  };
+  const chaleurs = notif.type === 'chaleurs_groupe';
+  const source = data.profil_source ?? 'eleveur';
+  const planning = chaleurs ? null
+    : source === 'pension' ? '/elevage/planning?profilSource=pension'
+    : source === 'eleveur' || source === 'association' ? '/elevage/planning' : null;
+  const aller = (href: string) => { onClose(); router.push(href); };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}
+        style={{ fontFamily: 'Galey, sans-serif' }}>
+        <p className="font-extrabold text-base text-[#0C5C6C]">{notif.title}</p>
+        <p className="text-xs text-gray-500 mt-0.5">{chaleurs ? 'Cliquez sur une femelle pour ouvrir son suivi des chaleurs.' : 'Cliquez sur un animal pour ouvrir sa fiche.'}</p>
+        {(data.sections ?? []).map((s, i) => (
+          <div key={i} className="mt-3">
+            {s.titre && <p className="text-sm font-extrabold text-[#1F2A2E]">{s.titre}</p>}
+            <div className="mt-1 divide-y divide-gray-100">
+              {(s.items ?? []).map((it, j) => it.animalId ? (
+                <button key={j} onClick={() => aller(`/mes-animaux/${it.animalId}${chaleurs ? '?tab=repro' : ''}`)}
+                  className="w-full flex items-center justify-between py-2 text-left hover:bg-gray-50 rounded">
+                  <span className="text-sm font-semibold text-gray-800">{it.nom}{it.detail ? <span className="font-normal text-gray-500"> — {it.detail}</span> : null}</span>
+                  <span className="text-[#0C5C6C] text-sm">›</span>
+                </button>
+              ) : (
+                <p key={j} className="py-2 text-sm text-gray-700">{it.nom}</p>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div className="flex gap-2 mt-4">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600">Fermer</button>
+          {planning && (
+            <button onClick={() => aller(planning)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-[#0C5C6C]">Voir le planning</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AnnonceRenewDialog({ notif, onClose }: { notif: Notif; onClose: () => void }) {
   const router = useRouter();

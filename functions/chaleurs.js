@@ -55,7 +55,7 @@ async function supabaseInsert(table, rows) {
 // ─── FCM helper (partagé — préfixe le profil concerné + bascule au tap) ──────
 
 const {animalPourRappel} = require("./animal_destinataire");
-const {employesAbonnes, notifyEmployes, PushDigest} = require("./push_helpers");
+const {employesAbonnes, sendPush} = require("./push_helpers");
 
 // ─── Domaine : chaleurs ───────────────────────────────────────────────────────
 
@@ -122,8 +122,15 @@ exports.sendChaleursNotifications = functions
         let sent = 0;
         let inApp = 0;
         const empCache = new Map();
-        // Un seul push par destinataire et par run (récap si plusieurs).
-        const digest = new PushDigest({type: "rappels_chaleurs", icone: "🌸", libelle: "rappels chaleurs"});
+        // Un seul rappel par destinataire et par run (regroupé si plusieurs femelles).
+        const rappels = new Map();
+        const ajouterRappel = (uid, profileId, item) => {
+            if (!uid) return;
+            const k = `${uid}|${profileId || ""}`;
+            if (!rappels.has(k)) rappels.set(k, {uid, profileId: profileId || null, items: []});
+            const r = rappels.get(k);
+            if (!r.items.some((i) => i.animalId === item.animalId)) r.items.push(item);
+        };
 
         // 1. Fetch all female animals (not departed/deceased, not stérilisées —
         // une femelle stérilisée n'a plus de cycle de chaleurs à suivre)
@@ -301,67 +308,39 @@ exports.sendChaleursNotifications = functions
             const assigneA = animal.chaleurs_responsable_uid || null;
             const assigneProfileId = animal.chaleurs_responsable_profile_id || null;
 
-            // Send FCM push — au propriétaire, et à l'employé assigné si la
-            // tâche a été déléguée.
-            digest.add(animal.uid_eleveur, title, body,
-                {type: "chaleur", animalId: String(animal.id)},
-                {profileId: profileIdByAnimal[animal.id] || null});
-            if (assigneA) {
-                digest.add(assigneA, title, body,
-                    {type: "chaleur", animalId: String(animal.id)},
-                    {profileId: assigneProfileId});
-            }
-
-            // Insert in-app notification into Supabase — idem, propriétaire + employé assigné.
-            try {
-                await supabaseInsert("notifications", [{
-                    uid: animal.uid_eleveur,
-                    type: "chaleur",
-                    title,
-                    body,
-                    data: {animalId: String(animal.id)},
-                    read: false,
-                    ...(profileIdByAnimal[animal.id] ? {profile_id: profileIdByAnimal[animal.id]} : {}),
-                }]);
-                inApp++;
-            } catch (e) {
-                console.error(`notifications insert error for animal ${animal.id}:`, e.message);
-            }
-            if (assigneA) {
-                try {
-                    await supabaseInsert("notifications", [{
-                        uid: assigneA,
-                        type: "chaleur",
-                        title,
-                        body,
-                        data: {animalId: String(animal.id)},
-                        read: false,
-                        ...(assigneProfileId ? {profile_id: assigneProfileId} : {}),
-                    }]);
-                } catch (e) {
-                    console.error(`notifications insert error (assignee) for animal ${animal.id}:`, e.message);
-                }
-            }
-
-            // Employés abonnés à la catégorie « Chaleurs » (permission
-            // notif_chaleurs) : reçoivent les rappels de TOUTES les femelles,
-            // sans attribution animal par animal.
+            // Regroupement : UNE notification par destinataire et par run
+            // (« Chaleurs : Aiko (aujourd'hui) · Vaïna (3 j de retard) »), au
+            // tap la liste s'ouvre et on choisit la chienne. Propriétaire,
+            // employé à qui le suivi est confié, employés abonnés « Chaleurs ».
+            const court = diff < 0 ? `${-diff} j de retard` : diff === 0 ? "aujourd'hui" :
+                diff === 1 ? "demain" : `dans ${diff} j`;
+            const item = {animalId: String(animal.id), nom, detail: court, title, body};
+            ajouterRappel(animal.uid_eleveur, profileIdByAnimal[animal.id] || null, item);
+            if (assigneA) ajouterRappel(assigneA, assigneProfileId, item);
             const abonnes = await employesAbonnes({
                 eleveurUid: animal.uid_eleveur,
                 eleveurProfileId: profileIdByAnimal[animal.id] || null,
                 permission: "notif_chaleurs", cache: empCache,
             });
-            await notifyEmployes(abonnes, {
-                type: "chaleur", title, body,
-                pushData: {animalId: String(animal.id)},
-                notifData: {animalId: String(animal.id)},
-                exclude: assigneA ? [assigneA] : [],
-                digest,
-            });
+            for (const e of abonnes) {
+                if (e.uid !== assigneA) ajouterRappel(e.uid, e.profileId, item);
+            }
 
             // Tâche agenda à 8h quand chaleurs aujourd'hui ou en retard
             if (diff <= 0) {
                 try {
+                    // Tâche « chaleurs » encore à faire pour cette femelle : on la
+                    // remet au jour (une seule tâche), jamais une de plus chaque jour.
+                    const ouvertes = await supabaseSelect("taches_elevage",
+                        `animal_id=eq.${animal.id}&statut=eq.a_faire&titre=ilike.*Chaleurs*&order=date.desc`);
+                    if (ouvertes.length) {
+                        await supabaseRequest("PATCH", `taches_elevage?id=eq.${ouvertes[0].id}`,
+                            {date: todayStr, titre: title, notes: body});
+                        for (const o of ouvertes.slice(1)) {
+                            await supabaseRequest("DELETE", `taches_elevage?id=eq.${o.id}`);
+                        }
+                        throw new Error("__deja__");
+                    }
                     await supabaseInsert("taches_elevage", [{
                         uid_eleveur: animal.uid_eleveur,
                         titre: title,
@@ -381,7 +360,9 @@ exports.sendChaleursNotifications = functions
                         } : {}),
                     }]);
                 } catch (e) {
-                    console.error(`taches_elevage insert error for animal ${animal.id}:`, e.message);
+                    if (e.message !== "__deja__") {
+                        console.error(`taches_elevage insert error for animal ${animal.id}:`, e.message);
+                    }
                 }
             }
 
@@ -393,7 +374,34 @@ exports.sendChaleursNotifications = functions
             }
         }
 
-        sent = await digest.flush();
+        for (const r of rappels.values()) {
+            const seul = r.items.length === 1 ? r.items[0] : null;
+            const title = seul ? seul.title :
+                `Chaleurs : ${r.items.length} femelles`;
+            let body = seul ? seul.body : r.items.map((i) => `${i.nom} (${i.detail})`).join(" · ");
+            if (body.length > 220) body = `${body.slice(0, 219)}…`;
+            const type = seul ? "chaleur" : "chaleurs_groupe";
+            const data = seul ? {animalId: seul.animalId} :
+                {sections: [{items: r.items.map((i) => ({animalId: i.animalId, nom: i.nom, detail: i.detail}))}]};
+            try {
+                // Rappel groupé de la veille non lu : remplacé, jamais empilé.
+                let del = `notifications?uid=eq.${encodeURIComponent(r.uid)}&type=eq.chaleurs_groupe&read=eq.false`;
+                del += r.profileId ? `&profile_id=eq.${encodeURIComponent(r.profileId)}` : "&profile_id=is.null";
+                await supabaseRequest("DELETE", del);
+                await supabaseInsert("notifications", [{
+                    uid: r.uid, type, title, body, data, read: false,
+                    ...(r.profileId ? {profile_id: r.profileId} : {}),
+                }]);
+                inApp++;
+            } catch (e) {
+                console.error(`notifications insert error ${r.uid}:`, e.message);
+            }
+            const ok = await sendPush(r.uid, title, body,
+                seul ? {type: "chaleur", animalId: seul.animalId} : {type: "chaleurs_groupe"},
+                {profileId: r.profileId,
+                    tag: seul ? undefined : `chaleurs_groupe_${r.profileId || r.uid}`.slice(0, 60)});
+            if (ok) sent++;
+        }
         console.log(`sendChaleursNotifications: ${sent} push FCM + ${inApp} notifs in-app.`);
         return null;
     });
