@@ -15,7 +15,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFi
 import 'package:PetsMatch/widgets/rdv/motif_annulation.dart';
 import 'package:PetsMatch/widgets/rattachement_picker.dart';
 import 'package:PetsMatch/widgets/agenda/rdv_veto_sheets.dart';
-import 'package:PetsMatch/utils/rdv_veto.dart' show animauxPresentsElevage;
+import 'package:PetsMatch/utils/rdv_veto.dart' show animauxPresentsElevage, animauxPourAgenda;
 import 'package:PetsMatch/utils/cloisonnement_profils.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 
@@ -1351,7 +1351,7 @@ class _AgendaPageState extends State<AgendaPage> {
               ),
               const SizedBox(width: 6),
             ],
-            if (User_Info.activeType == 'eleveur') _boutonRdvVeto(day ?? _selectedDay ?? DateTime.now()),
+            if (User_Info.activeType == 'eleveur' || User_Info.activeType == 'association') _boutonRdvVeto(day ?? _selectedDay ?? DateTime.now()),
             GestureDetector(
               onTap: () => _showAddTacheSheet(day ?? _selectedDay ?? DateTime.now()),
               child: Container(
@@ -1583,7 +1583,8 @@ class _AgendaPageState extends State<AgendaPage> {
             final ownerUid = await _effectiveUid();
             if (!mounted) return;
             final ok = await showNouveauRdvVeto(context, uid: ownerUid,
-                profileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null, jour: day);
+                profileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null, jour: day,
+                profilSource: User_Info.activeType == 'association' ? 'association' : 'eleveur');
             if (ok && mounted) _loadTasks();
           },
           child: Container(
@@ -1596,7 +1597,7 @@ class _AgendaPageState extends State<AgendaPage> {
             child: const Row(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.add, size: 12, color: _kTeal),
               SizedBox(width: 3),
-              Text('RDV véto', style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: _kTeal)),
+              Text('RDV véto / ostéo', style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: _kTeal)),
             ]),
           ),
         ),
@@ -1686,6 +1687,7 @@ class _AgendaPageState extends State<AgendaPage> {
       builder: (_) => _AddEventSheet(
         initialDate: initialDate ?? _selectedDay ?? DateTime.now(),
         uid: _uid,
+        source: _taskProfilSource,
         onSaved: _load,
       ),
     );
@@ -2027,7 +2029,7 @@ class _AgendaPageState extends State<AgendaPage> {
               const Text('Tâches du jour',
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: _kTeal)),
               const Spacer(),
-              if (User_Info.activeType == 'eleveur') _boutonRdvVeto(day),
+              if (User_Info.activeType == 'eleveur' || User_Info.activeType == 'association') _boutonRdvVeto(day),
               GestureDetector(
                 onTap: () => _showAddTacheSheet(day),
                 child: Container(
@@ -3300,7 +3302,9 @@ class _AddEventSheet extends StatefulWidget {
   final DateTime initialDate;
   final String uid;
   final VoidCallback onSaved;
-  const _AddEventSheet({required this.initialDate, required this.uid, required this.onSaved});
+  /// Profil actif (eleveur, association, pension, particulier, métier pro).
+  final String source;
+  const _AddEventSheet({required this.initialDate, required this.uid, required this.onSaved, this.source = 'eleveur'});
   @override
   State<_AddEventSheet> createState() => _AddEventSheetState();
 }
@@ -3312,6 +3316,19 @@ class _AddEventSheetState extends State<_AddEventSheet> {
   late String _type;
   late DateTime _dateDebut;
   bool _saving = false;
+  /// Animaux concernés (présents seulement), recherche par nom.
+  List<Map<String, dynamic>>? _animaux;
+  List<String> _choisis = [];
+
+  Future<void> _choisirAnimaux() async {
+    final res = await showRattachementSheet(context,
+        titre: 'Animaux concernés', recherche: 'Rechercher par nom…',
+        items: [for (final a in _animaux ?? const <Map<String, dynamic>>[])
+          ItemRattachement(a['id'].toString(), (a['nom'] ?? '').toString(),
+              (a['espece'] ?? '').toString().isEmpty ? 'Autre' : a['espece'].toString())],
+        initial: _choisis);
+    if (res != null && mounted) setState(() => _choisis = res);
+  }
 
   @override
   void initState() {
@@ -3323,6 +3340,8 @@ class _AddEventSheetState extends State<_AddEventSheet> {
         : d;
     final types = _typesForProfile();
     _type = types.contains('autre') ? 'autre' : types.last;
+    final pid = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+    animauxPourAgenda(widget.source, pid, widget.uid).then((l) { if (mounted) setState(() => _animaux = l); });
   }
 
   @override
@@ -3350,9 +3369,16 @@ class _AddEventSheetState extends State<_AddEventSheet> {
     if (_titreCtrl.text.trim().isEmpty) return;
     setState(() => _saving = true);
     try {
+      // Animaux : nommés dans le titre (visibles partout), animal_id = le premier,
+      // animaux_ids = la liste (migration_agenda_events_animaux).
+      final noms = [for (final a in _animaux ?? const <Map<String, dynamic>>[]) if (_choisis.contains(a['id'].toString())) (a['nom'] ?? '').toString()];
+      final t = _titreCtrl.text.trim();
+      final titre = noms.isNotEmpty && !noms.every(t.contains) ? '$t — ${noms.join(', ')}' : t;
       await _supa.from('agenda_events').insert({
+        if (_choisis.isNotEmpty) 'animal_id': _choisis.first,
+        if (_choisis.length > 1) 'animaux_ids': _choisis,
         'uid':            widget.uid,
-        'titre':          _titreCtrl.text.trim(),
+        'titre':          titre,
         'type':           _type,
         'date_debut':     _dateDebut.toUtc().toIso8601String(),
         'notes':          _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
@@ -3396,6 +3422,17 @@ class _AddEventSheetState extends State<_AddEventSheet> {
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           ),
         ),
+        const SizedBox(height: 12),
+        if ((_animaux ?? const []).isNotEmpty) ...[
+          OutlinedButton.icon(
+            onPressed: _choisirAnimaux,
+            icon: const Icon(Icons.pets_outlined, size: 18),
+            label: Text(_choisis.isEmpty ? 'Animaux concernés (facultatif)'
+                : '${_choisis.length} animal${_choisis.length > 1 ? 'aux' : ''} : ${[for (final a in _animaux!) if (_choisis.contains(a['id'].toString())) a['nom']].join(', ')}',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            style: OutlinedButton.styleFrom(foregroundColor: _kTeal, side: const BorderSide(color: _kTeal), alignment: Alignment.centerLeft),
+          ),
+        ],
         const SizedBox(height: 12),
 
         // Type chips

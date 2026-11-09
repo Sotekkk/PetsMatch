@@ -1653,10 +1653,10 @@ export default function AgendaElevagePage() {
                 ☑ Sélectionner
               </button>
             ))}
-            {profilSource === 'eleveur' && (
+            {(profilSource === 'eleveur' || profilSource === 'association') && (
               <button onClick={() => setShowRdvVeto(true)}
                 className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg px-3 py-1.5 mr-2">
-                <span className="text-base leading-none">+</span> RDV vétérinaire
+                <span className="text-base leading-none">+</span> RDV véto / ostéo
               </button>
             )}
             <button onClick={() => setShowAddTache(true)}
@@ -1740,10 +1740,10 @@ export default function AgendaElevagePage() {
 
           {/* Bouton ajout tâche pour le jour sélectionné */}
           <div className="flex justify-end mb-3">
-            {profilSource === 'eleveur' && (
+            {(profilSource === 'eleveur' || profilSource === 'association') && (
               <button onClick={() => setShowRdvVeto(true)}
                 className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg px-3 py-1.5 mr-2">
-                <span className="text-base leading-none">+</span> RDV vétérinaire
+                <span className="text-base leading-none">+</span> RDV véto / ostéo
               </button>
             )}
             <button onClick={() => setShowAddTache(true)}
@@ -1816,10 +1816,10 @@ export default function AgendaElevagePage() {
 
           {/* Bouton ajout tâche pour le jour sélectionné */}
           <div className="flex justify-end mb-3">
-            {profilSource === 'eleveur' && (
+            {(profilSource === 'eleveur' || profilSource === 'association') && (
               <button onClick={() => setShowRdvVeto(true)}
                 className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg px-3 py-1.5 mr-2">
-                <span className="text-base leading-none">+</span> RDV vétérinaire
+                <span className="text-base leading-none">+</span> RDV véto / ostéo
               </button>
             )}
             <button onClick={() => setShowAddTache(true)}
@@ -1875,6 +1875,7 @@ export default function AgendaElevagePage() {
           myUid={user.uid}
           profileId={activeProfileId}
           jour={selectedDate}
+          profilSource={profilSource === 'association' ? 'association' : 'eleveur'}
           onClose={() => setShowRdvVeto(false)}
           onSaved={() => { setShowRdvVeto(false); load(); loadMonth(); }}
         />

@@ -4,7 +4,7 @@
 // (date réelle, animaux réellement vus). Miroir appli : widgets/agenda/rdv_veto_sheets.dart.
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { animauxPresentsElevage, aujourdhuiLocal, creerRdvVeto, porteesElevage, validerRdvVeto, type AnimalElevage, type TacheRdvVeto } from '@/lib/rdv-veto';
+import { animauxPresentsElevage, aujourdhuiLocal, creerRdvVeto, porteesElevage, validerRdvVeto, type AnimalElevage, type PraticienRdv, type TacheRdvVeto } from '@/lib/rdv-veto';
 
 const TEAL = '#0C5C6C';
 const champ = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]';
@@ -25,14 +25,15 @@ function Cadre({ titre, onClose, children }: { titre: string; onClose: () => voi
   );
 }
 
-export function NouveauRdvVetoModal({ uid, myUid, profileId, jour, onClose, onSaved }: {
-  uid: string; myUid: string; profileId: string | null;
+export function NouveauRdvVetoModal({ uid, myUid, profileId, jour, profilSource = 'eleveur', onClose, onSaved }: {
+  uid: string; myUid: string; profileId: string | null; profilSource?: 'eleveur' | 'association';
   /** Jour affiché dans l'agenda (repris s'il est à venir). */
   jour?: string; onClose: () => void; onSaved: () => void;
 }) {
   const [date, setDate] = useState(jour && jour > aujourdhuiLocal() ? jour : '');
   const [heure, setHeure] = useState('');
   const [cabinet, setCabinet] = useState('');
+  const [praticien, setPraticien] = useState<PraticienRdv>('veterinaire');
   const [motif, setMotif] = useState('');
   const [notes, setNotes] = useState('');
   const [recherche, setRecherche] = useState('');
@@ -46,16 +47,27 @@ export function NouveauRdvVetoModal({ uid, myUid, profileId, jour, onClose, onSa
 
   async function enregistrer() {
     setEnCours(true); setErreur('');
-    const e = await creerRdvVeto({ uid, myUid, profileId, date, heure, cabinet, motif, notes, animaux: (animaux ?? []).filter(a => ids.has(a.id)) });
+    const e = await creerRdvVeto({ uid, myUid, profileId, date, heure, cabinet, motif, notes, praticien, profilSource, animaux: (animaux ?? []).filter(a => ids.has(a.id)) });
     setEnCours(false);
     if (e) setErreur(e); else onSaved();
   }
 
   return (
-    <Cadre titre="RDV vétérinaire à venir" onClose={onClose}>
+    <Cadre titre={praticien === 'osteopathe' ? 'RDV ostéopathe à venir' : 'RDV vétérinaire à venir'} onClose={onClose}>
       <div className="space-y-3">
         <div>
-          <label htmlFor="rv-cabinet" className={etiquette}>Cabinet vétérinaire *</label>
+          <p className={etiquette}>Praticien</p>
+          <div className="flex gap-2">
+            {([['veterinaire', 'Vétérinaire'], ['osteopathe', 'Ostéopathe']] as [PraticienRdv, string][]).map(([v, l]) => (
+              <button key={v} type="button" onClick={() => setPraticien(v)}
+                className={`px-3 py-1.5 rounded-full text-sm font-semibold border ${praticien === v ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label htmlFor="rv-cabinet" className={etiquette}>{praticien === 'osteopathe' ? 'Ostéopathe / cabinet *' : 'Cabinet vétérinaire *'}</label>
           <input id="rv-cabinet" value={cabinet} onChange={e => setCabinet(e.target.value)} placeholder="Nom du cabinet" className={champ} />
         </div>
         <div className="grid grid-cols-2 gap-3">

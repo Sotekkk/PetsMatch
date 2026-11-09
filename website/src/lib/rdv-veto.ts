@@ -5,7 +5,10 @@
 import { supabase } from '@/lib/supabase';
 import { estHorsPriseEnCharge, libellePortee, petitDePortee } from '@/lib/protocoles';
 
-export const titreRdvVeto = (cabinet: string) => `RDV vétérinaire — ${cabinet.trim()}`;
+/** Praticien du RDV : vétérinaire, ou ostéopathe (acte de soin, au registre sanitaire comme une visite). */
+export type PraticienRdv = 'veterinaire' | 'osteopathe';
+export const titreRdvVeto = (cabinet: string, praticien: PraticienRdv = 'veterinaire') =>
+  `RDV ${praticien === 'osteopathe' ? 'ostéopathe' : 'vétérinaire'} — ${cabinet.trim()}`;
 
 export interface AnimalElevage { id: string; nom: string; espece?: string | null; portee_id?: string | null; nom_mere?: string | null; date_naissance?: string | null }
 export interface PorteeElevage { id: string; label: string; ids: string[] }
@@ -37,6 +40,42 @@ export async function animauxPresentsElevage(profileId: string | null | undefine
     .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
 }
 
+/**
+ * Animaux qu'on peut associer à un événement d'agenda, selon le profil actif :
+ * élevage / association → présents de ce profil ; pension → pensionnaires
+ * présents ; particulier → ses animaux ; autre pro → animaux de ses clients.
+ * Miroir appli : animauxPourAgenda (utils/rdv_veto.dart).
+ */
+export async function animauxPourAgenda(source: string, profileId: string | null | undefined, uid: string): Promise<AnimalElevage[]> {
+  if (source === 'eleveur' || source === 'association') return animauxPresentsElevage(profileId);
+  if (source === 'pension') {
+    let q = supabase.from('pension_entrees').select('animal_id, animal_nom, espece').eq('statut', 'en_pension').not('animal_id', 'is', null);
+    q = profileId ? q.eq('pro_profile_id', profileId) : q.eq('pro_uid', uid);
+    const { data } = await q;
+    const vus = new Map<string, AnimalElevage>();
+    for (const e of (data ?? []) as { animal_id: string; animal_nom: string | null; espece: string | null }[]) {
+      vus.set(String(e.animal_id), { id: String(e.animal_id), nom: e.animal_nom || 'Pensionnaire', espece: e.espece });
+    }
+    return [...vus.values()].sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+  }
+  if (!profileId) return [];
+  if (source === 'particulier') {
+    const { data: props } = await supabase.from('animaux_proprietes').select('animal_id')
+      .eq('profile_id_proprio', profileId).eq('statut', 'actif').is('date_fin', null);
+    const ids = [...new Set((props ?? []).map(p => String(p.animal_id)))];
+    if (!ids.length) return [];
+    const { data } = await supabase.from('animaux').select('id, nom, espece, statut').in('id', ids);
+    return ((data ?? []) as (AnimalElevage & { statut?: string | null })[]).filter(a => !estHorsPriseEnCharge(a))
+      .map(a => ({ ...a, id: String(a.id), nom: a.nom ?? 'Animal' })).sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+  }
+  const { data } = await supabase.rpc('pm_mes_clients', { p_profile: profileId });
+  const vus = new Map<string, AnimalElevage>();
+  for (const c of (data ?? []) as { animal_id: string | null; animal_nom: string | null; espece: string | null }[]) {
+    if (c.animal_id && !vus.has(c.animal_id)) vus.set(c.animal_id, { id: c.animal_id, nom: c.animal_nom || 'Animal', espece: c.espece });
+  }
+  return [...vus.values()].sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+}
+
 /** Portées parmi ces animaux : seulement leurs petits présents ET encore
  *  jeunes (chiot < 13 sem., chaton < 15…) ; « Portée de X — mars 2026 ». */
 export function porteesElevage(animaux: AnimalElevage[]): PorteeElevage[] {
@@ -57,6 +96,7 @@ export interface NouveauRdvVeto {
   uid: string; myUid?: string | null; profileId?: string | null;
   animaux: { id: string; nom?: string | null }[];
   date: string; heure: string; cabinet: string; motif?: string; notes?: string;
+  praticien?: PraticienRdv; profilSource?: 'eleveur' | 'association';
 }
 
 /** Message d'erreur, ou null si tout est prêt. */
@@ -74,15 +114,18 @@ export async function creerRdvVeto(r: NouveauRdvVeto): Promise<string | null> {
   const employe = !!r.myUid && r.myUid !== r.uid;
   const { error } = await supabase.from('taches_elevage').insert({
     uid_eleveur: r.uid,
-    titre: titreRdvVeto(r.cabinet),
-    date: r.date, heure: r.heure, statut: 'a_faire', profil_source: 'eleveur',
+    titre: titreRdvVeto(r.cabinet, r.praticien),
+    date: r.date, heure: r.heure, statut: 'a_faire', profil_source: r.profilSource ?? 'eleveur',
     notes: r.notes?.trim() || null,
     ...(r.profileId ? { profile_id: r.profileId, eleveur_profile_id: r.profileId } : {}),
     animaux_ids: r.animaux.map(a => a.id),
     animal_id: r.animaux.length === 1 ? r.animaux[0].id : null,
     animal_nom: r.animaux.map(a => a.nom ?? '').filter(Boolean).join(', ') || null,
     rdv_veto_cabinet: r.cabinet.trim(),
-    rdv_veto_motif: r.motif?.trim() || null,
+    // Ostéopathe : « Ostéopathie — motif » au carnet et au registre sanitaire.
+    rdv_veto_motif: r.praticien === 'osteopathe'
+      ? ['Ostéopathie', r.motif?.trim()].filter(Boolean).join(' — ')
+      : r.motif?.trim() || null,
     // Employé : la tâche lui est attribuée, il peut la voir et la valider.
     ...(employe ? { assigne_a: r.myUid, assignes_a: [r.myUid] } : {}),
   });

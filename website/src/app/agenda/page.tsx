@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState, useProfileSource } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
+import { animauxPourAgenda, type AnimalElevage } from '@/lib/rdv-veto';
 import { animauxPresents } from '@/lib/protocoles';
 import { typeFromMotif } from '@/lib/agenda-type';
 import { sansAutresProfils } from '@/lib/cloisonnement-profils';
@@ -1112,7 +1113,7 @@ export default function AgendaPage() {
           membres={userData.profileType === 'particulier' ? coMembres : []} onClose={() => setShowAddTache(false)} onSaved={() => { setShowAddTache(false); load(); }} onEmployeCreated={() => {}} />
       )}
       {showAdd && uid && (
-        <AddModal uid={uid} profileId={activeProfileId} types={typesForProfile(userData, userData?.isAssociation ?? false)} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
+        <AddModal uid={uid} profileId={activeProfileId} source={taskProfilSource} types={typesForProfile(userData, userData?.isAssociation ?? false)} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
       )}
 
       {modalAnnuler && (
@@ -2223,8 +2224,15 @@ function WeekView({ date, eventsForDate, onNavigate, onSelectDay, onNavigateToAn
 
 // ── AddModal ──────────────────────────────────────────────────────────────────
 
-function AddModal({ uid, profileId, types, onClose, onSaved }: { uid: string; profileId: string; types: string[]; onClose: () => void; onSaved: () => void }) {
+function AddModal({ uid, profileId, source, types, onClose, onSaved }: { uid: string; profileId: string; source: string; types: string[]; onClose: () => void; onSaved: () => void }) {
   const [titre, setTitre]   = useState('');
+  // Animaux concernés (présents seulement), recherche par nom.
+  const [animaux, setAnimaux] = useState<AnimalElevage[] | null>(null);
+  const [choisis, setChoisis] = useState<string[]>([]);
+  const [recherche, setRecherche] = useState('');
+  useEffect(() => { animauxPourAgenda(source, profileId, uid).then(setAnimaux).catch(() => setAnimaux([])); }, [source, profileId, uid]);
+  const visibles = (animaux ?? []).filter(a => a.nom.toLowerCase().includes(recherche.trim().toLowerCase()));
+  const nomsChoisis = (animaux ?? []).filter(a => choisis.includes(a.id)).map(a => a.nom);
   const [type, setType]     = useState('autre');
   const [date, setDate]     = useState(() => new Date().toISOString().slice(0, 16));
   const [notes, setNotes]   = useState('');
@@ -2233,13 +2241,19 @@ function AddModal({ uid, profileId, types, onClose, onSaved }: { uid: string; pr
   async function save() {
     if (!titre.trim()) return;
     setSaving(true);
+    // Animaux : nommés dans le titre (visibles partout), animal_id = le premier,
+    // animaux_ids = la liste (migration_agenda_events_animaux).
+    const t = titre.trim();
+    const titreFinal = nomsChoisis.length && !nomsChoisis.every(n => t.includes(n)) ? `${t} — ${nomsChoisis.join(', ')}` : t;
     await supabase.from('agenda_events').insert({
       uid,
-      titre: titre.trim(),
+      titre: titreFinal,
       type,
       date_debut: new Date(date).toISOString(),
       notes: notes.trim() || null,
       pro_profile_id: profileId || null,
+      ...(choisis.length ? { animal_id: choisis[0] } : {}),
+      ...(choisis.length > 1 ? { animaux_ids: choisis } : {}),
     });
     setSaving(false);
     onSaved();
@@ -2276,6 +2290,25 @@ function AddModal({ uid, profileId, types, onClose, onSaved }: { uid: string; pr
           className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-100 text-sm outline-none focus:border-[#0C5C6C]"
           style={{ fontFamily: 'Galey, sans-serif' }}
         />
+        {animaux && animaux.length > 0 && (
+          <div>
+            <p className="text-xs font-bold text-[#0C5C6C] mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+              Animaux concernés (facultatif){choisis.length ? ` — ${choisis.length} choisi${choisis.length > 1 ? 's' : ''}` : ''}
+            </p>
+            <input value={recherche} onChange={e => setRecherche(e.target.value)} placeholder="Rechercher par nom…"
+              className="w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-100 text-sm outline-none focus:border-[#0C5C6C] mb-1.5" />
+            <div className="max-h-40 overflow-y-auto border border-gray-100 rounded-xl divide-y divide-gray-50">
+              {visibles.length === 0 ? <p className="text-xs text-gray-400 p-3">Aucun animal</p> : visibles.map(a => (
+                <label key={a.id} className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50">
+                  <input type="checkbox" checked={choisis.includes(a.id)}
+                    onChange={e => setChoisis(c => e.target.checked ? [...c, a.id] : c.filter(x => x !== a.id))} />
+                  <span className="flex-1">{a.nom}</span>
+                  {a.espece && <span className="text-xs text-gray-400">{a.espece}</span>}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
         <textarea
           value={notes} onChange={e => setNotes(e.target.value)}
           placeholder="Notes (optionnel)"

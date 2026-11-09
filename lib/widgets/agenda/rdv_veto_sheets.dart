@@ -57,11 +57,12 @@ class ChoixDateHeureRdv extends StatelessWidget {
 }
 
 /// Renvoie true si le RDV a été ajouté à l'agenda.
-Future<bool> showNouveauRdvVeto(BuildContext context, {required String uid, required String? profileId, DateTime? jour}) async {
+Future<bool> showNouveauRdvVeto(BuildContext context, {required String uid, required String? profileId, DateTime? jour,
+    String profilSource = 'eleveur'}) async {
   final r = await showModalBottomSheet<bool>(
     context: context, isScrollControlled: true, useSafeArea: true, backgroundColor: Colors.white,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-    builder: (_) => _NouveauRdvVeto(uid: uid, profileId: profileId, jour: jour),
+    builder: (_) => _NouveauRdvVeto(uid: uid, profileId: profileId, jour: jour, profilSource: profilSource),
   );
   return r ?? false;
 }
@@ -70,7 +71,8 @@ class _NouveauRdvVeto extends StatefulWidget {
   final String uid;
   final String? profileId;
   final DateTime? jour;
-  const _NouveauRdvVeto({required this.uid, required this.profileId, this.jour});
+  final String profilSource;
+  const _NouveauRdvVeto({required this.uid, required this.profileId, this.jour, this.profilSource = 'eleveur'});
   @override
   State<_NouveauRdvVeto> createState() => _NouveauRdvVetoState();
 }
@@ -83,6 +85,8 @@ class _NouveauRdvVetoState extends State<_NouveauRdvVeto> {
   List<String> _ids = [];
   String? _erreur;
   bool _enCours = false;
+  /// 'veterinaire' | 'osteopathe'
+  String _praticien = 'veterinaire';
 
   @override
   void initState() {
@@ -133,6 +137,7 @@ class _NouveauRdvVetoState extends State<_NouveauRdvVeto> {
     final d = _date, h = _heure;
     final e = await creerRdvVeto(
       uid: widget.uid, profileId: widget.profileId, cabinet: _cabinet.text, motif: _motif.text, notes: _notes.text,
+      praticien: _praticien, profilSource: widget.profilSource,
       dateHeure: d == null || h == null ? null : DateTime(d.year, d.month, d.day, h.hour, h.minute),
       animaux: [for (final a in _dispo ?? const <Map<String, dynamic>>[]) if (_ids.contains(a['id'].toString())) a],
     );
@@ -145,9 +150,19 @@ class _NouveauRdvVetoState extends State<_NouveauRdvVeto> {
   Widget build(BuildContext context) => Padding(
         padding: EdgeInsets.fromLTRB(20, 18, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
         child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('RDV vétérinaire à venir', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
-          const SizedBox(height: 14),
-          const Text('Cabinet vétérinaire *', style: _label),
+          Text(_praticien == 'osteopathe' ? 'RDV ostéopathe à venir' : 'RDV vétérinaire à venir',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+          const SizedBox(height: 10),
+          Wrap(spacing: 8, children: [
+            for (final (v, l) in const [('veterinaire', 'Vétérinaire'), ('osteopathe', 'Ostéopathe')])
+              ChoiceChip(
+                label: Text(l, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: _praticien == v ? Colors.white : _teal)),
+                selected: _praticien == v, selectedColor: _teal, showCheckmark: false,
+                onSelected: (_) => setState(() => _praticien = v),
+              ),
+          ]),
+          const SizedBox(height: 12),
+          Text(_praticien == 'osteopathe' ? 'Ostéopathe / cabinet *' : 'Cabinet vétérinaire *', style: _label),
           const SizedBox(height: 6),
           TextField(controller: _cabinet, style: _style, textCapitalization: TextCapitalization.words, decoration: _deco('Nom du cabinet')),
           const SizedBox(height: 12),
