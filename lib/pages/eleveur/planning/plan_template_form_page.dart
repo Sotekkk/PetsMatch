@@ -105,6 +105,34 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
 
   bool get _sejour => _refEvent == 'sejour';
 
+  /// Employés à qui attribuer une étape (tâches quotidiennes de l'équipe).
+  List<(String, String?, String)> _employes = [];
+  Future<void> _chargerEmployes() async {
+    final uid = widget.employerUid ?? FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || _isGarde) return;
+    try {
+      final supa = Supabase.instance.client;
+      final pid = widget.employerProfileId ?? User_Info.activeProfileId;
+      var q = supa.from('employes').select('uid_employe, employe_profile_id, prenom, nom')
+          .eq('uid_eleveur', uid).eq('actif', true).not('uid_employe', 'is', null);
+      if (pid.isNotEmpty) q = q.or('eleveur_profile_id.eq.$pid,eleveur_profile_id.is.null');
+      final rows = await q;
+      final pids = [for (final r in rows) if (r['employe_profile_id'] != null) r['employe_profile_id'].toString()];
+      final profs = pids.isEmpty ? const [] : await supa.from('user_profiles').select('id, firstname, lastname, nom').inFilter('id', pids);
+      final parId = {for (final p in profs) p['id'].toString(): p};
+      final out = <(String, String?, String)>[];
+      for (final r in rows) {
+        final p = parId[r['employe_profile_id']?.toString()];
+        String n(Object? a, Object? b) => '${a ?? ''} ${b ?? ''}'.trim();
+        final nom = n(r['prenom'], r['nom']).isNotEmpty ? n(r['prenom'], r['nom'])
+            : p != null && n(p['firstname'], p['lastname']).isNotEmpty ? n(p['firstname'], p['lastname'])
+            : (p?['nom']?.toString() ?? 'Employé');
+        out.add((r['uid_employe'].toString(), r['employe_profile_id']?.toString(), nom));
+      }
+      if (mounted) setState(() => _employes = out);
+    } catch (_) {}
+  }
+
   Future<void> _chargerLogements() async {
     final uid = widget.employerUid ?? FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -293,7 +321,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     }
     if (_etapes.isEmpty) _etapes.add(_EtapeCtrl());
     // Lieux enregistrés (logements, enclos…) : à cocher dans un protocole de locaux.
-    if (!_isGarde) _chargerLogements();
+    if (!_isGarde) { _chargerLogements(); _chargerEmployes(); }
   }
 
   Future<void> _loadDefaultAnimaux(List<String> ids) async {
@@ -561,6 +589,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
             for (var i = 0; i < _etapes.length; i++)
               _EtapeCard(
                 profilSource: _profilSource,
+                employes: _employes,
                 key: ObjectKey(_etapes[i]),
                 index: i,
                 total: _etapes.length,
@@ -623,6 +652,8 @@ class _EtapeCard extends StatefulWidget {
   final bool usesAge;
   /// Profil du protocole (garde : actions de visite à domicile proposées).
   final String profilSource;
+  /// Employés à qui attribuer l'étape : (uid, profil, nom).
+  final List<(String, String?, String)> employes;
   final VoidCallback onChanged;
   final ValueChanged<int> onMove;
   final VoidCallback onDuplicate;
@@ -630,7 +661,7 @@ class _EtapeCard extends StatefulWidget {
 
   const _EtapeCard({
     super.key, required this.index, required this.total, required this.ctrl, required this.refEvent,
-    required this.usesAge, this.profilSource = '', required this.onChanged, required this.onMove, required this.onDuplicate, this.onRemove,
+    required this.usesAge, this.profilSource = '', this.employes = const [], required this.onChanged, required this.onMove, required this.onDuplicate, this.onRemove,
   });
 
   @override
@@ -827,6 +858,43 @@ class _EtapeCardState extends State<_EtapeCard> {
             ]),
             ],
             const SizedBox(height: 10),
+            // Heure précise et employé attribué (tâches quotidiennes de l'équipe).
+            Row(children: [
+              Expanded(child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () async {
+                  final p = (c.heure ?? '').split(':');
+                  final t = await showTimePicker(context: context,
+                      initialTime: TimeOfDay(hour: int.tryParse(p.first) ?? 10, minute: p.length > 1 ? int.tryParse(p[1]) ?? 0 : 0));
+                  if (t != null) maj(() => c.heure = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}');
+                },
+                child: InputDecorator(
+                  decoration: _dec('Heure précise').copyWith(
+                    suffixIcon: (c.heure ?? '').isEmpty ? null
+                        : IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () => maj(() => c.heure = null)),
+                  ),
+                  child: Text((c.heure ?? '').isEmpty ? 'Facultatif' : c.heure!,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: (c.heure ?? '').isEmpty ? Colors.grey.shade500 : null)),
+                ),
+              )),
+              if (widget.employes.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Expanded(child: DropdownButtonFormField<String>(
+                  initialValue: widget.employes.any((x) => x.$1 == c.assigneUid) ? c.assigneUid : '',
+                  isExpanded: true, decoration: _dec('Attribuée à'),
+                  items: [
+                    DropdownMenuItem(value: '', child: Text('Personne en particulier', style: _ts, overflow: TextOverflow.ellipsis)),
+                    for (final (u, _, nom) in widget.employes) DropdownMenuItem(value: u, child: Text(nom, style: _ts, overflow: TextOverflow.ellipsis)),
+                  ],
+                  onChanged: (v) => maj(() {
+                    final e = widget.employes.where((x) => x.$1 == v).firstOrNull;
+                    c.assigneUid = e?.$1;
+                    c.assigneProfileId = e?.$2;
+                  }),
+                )),
+              ],
+            ]),
+            const SizedBox(height: 10),
             if (_details || sanitaire) ...[
               Row(children: [
                 Expanded(child: TextFormField(controller: c.produitCtrl, style: _ts, onChanged: (_) => widget.onChanged(),
@@ -865,6 +933,12 @@ class _EtapeCtrl {
   String? existingId;
   /// Pension, protocole de séjour : chaque_jour | arrivee | depart.
   String  sejourMoment   = 'chaque_jour';
+  /// Heure précise 'HH:MM' et employé attribué (migration_protocoles_heure_assigne).
+  String? heure;
+  String? assigneUid;
+  String? assigneProfileId;
+  /// Réglages déjà enregistrés : renvoyés pour pouvoir les effacer.
+  bool avaitReglages = false;
 
   /// Action saisie librement (ou suggestion) — enregistrée dans type_acte
   final TextEditingController actionCtrl;
@@ -896,6 +970,10 @@ class _EtapeCtrl {
         trancheHoraire    = d['tranche_horaire'] as String?,
         existingId        = d['id'] as String?,
         sejourMoment      = (d['sejour_moment'] as String?) ?? 'chaque_jour',
+        heure             = d['heure'] as String?,
+        assigneUid        = d['assigne_uid'] as String?,
+        assigneProfileId  = d['assigne_profile_id']?.toString(),
+        avaitReglages     = (d['heure'] ?? d['assigne_uid']) != null,
         actionCtrl        = TextEditingController(text: acteLabel(d['type_acte'] as String?)),
         produitCtrl       = TextEditingController(text: d['produit'] ?? ''),
         dosageCtrl        = TextEditingController(text: d['dosage'] ?? ''),
@@ -930,6 +1008,11 @@ class _EtapeCtrl {
     'description':      descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
     'tranche_horaire':  trancheHoraire,
     'ordre':            ordre,
+    if (avaitReglages || (heure ?? '').isNotEmpty) 'heure': (heure ?? '').isEmpty ? null : heure,
+    if (avaitReglages || (assigneUid ?? '').isNotEmpty) ...{
+      'assigne_uid': (assigneUid ?? '').isEmpty ? null : assigneUid,
+      'assigne_profile_id': (assigneUid ?? '').isEmpty ? null : assigneProfileId,
+    },
   };
 
   void dispose() {

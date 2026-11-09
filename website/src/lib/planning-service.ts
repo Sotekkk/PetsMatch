@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { eclaterTranches } from './protocoles';
+import { eclaterTranches, appliquerReglagesEtapes } from './protocoles';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -131,7 +131,7 @@ export async function applyTemplateToAnimal(
 
   if (taches.length === 0) return 0;
   // Plusieurs créneaux (matin et soir…) : une tâche par créneau.
-  taches = eclaterTranches(taches);
+  taches = eclaterTranches(appliquerReglagesEtapes(taches, etapes));
 
   // Dedup : filtrer les tâches qui existent déjà (même etape_id + date_prevue + animal_id + créneau)
   try {

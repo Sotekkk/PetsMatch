@@ -1,7 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/main.dart';
-import 'package:PetsMatch/utils/protocoles.dart' show perimetreDe, estHorsPriseEnCharge, petitDePortee, animauxPresents, eclaterTranches;
+import 'package:PetsMatch/utils/protocoles.dart' show perimetreDe, estHorsPriseEnCharge, petitDePortee, animauxPresents, eclaterTranches, appliquerReglagesEtapes;
 
 class PlanningService {
   static final _supa = Supabase.instance.client;
@@ -166,6 +166,11 @@ class PlanningService {
     'tranche_horaire':  e['tranche_horaire'],
     // Pension, protocole de séjour : moment de l'étape (colonne non envoyée sinon).
     if (e['sejour_moment'] != null) 'sejour_moment': e['sejour_moment'],
+    // Heure précise / employé attribué (migration_protocoles_heure_assigne).
+    // Clé présente seulement si remplie ou à effacer (pas d'erreur avant la migration).
+    if (e.containsKey('heure')) 'heure': e['heure'],
+    if (e.containsKey('assigne_uid')) 'assigne_uid': e['assigne_uid'],
+    if (e.containsKey('assigne_profile_id')) 'assigne_profile_id': e['assigne_profile_id'],
   };
 
   static Future<void> _insertEtapes(String templateId, List<Map<String, dynamic>> etapes) async {
@@ -675,7 +680,7 @@ class PlanningService {
     if (taches.isEmpty) return 0;
     if (boxId != null) { for (final t in taches) { t['box_id'] = boxId; } }
     // Plusieurs créneaux (matin et soir…) : une tâche par créneau.
-    final parCreneau = eclaterTranches(taches);
+    final parCreneau = eclaterTranches(appliquerReglagesEtapes(taches, etapes));
     taches..clear()..addAll(parCreneau);
 
     // Dedup : filtrer les tâches qui existent déjà (même etape_id + date_prevue + animal_id + logement)

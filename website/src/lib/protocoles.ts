@@ -245,6 +245,29 @@ export function tranchesDe(v?: string | null): string[] {
 export function trancheLabel(v?: string | null): string {
   return tranchesDe(v).map(k => TRANCHES_LABELS[k] ?? k).join(' et ');
 }
+/** Créneau d'une heure précise (10:00 → matin). */
+export function trancheDeHeure(h: string): string {
+  const n = parseInt(h.slice(0, 2), 10);
+  return n < 12 ? 'matin' : n < 14 ? 'midi' : n < 18 ? 'apres_midi' : 'soir';
+}
+
+/** Réglages de l'étape sur ses tâches (migration_protocoles_heure_assigne) :
+ *  heure précise (« Distribution des repas — 10:00 ») et employé attribué.
+ *  Miroir appli : appliquerReglagesEtapes (lib/utils/protocoles.dart). */
+export function appliquerReglagesEtapes<T>(taches: T[],
+  etapes: { id?: string | null; heure?: string | null; assigne_uid?: string | null; assigne_profile_id?: string | null }[]): T[] {
+  const parId = new Map(etapes.filter(e => e.id).map(e => [String(e.id), e]));
+  return taches.map(t => {
+    const x = t as unknown as Record<string, unknown>;
+    const e = parId.get(String(x.etape_id ?? ''));
+    if (!e) return t;
+    const r: Record<string, unknown> = { ...x };
+    if (e.assigne_uid) { r.assigned_to = e.assigne_uid; r.assigned_profile_id = e.assigne_profile_id ?? null; }
+    if (e.heure) { r.heure = e.heure; r.tranche_horaire = trancheDeHeure(e.heure); r.label = `${String(x.label ?? '')} — ${e.heure}`; }
+    return r as unknown as T;
+  });
+}
+
 /** Une tâche par créneau (« Litière — Matin », « Litière — Soir »). Miroir
  *  appli : eclaterTranches (lib/utils/protocoles.dart). */
 export function eclaterTranches<T extends { tranche_horaire?: unknown; label?: unknown }>(taches: T[]): T[] {

@@ -5,7 +5,7 @@
 // annulé. Miroir site : lib/pension-protocoles.ts (même logique).
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:PetsMatch/utils/protocoles.dart' show acteLabel, eclaterTranches;
+import 'package:PetsMatch/utils/protocoles.dart' show acteLabel, eclaterTranches, appliquerReglagesEtapes;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show cleEspecePension, pensionGroupe, kPensionEspeces;
 
 const kMomentsSejour = <(String, String)>[
@@ -172,7 +172,7 @@ Future<({int taches, List<String> protocoles})> appliquerProtocolesSejour(List<S
         }).select('id').single();
         try {
           // Plusieurs créneaux (matin et soir…) : une tâche par créneau.
-          final parCreneau = eclaterTranches(taches);
+          final parCreneau = eclaterTranches(appliquerReglagesEtapes(taches, etapes));
           await supa.from('plan_taches').insert([for (final x in parCreneau) {...x, 'plan_id': plan['id']}]);
           total += parCreneau.length;
           applique = true;

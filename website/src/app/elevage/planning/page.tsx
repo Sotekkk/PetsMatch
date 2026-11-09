@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { datesGestationEnCours, dateRefGestation, type DatesGestation } from '@/lib/planning-service';
 import {
   PERIMETRES, CATEGORIES, REF_EVENTS, actesSuggeresPour, TRANCHES_LABELS,
-  perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, estHorsPriseEnCharge, type Perimetre, petitDePortee, animauxPresents, tranchesDe, trancheLabel, eclaterTranches,
+  perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, estHorsPriseEnCharge, type Perimetre, petitDePortee, animauxPresents, tranchesDe, trancheLabel, eclaterTranches, appliquerReglagesEtapes,
 } from '@/lib/protocoles';
 import { ouvrirFicheProtocole } from '@/lib/protocole-pdf';
 import { SANTE_COULEURS, SANTE_COULEUR_ACTE } from '@/lib/sante-couleurs';
@@ -40,7 +40,13 @@ interface Etape {
   tranche_horaire?: string | null;
   /** Pension, protocole de séjour : chaque_jour | arrivee | depart. */
   sejour_moment?: string | null;
+  /** Heure précise 'HH:MM' et employé attribué (migration_protocoles_heure_assigne). */
+  heure?: string | null;
+  assigne_uid?: string | null;
+  assigne_profile_id?: string | null;
 }
+
+interface EmployeOption { uid: string; profileId: string | null; nom: string }
 
 interface Template {
   id: string;
@@ -1369,6 +1375,37 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
     return next;
   });
 
+  const avant = new Map((existing?.plan_template_etapes ?? []).map(x => [x.id, x as Etape]));
+  const reglagesEtape = (e: Etape) => {
+    const a = e.id ? avant.get(e.id) : undefined;
+    const r: Partial<Etape> = {};
+    if (e.heure || a?.heure) r.heure = e.heure || null;
+    if (e.assigne_uid || a?.assigne_uid) { r.assigne_uid = e.assigne_uid || null; r.assigne_profile_id = e.assigne_uid ? (e.assigne_profile_id ?? null) : null; }
+    return r;
+  };
+  // Employés à qui attribuer une étape (tâches quotidiennes de l'équipe).
+  const [employes, setEmployes] = useState<EmployeOption[]>([]);
+  useEffect(() => {
+    if (profilSource === 'garde' || profilSource === 'particulier') return;
+    (async () => {
+      let q = supabase.from('employes').select('uid_employe, employe_profile_id, prenom, nom, eleveur_profile_id')
+        .eq('uid_eleveur', uid).eq('actif', true).not('uid_employe', 'is', null);
+      if (profileId) q = q.or(`eleveur_profile_id.eq.${profileId},eleveur_profile_id.is.null`);
+      const { data } = await q;
+      const rows = (data ?? []) as { uid_employe: string; employe_profile_id: string | null; prenom: string | null; nom: string | null }[];
+      const pids = rows.map(r => r.employe_profile_id).filter((x): x is string => !!x);
+      const { data: profs } = pids.length
+        ? await supabase.from('user_profiles').select('id, firstname, lastname, nom').in('id', pids)
+        : { data: [] };
+      const parId = new Map(((profs ?? []) as { id: string; firstname?: string | null; lastname?: string | null; nom?: string | null }[]).map(p => [p.id, p]));
+      setEmployes(rows.map(r => {
+        const p = r.employe_profile_id ? parId.get(r.employe_profile_id) : undefined;
+        const nom = `${r.prenom ?? ''} ${r.nom ?? ''}`.trim() || `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim() || p?.nom || 'Employé';
+        return { uid: r.uid_employe, profileId: r.employe_profile_id, nom };
+      }));
+    })();
+  }, [profilSource, uid, profileId]);
+
   const save = async () => {
     if (!nom.trim()) { setError('Le nom du protocole est requis'); return; }
     if (etapes.some(e => !e.type_acte.trim())) { setError('Indiquez l’action de chaque étape'); return; }
@@ -1385,6 +1422,8 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
         duree_semaines: e.is_recurrent ? 52 : e.duree_semaines,
         // Protocole de séjour : moment de l'étape (sinon colonne non envoyée).
         sejour_moment: refEvent === 'sejour' ? (e.sejour_moment || 'chaque_jour') : undefined,
+        // Heure / employé : envoyés s'ils sont remplis, ou pour les effacer.
+        ...reglagesEtape(e),
       }));
       const racesListe = racesTxt.split(',').map(x => x.trim()).filter(Boolean);
       const cibleSejour: PensionCible = { ...cible, races: racesListe.length ? racesListe : undefined };
@@ -1746,6 +1785,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
                 <EtapeForm key={e.id ?? `n${i}`} index={i} total={etapes.length} etape={e}
                   refEvent={perimetre === 'locaux' && refEvent !== 'sejour' ? 'manuel' : refEvent}
                   sansDepart={profilSource === 'association'}
+                  employes={employes}
                   usesAge={refEvent === 'age_semaines' || cibleEffective === 'bebes'}
                   onChange={patch => updateEtape(i, patch)}
                   onMove={d => deplacerEtape(i, d)}
@@ -1772,8 +1812,8 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
 
 // ── Carte d'une étape ─────────────────────────────────────────────────────────
 
-function EtapeForm({ index, total, etape, refEvent, usesAge, sansDepart = false, onChange, onMove, onDuplicate, onRemove }: {
-  index: number; total: number; etape: Etape; refEvent: string; usesAge: boolean; sansDepart?: boolean;
+function EtapeForm({ index, total, etape, refEvent, usesAge, sansDepart = false, employes = [], onChange, onMove, onDuplicate, onRemove }: {
+  index: number; total: number; etape: Etape; refEvent: string; usesAge: boolean; sansDepart?: boolean; employes?: EmployeOption[];
   onChange: (patch: Partial<Etape>) => void; onMove: (d: -1 | 1) => void; onDuplicate: () => void; onRemove?: () => void;
 }) {
   const [menu, setMenu] = useState(false);
@@ -1869,7 +1909,7 @@ function EtapeForm({ index, total, etape, refEvent, usesAge, sansDepart = false,
         </div>
         </>)}
         <div>
-          <label className={libelleCls}>Créneaux (plusieurs possibles)</label>
+          <label className={libelleCls}>Créneaux (plusieurs possibles){etape.heure ? ' — remplacés par l’heure' : ''}</label>
           <div className="flex flex-wrap gap-x-3 gap-y-1.5 pt-1.5">
             {Object.entries(TRANCHES_LABELS).map(([k, v]) => {
               const actuels = tranchesDe(etape.tranche_horaire);
@@ -1888,6 +1928,26 @@ function EtapeForm({ index, total, etape, refEvent, usesAge, sansDepart = false,
             })}
           </div>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className={libelleCls}>Heure précise (facultatif)</label>
+          <input type="time" value={etape.heure ?? ''} onChange={e => onChange({ heure: e.target.value || null })} className={champCls} />
+        </div>
+        {employes.length > 0 && (
+          <div>
+            <label className={libelleCls}>Attribuée à</label>
+            <select value={etape.assigne_uid ?? ''} className={champCls}
+              onChange={e => {
+                const emp = employes.find(x => x.uid === e.target.value);
+                onChange({ assigne_uid: emp?.uid ?? null, assigne_profile_id: emp?.profileId ?? null });
+              }}>
+              <option value="">Personne en particulier</option>
+              {employes.map(x => <option key={x.uid} value={x.uid}>{x.nom}</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-600">
@@ -2205,7 +2265,7 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
           }
         }
         // Plusieurs créneaux (matin et soir…) : une tâche par créneau.
-        const parCreneau = eclaterTranches(taches);
+        const parCreneau = eclaterTranches(appliquerReglagesEtapes(taches, etapes));
         if (parCreneau.length > 0) await supabase.from('plan_taches').insert(parCreneau);
         totalTaches += parCreneau.length;
       }

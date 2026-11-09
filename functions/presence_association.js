@@ -72,6 +72,11 @@ function especeOk(cibles, espece) {
     });
 }
 
+function trancheDeHeure(h) {
+    const n = parseInt(String(h).slice(0, 2), 10);
+    return n < 12 ? "matin" : n < 14 ? "midi" : n < 18 ? "apres_midi" : "soir";
+}
+
 function tranchesDe(v) {
     return (v || "").toString().split(",").map((x) => x.trim()).filter(Boolean);
 }
@@ -79,8 +84,8 @@ function tranchesDe(v) {
 /**
  * Association — protocoles « Présence au refuge (automatique) »
  * (plan_templates.reference_event = 'sejour', profil_source = 'association').
- * Chaque matin à 5 h (Paris, avant le récapitulatif de 8 h) : les tâches du
- * jour sont créées pour les animaux présents dans un enclos (périmètre animal)
+ * Chaque soir à 18 h (Paris) : les tâches du LENDEMAIN sont créées pour les
+ * animaux présents dans un enclos (périmètre animal)
  * ou une par enclos occupé (périmètre locaux), selon le ciblage du protocole
  * (pension_cible : espèces, races, enclos / types, individuels / partagés).
  * Étapes : « chaque jour », ou « jour de l'entrée + n » (animaux.date_entree).
@@ -91,10 +96,13 @@ function tranchesDe(v) {
 exports.genererTachesPresenceAssociation = functions
     .region("europe-west1")
     .runWith({timeoutSeconds: 540, memory: "512MB"})
-    .pubsub.schedule("0 5 * * *")
+    .pubsub.schedule("0 18 * * *")
     .timeZone("Europe/Paris")
     .onRun(async () => {
+        // Chaque soir à 18 h : les tâches du LENDEMAIN, selon l'occupation des
+        // enclos (l'équipe voit son planning la veille).
         const now = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+        now.setDate(now.getDate() + 1);
         const today = isoJour(now);
         const templates = await supabaseSelect("plan_templates",
             "select=*,plan_template_etapes(*)&reference_event=eq.sejour&profil_source=eq.association");
@@ -164,9 +172,11 @@ exports.genererTachesPresenceAssociation = functions
                         .map((a) => [String(a.enclos_id), {enclos: enclos.get(String(a.enclos_id))}])).values()] :
                     concernes.filter(duJour).map((a) => ({animal: a, enclos: enclos.get(String(a.enclos_id))}));
                 for (const c of cibles) {
-                    const tr = tranchesDe(et.tranche_horaire);
+                    // Heure précise : un seul passage, à cette heure.
+                    const tr = et.heure ? [trancheDeHeure(et.heure)] : tranchesDe(et.tranche_horaire);
                     for (const k of tr.length ? tr : [null]) {
-                        const lib = locaux ? `${base} — ${c.enclos.nom}` : base;
+                        const lib0 = locaux ? `${base} — ${c.enclos.nom}` : base;
+                        const lib = et.heure ? `${lib0} — ${et.heure}` : lib0;
                         taches.push({
                             etape_id: et.id, uid_eleveur: uid, profile_id: pid,
                             ...(pid ? {eleveur_profile_id: pid} : {}),
@@ -177,6 +187,10 @@ exports.genererTachesPresenceAssociation = functions
                             tranche_horaire: k, profil_source: "association",
                             label: tr.length > 1 ? `${lib} — ${TRANCHES[k] || k}` : lib,
                             date_prevue: today, jour_traitement: 1, total_jours: 1,
+                            ...(et.heure ? {heure: et.heure} : {}),
+                            // Étape attribuée à un employé.
+                            ...(et.assigne_uid ? {assigned_to: et.assigne_uid,
+                                assigned_profile_id: et.assigne_profile_id || null} : {}),
                         });
                     }
                 }

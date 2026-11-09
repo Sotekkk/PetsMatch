@@ -181,6 +181,32 @@ List<String> tranchesDe(Object? v) =>
     [for (final x in (v?.toString() ?? '').split(',')) if (x.trim().isNotEmpty) x.trim()];
 String trancheLabel(Object? v) => tranchesDe(v).map((k) => kTranches[k] ?? k).join(' et ');
 
+/// Créneau d'une heure précise (10:00 → matin).
+String trancheDeHeure(String h) {
+  final n = int.tryParse(h.length >= 2 ? h.substring(0, 2) : h) ?? 8;
+  return n < 12 ? 'matin' : n < 14 ? 'midi' : n < 18 ? 'apres_midi' : 'soir';
+}
+
+/// Réglages de l'étape sur ses tâches (migration_protocoles_heure_assigne) :
+/// heure précise (« Distribution des repas — 10:00 ») et employé attribué.
+/// Miroir site : appliquerReglagesEtapes (protocoles.ts).
+List<Map<String, dynamic>> appliquerReglagesEtapes(List<Map<String, dynamic>> taches, List etapes) {
+  final parId = {for (final e in etapes) if (e is Map && e['id'] != null) e['id'].toString(): e};
+  return [
+    for (final t in taches)
+      () {
+        final e = parId[t['etape_id']?.toString()];
+        if (e == null) return t;
+        final r = {...t};
+        final a = e['assigne_uid']?.toString() ?? '';
+        if (a.isNotEmpty) { r['assigned_to'] = a; r['assigned_profile_id'] = e['assigne_profile_id']; }
+        final h = e['heure']?.toString() ?? '';
+        if (h.isNotEmpty) { r['heure'] = h; r['tranche_horaire'] = trancheDeHeure(h); r['label'] = '${t['label'] ?? ''} — $h'; }
+        return r;
+      }(),
+  ];
+}
+
 /// Une tâche par créneau (« Litière — Matin », « Litière — Soir »). Miroir
 /// site : eclaterTranches (protocoles.ts).
 List<Map<String, dynamic>> eclaterTranches(List<Map<String, dynamic>> taches) => [
