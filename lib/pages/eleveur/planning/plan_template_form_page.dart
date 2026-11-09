@@ -147,8 +147,10 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     ];
   }
 
-  /// Ciblage d'un protocole de séjour (pension).
-  Widget _cibleSejourBloc() {
+  /// Pension, protocole de séjour : espèces et logements concernés — dans
+  /// « Périmètre concerné » pour un nettoyage des locaux, dans « Pensionnaires
+  /// concernés » sinon (jamais affichés deux fois).
+  List<Widget> _choixZones({required bool especes}) {
     final types = {for (final l in _logementsPension) if ((l['type']?.toString() ?? '').isNotEmpty) l['type'].toString()}.toList();
     Widget cases(String cle, List<(String, String)> items) => Wrap(spacing: 4, children: [
           for (final (v, lib) in items)
@@ -158,18 +160,8 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
               onSelected: (o) => _basculer(cle, v, o),
             ),
         ]);
-    return Container(
-      margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: _teal.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _teal.withValues(alpha: 0.15))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Pensionnaires concernés', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, color: _teal)),
-        const SizedBox(height: 8),
-        if (_perimetre != 'locaux')
-          TextField(controller: _racesCtrl, style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-              decoration: _dec('Races (facultatif, séparées par des virgules)', hint: 'Ex : Berger australien, Border collie')),
-        if (_perimetre == 'locaux') ...[
+    return [
+        if (especes) ...[
           const SizedBox(height: 8),
           const Text('Espèces (aucune cochée = toutes)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
           Wrap(spacing: 4, children: [
@@ -189,13 +181,32 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
               ),
           ]),
         ],
-        if (types.isNotEmpty) ...[
+        if (_logementsPension.isNotEmpty) ...[
           const SizedBox(height: 8),
-          const Text('Types de logement (aucun = tous)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
-          cases('logement_types', [for (final t in types) (t, t[0].toUpperCase() + t.substring(1))]),
+          if (types.isNotEmpty) ...[
+            const Text('Types de logement (aucun = tous)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+            cases('logement_types', [for (final t in types) (t, t[0].toUpperCase() + t.substring(1))]),
+          ],
           const Text('Logements précis (aucun = tous)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
           ..._logementsParEspece(cases),
         ],
+    ];
+  }
+
+  /// Ciblage d'un protocole de séjour (pension).
+  Widget _cibleSejourBloc() {
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: _teal.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _teal.withValues(alpha: 0.15))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Pensionnaires concernés', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, color: _teal)),
+        const SizedBox(height: 8),
+        if (_perimetre != 'locaux')
+          TextField(controller: _racesCtrl, style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: _dec('Races (facultatif, séparées par des virgules)', hint: 'Ex : Berger australien, Border collie')),
+        if (_perimetre != 'locaux') ..._choixZones(especes: false),
         const SizedBox(height: 8),
         _select<String>('Logements', _cibleSejour['places']?.toString() ?? 'tous',
             const [('tous', 'Individuels et partagés'), ('individuel', 'Individuels seulement (1 place)'), ('partage', 'Partagés seulement (plusieurs places)')],
@@ -446,7 +457,11 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
             _select<String>('Concerne', _perimetre, _perimetresDispo.map((p) => (p.$1, p.$2)).toList(),
                 (v) => setState(() { _perimetre = v; _ajusterRefEvent(); })),
             const SizedBox(height: 10),
-            if (locaux)
+            if (locaux && _isPension && _sejour) ...[
+              Text('Zones concernées : une tâche par logement occupé, parmi les espèces et logements cochés.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+              ..._choixZones(especes: true),
+            ] else if (locaux)
               TextFormField(
                 controller: _lieuCtrl, style: const TextStyle(fontFamily: 'Galey'),
                 textCapitalization: TextCapitalization.sentences,
