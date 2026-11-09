@@ -5,7 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:PetsMatch/utils/protocoles.dart' show estHorsPriseEnCharge;
+import 'package:PetsMatch/utils/protocoles.dart' show estHorsPriseEnCharge, petitDePortee;
 
 const _teal = Color(0xFF0C5C6C);
 const _dark = Color(0xFF1F2A2E);
@@ -19,7 +19,7 @@ const _dark = Color(0xFF1F2A2E);
 Future<List<Map<String, dynamic>>> chargerAnimauxRattachement(String uid, String? profileId) async {
   final supa = Supabase.instance.client;
   var q = supa.from('animaux')
-      .select('id, nom, espece, race, portee_id, nom_mere, statut, uid_eleveur')
+      .select('id, nom, espece, race, portee_id, nom_mere, statut, uid_eleveur, date_naissance')
       .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid');
   if (profileId != null && profileId.isNotEmpty) q = q.eq('profile_id', profileId);
   final direct = List<Map<String, dynamic>>.from(
@@ -30,7 +30,7 @@ Future<List<Map<String, dynamic>>> chargerAnimauxRattachement(String uid, String
   final ownIds = (await ownQ as List).map((r) => r['animal_id']?.toString()).whereType<String>().toSet();
   final missing = ownIds.difference(direct.map((a) => a['id']?.toString() ?? '').toSet());
   if (missing.isNotEmpty) {
-    final rows = await supa.from('animaux').select('id, nom, espece, race, portee_id, nom_mere')
+    final rows = await supa.from('animaux').select('id, nom, espece, race, portee_id, nom_mere, date_naissance')
         .inFilter('id', missing.toList());
     direct.addAll((rows as List).map((e) => Map<String, dynamic>.from(e as Map)));
   }
@@ -50,11 +50,17 @@ List<PorteeRattachement> porteesDepuis(List<Map<String, dynamic>> animaux) {
   for (final a in animaux) {
     final pid = a['portee_id']?.toString();
     if (pid == null || pid.isEmpty) continue;
+    // Petits encore jeunes seulement (chiot < 13 sem., chaton < 15…).
+    if (!petitDePortee(a['date_naissance'], a['espece']?.toString())) continue;
     map.putIfAbsent(pid, () => []).add(a);
   }
   return map.entries.map((e) {
     final mere = e.value.map((a) => (a['nom_mere'] ?? '').toString()).firstWhere((n) => n.isNotEmpty, orElse: () => '');
     var label = mere.isNotEmpty ? 'Portée de $mere' : 'Portée';
+    // Mois et année de naissance : deux portées de la même mère se distinguent.
+    final dates = [for (final a in e.value) if (DateTime.tryParse(a['date_naissance']?.toString() ?? '') != null)
+      DateTime.parse(a['date_naissance'].toString())]..sort();
+    if (mere.isNotEmpty && dates.isNotEmpty) label = '$label — ${DateFormat('MMMM yyyy', 'fr').format(dates.first)}';
     if (mere.isEmpty) {
       final ms = int.tryParse(e.key.replaceFirst('portee_', ''));
       if (ms != null) label = 'Portée du ${DateFormat('d MMM yyyy', 'fr').format(DateTime.fromMillisecondsSinceEpoch(ms))}';

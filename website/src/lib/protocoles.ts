@@ -110,6 +110,15 @@ export async function animauxPresents(
   return out;
 }
 
+/** « Portée de Shouka — mars 2026 » : mois et année de naissance pour
+ *  distinguer deux portées de la même mère. */
+export function libellePortee(membres: { nom_mere?: string | null; date_naissance?: string | null }[]): string {
+  const mere = membres.map(a => a.nom_mere?.trim() ?? '').find(Boolean);
+  const dates = membres.map(a => a.date_naissance).filter((d): d is string => !!d).sort();
+  const mois = dates[0] ? new Date(dates[0]).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : '';
+  return `${mere ? `Portée de ${mere}` : 'Portée'}${mois ? ` — ${mois}` : ''}`;
+}
+
 /** Le petit a-t-il encore l'âge « portée » (date de naissance inconnue : oui) ? */
 export function petitDePortee(dateNaissance?: string | null, espece?: string | null): boolean {
   if (!dateNaissance) return true;

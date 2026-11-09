@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { estHorsPriseEnCharge } from '@/lib/protocoles';
+import { estHorsPriseEnCharge, libellePortee, petitDePortee } from '@/lib/protocoles';
 import { animauxPresentsElevage } from '@/lib/rdv-veto';
 
-export interface AnimalOption { id: string; nom: string; espece?: string | null; portee_id?: string | null; nom_mere?: string | null; }
+export interface AnimalOption { id: string; nom: string; espece?: string | null; portee_id?: string | null; nom_mere?: string | null; date_naissance?: string | null; }
 export interface MembreOption { uid: string; nom: string; type: 'employe' | 'benevole' | 'moi'; }
 
 /**
@@ -122,7 +122,7 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
       return;
     }
     // Seuls les animaux encore pris en charge (adoptés, cédés… écartés).
-    let q = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere, statut')
+    let q = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere, statut, date_naissance')
       .eq('uid_eleveur', uid);
     if (profileId) q = q.eq('profile_id', profileId);
     const { data } = await q.order('nom');
@@ -149,7 +149,8 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
   const portees = useMemo(() => {
     const map = new Map<string, AnimalOption[]>();
     for (const a of animauxDispo) {
-      if (!a.portee_id) continue;
+      // Petits encore jeunes seulement (chiot < 13 sem., chaton < 15…).
+      if (!a.portee_id || !petitDePortee(a.date_naissance, a.espece)) continue;
       if (!map.has(a.portee_id)) map.set(a.portee_id, []);
       map.get(a.portee_id)!.push(a);
     }
@@ -157,8 +158,7 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
   }, [animauxDispo]);
 
   function porteeLabel(membresPortee: AnimalOption[]): string {
-    const nomMere = membresPortee.map(a => a.nom_mere).find(n => !!n);
-    return nomMere ? `Portée de ${nomMere}` : 'Portée';
+    return libellePortee(membresPortee);
   }
 
   // Animaux réellement concernés à l'enregistrement (portée = ses membres).

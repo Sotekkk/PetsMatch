@@ -16,7 +16,7 @@ String titreRdvVeto(String cabinet) => 'RDV vétérinaire — ${cabinet.trim()}'
 Future<List<Map<String, dynamic>>> animauxPresentsElevage(String? profileId) async {
   if ((profileId ?? '').isEmpty) return [];
   final supa = Supabase.instance.client;
-  const cols = 'id, nom, espece, race, portee_id, nom_mere, statut, uid_eleveur';
+  const cols = 'id, nom, espece, race, portee_id, nom_mere, statut, uid_eleveur, date_naissance';
   final props = await supa.from('animaux_proprietes').select('animal_id, date_fin, statut').eq('profile_id_proprio', profileId!) as List;
   final ouverts = {for (final p in props) if (p['date_fin'] == null && p['statut'] == 'actif') p['animal_id'].toString()};
   final clos = {for (final p in props) if (p['date_fin'] != null) p['animal_id'].toString()};

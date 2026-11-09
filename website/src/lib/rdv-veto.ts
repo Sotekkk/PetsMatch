@@ -3,11 +3,11 @@
 // par animal et la ligne du registre (migration_rdv_veto_taches.sql).
 // Miroir appli : lib/utils/rdv_veto.dart.
 import { supabase } from '@/lib/supabase';
-import { estHorsPriseEnCharge } from '@/lib/protocoles';
+import { estHorsPriseEnCharge, libellePortee, petitDePortee } from '@/lib/protocoles';
 
 export const titreRdvVeto = (cabinet: string) => `RDV vétérinaire — ${cabinet.trim()}`;
 
-export interface AnimalElevage { id: string; nom: string; espece?: string | null; portee_id?: string | null; nom_mere?: string | null }
+export interface AnimalElevage { id: string; nom: string; espece?: string | null; portee_id?: string | null; nom_mere?: string | null; date_naissance?: string | null }
 export interface PorteeElevage { id: string; label: string; ids: string[] }
 
 /** Animaux présents de CE profil élevage : propriété en cours (animaux_proprietes), ou fiche
@@ -15,7 +15,7 @@ export interface PorteeElevage { id: string; label: string; ids: string[] }
  *  pro, ni animal d'un autre profil du compte (association…). Miroir appli : utils/rdv_veto.dart. */
 export async function animauxPresentsElevage(profileId: string | null | undefined): Promise<AnimalElevage[]> {
   if (!profileId) return [];
-  const cols = 'id, nom, espece, portee_id, nom_mere, statut';
+  const cols = 'id, nom, espece, portee_id, nom_mere, statut, date_naissance';
   const [{ data: props }, { data: fiches }] = await Promise.all([
     supabase.from('animaux_proprietes').select('animal_id, date_fin, statut').eq('profile_id_proprio', profileId),
     supabase.from('animaux').select(cols).eq('profile_id', profileId),
@@ -37,14 +37,16 @@ export async function animauxPresentsElevage(profileId: string | null | undefine
     .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
 }
 
-/** Portées parmi ces animaux (seulement leurs membres présents). */
+/** Portées parmi ces animaux : seulement leurs petits présents ET encore
+ *  jeunes (chiot < 13 sem., chaton < 15…) ; « Portée de X — mars 2026 ». */
 export function porteesElevage(animaux: AnimalElevage[]): PorteeElevage[] {
   const parPortee = new Map<string, AnimalElevage[]>();
-  for (const a of animaux) if (a.portee_id) parPortee.set(a.portee_id, [...(parPortee.get(a.portee_id) ?? []), a]);
-  return [...parPortee.entries()].map(([id, m]) => {
-    const mere = m.map(a => a.nom_mere).find(n => !!n);
-    return { id, label: mere ? `Portée de ${mere}` : 'Portée', ids: m.map(a => a.id) };
-  }).sort((a, b) => a.label.localeCompare(b.label, 'fr'));
+  for (const a of animaux) {
+    if (!a.portee_id || !petitDePortee(a.date_naissance, a.espece)) continue;
+    parPortee.set(a.portee_id, [...(parPortee.get(a.portee_id) ?? []), a]);
+  }
+  return [...parPortee.entries()].map(([id, m]) => ({ id, label: libellePortee(m), ids: m.map(a => a.id) }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'fr'));
 }
 
 /** Aujourd'hui, AAAA-MM-JJ en heure locale. */
