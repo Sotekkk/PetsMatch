@@ -70,6 +70,9 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   // Pet-sitter : pas de cheptel ni de reproduction.
   bool get _isGarde => _profilSource == 'garde';
   bool get _isPension => _profilSource == 'pension';
+  /// Accueil d'animaux (pension : séjours ; association : présence au refuge) :
+  /// protocoles appliqués tout seuls selon la présence.
+  bool get _accueil => _isPension || _profilSource == 'association';
 
   String get _cible => cibleTypePour(_perimetre, _categorie);
   bool get _usesAge => _refEvent == 'age_semaines' || _cible == 'bebes';
@@ -83,9 +86,9 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       && !(_isPension && (c.$1 == 'bebes' || c.$1 == 'allaitantes'))).toList();
 
   List<(String, String, String)> get _refEventsDispo => kRefEvents.where((r) {
-    // « Séjour » : pension seulement ; pour les locaux de la pension, manuel ou séjour.
-    if (r.$1 == 'sejour') return _isPension;
-    if (_isPension && _perimetre == 'locaux') return r.$1 == 'manuel';
+    // « Séjour / présence » : pension et association ; pour leurs locaux, manuel ou automatique.
+    if (r.$1 == 'sejour') return _accueil;
+    if (_accueil && _perimetre == 'locaux') return r.$1 == 'manuel';
     if ((_isAssociation || _isGarde) && (r.$1 == 'saillie' || r.$1 == 'mise_bas')) return false;
     if ((_isPension || _isGarde) && r.$1 == 'naissance') return false;
     if (_cible == 'gestantes') return ['mise_bas', 'saillie', 'manuel'].contains(r.$1);
@@ -95,7 +98,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   }).toList();
 
   void _ajusterRefEvent() {
-    if (_perimetre == 'locaux' && !_isPension) { _refEvent = 'manuel'; return; }
+    if (_perimetre == 'locaux' && !_accueil) { _refEvent = 'manuel'; return; }
     final dispo = _refEventsDispo;
     if (!dispo.any((r) => r.$1 == _refEvent)) _refEvent = _isPension ? 'sejour' : (dispo.isNotEmpty ? dispo.first.$1 : 'manuel');
   }
@@ -223,7 +226,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       decoration: BoxDecoration(color: _teal.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(12),
           border: Border.all(color: _teal.withValues(alpha: 0.15))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Pensionnaires concernés', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, color: _teal)),
+        Text(_isPension ? 'Pensionnaires concernés' : 'Animaux concernés', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, color: _teal)),
         const SizedBox(height: 8),
         if (_perimetre != 'locaux')
           TextField(controller: _racesCtrl, style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
@@ -233,16 +236,22 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
         _select<String>('Logements', _cibleSejour['places']?.toString() ?? 'tous',
             const [('tous', 'Individuels et partagés'), ('individuel', 'Individuels seulement (1 place)'), ('partage', 'Partagés seulement (plusieurs places)')],
             (v) => setState(() => _cibleSejour = {..._cibleSejour, 'places': v})),
-        const SizedBox(height: 8),
-        _select<String>('Séjours', _cibleSejour['sejour']?.toString() ?? 'tous',
-            const [('tous', 'Séjours et essais'), ('sejour', 'Séjours seulement'), ('essai', 'Essais seulement')],
-            (v) => setState(() => _cibleSejour = {..._cibleSejour, 'sejour': v})),
-        const SizedBox(height: 8),
-        _select<String>('Pensionnaires', _cibleSejour['nouveau']?.toString() ?? 'tous',
-            const [('tous', 'Tous'), ('nouveau', 'Nouveaux pensionnaires'), ('habitue', 'Habitués')],
-            (v) => setState(() => _cibleSejour = {..._cibleSejour, 'nouveau': v})),
+        if (_isPension) ...[
+          const SizedBox(height: 8),
+          _select<String>('Séjours', _cibleSejour['sejour']?.toString() ?? 'tous',
+              const [('tous', 'Séjours et essais'), ('sejour', 'Séjours seulement'), ('essai', 'Essais seulement')],
+              (v) => setState(() => _cibleSejour = {..._cibleSejour, 'sejour': v})),
+          const SizedBox(height: 8),
+          _select<String>('Pensionnaires', _cibleSejour['nouveau']?.toString() ?? 'tous',
+              const [('tous', 'Tous'), ('nouveau', 'Nouveaux pensionnaires'), ('habitue', 'Habitués')],
+              (v) => setState(() => _cibleSejour = {..._cibleSejour, 'nouveau': v})),
+        ],
         const SizedBox(height: 6),
-        Text(_perimetre == 'locaux'
+        Text(!_isPension
+            ? (_perimetre == 'locaux'
+                ? 'Chaque matin, une tâche par enclos occupé, même si plusieurs animaux le partagent.'
+                : 'Chaque matin, pour chaque animal présent dans un enclos.')
+            : _perimetre == 'locaux'
             ? 'Une tâche par logement occupé (nettoyage du box, désinfection au départ…), même si plusieurs animaux le partagent.'
             : "Appliqué à l'enregistrement de l'arrivée de chaque pensionnaire concerné.",
             style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
@@ -482,7 +491,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
             _select<String>('Concerne', _perimetre, _perimetresDispo.map((p) => (p.$1, p.$2)).toList(),
                 (v) => setState(() { _perimetre = v; _ajusterRefEvent(); })),
             const SizedBox(height: 10),
-            if (locaux && _isPension && _sejour) ...[
+            if (locaux && _accueil && _sejour) ...[
               Text('Zones concernées : une tâche par logement occupé, parmi les espèces et logements cochés.',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
               ..._choixZones(especes: true),
@@ -527,13 +536,16 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
                 accentColor: _teal,
               ),
             ],
-            if ((!locaux || _isPension) && !_isGarde) ...[
+            if ((!locaux || _accueil) && !_isGarde) ...[
               const SizedBox(height: 12),
               _select<String>('Calcul des dates à partir de', _refEvent,
-                  _refEventsDispo.map((r) => (r.$1, r.$2)).toList(), (v) => setState(() => _refEvent = v)),
+                  _refEventsDispo.map((r) => (r.$1, r.$1 == 'sejour' && !_isPension ? 'Présence au refuge (automatique)' : r.$2)).toList(),
+                  (v) => setState(() => _refEvent = v)),
               Padding(
                 padding: const EdgeInsets.only(top: 4, left: 4),
-                child: Text(kRefEvents.firstWhere((r) => r.$1 == _refEvent, orElse: () => kRefEvents.first).$3,
+                child: Text(_sejour && !_isPension
+                    ? "Tâches créées chaque matin pour les animaux présents dans un enclos (ou les enclos occupés) ; plus rien dès qu'un animal sort ou est adopté"
+                    : kRefEvents.firstWhere((r) => r.$1 == _refEvent, orElse: () => kRefEvents.first).$3,
                     style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
               ),
               if (!_sejour && !locaux) ...[
@@ -726,7 +738,10 @@ class _EtapeCardState extends State<_EtapeCard> {
               Row(children: [
                 Expanded(child: DropdownButtonFormField<String>(
                   initialValue: c.sejourMoment, isExpanded: true, decoration: _dec('Pendant le séjour'),
-                  items: [for (final (v, lib) in kMomentsSejour) DropdownMenuItem(value: v, child: Text(lib, style: _ts))],
+                  // Association : pas de « départ » (sortie inconnue à l'avance).
+                  items: [for (final (v, lib) in kMomentsSejour)
+                    if (widget.profilSource != 'association' || v != 'depart')
+                      DropdownMenuItem(value: v, child: Text(widget.profilSource == 'association' && v == 'arrivee' ? "Jour de l'entrée (+ jours)" : lib, style: _ts))],
                   onChanged: (v) => maj(() => c.sejourMoment = v ?? 'chaque_jour'),
                 )),
                 if (c.sejourMoment != 'chaque_jour') ...[

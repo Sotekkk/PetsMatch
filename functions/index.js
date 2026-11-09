@@ -6,6 +6,7 @@ const rdvRemindersFunctions = require("./rdv_reminders");
 const vetNotifFunctions = require("./vet_notifications");
 const chaleursFunctions = require("./chaleurs");
 const protocolesFunctions = require("./protocoles");
+const presenceAssoFunctions = require("./presence_association");
 const retraiteFunctions = require("./retraite");
 const tachesFunctions = require("./taches");
 const employesFunctions = require("./employes");
@@ -56,6 +57,7 @@ exports.generateCoursCollectifsOccurrences = agendaFunctions.generateCoursCollec
 // Chaleurs — alertes quotidiennes éleveurs
 exports.sendChaleursNotifications = chaleursFunctions.sendChaleursNotifications;
 exports.sendProtocolesDuJour = protocolesFunctions.sendProtocolesDuJour;
+exports.genererTachesPresenceAssociation = presenceAssoFunctions.genererTachesPresenceAssociation;
 
 // Retraite reproductive — alertes J-30 et J-0
 exports.sendRetraiteReminders = retraiteFunctions.sendRetraiteReminders;

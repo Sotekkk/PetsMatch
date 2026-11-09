@@ -995,7 +995,7 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
                       )}
                     </div>
                     <p className="text-sm text-gray-500 mt-1">
-                      {t.reference_event === 'sejour' ? `Séjour en pension · ${cibleLabel(t.pension_cible)}` : perimetreLabel(t, profilSource)} · {nbEtapes} étape{nbEtapes > 1 ? 's' : ''}
+                      {t.reference_event === 'sejour' ? `${profilSource === 'association' ? 'Présence au refuge' : 'Séjour en pension'} · ${cibleLabel(t.pension_cible)}` : perimetreLabel(t, profilSource)} · {nbEtapes} étape{nbEtapes > 1 ? 's' : ''}
                     </p>
                   </button>
                   <div className="relative">
@@ -1338,10 +1338,13 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
     !((profilSource === 'association' || profilSource === 'pension') && c.value === 'gestantes') &&
     !(profilSource === 'pension' && c.value === 'bebes'));
   const cibleEffective = cibleTypePour(perimetre, categorie);
+  // Accueil d'animaux (pension : séjours ; association : présence au refuge) :
+  // protocoles appliqués tout seuls selon la présence.
+  const accueil = profilSource === 'pension' || profilSource === 'association';
   const refEventsDispo = REF_EVENTS.filter(r => {
-    // « Séjour » : pension seulement ; pour les locaux de la pension, manuel ou séjour.
-    if (r.value === 'sejour') return profilSource === 'pension';
-    if (profilSource === 'pension' && perimetre === 'locaux') return r.value === 'manuel';
+    // « Séjour / présence » : pension et association ; pour leurs locaux, manuel ou automatique.
+    if (r.value === 'sejour') return accueil;
+    if (accueil && perimetre === 'locaux') return r.value === 'manuel';
     if ((profilSource === 'association' || profilSource === 'pension' || profilSource === 'garde')
       && (r.value === 'saillie' || r.value === 'mise_bas')) return false;
     if ((profilSource === 'pension' || profilSource === 'garde') && r.value === 'naissance') return false;
@@ -1351,7 +1354,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
     return r.value !== 'age_semaines';
   });
   useEffect(() => {
-    if (perimetre === 'locaux' && profilSource !== 'pension') { setRefEvent('manuel'); return; }
+    if (perimetre === 'locaux' && !accueil) { setRefEvent('manuel'); return; }
     if (!refEventsDispo.some(r => r.value === refEvent)) setRefEvent(profilSource === 'pension' ? 'sejour' : refEventsDispo[0]?.value ?? 'manuel');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perimetre, categorie]);
@@ -1582,7 +1585,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
               </div>
               {perimetre === 'locaux' ? (
                 <div className="sm:col-span-2 space-y-3">
-                  {profilSource === 'pension' && refEvent === 'sejour' ? (<>
+                  {accueil && refEvent === 'sejour' ? (<>
                     <p className="text-xs text-gray-500">Zones concernées : une tâche par logement occupé, parmi les espèces et lieux cochés.</p>
                     {choixEspecesLocaux}
                     {choixLogements}
@@ -1666,14 +1669,16 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
               </div>
             )}
 
-            {(perimetre !== 'locaux' || profilSource === 'pension') && profilSource !== 'garde' && (
+            {(perimetre !== 'locaux' || accueil) && profilSource !== 'garde' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 <div>
                   <label className={libelleCls}>Calcul des dates à partir de</label>
                   <select value={refEvent} onChange={e => setRefEvent(e.target.value)} className={champCls}>
-                    {refEventsDispo.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                    {refEventsDispo.map(r => <option key={r.value} value={r.value}>{r.value === 'sejour' && profilSource === 'association' ? 'Présence au refuge (automatique)' : r.label}</option>)}
                   </select>
-                  <p className="text-[11px] text-gray-400 mt-1">{REF_EVENTS.find(r => r.value === refEvent)?.aide}</p>
+                  <p className="text-[11px] text-gray-400 mt-1">{refEvent === 'sejour' && profilSource === 'association'
+                    ? 'Tâches créées chaque matin pour les animaux présents dans un enclos (ou les enclos occupés) ; plus rien dès qu’un animal sort ou est adopté'
+                    : REF_EVENTS.find(r => r.value === refEvent)?.aide}</p>
                 </div>
                 {refEvent !== 'sejour' && perimetre !== 'locaux' && (
                 <div>
@@ -1687,7 +1692,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
             )}
             {refEvent === 'sejour' && (
               <div className="border border-[#0C5C6C]/15 rounded-xl p-3 space-y-3 bg-[#0C5C6C]/[0.03]">
-                <p className="text-xs font-bold text-[#0C5C6C]">Pensionnaires concernés</p>
+                <p className="text-xs font-bold text-[#0C5C6C]">{profilSource === 'association' ? 'Animaux concernés' : 'Pensionnaires concernés'}</p>
                 {perimetre !== 'locaux' && (
                   <div>
                     <label className={libelleCls}>Races (facultatif, séparées par des virgules)</label>
@@ -1704,6 +1709,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
                       <option value="partage">Partagés seulement (plusieurs places)</option>
                     </select>
                   </div>
+                  {profilSource === 'pension' && (<>
                   <div>
                     <label className={libelleCls}>Séjours</label>
                     <select value={cible.sejour ?? 'tous'} onChange={e => setCible(c => ({ ...c, sejour: e.target.value as PensionCible['sejour'] }))} className={champCls}>
@@ -1720,10 +1726,15 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
                       <option value="habitue">Habitués</option>
                     </select>
                   </div>
+                  </>)}
                 </div>
                 <p className="text-[11px] text-gray-500">{perimetre === 'locaux'
-                  ? "Une tâche par logement occupé (nettoyage du box, désinfection au départ…), même si plusieurs animaux le partagent."
-                  : "Appliqué à l'enregistrement de l'arrivée de chaque pensionnaire concerné (espèce choisie plus haut)."}</p>
+                  ? (profilSource === 'association'
+                    ? "Chaque matin, une tâche par enclos occupé, même si plusieurs animaux le partagent."
+                    : "Une tâche par logement occupé (nettoyage du box, désinfection au départ…), même si plusieurs animaux le partagent.")
+                  : profilSource === 'association'
+                    ? "Chaque matin, pour chaque animal présent dans un enclos (espèce choisie plus haut)."
+                    : "Appliqué à l'enregistrement de l'arrivée de chaque pensionnaire concerné (espèce choisie plus haut)."}</p>
               </div>
             )}
           </BlocNumerote>
@@ -1734,6 +1745,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
               {etapes.map((e, i) => (
                 <EtapeForm key={e.id ?? `n${i}`} index={i} total={etapes.length} etape={e}
                   refEvent={perimetre === 'locaux' && refEvent !== 'sejour' ? 'manuel' : refEvent}
+                  sansDepart={profilSource === 'association'}
                   usesAge={refEvent === 'age_semaines' || cibleEffective === 'bebes'}
                   onChange={patch => updateEtape(i, patch)}
                   onMove={d => deplacerEtape(i, d)}
@@ -1760,8 +1772,8 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
 
 // ── Carte d'une étape ─────────────────────────────────────────────────────────
 
-function EtapeForm({ index, total, etape, refEvent, usesAge, onChange, onMove, onDuplicate, onRemove }: {
-  index: number; total: number; etape: Etape; refEvent: string; usesAge: boolean;
+function EtapeForm({ index, total, etape, refEvent, usesAge, sansDepart = false, onChange, onMove, onDuplicate, onRemove }: {
+  index: number; total: number; etape: Etape; refEvent: string; usesAge: boolean; sansDepart?: boolean;
   onChange: (patch: Partial<Etape>) => void; onMove: (d: -1 | 1) => void; onDuplicate: () => void; onRemove?: () => void;
 }) {
   const [menu, setMenu] = useState(false);
@@ -1807,7 +1819,7 @@ function EtapeForm({ index, total, etape, refEvent, usesAge, onChange, onMove, o
             <label className={libelleCls}>Pendant le séjour</label>
             <div className="flex items-center gap-1.5">
               <select value={etape.sejour_moment || 'chaque_jour'} onChange={e => onChange({ sejour_moment: e.target.value })} className={champCls}>
-                {MOMENTS_SEJOUR.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                {MOMENTS_SEJOUR.filter(m => !sansDepart || m.value !== 'depart').map(m => <option key={m.value} value={m.value}>{sansDepart && m.value === 'arrivee' ? "Jour de l'entrée (+ jours)" : m.label}</option>)}
               </select>
               {(etape.sejour_moment === 'arrivee' || etape.sejour_moment === 'depart') && (
                 <input type="number" min={0} value={etape.jour_offset} onChange={e => onChange({ jour_offset: parseInt(e.target.value) || 0 })}
@@ -2206,6 +2218,18 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
       onApplied();
     } catch (e) { console.error(e); setSaving(false); }
   };
+
+  if (template.reference_event === 'sejour' && profilSource === 'association') {
+    return (
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={onClose}>
+        <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 space-y-3" onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
+          <p className="font-bold text-lg text-[#1F2A2E]">{template.nom}</p>
+          <p className="text-sm text-gray-600">Ce protocole s&apos;applique tout seul : chaque matin, ses tâches du jour sont créées pour les animaux présents dans un enclos ({cibleLabel(template.pension_cible)}). Un animal sorti ou adopté n&apos;en reçoit plus.</p>
+          <button onClick={onClose} className="w-full py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600">Fermer</button>
+        </div>
+      </div>
+    );
+  }
 
   if (template.reference_event === 'sejour') {
     const appliquerPresents = async () => {

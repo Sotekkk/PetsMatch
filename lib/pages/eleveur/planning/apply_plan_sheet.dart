@@ -253,6 +253,22 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.template['reference_event'] == 'sejour' && widget.profilSourceOverride == 'association') {
+      // Association : présence au refuge, tâches créées chaque matin.
+      return SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(widget.template['nom']?.toString() ?? 'Protocole',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 17, color: _dark)),
+          const SizedBox(height: 8),
+          Text("Ce protocole s'applique tout seul : chaque matin, ses tâches du jour sont créées pour les animaux présents "
+              "dans un enclos (${cibleSejourLabel(widget.template['pension_cible'])}). Un animal sorti ou adopté n'en reçoit plus.",
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
+          const SizedBox(height: 12),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer', style: TextStyle(fontFamily: 'Galey'))),
+        ]),
+      ));
+    }
     if (widget.template['reference_event'] == 'sejour') return _sejourBuild(context);
     final fmt   = DateFormat('d MMM yyyy', 'fr_FR');
     final etapes = (widget.template['plan_template_etapes'] as List? ?? []);
