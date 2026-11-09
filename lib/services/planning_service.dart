@@ -303,17 +303,23 @@ class PlanningService {
 
     if (cibleType == 'locaux') {
       final lieu = (template['lieu'] ?? '').toString();
-      final planId = await _createPlan(
-        uid: uid, template: template, dateReference: dateReference,
-        referenceId: null, referenceLabel: lieu.isNotEmpty ? lieu : 'Locaux / matériel',
-        profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride,
-      );
-      tachesCount += await _generateTaches(
-        planId: planId, uid: uid, etapes: etapes, dateBase: dateReference, isBebes: false,
-        animalId: null, animalNom: null,
-        profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride,
-        assignedTo: autoAssignUid, assignedProfileId: autoAssignProfileId,
-      );
+      // Lieux cochés dans le protocole (logements enregistrés) : une série par lieu.
+      final lieux = await lieuxDuProtocole(uid, template['pension_cible']);
+      for (final l in lieux.isEmpty ? <Map<String, dynamic>?>[null] : lieux) {
+        final nomLieu = l?['nom']?.toString();
+        final planId = await _createPlan(
+          uid: uid, template: template, dateReference: dateReference,
+          referenceId: null, referenceLabel: nomLieu ?? (lieu.isNotEmpty ? lieu : 'Locaux / matériel'),
+          profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride,
+        );
+        tachesCount += await _generateTaches(
+          planId: planId, uid: uid, etapes: etapes, dateBase: dateReference, isBebes: false,
+          animalId: null, animalNom: null,
+          profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride,
+          assignedTo: autoAssignUid, assignedProfileId: autoAssignProfileId,
+          lieuOverride: nomLieu, boxId: l?['id']?.toString(),
+        );
+      }
     } else if (cibleType == 'cheptel' || cibleType == 'males' || cibleType == 'femelles') {
       // Un seul plan pour le groupe
       final planId = await _createPlan(
@@ -355,6 +361,22 @@ class PlanningService {
       }
     }
     return tachesCount;
+  }
+
+  /// Lieux (logements enregistrés) cochés dans un protocole de locaux :
+  /// pension_cible.logement_ids / logement_types. Aucun coché : liste vide.
+  static Future<List<Map<String, dynamic>>> lieuxDuProtocole(String uid, Object? cible) async {
+    if (cible is! Map) return [];
+    final ids = [for (final x in (cible['logement_ids'] as List?) ?? const []) x.toString()];
+    final types = [for (final x in (cible['logement_types'] as List?) ?? const []) x.toString()];
+    if (ids.isEmpty && types.isEmpty) return [];
+    try {
+      final rows = await _supa.from('enclos_chenil').select('id, nom, type').eq('uid_eleveur', uid).order('nom');
+      return [for (final r in rows)
+        if (ids.contains(r['id'].toString()) || types.contains(r['type']?.toString() ?? '')) Map<String, dynamic>.from(r)];
+    } catch (_) {
+      return [];
+    }
   }
 
   // ── Gestation en cours de chaque femelle (protocoles saillie / mise bas) ────
@@ -569,6 +591,9 @@ class PlanningService {
     String? eleveurProfileIdOverride,
     String? assignedTo,
     String? assignedProfileId,
+    /// Locaux : une série par lieu coché (nom + logement).
+    String? lieuOverride,
+    String? boxId,
   }) async {
     final taches = <Map<String, dynamic>>[];
 
@@ -582,7 +607,7 @@ class PlanningService {
       final typeActe       = etape['type_acte']?.toString() ?? '';
       final produit        = etape['produit']?.toString() ?? '';
       final dosage         = etape['dosage']?.toString() ?? '';
-      final lieu           = etape['lieu']?.toString();
+      final lieu           = lieuOverride ?? etape['lieu']?.toString();
       final desc           = etape['description']?.toString() ?? '';
       final ageSemaines    = etape['age_min_semaines'] as int?;
       final trancheHoraire = etape['tranche_horaire'] as String?;
@@ -597,7 +622,9 @@ class PlanningService {
         startDate = dateBase.add(Duration(days: sign * offsetJours));
       }
 
-      final labelBase = _buildLabel(typeActe, produit, dosage, desc);
+      final labelBase = lieuOverride != null && lieuOverride.isNotEmpty
+          ? '${_buildLabel(typeActe, produit, dosage, desc)} — $lieuOverride'
+          : _buildLabel(typeActe, produit, dosage, desc);
 
       switch (frequence) {
         case 'ponctuel':
@@ -646,23 +673,24 @@ class PlanningService {
     }
 
     if (taches.isEmpty) return 0;
+    if (boxId != null) { for (final t in taches) { t['box_id'] = boxId; } }
 
-    // Dedup : filtrer les tâches qui existent déjà (même etape_id + date_prevue + animal_id)
+    // Dedup : filtrer les tâches qui existent déjà (même etape_id + date_prevue + animal_id + logement)
     try {
       final etapeIds = taches.map((t) => t['etape_id']).whereType<String>().toSet().toList();
       final dates    = taches.map((t) => t['date_prevue'] as String).toSet().toList();
       final existing = await _supa
           .from('plan_taches')
-          .select('etape_id, date_prevue, animal_id')
+          .select('etape_id, date_prevue, animal_id, box_id')
           .eq('uid_eleveur', uid)
           .inFilter('etape_id', etapeIds)
           .inFilter('date_prevue', dates);
       final existingKeys = <String>{
         for (final e in existing as List)
-          '${e['etape_id']}_${e['date_prevue']}_${e['animal_id'] ?? ''}'
+          '${e['etape_id']}_${e['date_prevue']}_${e['animal_id'] ?? ''}_${e['box_id'] ?? ''}'
       };
       final toInsert = taches.where((t) {
-        final key = '${t['etape_id']}_${t['date_prevue']}_${t['animal_id'] ?? ''}';
+        final key = '${t['etape_id']}_${t['date_prevue']}_${t['animal_id'] ?? ''}_${t['box_id'] ?? ''}';
         return !existingKeys.contains(key);
       }).toList();
       if (toInsert.isNotEmpty) await _supa.from('plan_taches').insert(toInsert);

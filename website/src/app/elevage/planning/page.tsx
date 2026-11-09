@@ -1280,7 +1280,8 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
   const [racesTxt, setRacesTxt] = useState((existing?.pension_cible?.races ?? []).join(', '));
   const [logementsPension, setLogementsPension] = useState<{ id: string; nom: string; type: string | null; especes: string[] | null }[]>([]);
   useEffect(() => {
-    if (profilSource !== 'pension') return;
+    // Lieux enregistrés (logements, enclos…) : à cocher dans un protocole de locaux.
+    if (profilSource === 'garde') return;
     supabase.from('enclos_chenil').select('id, nom, type, especes').eq('uid_eleveur', uid).order('nom')
       .then(({ data }) => setLogementsPension((data ?? []) as { id: string; nom: string; type: string | null; especes: string[] | null }[]));
   }, [profilSource, uid]);
@@ -1386,7 +1387,11 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
         lieu: locaux ? (lieu.trim() || null) : null,
         cible_type: cibleEffective,
         reference_event: locaux && refEvent !== 'sejour' ? 'manuel' : refEvent,
-        ...(refEvent === 'sejour' ? { pension_cible: cibleSejour } : existing?.pension_cible ? { pension_cible: null } : {}),
+        // Locaux (hors séjour) : lieux cochés gardés pour l'application.
+        ...(refEvent === 'sejour' ? { pension_cible: cibleSejour }
+          : perimetre === 'locaux' && (cible.logement_ids?.length || cible.logement_types?.length)
+            ? { pension_cible: { logement_ids: cible.logement_ids ?? [], logement_types: cible.logement_types ?? [] } }
+          : existing?.pension_cible ? { pension_cible: null } : {}),
         declencheur_auto: (locaux || !declencheurAuto || refEvent === 'sejour') ? null : declencheurAuto,
         default_animal_ids: (perimetre === 'animal' && animalIds.length > 0) ? animalIds : null,
       };
@@ -1490,7 +1495,15 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
           </label>
         ))}
       </div>
-      <label className={`${libelleCls} mt-2`}>Logements précis (aucun coché = tous)</label>
+      <details className="mt-2 border border-gray-200 rounded-xl bg-white">
+        <summary className="px-3 py-2.5 text-sm cursor-pointer select-none">
+          <span className="font-semibold text-gray-600">Lieux concernés : </span>
+          {(() => {
+            const noms = logementsPension.filter(l => cible.logement_ids?.includes(l.id)).map(l => l.nom);
+            return noms.length ? noms.join(', ') : (refEvent === 'sejour' ? 'tous' : 'à choisir');
+          })()}
+        </summary>
+        <div className="px-3 pb-3">
       {(() => {
         // Logements rangés par espèce (ceux des espèces cochées seulement).
         const choisies = cible.especes ?? [];
@@ -1518,6 +1531,8 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
           </div>
         ));
       })()}
+        </div>
+      </details>
     </div>
   ) : null;
 
@@ -1562,17 +1577,21 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
                   {perimetresDispo.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                 </select>
               </div>
-              {perimetre === 'locaux' && profilSource === 'pension' && refEvent === 'sejour' ? (
+              {perimetre === 'locaux' ? (
                 <div className="sm:col-span-2 space-y-3">
-                  <p className="text-xs text-gray-500">Zones concernées : une tâche par logement occupé, parmi les espèces et logements cochés.</p>
-                  {choixEspecesLocaux}
-                  {choixLogements}
-                </div>
-              ) : perimetre === 'locaux' ? (
-                <div>
-                  <label className={libelleCls}>Zone / lieu</label>
-                  <input value={lieu} onChange={e => setLieu(e.target.value)} className={champCls}
-                    placeholder="Saisissez l’espace concerné" />
+                  {profilSource === 'pension' && refEvent === 'sejour' ? (<>
+                    <p className="text-xs text-gray-500">Zones concernées : une tâche par logement occupé, parmi les espèces et lieux cochés.</p>
+                    {choixEspecesLocaux}
+                    {choixLogements}
+                  </>) : (<>
+                    {choixLogements}
+                    {choixLogements && <p className="text-xs text-gray-500">Une série de tâches par lieu coché.</p>}
+                    <div>
+                      <label className={libelleCls}>{choixLogements ? 'Autre zone (facultatif)' : 'Zone / lieu'}</label>
+                      <input value={lieu} onChange={e => setLieu(e.target.value)} className={champCls}
+                        placeholder="Saisissez l’espace concerné" />
+                    </div>
+                  </>)}
                 </div>
               ) : perimetre === 'categorie' ? (
                 <div>
@@ -2009,11 +2028,18 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
     setSaving(true);
     try {
       const etapes = template.plan_template_etapes ?? [];
-      const targets: { animal_id?: string; date_base: string; animal_nom?: string }[] = [];
+      const targets: { animal_id?: string; date_base: string; animal_nom?: string; lieu?: string; box_id?: string }[] = [];
 
       if (perimetre === 'locaux') {
-        // Locaux / matériel : aucune tâche par animal, une seule série.
-        targets.push({ date_base: dateRef });
+        // Locaux / matériel : une série par lieu coché (sinon une seule série).
+        const c = template.pension_cible;
+        if (c?.logement_ids?.length || c?.logement_types?.length) {
+          const { data: lgs } = await supabase.from('enclos_chenil').select('id, nom, type').eq('uid_eleveur', uid).order('nom');
+          for (const l of (lgs ?? []) as { id: string; nom: string; type: string | null }[]) {
+            if (c.logement_ids?.includes(l.id) || (l.type && c.logement_types?.includes(l.type))) targets.push({ date_base: dateRef, lieu: l.nom, box_id: l.id });
+          }
+        }
+        if (!targets.length) targets.push({ date_base: dateRef });
       } else if (isPortee) {
         for (const p of portees.filter(x => porteeIds.includes(x.id))) {
           for (const m of p.membres) {
@@ -2086,7 +2112,7 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
           type_declencheur: template.reference_event ?? 'manuel',
           date_reference: target.date_base,
           reference_id: target.animal_id ?? null,
-          reference_label: perimetre === 'locaux' ? (template.lieu || 'Locaux / matériel') : (target.animal_nom ?? null),
+          reference_label: perimetre === 'locaux' ? (target.lieu || template.lieu || 'Locaux / matériel') : (target.animal_nom ?? null),
           profil_source: profilSource,
         }).select('id').single();
         if (!planRow) continue;
@@ -2100,7 +2126,7 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
           const startDate = (usesAge && ageSem != null)
             ? addDays(baseDate, ageSem * 7)
             : addDays(baseDate, direction * etape.jour_offset);
-          const labelBase = [etape.type_acte, etape.produit, etape.dosage ? `(${etape.dosage})` : ''].filter(Boolean).join(' ');
+          const labelBase = [etape.type_acte, etape.produit, etape.dosage ? `(${etape.dosage})` : ''].filter(Boolean).join(' ') + (target.lieu ? ` — ${target.lieu}` : '');
           const common = {
             plan_id: planRow.id, etape_id: etape.id, uid_eleveur: uid,
             profile_id: profileId || null,
@@ -2108,7 +2134,8 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
             animal_id: target.animal_id ?? null,
             animal_nom: target.animal_nom ?? null,
             type_acte: etape.type_acte || null,
-            lieu: etape.lieu || null,
+            lieu: target.lieu || etape.lieu || null,
+            ...(target.box_id ? { box_id: target.box_id } : {}),
             tranche_horaire: etape.tranche_horaire ?? null,
             profil_source: profilSource,
             ...(autoAssignUid ? { assigned_to: autoAssignUid } : {}),

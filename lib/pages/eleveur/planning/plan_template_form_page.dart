@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/rattachement_picker.dart' show showRattachementSheet, ItemRattachement;
 import 'package:PetsMatch/utils/pension_protocoles.dart' show kMomentsSejour;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces, cleEspecePension, logementAccepteEspece;
 import 'package:flutter/services.dart';
@@ -124,29 +125,6 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     return cles.isEmpty ? kPensionEspeces : [for (final sp in kPensionEspeces) if (cles.contains(sp['key'])) sp];
   }
 
-  /// Logements précis rangés par espèce (ceux des espèces cochées seulement).
-  List<Widget> _logementsParEspece(Widget Function(String, List<(String, String)>) cases) {
-    final choisies = _liste('especes');
-    final groupes = <(String, List<Map<String, dynamic>>)>[];
-    for (final sp in kPensionEspeces) {
-      if (choisies.isNotEmpty && !choisies.contains(sp['key'])) continue;
-      final lgs = [for (final l in _logementsPension)
-        if (((l['especes'] as List?) ?? const []).any((x) => cleEspecePension(x.toString()) == sp['key'])) l];
-      if (lgs.isNotEmpty) groupes.add((sp['label']!, lgs));
-    }
-    final sans = [for (final l in _logementsPension) if (((l['especes'] as List?) ?? const []).isEmpty) l];
-    if (sans.isNotEmpty) groupes.add(('Toutes espèces', sans));
-    final unSeul = groupes.length == 1 && groupes.first.$1 == 'Toutes espèces';
-    return [
-      for (final (titre, lgs) in groupes) ...[
-        if (!unSeul)
-          Padding(padding: const EdgeInsets.only(top: 4),
-              child: Text(titre.toUpperCase(), style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w800, color: Colors.grey.shade600))),
-        cases('logement_ids', [for (final l in lgs) (l['id'].toString(), l['nom']?.toString() ?? 'Logement')]),
-      ],
-    ];
-  }
-
   /// Pension, protocole de séjour : espèces et logements concernés — dans
   /// « Périmètre concerné » pour un nettoyage des locaux, dans « Pensionnaires
   /// concernés » sinon (jamais affichés deux fois).
@@ -188,9 +166,44 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
             cases('logement_types', [for (final t in types) (t, t[0].toUpperCase() + t.substring(1))]),
           ],
           const Text('Logements précis (aucun = tous)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
-          ..._logementsParEspece(cases),
+          const SizedBox(height: 4),
+          _champLieux(),
         ],
     ];
+  }
+
+  /// Liste déroulante des lieux enregistrés (logements), à cocher ; rangés par
+  /// espèce, limités aux espèces cochées.
+  Widget _champLieux() {
+    final choisis = _liste('logement_ids');
+    final especes = _liste('especes');
+    final noms = [for (final l in _logementsPension) if (choisis.contains(l['id'].toString())) l['nom']?.toString() ?? 'Lieu'];
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () async {
+        final items = <ItemRattachement>[];
+        for (final l in _logementsPension) {
+          final esp = [for (final x in (l['especes'] as List?) ?? const []) cleEspecePension(x.toString())];
+          if (especes.isNotEmpty && esp.isNotEmpty && !esp.any(especes.contains)) continue;
+          final lib = esp.isEmpty ? 'Toutes espèces'
+              : kPensionEspeces.firstWhere((x) => x['key'] == esp.first, orElse: () => {'label': esp.first})['label']!;
+          items.add(ItemRattachement(l['id'].toString(), l['nom']?.toString() ?? 'Lieu', lib,
+              detail: (l['type']?.toString() ?? '').isEmpty ? null : l['type'].toString()));
+        }
+        final res = await showRattachementSheet(context,
+            titre: 'Lieux concernés', recherche: 'Rechercher un lieu…', items: items, initial: choisis);
+        if (res != null && mounted) setState(() => _cibleSejour = {..._cibleSejour, 'logement_ids': res});
+      },
+      child: InputDecorator(
+        decoration: _dec('Lieux concernés'),
+        child: Row(children: [
+          Expanded(child: Text(noms.isEmpty ? (_sejour ? 'Tous les lieux' : 'Choisir les lieux') : noms.join(', '),
+              maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: noms.isEmpty ? Colors.grey.shade600 : null))),
+          const Icon(Icons.arrow_drop_down, color: _teal),
+        ]),
+      ),
+    );
   }
 
   /// Ciblage d'un protocole de séjour (pension).
@@ -261,7 +274,8 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       }
     }
     if (_etapes.isEmpty) _etapes.add(_EtapeCtrl());
-    if (_isPension) _chargerLogements();
+    // Lieux enregistrés (logements, enclos…) : à cocher dans un protocole de locaux.
+    if (!_isGarde) _chargerLogements();
   }
 
   Future<void> _loadDefaultAnimaux(List<String> ids) async {
@@ -313,7 +327,9 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       },
     ];
     final races = _racesCtrl.text.split(',').map((x) => x.trim()).where((x) => x.isNotEmpty).toList();
-    final cibleSejourMap = _sejour ? {..._cibleSejour, 'races': races.isEmpty ? null : races} : null;
+    final lieuxCoches = _perimetre == 'locaux' && _liste('logement_ids').isNotEmpty;
+    final cibleSejourMap = _sejour ? {..._cibleSejour, 'races': races.isEmpty ? null : races}
+        : lieuxCoches ? {'logement_ids': _liste('logement_ids')} : null;
     final lieu = locaux && _lieuCtrl.text.trim().isNotEmpty ? _lieuCtrl.text.trim() : null;
     final auto = (locaux || _declencheurAuto.isEmpty || _sejour) ? null : _declencheurAuto;
     final defaultIds = (_perimetre == 'animal' && _selectedAnimaux.isNotEmpty)
@@ -461,12 +477,19 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
               Text('Zones concernées : une tâche par logement occupé, parmi les espèces et logements cochés.',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
               ..._choixZones(especes: true),
-            ] else if (locaux)
+            ] else if (locaux) ...[
+              if (_logementsPension.isNotEmpty) ...[
+                _champLieux(),
+                const SizedBox(height: 4),
+                Text('Une série de tâches par lieu coché.', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+                const SizedBox(height: 10),
+              ],
               TextFormField(
                 controller: _lieuCtrl, style: const TextStyle(fontFamily: 'Galey'),
                 textCapitalization: TextCapitalization.sentences,
-                decoration: _dec('Zone / lieu', hint: 'Saisissez l’espace concerné'),
-              )
+                decoration: _dec(_logementsPension.isNotEmpty ? 'Autre zone (facultatif)' : 'Zone / lieu', hint: 'Saisissez l’espace concerné'),
+              ),
+            ]
             else ...[
               if (_perimetre == 'categorie') ...[
                 _select<String>('Catégorie d’animaux', _categorie, _categoriesDispo,
