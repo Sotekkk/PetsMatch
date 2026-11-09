@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/protocoles.dart' show animauxPresents;
 import 'package:PetsMatch/utils/exercice_tache.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -841,6 +842,10 @@ class _AgendaPageState extends State<AgendaPage> {
         if (idsAnimaux.isNotEmpty) {
           final anims = await _supa.from('animaux').select('id, portee_id, nom_mere').inFilter('id', idsAnimaux.toList());
           final parId = {for (final a in anims) a['id'].toString(): a};
+          // Animal cédé, adopté, sorti : ses tâches de protocole ne s'affichent plus.
+          final presents = await animauxPresents(idsAnimaux.toList(), await _effectiveUid());
+          all.removeWhere((t) => t['_source'] == 'protocole' && t['animal_id'] != null
+              && !presents.contains(t['animal_id'].toString()) && t['statut'] != 'fait');
           for (final t in all) {
             if (t['_source'] != 'protocole') continue;
             final a = parId[t['animal_id']?.toString()];

@@ -69,11 +69,14 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
       if (espece != null && espece.isNotEmpty) q = q.eq('espece', espece);
       if (pid.isNotEmpty) q = q.eq('profile_id', pid);
       final rows = await q;
+      // Petits encore présents (pas cédés, adoptés, sortis).
+      final presents = await animauxPresents([for (final a in rows) a['id'].toString()], widget.uid);
       if (mounted) {
         setState(() {
           // Seulement les petits encore « de la portée » (chiot < 13 sem., chaton < 15…).
           _portees = porteesDepuis([for (final a in rows)
-            if (petitDePortee(a['date_naissance'], (a['espece'] ?? espece)?.toString())) Map<String, dynamic>.from(a)]);
+            if (presents.contains(a['id'].toString()) && petitDePortee(a['date_naissance'], (a['espece'] ?? espece)?.toString()))
+              Map<String, dynamic>.from(a)]);
           _loadingRefs = false;
         });
       }

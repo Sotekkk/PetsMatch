@@ -92,7 +92,33 @@ exports.sendProtocolesDuJour = functions
             return null;
         }
 
-        // Destinataire (uid + profil) → tâches regroupées par titre.
+        // Animaux des tâches : portée (un groupe par portée) et présence (un
+        // petit cédé, adopté, sorti ou décédé n'est plus dans la notification).
+        const HORS = ["sorti", "adopte", "transfere", "decede"];
+        const ids = [...new Set(taches.map((t) => t.animal_id).filter(Boolean).map(String))];
+        const animaux = new Map();
+        const proprietes = new Map();
+        for (let i = 0; i < ids.length; i += 150) {
+            const lot = ids.slice(i, i + 150).map(encodeURIComponent).join(",");
+            for (const a of await supabaseSelect("animaux", `select=id,statut,portee_id,nom_mere&id=in.(${lot})`)) {
+                animaux.set(String(a.id), a);
+            }
+            for (const p of await supabaseSelect("animaux_proprietes",
+                `select=animal_id,uid_proprio,date_fin&animal_id=in.(${lot})`)) {
+                const k = String(p.animal_id);
+                if (!proprietes.has(k)) proprietes.set(k, []);
+                proprietes.get(k).push(p);
+            }
+        }
+        const present = (t) => {
+            if (!t.animal_id) return true;
+            const a = animaux.get(String(t.animal_id));
+            if (!a || HORS.includes(a.statut || "")) return false;
+            const lignes = proprietes.get(String(t.animal_id)) || [];
+            return !lignes.length || lignes.some((p) => p.uid_proprio === t.uid_eleveur && !p.date_fin);
+        };
+
+        // Destinataire (uid + profil) → tâches regroupées par titre (et par portée).
         const dest = new Map();
         const ajouter = (uid, profileId, t) => {
             if (!uid) return;
@@ -103,7 +129,9 @@ exports.sendProtocolesDuJour = functions
             }
             const d = dest.get(k);
             const retard = t.date_prevue < today;
-            const titre = titreTache(t);
+            const a = t.animal_id ? animaux.get(String(t.animal_id)) : null;
+            const portee = a && a.portee_id ? (a.nom_mere ? `Portée de ${a.nom_mere}` : "Portée") : null;
+            const titre = portee ? `${titreTache(t)} — ${portee}` : titreTache(t);
             const gk = `${titre}|${retard ? "r" : "j"}`;
             if (!d.groupes.has(gk)) d.groupes.set(gk, {titre, retard, items: [], vus: new Set()});
             const g = d.groupes.get(gk);
@@ -116,6 +144,7 @@ exports.sendProtocolesDuJour = functions
                 {nom: t.lieu || "Locaux"});
         };
         for (const t of taches) {
+            if (!present(t)) continue;
             const pid = t.eleveur_profile_id || t.profile_id || null;
             ajouter(t.uid_eleveur, pid, t);
             if (t.assigned_to && t.assigned_to !== t.uid_eleveur) ajouter(t.assigned_to, t.assigned_profile_id, t);

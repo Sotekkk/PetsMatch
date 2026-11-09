@@ -1,7 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/main.dart';
-import 'package:PetsMatch/utils/protocoles.dart' show perimetreDe, estHorsPriseEnCharge, petitDePortee;
+import 'package:PetsMatch/utils/protocoles.dart' show perimetreDe, estHorsPriseEnCharge, petitDePortee, animauxPresents;
 
 class PlanningService {
   static final _supa = Supabase.instance.client;
@@ -268,7 +268,7 @@ class PlanningService {
     final List<Map<String, dynamic>> cibles = cibleType == 'locaux'
         ? [{ 'animal_id': null, 'animal_nom': null, 'date_ref': dateReference }]
         : cibleType == 'portee'
-            ? await _resolvePortees(porteeIds ?? const [], refEvent, dateReference)
+            ? await _resolvePortees(porteeIds ?? const [], refEvent, dateReference, uid)
             : await _resolveCibles(
                 uid: uid,
                 cibleType: cibleType,
@@ -390,12 +390,15 @@ class PlanningService {
   // ── Petits des portées choisies (date de base = naissance si le protocole
   // se calcule depuis la naissance ou l'âge) ──────────────────────────────────
   static Future<List<Map<String, dynamic>>> _resolvePortees(
-      List<String> porteeIds, String refEvent, DateTime dateReference) async {
+      List<String> porteeIds, String refEvent, DateTime dateReference, String uid) async {
     if (porteeIds.isEmpty) return [];
     final rows = [for (final a in await _supa.from('animaux').select('id, nom, date_naissance, espece')
         .inFilter('portee_id', porteeIds).not('statut', 'in', '(sorti,decede)').order('nom'))
       // Seulement les petits encore « de la portée » (chiot < 13 sem., chaton < 15…).
       if (petitDePortee(a['date_naissance'], a['espece']?.toString())) a];
+    // Petits encore présents (pas cédés, adoptés, sortis).
+    final presents = await animauxPresents([for (final a in rows) a['id'].toString()], uid);
+    rows.removeWhere((a) => !presents.contains(a['id'].toString()));
     final depuisNaissance = refEvent == 'naissance' || refEvent == 'age_semaines';
     return (rows as List).map((a) => {
       'animal_id': a['id'] as String?,

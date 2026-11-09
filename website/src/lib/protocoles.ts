@@ -83,6 +83,33 @@ export function ageMaxPorteeSemaines(espece?: string | null): number {
   return 13; // chien et autres
 }
 
+/**
+ * Animaux encore présents chez l'éleveur : pas sortis / adoptés / décédés, et
+ * pas cédés (sa propriété est close alors qu'elle existait). Animal sans
+ * aucune ligne de propriété : présent. Miroir appli : animauxPresents.
+ */
+export async function animauxPresents(
+  sb: { from: (t: string) => any }, // eslint-disable-line @typescript-eslint/no-explicit-any
+  ids: string[], uidEleveur: string,
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!ids.length) return out;
+  const [{ data: anims }, { data: props }] = await Promise.all([
+    sb.from('animaux').select('id, statut').in('id', ids),
+    sb.from('animaux_proprietes').select('animal_id, uid_proprio, date_fin').in('animal_id', ids),
+  ]);
+  const avecLigne = new Set<string>(), actif = new Set<string>();
+  for (const p of (props ?? []) as { animal_id: string; uid_proprio: string; date_fin: string | null }[]) {
+    avecLigne.add(p.animal_id);
+    if (p.uid_proprio === uidEleveur && !p.date_fin) actif.add(p.animal_id);
+  }
+  for (const a of (anims ?? []) as { id: string; statut: string | null }[]) {
+    if (estHorsPriseEnCharge(a)) continue;
+    if (actif.has(a.id) || !avecLigne.has(a.id)) out.add(a.id);
+  }
+  return out;
+}
+
 /** Le petit a-t-il encore l'âge « portée » (date de naissance inconnue : oui) ? */
 export function petitDePortee(dateNaissance?: string | null, espece?: string | null): boolean {
   if (!dateNaissance) return true;

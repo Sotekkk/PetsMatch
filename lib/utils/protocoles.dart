@@ -1,3 +1,4 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
 // Protocoles (plan_templates) — périmètre, libellés et calcul des dates.
 // Miroir site : website/src/lib/protocoles.ts — garder les deux synchronisés.
 
@@ -44,6 +45,32 @@ int ageMaxPorteeSemaines(String? espece) {
   if (d(['ovin', 'mouton', 'caprin', 'chèvre', 'chevre'])) return 16;
   if (d(['volaille', 'oiseau', 'poule'])) return 8;
   return 13; // chien et autres
+}
+
+/// Animaux encore présents chez l'éleveur : pas sortis / adoptés / décédés, et
+/// pas cédés (propriété close alors qu'elle existait). Animal sans ligne de
+/// propriété : présent. Miroir site : animauxPresents (protocoles.ts).
+Future<Set<String>> animauxPresents(List<String> ids, String uidEleveur) async {
+  final out = <String>{};
+  if (ids.isEmpty) return out;
+  try {
+    final supa = Supabase.instance.client;
+    final anims = await supa.from('animaux').select('id, statut').inFilter('id', ids);
+    final props = await supa.from('animaux_proprietes').select('animal_id, uid_proprio, date_fin').inFilter('animal_id', ids);
+    final avecLigne = <String>{}, actif = <String>{};
+    for (final p in props) {
+      avecLigne.add(p['animal_id'].toString());
+      if (p['uid_proprio'] == uidEleveur && p['date_fin'] == null) actif.add(p['animal_id'].toString());
+    }
+    for (final a in anims) {
+      final id = a['id'].toString();
+      if (estHorsPriseEnCharge(Map<String, dynamic>.from(a))) continue;
+      if (actif.contains(id) || !avecLigne.contains(id)) out.add(id);
+    }
+  } catch (_) {
+    return ids.toSet();
+  }
+  return out;
 }
 
 /// Le petit a-t-il encore l'âge « portée » (date de naissance inconnue : oui) ?

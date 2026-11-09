@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { datesGestationEnCours, dateRefGestation, type DatesGestation } from '@/lib/planning-service';
 import {
   PERIMETRES, CATEGORIES, REF_EVENTS, actesSuggeresPour, TRANCHES_LABELS,
-  perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, estHorsPriseEnCharge, type Perimetre, petitDePortee,
+  perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, estHorsPriseEnCharge, type Perimetre, petitDePortee, animauxPresents,
 } from '@/lib/protocoles';
 import { ouvrirFicheProtocole } from '@/lib/protocole-pdf';
 import { SANTE_COULEURS, SANTE_COULEUR_ACTE } from '@/lib/sante-couleurs';
@@ -1917,11 +1917,13 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
       .eq('uid_eleveur', uid).not('portee_id', 'is', null).not('statut', 'in', '(sorti,decede)');
     if (template.espece) q = q.eq('espece', template.espece);
     if (profileId) q = q.eq('profile_id', profileId) as typeof q;
-    q.order('date_naissance', { ascending: false }).then(({ data }) => {
+    q.order('date_naissance', { ascending: false }).then(async ({ data }) => {
+      // Petits encore présents (pas cédés, adoptés, sortis).
+      const presents = await animauxPresents(supabase, ((data ?? []) as { id: string }[]).map(a => a.id), uid);
       const map = new Map<string, { id: string; label: string; membres: { id: string; nom: string; date_naissance: string | null }[] }>();
       // Seulement les petits encore « de la portée » (chiot < 13 sem., chaton < 15…).
       for (const a of ((data ?? []) as { id: string; nom: string; date_naissance: string | null; portee_id: string; nom_mere: string | null; espece: string | null }[])
-        .filter(x => petitDePortee(x.date_naissance, x.espece ?? template.espece))) {
+        .filter(x => presents.has(x.id) && petitDePortee(x.date_naissance, x.espece ?? template.espece))) {
         if (!map.has(a.portee_id)) {
           const dn = a.date_naissance ? ` — née le ${new Date(a.date_naissance).toLocaleDateString('fr-FR')}` : '';
           map.set(a.portee_id, { id: a.portee_id, label: `${a.nom_mere ? `Portée de ${a.nom_mere}` : 'Portée'}${dn}`, membres: [] });

@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState, useProfileSource } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
+import { animauxPresents } from '@/lib/protocoles';
 import { typeFromMotif } from '@/lib/agenda-type';
 import { sansAutresProfils } from '@/lib/cloisonnement-profils';
 import { AddTacheModal, type MembreOption } from '@/components/agenda/AddTacheModal';
@@ -756,6 +757,12 @@ export default function AgendaPage() {
     if (idsAnimaux.length) {
       const { data: anims } = await supabase.from('animaux').select('id, portee_id, nom_mere').in('id', idsAnimaux);
       const parId = new Map(((anims ?? []) as { id: string; portee_id: string | null; nom_mere: string | null }[]).map(a => [a.id, a]));
+      // Animal cédé, adopté, sorti : ses tâches de protocole ne s'affichent plus.
+      const presents = await animauxPresents(supabase, idsAnimaux, await resolveEffectiveUid());
+      for (let i = protoTasks.length - 1; i >= 0; i--) {
+        const id = protoTasks[i].animal_id;
+        if (id && !presents.has(id) && protoTasks[i].statut !== 'fait') protoTasks.splice(i, 1);
+      }
       for (const t of protoTasks) {
         const a = t.animal_id ? parId.get(t.animal_id) : undefined;
         if (a?.portee_id) { t.portee_id = a.portee_id; t.portee_label = a.nom_mere ? `Portée de ${a.nom_mere}` : 'Portée'; }
