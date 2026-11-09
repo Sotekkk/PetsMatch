@@ -80,7 +80,13 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
     }
   }
 
+  /// Saillie / mise bas : femelles cochées sans gestation enregistrée.
+  List<Map<String, dynamic>> get _sansGestation =>
+      [for (final a in _animaux) if (_selectedIds.contains(a['id'].toString()) && _dateGest(a['id'].toString()) == null) a];
+
   bool get _showDatePicker =>
+    // Date à saisir seulement pour les femelles cochées sans gestation enregistrée.
+    _refGestation ? (_cibleType == 'individuel' && _sansGestation.isNotEmpty) :
     _cibleType == 'locaux' ||
     (_cibleType == 'portee' ? !_depuisNaissance
         : (_refEvent == 'manuel' || _refEvent == 'saillie' || _cibleType == 'individuel'));
@@ -438,11 +444,17 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
                 if (_refGestation)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: Text(_cibleType == 'individuel'
-                        ? 'La date enregistrée dans la gestation en cours de chaque femelle est reprise ; celle-ci ne sert que pour les femelles sans gestation enregistrée.'
-                        : 'Seules les femelles avec une gestation en cours reçoivent les tâches, à partir de la date enregistrée.',
+                    child: Text('Date utilisée pour les femelles cochées sans gestation enregistrée : ${_sansGestation.map((a) => a['nom'] ?? '').join(', ')}. Les autres gardent la date de leur gestation.',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
                   ),
+                const SizedBox(height: 14),
+              ],
+
+              if (_refGestation && !_showDatePicker && _cibleType != 'bebes') ...[
+                Text(_cibleType == 'individuel' || _cibleType == 'gestantes'
+                    ? 'Dates reprises de la gestation enregistrée de chaque femelle (${_refEvent == 'saillie' ? 'saillie' : 'mise bas prévue'}).'
+                    : 'Seules les femelles avec une gestation en cours reçoivent les tâches, à partir de la date enregistrée.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                 const SizedBox(height: 14),
               ],
 

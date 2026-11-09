@@ -1940,6 +1940,10 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
   }, [refGestation, needsAnimal, animaux]);
   const dateGest = (id: string) => dateRefGestation(template.reference_event, gestations.get(id));
   const fmtJour = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR');
+  // Saillie / mise bas : date à saisir seulement pour les femelles cochées
+  // sans gestation enregistrée (jamais sur un groupe : la date enregistrée suffit).
+  const sansGestation = refGestation ? selectedAnimaux.filter(a => !dateGest(a.id)) : [];
+  const afficherDate = showDate && (!refGestation || (cibleType === 'individuel' && sansGestation.length > 0));
   const filteredAnimaux = animalSearch.trim()
     ? animaux.filter(a => a.nom.toLowerCase().includes(animalSearch.trim().toLowerCase()))
     : animaux;
@@ -2285,7 +2289,7 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
               </div>
             </div>
           )}
-          {showDate && (
+          {afficherDate && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">
                 {template.reference_event === 'mise_bas' ? 'Date de mise bas prévue (J0)'
@@ -2296,12 +2300,17 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500" />
               {refGestation && (
                 <p className="text-xs text-gray-500 mt-1">
-                  {cibleType === 'individuel'
-                    ? 'La date enregistrée dans la gestation en cours de chaque femelle est reprise ; celle-ci ne sert que pour les femelles sans gestation enregistrée.'
-                    : 'Seules les femelles avec une gestation en cours reçoivent les tâches, à partir de la date enregistrée.'}
+                  {`Date utilisée pour les femelles cochées sans gestation enregistrée : ${sansGestation.map(a => a.nom).join(', ')}. Les autres gardent la date de leur gestation.`}
                 </p>
               )}
             </div>
+          )}
+          {refGestation && !afficherDate && cibleType !== 'bebes' && (
+            <p className="text-xs text-gray-500">
+              {cibleType === 'individuel' || cibleType === 'gestantes'
+                ? `Dates reprises de la gestation enregistrée de chaque femelle (${template.reference_event === 'saillie' ? 'saillie' : 'mise bas prévue'}).`
+                : 'Seules les femelles avec une gestation en cours reçoivent les tâches, à partir de la date enregistrée.'}
+            </p>
           )}
           <button onClick={apply} disabled={saving}
             className="w-full py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 disabled:opacity-50">
