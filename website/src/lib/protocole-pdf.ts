@@ -7,7 +7,7 @@
 import { supabase } from '@/lib/supabase';
 import {
   acteLabel, frequenceLabel, perimetreLabel, quandLabel, refEventLabel, perimetreDe,
-  TRANCHES_LABELS, type ProtocoleBase,
+  TRANCHES_LABELS, trancheLabel, type ProtocoleBase,
 } from '@/lib/protocoles';
 
 interface Application {
@@ -137,7 +137,7 @@ export async function genererFicheProtocole(t: ProtocoleBase, opts: { structure:
         acteLabel(e.type_acte),
         quandLabel(e, t.reference_event),
         frequenceLabel(e),
-        e.tranche_horaire ? (TRANCHES_LABELS[e.tranche_horaire] ?? e.tranche_horaire) : '—',
+        e.tranche_horaire ? trancheLabel(e.tranche_horaire) : '—',
         consignes || '—',
       ];
     }),

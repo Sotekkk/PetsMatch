@@ -1,7 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/main.dart';
-import 'package:PetsMatch/utils/protocoles.dart' show perimetreDe, estHorsPriseEnCharge, petitDePortee, animauxPresents;
+import 'package:PetsMatch/utils/protocoles.dart' show perimetreDe, estHorsPriseEnCharge, petitDePortee, animauxPresents, eclaterTranches;
 
 class PlanningService {
   static final _supa = Supabase.instance.client;
@@ -674,6 +674,9 @@ class PlanningService {
 
     if (taches.isEmpty) return 0;
     if (boxId != null) { for (final t in taches) { t['box_id'] = boxId; } }
+    // Plusieurs créneaux (matin et soir…) : une tâche par créneau.
+    final parCreneau = eclaterTranches(taches);
+    taches..clear()..addAll(parCreneau);
 
     // Dedup : filtrer les tâches qui existent déjà (même etape_id + date_prevue + animal_id + logement)
     try {
@@ -681,16 +684,16 @@ class PlanningService {
       final dates    = taches.map((t) => t['date_prevue'] as String).toSet().toList();
       final existing = await _supa
           .from('plan_taches')
-          .select('etape_id, date_prevue, animal_id, box_id')
+          .select('etape_id, date_prevue, animal_id, box_id, tranche_horaire')
           .eq('uid_eleveur', uid)
           .inFilter('etape_id', etapeIds)
           .inFilter('date_prevue', dates);
       final existingKeys = <String>{
         for (final e in existing as List)
-          '${e['etape_id']}_${e['date_prevue']}_${e['animal_id'] ?? ''}_${e['box_id'] ?? ''}'
+          '${e['etape_id']}_${e['date_prevue']}_${e['animal_id'] ?? ''}_${e['box_id'] ?? ''}_${e['tranche_horaire'] ?? ''}'
       };
       final toInsert = taches.where((t) {
-        final key = '${t['etape_id']}_${t['date_prevue']}_${t['animal_id'] ?? ''}_${t['box_id'] ?? ''}';
+        final key = '${t['etape_id']}_${t['date_prevue']}_${t['animal_id'] ?? ''}_${t['box_id'] ?? ''}_${t['tranche_horaire'] ?? ''}';
         return !existingKeys.contains(key);
       }).toList();
       if (toInsert.isNotEmpty) await _supa.from('plan_taches').insert(toInsert);

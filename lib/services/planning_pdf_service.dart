@@ -205,7 +205,7 @@ class PlanningPdfService {
                   cell(acteLabel(e['type_acte'] as String?)),
                   cell(quandLabel(e, refEvent)),
                   cell(frequenceLabel(e)),
-                  cell(kTranches[e['tranche_horaire']] ?? '—'),
+                  cell(tranchesDe(e['tranche_horaire']).isEmpty ? '—' : trancheLabel(e['tranche_horaire'])),
                   cell(consignes.isEmpty ? '—' : consignes),
                 ]);
               })(),

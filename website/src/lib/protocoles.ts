@@ -238,6 +238,24 @@ export const TRANCHES_LABELS: Record<string, string> = {
   matin: 'Matin', midi: 'Midi', apres_midi: 'Après-midi', soir: 'Soir',
 };
 
+/** Créneaux d'une étape : « matin,soir » = plusieurs fois par jour. */
+export function tranchesDe(v?: string | null): string[] {
+  return (v ?? '').split(',').map(x => x.trim()).filter(Boolean);
+}
+export function trancheLabel(v?: string | null): string {
+  return tranchesDe(v).map(k => TRANCHES_LABELS[k] ?? k).join(' et ');
+}
+/** Une tâche par créneau (« Litière — Matin », « Litière — Soir »). Miroir
+ *  appli : eclaterTranches (lib/utils/protocoles.dart). */
+export function eclaterTranches<T extends { tranche_horaire?: unknown; label?: unknown }>(taches: T[]): T[] {
+  return taches.flatMap(t => {
+    const ts = tranchesDe(t.tranche_horaire as string | null);
+    return ts.length > 1
+      ? ts.map(k => ({ ...t, tranche_horaire: k, label: `${String(t.label ?? '')} — ${TRANCHES_LABELS[k] ?? k}` }))
+      : [t];
+  });
+}
+
 export function quandLabel(e: EtapeProtocole, refEvent: string): string {
   if (refEvent === 'age_semaines' || (e.age_min_semaines != null && refEvent !== 'manuel' && refEvent !== 'saillie' && refEvent !== 'mise_bas')) {
     return `À ${e.age_min_semaines ?? 0} semaine${(e.age_min_semaines ?? 0) > 1 ? 's' : ''} d’âge`;

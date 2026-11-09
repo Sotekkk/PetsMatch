@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { datesGestationEnCours, dateRefGestation, type DatesGestation } from '@/lib/planning-service';
 import {
   PERIMETRES, CATEGORIES, REF_EVENTS, actesSuggeresPour, TRANCHES_LABELS,
-  perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, estHorsPriseEnCharge, type Perimetre, petitDePortee, animauxPresents,
+  perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, estHorsPriseEnCharge, type Perimetre, petitDePortee, animauxPresents, tranchesDe, trancheLabel, eclaterTranches,
 } from '@/lib/protocoles';
 import { ouvrirFicheProtocole } from '@/lib/protocole-pdf';
 import { SANTE_COULEURS, SANTE_COULEUR_ACTE } from '@/lib/sante-couleurs';
@@ -157,7 +157,7 @@ function etapeFreqLabel(e: Etape): string {
     : `Mensuel × ${e.duree_semaines}mois`;
 }
 function etapeTrancheLabel(e: Etape): string {
-  return e.tranche_horaire ? (TRANCHE_LABELS[e.tranche_horaire] ?? e.tranche_horaire) : '—';
+  return e.tranche_horaire ? trancheLabel(e.tranche_horaire) : '—';
 }
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
@@ -1282,9 +1282,12 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
   useEffect(() => {
     // Lieux enregistrés (logements, enclos…) : à cocher dans un protocole de locaux.
     if (profilSource === 'garde') return;
-    supabase.from('enclos_chenil').select('id, nom, type, especes').eq('uid_eleveur', uid).order('nom')
-      .then(({ data }) => setLogementsPension((data ?? []) as { id: string; nom: string; type: string | null; especes: string[] | null }[]));
-  }, [profilSource, uid]);
+    // Lieux de CE profil (élevage, association, pension d'un même compte jamais
+    // mélangés) ; anciens lieux sans profil : selon « association » ou non.
+    supabase.from('enclos_chenil').select('id, nom, type, especes, profile_id, is_association').eq('uid_eleveur', uid).order('nom')
+      .then(({ data }) => setLogementsPension(((data ?? []) as { id: string; nom: string; type: string | null; especes: string[] | null; profile_id: string | null; is_association: boolean | null }[])
+        .filter(l => l.profile_id ? !profileId || l.profile_id === profileId : (profilSource === 'association') === !!l.is_association)));
+  }, [profilSource, uid, profileId]);
   const [animalIds, setAnimalIds] = useState<string[]>(existing?.default_animal_ids ?? []);
   const [showAnimalPicker, setShowAnimalPicker] = useState(false);
   const [animalSearch, setAnimalSearch] = useState('');
@@ -1854,11 +1857,24 @@ function EtapeForm({ index, total, etape, refEvent, usesAge, onChange, onMove, o
         </div>
         </>)}
         <div>
-          <label className={libelleCls}>Créneau</label>
-          <select value={etape.tranche_horaire ?? ''} onChange={e => onChange({ tranche_horaire: e.target.value || null })} className={champCls}>
-            <option value="">Non défini</option>
-            {Object.entries(TRANCHES_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          <label className={libelleCls}>Créneaux (plusieurs possibles)</label>
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5 pt-1.5">
+            {Object.entries(TRANCHES_LABELS).map(([k, v]) => {
+              const actuels = tranchesDe(etape.tranche_horaire);
+              return (
+                <label key={k} className="flex items-center gap-1.5 text-sm">
+                  <input type="checkbox" checked={actuels.includes(k)}
+                    onChange={e => {
+                      const l = e.target.checked ? [...actuels, k] : actuels.filter(x => x !== k);
+                      // Ordre de la journée (matin, midi, après-midi, soir).
+                      const tri = Object.keys(TRANCHES_LABELS).filter(x => l.includes(x));
+                      onChange({ tranche_horaire: tri.length ? tri.join(',') : null });
+                    }} />
+                  {v}
+                </label>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -2176,8 +2192,10 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
             }
           }
         }
-        if (taches.length > 0) await supabase.from('plan_taches').insert(taches);
-        totalTaches += taches.length;
+        // Plusieurs créneaux (matin et soir…) : une tâche par créneau.
+        const parCreneau = eclaterTranches(taches);
+        if (parCreneau.length > 0) await supabase.from('plan_taches').insert(parCreneau);
+        totalTaches += parCreneau.length;
       }
       // Aucune tâche : le dire clairement (avant : « 0 tâche générée ! », lu comme un succès).
       if (totalTaches === 0) {

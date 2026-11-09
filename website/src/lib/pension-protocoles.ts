@@ -8,7 +8,7 @@
 // les tâches non faites sont retirées si le séjour se termine plus tôt ou est
 // annulé. Miroir appli : lib/utils/pension_protocoles.dart.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { acteLabel } from '@/lib/protocoles';
+import { acteLabel, eclaterTranches } from '@/lib/protocoles';
 import { cleEspecePension, pensionGroupe, PENSION_ESPECES } from '@/lib/pension-especes';
 
 export interface PensionCible {
@@ -167,9 +167,11 @@ export async function appliquerProtocolesSejour(sb: SupabaseClient, entreeIds: s
         reference_label: locaux ? t(lg?.nom) || 'Logement' : t(e.animal_nom) || 'Pensionnaire', profil_source: 'pension',
       }).select('id').single();
       if (!plan) continue;
-      const { error: errT } = await sb.from('plan_taches').insert(taches.map(x => ({ ...x, plan_id: (plan as { id: string }).id })));
+      // Plusieurs créneaux (matin et soir…) : une tâche par créneau.
+      const parCreneau = eclaterTranches(taches);
+      const { error: errT } = await sb.from('plan_taches').insert(parCreneau.map(x => ({ ...x, plan_id: (plan as { id: string }).id })));
       if (errT) continue;
-      res.taches += taches.length;
+      res.taches += parCreneau.length;
       applique = true;
     }
     if (applique) res.protocoles.push(t(tp.nom));

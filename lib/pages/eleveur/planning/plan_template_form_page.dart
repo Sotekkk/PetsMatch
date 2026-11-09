@@ -106,8 +106,17 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     final uid = widget.employerUid ?? FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final r = await Supabase.instance.client.from('enclos_chenil').select('id, nom, type, especes').eq('uid_eleveur', uid).order('nom');
-      if (mounted) setState(() => _logementsPension = List<Map<String, dynamic>>.from(r));
+      final r = await Supabase.instance.client.from('enclos_chenil')
+          .select('id, nom, type, especes, profile_id, is_association').eq('uid_eleveur', uid).order('nom');
+      // Lieux de CE profil (élevage, association, pension d'un même compte jamais
+      // mélangés) ; anciens lieux sans profil : selon « association » ou non.
+      final pid = widget.employerProfileId ?? User_Info.activeProfileId;
+      final asso = _profilSource == 'association';
+      final lieux = [for (final l in r)
+        if ((l['profile_id']?.toString() ?? '').isNotEmpty
+            ? (pid.isEmpty || l['profile_id'].toString() == pid)
+            : asso == (l['is_association'] == true)) Map<String, dynamic>.from(l)];
+      if (mounted) setState(() => _logementsPension = lieux);
     } catch (_) {}
   }
 
@@ -622,6 +631,44 @@ class _EtapeCardState extends State<_EtapeCard> {
   static const _ts = TextStyle(fontFamily: 'Galey', fontSize: 14);
   InputDecoration _dec(String l, {String? hint}) => _PlanTemplateFormPageState._dec(l, hint: hint);
 
+  /// Créneaux d'une étape, plusieurs possibles (matin et soir…) : une tâche
+  /// par créneau à l'application.
+  Widget _champCreneaux(dynamic c, void Function(VoidCallback) maj) {
+    final actuels = tranchesDe(c.trancheHoraire);
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () async {
+        final choix = {...actuels};
+        final ok = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setD) => AlertDialog(
+          title: const Text('Créneaux', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800)),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            for (final t in kTranches.entries)
+              CheckboxListTile(
+                dense: true, contentPadding: EdgeInsets.zero, activeColor: _teal,
+                title: Text(t.value, style: const TextStyle(fontFamily: 'Galey')),
+                value: choix.contains(t.key),
+                onChanged: (v) => setD(() => v == true ? choix.add(t.key) : choix.remove(t.key)),
+              ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), style: FilledButton.styleFrom(backgroundColor: _teal), child: const Text('Valider')),
+          ],
+        )));
+        if (ok != true) return;
+        // Ordre de la journée (matin, midi, après-midi, soir).
+        final tri = [for (final k in kTranches.keys) if (choix.contains(k)) k];
+        maj(() => c.trancheHoraire = tri.isEmpty ? null : tri.join(','));
+      },
+      child: InputDecorator(
+        decoration: _dec('Créneaux'),
+        child: Text(actuels.isEmpty ? 'Non défini' : trancheLabel(c.trancheHoraire),
+            maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+      ),
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final c = widget.ctrl;
@@ -690,14 +737,7 @@ class _EtapeCardState extends State<_EtapeCard> {
                     decoration: _dec('Jours'))),
                 ],
                 const SizedBox(width: 8),
-                Expanded(child: DropdownButtonFormField<String?>(
-                  initialValue: c.trancheHoraire, isExpanded: true, decoration: _dec('Créneau'),
-                  items: [
-                    DropdownMenuItem<String?>(value: null, child: Text('Non défini', style: _ts)),
-                    ...kTranches.entries.map((t) => DropdownMenuItem<String?>(value: t.key, child: Text(t.value, style: _ts))),
-                  ],
-                  onChanged: (v) => maj(() => c.trancheHoraire = v),
-                )),
+                Expanded(child: _champCreneaux(c, maj)),
               ])
             else ...[
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -743,15 +783,7 @@ class _EtapeCardState extends State<_EtapeCard> {
                 }),
               )),
               const SizedBox(width: 8),
-              Expanded(flex: 2, child: DropdownButtonFormField<String?>(
-                initialValue: c.trancheHoraire, isExpanded: true,
-                decoration: _dec('Créneau'),
-                items: [
-                  DropdownMenuItem<String?>(value: null, child: Text('Non défini', style: _ts)),
-                  ...kTranches.entries.map((t) => DropdownMenuItem<String?>(value: t.key, child: Text(t.value, style: _ts))),
-                ],
-                onChanged: (v) => maj(() => c.trancheHoraire = v),
-              )),
+              Expanded(flex: 2, child: _champCreneaux(c, maj)),
             ]),
             const SizedBox(height: 8),
             Wrap(spacing: 10, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [

@@ -176,6 +176,21 @@ String acteDepuisSaisie(String s) {
 
 const kTranches = <String, String>{'matin': 'Matin', 'midi': 'Midi', 'apres_midi': 'Après-midi', 'soir': 'Soir'};
 
+/// Créneaux d'une étape : « matin,soir » = plusieurs fois par jour.
+List<String> tranchesDe(Object? v) =>
+    [for (final x in (v?.toString() ?? '').split(',')) if (x.trim().isNotEmpty) x.trim()];
+String trancheLabel(Object? v) => tranchesDe(v).map((k) => kTranches[k] ?? k).join(' et ');
+
+/// Une tâche par créneau (« Litière — Matin », « Litière — Soir »). Miroir
+/// site : eclaterTranches (protocoles.ts).
+List<Map<String, dynamic>> eclaterTranches(List<Map<String, dynamic>> taches) => [
+  for (final t in taches)
+    if (tranchesDe(t['tranche_horaire']).length > 1)
+      for (final k in tranchesDe(t['tranche_horaire']))
+        {...t, 'tranche_horaire': k, 'label': '${t['label'] ?? ''} — ${kTranches[k] ?? k}'}
+    else t,
+];
+
 String quandLabel(Map<String, dynamic> e, String refEvent) {
   // Pension, protocole de séjour.
   if (refEvent == 'sejour') {

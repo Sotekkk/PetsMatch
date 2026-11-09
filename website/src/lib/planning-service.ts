@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { eclaterTranches } from './protocoles';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -67,7 +68,7 @@ export async function applyTemplateToAnimal(
   if (!planRow) return 0;
   const planId = (planRow as { id: string }).id;
 
-  const taches: Record<string, unknown>[] = [];
+  let taches: Record<string, unknown>[] = [];
   for (const etape of etapes) {
     const direction = etape.offset_direction === 'avant' ? -1 : 1;
     const ageSem    = etape.age_min_semaines;
@@ -129,24 +130,26 @@ export async function applyTemplateToAnimal(
   }
 
   if (taches.length === 0) return 0;
+  // Plusieurs créneaux (matin et soir…) : une tâche par créneau.
+  taches = eclaterTranches(taches);
 
-  // Dedup : filtrer les tâches qui existent déjà (même etape_id + date_prevue + animal_id)
+  // Dedup : filtrer les tâches qui existent déjà (même etape_id + date_prevue + animal_id + créneau)
   try {
     const etapeIds = [...new Set(taches.map(t => t.etape_id as string).filter(Boolean))];
     const dates    = [...new Set(taches.map(t => t.date_prevue as string))];
     const { data: existing } = await supabase
       .from('plan_taches')
-      .select('etape_id, date_prevue, animal_id')
+      .select('etape_id, date_prevue, animal_id, tranche_horaire')
       .eq('uid_eleveur', uid)
       .in('etape_id', etapeIds)
       .in('date_prevue', dates);
 
     const existingKeys = new Set(
       (existing ?? []).map((e: Record<string, unknown>) =>
-        `${e.etape_id}_${e.date_prevue}_${e.animal_id ?? ''}`)
+        `${e.etape_id}_${e.date_prevue}_${e.animal_id ?? ''}_${e.tranche_horaire ?? ''}`)
     );
     const toInsert = taches.filter(t => {
-      const key = `${t.etape_id}_${t.date_prevue}_${t.animal_id ?? ''}`;
+      const key = `${t.etape_id}_${t.date_prevue}_${t.animal_id ?? ''}_${t.tranche_horaire ?? ''}`;
       return !existingKeys.has(key);
     });
     if (toInsert.length > 0) await supabase.from('plan_taches').insert(toInsert);
