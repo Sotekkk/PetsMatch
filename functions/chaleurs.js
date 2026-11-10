@@ -363,24 +363,24 @@ exports.sendChaleursNotifications = functions
                 console.error(`taches_elevage chaleurs purge ${g.uid}:`, e.message);
             }
         }
+        // Une tâche PAR femelle (clic → son suivi des chaleurs, validée une à
+        // une) ; celle de la veille non validée a été retirée juste au-dessus.
         for (const g of agenda.values()) {
-            const seule = g.animaux.length === 1 ? g.animaux[0] : null;
             try {
-                await supabaseInsert("taches_elevage", [{
+                await supabaseInsert("taches_elevage", g.animaux.map((x) => ({
                     uid_eleveur: g.uid,
-                    titre: `Chaleurs à vérifier : ${g.animaux.map((x) => x.nom).join(", ")}`,
+                    titre: `Chaleurs à vérifier — ${x.nom}`,
                     date: todayStr,
                     heure: "08:00",
-                    notes: g.animaux.map((x) => `${x.nom} (${x.court})`).join(" · "),
+                    notes: `${x.nom} : ${x.court}`,
                     statut: "a_faire",
                     profil_source: "eleveur",
-                    animal_nom: g.animaux.map((x) => x.nom).join(", "),
-                    // Une seule femelle : clic sur la tâche → son suivi des chaleurs.
-                    animal_id: seule ? seule.id : null,
+                    animal_nom: x.nom,
+                    animal_id: x.id,
                     ...(g.assigneA ? {assigne_a: g.assigneA} : {}),
                     ...(g.assigneProfileId ? {assigne_profile_id: g.assigneProfileId} : {}),
                     ...(g.profileId ? {profile_id: g.profileId, eleveur_profile_id: g.profileId} : {}),
-                }]);
+                })));
             } catch (e) {
                 console.error(`taches_elevage chaleurs insert ${g.uid}:`, e.message);
             }
@@ -389,8 +389,14 @@ exports.sendChaleursNotifications = functions
         for (const r of rappels.values()) {
             const seul = r.items.length === 1 ? r.items[0] : null;
             const title = seul ? seul.title :
-                `Chaleurs : ${r.items.length} femelles`;
-            let body = seul ? seul.body : r.items.map((i) => `${i.nom} (${i.detail})`).join(" · ");
+                `Chaleurs à vérifier : ${r.items.length} femelles`;
+            // Lisible en entier : les 3 premières, puis « et N autres » ; la liste
+            // complète s'ouvre au tap (page « Chaleurs à vérifier »).
+            const noms = r.items.map((i) => i.nom);
+            let body = seul ? seul.body :
+                noms.slice(0, 3).join(", ") +
+                (noms.length > 3 ? ` et ${noms.length - 3} autre${noms.length > 4 ? "s" : ""}` : "") +
+                " — touchez pour voir chaque femelle.";
             if (body.length > 220) body = `${body.slice(0, 219)}…`;
             const type = seul ? "chaleur" : "chaleurs_groupe";
             const data = seul ? {animalId: seul.animalId} :

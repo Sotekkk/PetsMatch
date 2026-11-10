@@ -647,6 +647,36 @@ async function sendOverdueSanteReminders(digest) {
                 });
             }
 
+            // Agenda : UNE tâche du jour par soin en retard. Celles des jours
+            // précédents (non validées) pour ce soin et cet animal sont retirées
+            // — y compris la tâche du jour J — sinon elles s'empilent.
+            try {
+                const hier = dateStr(-1);
+                const motifs = encodeURIComponent(`(titre.ilike.*${label} en retard*,titre.ilike.*${label} — *)`);
+                await supabaseDelete(`taches_elevage?uid_eleveur=eq.${encodeURIComponent(uid)}&statut=eq.a_faire` +
+                    `&date=lte.${hier}&animal_id=eq.${encodeURIComponent(row.animal_id)}&or=${motifs}`);
+                // Tâche du jour J groupée (plusieurs animaux) : retirée si elle nomme cet animal.
+                await supabaseDelete(`taches_elevage?uid_eleveur=eq.${encodeURIComponent(uid)}&statut=eq.a_faire` +
+                    `&date=lte.${hier}&animal_id=is.null&animal_nom=ilike.${encodeURIComponent(`*${nomAnimal}*`)}` +
+                    `&titre=ilike.${encodeURIComponent(`*${label} — *`)}`);
+                await supabaseInsert("taches_elevage", [{
+                    uid_eleveur: uid,
+                    titre: `${label} en retard — ${nomAnimal}`,
+                    date: todayStr,
+                    heure: "08:00",
+                    notes: body,
+                    statut: "a_faire",
+                    profil_source: animal.uid_eleveur ? "eleveur" : "particulier",
+                    animal_id: row.animal_id,
+                    animal_nom: nomAnimal,
+                    ...(assigneA ? {assigne_a: assigneA} : {}),
+                    ...(assigneProfileId ? {assigne_profile_id: assigneProfileId} : {}),
+                    ...(profileId ? {profile_id: profileId, eleveur_profile_id: profileId} : {}),
+                }]);
+            } catch (e) {
+                console.error(`taches_elevage retard (${table} ${row.id}):`, e.message);
+            }
+
             // Relance aussi toute pension ayant un accès actif à la fiche —
             // la tâche miroir créée au palier j0 reste ouverte tant que non validée.
             await notifyAndMirrorPension({
@@ -936,6 +966,14 @@ exports.sendInventaireReminders = functions
                 type: "inventaire_alerte", itemId: String(item.id), table: "inventaire_items",
             }, {profileId: item.eleveur_profile_id || null});
 
+            // Une seule alerte « stock bas » par article (propriétaire, employés) :
+            // celle du jour remplace celle de la veille non lue.
+            try {
+                await supabaseDelete(`notifications?type=eq.inventaire_alerte&read=eq.false` +
+                    `&data->>itemId=eq.${encodeURIComponent(item.id)}`);
+            } catch (e) {
+                console.error(`notifications delete error (inventaire ${item.id}):`, e.message);
+            }
             try {
                 await supabaseInsert("notifications", [{
                     uid: item.uid_eleveur,

@@ -28,6 +28,7 @@ import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/chaleurs_a_verifier_page.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/cogerance_page.dart';
@@ -370,6 +371,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (!mounted) return;
     // Rappels regroupés (protocoles du jour, chaleurs de plusieurs femelles) :
     // la liste s'ouvre, on choisit l'animal.
+    // Chaleurs de plusieurs femelles : page dédiée (chaque femelle, sa photo,
+    // son échéance ; appui → son suivi des chaleurs).
+    if (type == 'chaleurs_groupe') {
+      final items = data is Map
+          ? [for (final sct in (data['sections'] as List?) ?? const []) for (final i in ((sct as Map)['items'] as List?) ?? const []) Map<String, dynamic>.from(i as Map)]
+          : null;
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => ChaleursAVerifierPage(items: items)));
+      return;
+    }
     if ((type == 'protocoles_jour' || type == 'chaleurs_groupe') && data is Map) {
       await _ouvrirGroupe(notif, type!, Map<String, dynamic>.from(data));
       return;

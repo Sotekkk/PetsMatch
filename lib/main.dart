@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:PetsMatch/pages/eleveur/animaux/chaleurs_a_verifier_page.dart';
 import 'package:PetsMatch/utils/especes_elevees.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart' show AgendaContexte;
 import 'dart:io';
@@ -234,6 +235,11 @@ Future<void> _handleNotifNavigation(Map<String, dynamic> data) async {
   // été confié — voir chaleurs_responsable_uid) : ouvre directement la fiche
   // de l'animal, onglet Repro → sous-onglet Chaleurs (toujours en première
   // position pour une femelle), plutôt que la liste de notifs générique.
+  // Chaleurs de plusieurs femelles : la liste, chacune ouvrable.
+  if (type == 'chaleurs_groupe') {
+    ctx.push(MaterialPageRoute(builder: (_) => const ChaleursAVerifierPage()));
+    return;
+  }
   final animalId = data['animalId'] as String? ?? '';
   if (type == 'chaleur' && animalId.isNotEmpty) {
     String? eleveurUidOverride;
