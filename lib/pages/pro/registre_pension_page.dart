@@ -3709,8 +3709,11 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
           _nbNuitsCtrl.text = '1';
         });
       }
-      // Plein tarif + réduction long séjour à part (visible sur la facture).
-      final sugg = estEssai ? null : await tarifPensionSuggere(widget.entree, config, _nbNuits);
+      // Plein tarif (espèce + logement attribué) + réduction long séjour à part.
+      // Essai facturé à son prix : celui-ci ; sinon (essai non facturé dans
+      // Tarifs mais facturé quand même) : le tarif normal, comme au contrat.
+      final essaiPrix = estEssai && essaiCfg is Map && essaiCfg['facture'] == true && ((essaiCfg['prix'] as num?) ?? 0) > 0;
+      final sugg = essaiPrix ? null : await tarifPensionSuggere(widget.entree, config, _nbNuits);
       if (mounted && sugg != null && sugg.prixNuit > 0) {
         setState(() {
           if (_tarifCtrl.text.isEmpty) _tarifCtrl.text = sugg.prixNuit.toStringAsFixed(2);

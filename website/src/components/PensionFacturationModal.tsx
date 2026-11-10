@@ -75,8 +75,11 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
         setTarif(prev => prev === '' ? Number(essaiCfg.prix).toFixed(2) : prev);
         setNbNuits('1');
       }
-      // Plein tarif + réduction long séjour à part (visible sur la facture).
-      const sugg = (entree as { essai?: boolean }).essai ? null : await tarifPensionSuggere(supabase, entree as unknown as Record<string, unknown>, config, nuitsInitiales);
+      // Plein tarif (espèce + logement attribué) + réduction long séjour à part.
+      // Essai facturé à son prix : celui-ci ; sinon (essai non facturé dans
+      // Tarifs mais facturé quand même) : le tarif normal, comme au contrat.
+      const essaiPrix = (entree as { essai?: boolean }).essai && essaiCfg?.facture && (essaiCfg.prix ?? 0) > 0;
+      const sugg = essaiPrix ? null : await tarifPensionSuggere(supabase, entree as unknown as Record<string, unknown>, config, nuitsInitiales);
       if (sugg && sugg.prixNuit > 0) {
         setTarif(prev => prev === '' ? sugg.prixNuit.toFixed(2) : prev);
         setReduction(prev => prev === '' ? String(sugg.reductionPct || '') : prev);
