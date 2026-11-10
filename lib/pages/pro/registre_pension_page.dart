@@ -1587,7 +1587,7 @@ class _PensionCard extends StatelessWidget {
                           style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF374151))),
                     Text(switch (contratStatut) {
                           null => 'Contrat à faire', 'signe' => 'Contrat signé', 'en_attente' => 'Contrat envoyé, à signer',
-                          'partiellement_signe' => 'Contrat signé en partie', _ => 'Contrat en brouillon' },
+                          'partiellement_signe' => 'Contrat signé en partie (une signature manque)', _ => 'Contrat en brouillon' },
                         style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700,
                             color: contratStatut == 'signe' ? _green : contratStatut == null ? const Color(0xFFB3261E) : const Color(0xFFB45309))),
                     InkWell(

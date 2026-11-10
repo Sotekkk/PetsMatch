@@ -148,11 +148,26 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
 
   /// Contrat de la pension (modèle ou fichier) : rattaché au séjour, signé
   /// d'office, notifié au client (appli) et envoyé par e-mail.
+  /// La pension signe avant tout envoi : signature enregistrée, sinon la
+  /// tracer une fois (enregistrée pour la suite). false = pas de signature.
+  Future<bool> _signatureAvantEnvoi() async {
+    if (await maSignaturePro() != null) return true;
+    if (!mounted) return false;
+    final sig = await signerEtEnregistrer(context);
+    if (sig == null) {
+      if (mounted) setState(() { _erreur = true; _message = 'Signez le contrat avant de l’envoyer au client.'; });
+      return false;
+    }
+    _aSignature = true;
+    return true;
+  }
+
   Future<void> _monContratSigneEtEnvoye() async {
     if (_fichier == null && _modele == null) {
       setState(() { _erreur = true; _message = 'Chargez votre contrat (PDF ou photo).'; });
       return;
     }
+    if (!await _signatureAvantEnvoi()) return;
     setState(() { _envoi = true; _message = null; _erreur = false; });
     try {
       final client = await clientDuSejour(e);
@@ -224,6 +239,7 @@ class _FinalisationSheetState extends State<_FinalisationSheet> {
       return;
     }
     if (_choixContrat == 'mien' && _contrat == null) { await _monContratSigneEtEnvoye(); return; }
+    if (!await _signatureAvantEnvoi()) return;
     setState(() { _envoi = true; _message = null; _erreur = false; });
     try {
       final r = await http.post(Uri.parse('$kSiteBaseUrl/api/pension/contrat'), headers: await siteApiHeaders(),

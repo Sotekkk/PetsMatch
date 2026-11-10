@@ -13,6 +13,8 @@ import Link from 'next/link';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
+import { signerContratAvecSignaturePro, maSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
+import SignatureProModal from '@/components/signature/SignatureProModal';
 import { apiFetch } from '@/lib/api-fetch';
 import AccepterSejourModal, { type DemandeSejour } from '@/components/pension/AccepterSejourModal';
 import { PensionFacturationModal } from '@/components/PensionFacturationModal';
@@ -42,7 +44,8 @@ export default function DemandesSejourPage() {
   const [sejours, setSejours] = useState<Record<string, Sejour>>({});
   const [clients, setClients] = useState<Record<string, string>>({});
   const [arrhesFacts, setArrhesFacts] = useState<Record<string, string>>({}); // séjour → statut de la facture d'acompte
-  const [contrats, setContrats] = useState<Record<string, string>>({});
+  // Contrat par séjour : statut, document, lien de signature, signé par la pension ?
+  const [contrats, setContrats] = useState<Record<string, { statut: string; id: string; token: string | null; signePro: boolean }>>({});
   const [arrhesPct, setArrhesPct] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [aAccepter, setAAccepter] = useState<Demande[] | null>(null);
@@ -75,7 +78,7 @@ export default function DemandesSejourPage() {
       idsSejours.length ? supabase.from('pension_entrees').select('id, statut, arrivee_reelle_le, logement_id').in('id', idsSejours) : Promise.resolve({ data: [] }),
       pids.length ? supabase.from('user_profiles_complet').select('id, firstname, lastname, nom').in('id', pids) : Promise.resolve({ data: [] }),
       idsSejours.length && pid ? supabase.from('factures').select('source_pension_entree_id, statut, type_facture').eq('profile_id', pid).in('source_pension_entree_id', idsSejours) : Promise.resolve({ data: [] }),
-      idsSejours.length ? supabase.from('documents_animaux').select('pension_entree_id, statut, metadata').in('type', ['contrat_hebergement', 'contrat_document_pro']).in('pension_entree_id', idsSejours) : Promise.resolve({ data: [] }),
+      idsSejours.length ? supabase.from('documents_animaux').select('id, token, pension_entree_id, statut, metadata').in('type', ['contrat_hebergement', 'contrat_document_pro']).in('pension_entree_id', idsSejours) : Promise.resolve({ data: [] }),
       pid ? supabase.from('user_profiles').select('tarifs_pension').eq('id', pid).maybeSingle() : Promise.resolve({ data: null }),
     ]);
     setSejours(Object.fromEntries(((se ?? []) as Sejour[]).map(s => [s.id, s])));
@@ -87,9 +90,10 @@ export default function DemandesSejourPage() {
       if (f.type_facture === 'acompte' || !af[f.source_pension_entree_id]) af[f.source_pension_entree_id] = `${f.type_facture === 'acompte' ? 'acompte' : 'complete'}:${f.statut ?? 'envoyee'}`;
     }
     setArrhesFacts(af);
-    const ct: Record<string, string> = {};
-    for (const d of (dc ?? []) as { pension_entree_id: string; statut: string | null; metadata: { entree_ids?: string[] } | null }[]) {
-      for (const id of [d.pension_entree_id, ...(d.metadata?.entree_ids ?? [])]) ct[id] = d.statut ?? 'brouillon';
+    const ct: Record<string, { statut: string; id: string; token: string | null; signePro: boolean }> = {};
+    for (const d of (dc ?? []) as { id: string; token: string | null; pension_entree_id: string; statut: string | null; metadata: { entree_ids?: string[]; signature_eleveur?: string | null } | null }[]) {
+      const v = { statut: d.statut ?? 'brouillon', id: d.id, token: d.token, signePro: !!d.metadata?.signature_eleveur };
+      for (const id of [d.pension_entree_id, ...(d.metadata?.entree_ids ?? [])]) ct[id] = v;
     }
     setContrats(ct);
     const reg = (tp as { tarifs_pension?: { reglement?: { arrhes_pct?: number | null } } } | null)?.tarifs_pension?.reglement;
@@ -141,6 +145,16 @@ export default function DemandesSejourPage() {
     }
   }
 
+  // Signature de la pension : signature enregistrée reprise d'office, sinon
+  // page du contrat pour signer (elle sera enregistrée pour la suite).
+  async function signerContrat(c: { id: string; token: string | null }) {
+    if (!user) return;
+    if (!(await maSignaturePro(user.uid).catch(() => null))) { setASigner(c); return; }
+    const ok = await signerContratAvecSignaturePro(c.id, user.uid, userData?.nameElevage || userData?.firstname || 'Pension').catch(() => false);
+    if (ok) await charger();
+  }
+  const [aSigner, setASigner] = useState<{ id: string; token: string | null } | null>(null);
+
   async function ouvrirFacturationArrhes(g: Demande[]) {
     const eid = g.find(d => d.entree_id)?.entree_id;
     if (!eid) return;
@@ -155,7 +169,8 @@ export default function DemandesSejourPage() {
     const resultat = g.find(x => x.essai_resultat)?.essai_resultat ?? null;
     const sejourIds = g.map(x => x.entree_id).filter(Boolean) as string[];
     const fact = sejourIds.map(i => arrhesFacts[i]).find(Boolean);
-    const contrat = sejourIds.map(i => contrats[i]).find(Boolean);
+    // Contrat du séjour, ou de l'essai (fait à l'arrivée de l'essai).
+    const contrat = [...sejourIds, ...(g.map(x => x.essai_entree_id).filter(Boolean) as string[])].map(i => contrats[i]).find(Boolean);
     const lib = (t: string, c: string) => <span className="text-xs font-semibold" style={{ color: c }}>{t}</span>;
     return (
       <div className="bg-white rounded-2xl border border-[#E5E8E6] p-4 space-y-2">
@@ -212,7 +227,14 @@ export default function DemandesSejourPage() {
                   <button onClick={() => { void ouvrirFacturationArrhes(g); }} className="text-xs font-bold text-white rounded-full px-3 py-1" style={{ background: TEAL }}>Facturer les arrhes</button>
                 </>
               ) : lib('Pas d\'arrhes prévues', '#6b7280')}
-            {lib(contrat === 'signe' ? 'Contrat signé' : contrat ? 'Contrat envoyé' : 'Contrat à faire à l\'arrivée', contrat === 'signe' ? VERT : '#6b7280')}
+            {contrat?.statut === 'signe' ? lib('Contrat signé', VERT)
+              : contrat?.statut === 'partiellement_signe' && !contrat.signePro ? (
+                <>
+                  {lib('Contrat signé par le client — à signer par vous', ORANGE)}
+                  <button onClick={() => { void signerContrat(contrat); }} className="text-xs font-bold text-white rounded-full px-3 py-1" style={{ background: TEAL }}>Signer</button>
+                </>
+              )
+              : lib(contrat ? 'Contrat envoyé' : 'Contrat à faire à l\'arrivée', '#6b7280')}
             <Link href="/pension/registre?mouvement=a_enregistrer" className="text-xs font-semibold" style={{ color: TEAL }}>Arrivées à enregistrer</Link>
           </div>
         )}
@@ -246,6 +268,14 @@ export default function DemandesSejourPage() {
       {aAccepter && user && (
         <AccepterSejourModal groupe={aAccepter} uid={user.uid} proProfileId={pid || null} couleur={VERT}
           onClose={() => setAAccepter(null)} onDone={() => { setAAccepter(null); void charger(); }} />
+      )}
+      {aSigner && user && (
+        <SignatureProModal onClose={() => setASigner(null)} onValider={async dataUrl => {
+          await enregistrerSignaturePro(user.uid, dataUrl);
+          const c = aSigner;
+          setASigner(null);
+          await signerContrat(c);
+        }} />
       )}
       {facturer && (
         <PensionFacturationModal entree={facturer} proProfileId={pid || null} acompte={arrhesPct} retour="/pension/sejours?onglet=avenir"

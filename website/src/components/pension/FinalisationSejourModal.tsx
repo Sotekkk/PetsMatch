@@ -13,7 +13,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
 import { useAuth } from '@/lib/auth-context';
-import { maSignaturePro, signerContratAvecSignaturePro } from '@/lib/signature-pro';
+import { maSignaturePro, signerContratAvecSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
+import SignatureProModal from '@/components/signature/SignatureProModal';
 import { envoyerContratParEmail } from '@/lib/contrat-email';
 import { sejoursFactures } from '@/lib/pension-facture-groupee';
 import { PensionFacturationModal } from '@/components/PensionFacturationModal';
@@ -47,6 +48,8 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
   const [messageContrat, setMessageContrat] = useState('');
   const [parEmail, setParEmail] = useState(true);
   const [aSignature, setASignature] = useState<boolean | null>(null);
+  // La pension signe avant l'envoi : fenêtre de signature si aucune n'est enregistrée.
+  const [signerAvantEnvoi, setSignerAvantEnvoi] = useState(false);
   const [facture, setFacture] = useState<boolean | null>(null);
   const [solde, setSolde] = useState<'arrivee' | 'depart'>('arrivee');
   const [arrhes, setArrhes] = useState<number | null>(null);
@@ -152,6 +155,8 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
   /** Prépare le contrat, le signe avec la signature enregistrée, l'envoie au client. */
   async function contratSigneEtEnvoye() {
     if (!user) return;
+    // Jamais d'envoi au client sans la signature de la pension.
+    if (!aSignature && !(await maSignaturePro(user.uid).catch(() => null))) { setSignerAvantEnvoi(true); return; }
     if (choixContrat === 'mien' && !contrat) { await monContratSigneEtEnvoye(); return; }
     setEtatContrat('envoi'); setMessageContrat('');
     const r = await apiFetch('/api/pension/contrat', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -234,7 +239,7 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
             {contrat?.statut !== 'signe' && (
               <>
                 {aSignature === false && (
-                  <p className="text-xs text-[#B45309]">Aucune signature enregistrée : signez une première fois le contrat (bouton « Voir le contrat »), elle sera reprise d&apos;office ensuite.</p>
+                  <p className="text-xs text-[#B45309]">Aucune signature enregistrée : vous signerez avant l&apos;envoi, elle sera reprise d&apos;office ensuite.</p>
                 )}
                 {(contrat?.client_email ?? entree.proprietaire_email) && !contrat?.signe_client && (
                   <label className="flex items-center gap-2 text-xs text-[#1F2A2E]">
@@ -288,6 +293,14 @@ export default function FinalisationSejourModal({ entree, mode, proProfileId, pe
         <button onClick={onClose} className="w-full py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600">Terminer</button>
       </div>
     </div>
+    {signerAvantEnvoi && user && (
+      <SignatureProModal onClose={() => setSignerAvantEnvoi(false)} onValider={async dataUrl => {
+        await enregistrerSignaturePro(user.uid, dataUrl);
+        setASignature(true);
+        setSignerAvantEnvoi(false);
+        await contratSigneEtEnvoye();
+      }} />
+    )}
     {facturer && (
       <PensionFacturationModal entree={entree} proProfileId={proProfileId} pensionNom={pensionNom}
         retour={typeof window !== 'undefined' ? window.location.pathname + window.location.search : undefined}

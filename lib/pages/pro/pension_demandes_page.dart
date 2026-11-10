@@ -10,6 +10,7 @@
 import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show signerContratAvecSignaturePro;
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -296,7 +297,9 @@ class _PensionDemandesPageState extends State<PensionDemandesPage> {
   final _supa = Supabase.instance.client;
   List<Map<String, dynamic>> _demandes = [];
   Map<String, Map<String, dynamic>> _sejours = {};
-  Map<String, String> _clients = {}, _arrhesFacts = {}, _contrats = {};
+  Map<String, String> _clients = {}, _arrhesFacts = {};
+  /// Contrat par séjour : statut, id du document, signé par la pension ?
+  Map<String, ({String statut, String id, bool signePro})> _contrats = {};
   int? _arrhesPct;
   bool _loading = true;
   String? _enCours;
@@ -334,10 +337,12 @@ class _PensionDemandesPageState extends State<PensionDemandesPage> {
             }
           }
         }
-        for (final d in await _supa.from('documents_animaux').select('pension_entree_id, statut, metadata')
+        for (final d in await _supa.from('documents_animaux').select('id, pension_entree_id, statut, metadata')
             .inFilter('type', ['contrat_hebergement', 'contrat_document_pro']).inFilter('pension_entree_id', ids)) {
+          final v = (statut: (d['statut'] ?? 'brouillon').toString(), id: d['id'].toString(),
+              signePro: ((d['metadata'] as Map?)?['signature_eleveur']?.toString() ?? '').isNotEmpty);
           for (final id in [d['pension_entree_id'], ...(((d['metadata'] as Map?)?['entree_ids'] as List?) ?? const [])]) {
-            _contrats[id.toString()] = (d['statut'] ?? 'brouillon').toString();
+            _contrats[id.toString()] = v;
           }
         }
       }
@@ -439,7 +444,9 @@ class _PensionDemandesPageState extends State<PensionDemandesPage> {
     final resultat = g.map((x) => x['essai_resultat']).whereType<Object>().firstOrNull?.toString();
     final ids = [for (final x in g) if (x['entree_id'] != null) x['entree_id'].toString()];
     final fact = ids.map((i) => _arrhesFacts[i]).whereType<String>().firstOrNull;
-    final contrat = ids.map((i) => _contrats[i]).whereType<String>().firstOrNull;
+    // Contrat du séjour, ou de l'essai (fait à l'arrivée de l'essai).
+    final contrat = [...ids, for (final x in g) if (x['essai_entree_id'] != null) x['essai_entree_id'].toString()]
+        .map((i) => _contrats[i]).nonNulls.firstOrNull;
     final occupe = _enCours == d['id'].toString();
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -504,7 +511,21 @@ class _PensionDemandesPageState extends State<PensionDemandesPage> {
                     child: const Text('Facturer les arrhes', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5))),
               ] else
                 _txt("Pas d'arrhes prévues", _muted, gras: false),
-              _txt(contrat == 'signe' ? 'Contrat signé' : contrat != null ? 'Contrat envoyé' : "Contrat à faire à l'arrivée", contrat == 'signe' ? _vert : _muted, gras: false),
+              if (contrat?.statut == 'signe')
+                _txt('Contrat signé', _vert, gras: false)
+              else if (contrat?.statut == 'partiellement_signe' && !contrat!.signePro) ...[
+                _txt('Contrat signé par le client — à signer par vous', _orange),
+                FilledButton(
+                  onPressed: () async {
+                    // Signature enregistrée reprise d'office, sinon signer une fois (enregistrée).
+                    await signerContratAvecSignaturePro(context, contrat.id);
+                    await _charger();
+                  },
+                  style: FilledButton.styleFrom(backgroundColor: _teal, visualDensity: VisualDensity.compact),
+                  child: const Text('Signer', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                ),
+              ] else
+                _txt(contrat != null ? 'Contrat envoyé' : "Contrat à faire à l'arrivée", _muted, gras: false),
             ]),
           ],
         ]),

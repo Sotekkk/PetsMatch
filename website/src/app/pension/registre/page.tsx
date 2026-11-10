@@ -585,7 +585,7 @@ type Planning = { arrivee_reelle_le?: string | null; heure_arrivee_prevue?: stri
   duree_arrivee_min?: number | null; duree_depart_min?: number | null; notes?: string | null };
 const LIBELLE_CONTRAT: Record<string, [string, string]> = {
   brouillon: ['Contrat en brouillon', '#B45309'], en_attente: ['Contrat envoyé, à signer', '#B45309'],
-  partiellement_signe: ['Contrat signé en partie', '#B45309'], signe: ['Contrat signé', '#2E7D5E'],
+  partiellement_signe: ['Contrat signé en partie (une signature manque)', '#B45309'], signe: ['Contrat signé', '#2E7D5E'],
 };
 
 function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, logementNom, logements, contratStatut, onLogement, onFicheBox, onEdit, onArrivee, onSorti, onJournal, onFacturer, onContrat }: {
