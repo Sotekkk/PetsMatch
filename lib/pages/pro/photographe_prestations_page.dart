@@ -225,7 +225,7 @@ class _PrestationFormState extends State<_PrestationForm> {
           _field(_nomCtrl, 'Nom de la prestation'),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: _field(_prixCtrl, 'Prix (€)', type: TextInputType.number)),
+            Expanded(child: _field(_prixCtrl, 'Prix (€ TTC)', type: TextInputType.number)),
             const SizedBox(width: 8),
             Expanded(child: _field(_dureeCtrl, 'Durée (min)', type: TextInputType.number)),
           ]),
@@ -233,7 +233,7 @@ class _PrestationFormState extends State<_PrestationForm> {
           Row(children: [
             Expanded(child: _field(_nbPhotosCtrl, 'Photos incluses', type: TextInputType.number)),
             const SizedBox(width: 8),
-            Expanded(child: _field(_prixPhotoCtrl, 'Prix photo suppl. (€)', type: const TextInputType.numberWithOptions(decimal: true))),
+            Expanded(child: _field(_prixPhotoCtrl, 'Prix photo suppl. (€ TTC)', type: const TextInputType.numberWithOptions(decimal: true))),
           ]),
           const SizedBox(height: 12),
           Row(children: [
@@ -243,7 +243,7 @@ class _PrestationFormState extends State<_PrestationForm> {
           Row(children: [
             Expanded(child: _field(_kmInclusCtrl, 'Km inclus', type: TextInputType.number)),
             const SizedBox(width: 8),
-            Expanded(child: _field(_prixKmCtrl, 'Prix/km suppl. (€)', type: const TextInputType.numberWithOptions(decimal: true))),
+            Expanded(child: _field(_prixKmCtrl, 'Prix/km suppl. (€ TTC)', type: const TextInputType.numberWithOptions(decimal: true))),
           ]),
           const SizedBox(height: 12),
           _field(_acompteCtrl, 'Acompte (%)', type: TextInputType.number),

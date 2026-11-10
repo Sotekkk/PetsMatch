@@ -1727,7 +1727,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
 
         {/* Tarifs garde (petsitter/promeneur) */}
         {catPro === 'garde' && (
-          <Card title="Tarifs par type de prestation (€)">
+          <Card title="Tarifs par type de prestation (€ TTC)">
             <p className="text-xs text-gray-400 mb-3">Laissez à 0 les prestations que vous ne proposez pas.</p>
             <div className="grid grid-cols-2 gap-3">
               {PRESTATIONS_GARDE.map(({ value, label }) => (
@@ -1745,7 +1745,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
 
         {/* Tarifs santé (ostéo/kiné) */}
         {catPro === 'sante' && (
-          <Card title="Tarifs par type de prestation (€)">
+          <Card title="Tarifs par type de prestation (€ TTC)">
             <p className="text-xs text-gray-400 mb-3">Laissez à 0 les prestations que vous ne proposez pas.</p>
             <div className="flex items-center justify-between gap-4 mb-4">
               <p className="text-xs font-medium text-gray-600 flex-1">Afficher mes tarifs sur ma fiche publique</p>
@@ -1801,7 +1801,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
               setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250);
             }
           }}>
-          <Card title="Mes tarifs (€)">
+          <Card title="Mes tarifs (€ TTC)">
             <p className="text-xs text-gray-400 mb-3">Laissez à 0 ce que vous ne proposez pas. Ajoutez vos autres actes en bas.</p>
             <div className="flex items-center justify-between gap-4 mb-4">
               <p className="text-xs font-medium text-gray-600 flex-1">Afficher mes tarifs sur ma fiche publique</p>
@@ -1840,7 +1840,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                         className={inputCls} />
                     </div>
                     <div className="w-28 shrink-0">
-                      <label className="text-xs font-medium text-gray-500 block mb-1">Prix (€)</label>
+                      <label className="text-xs font-medium text-gray-500 block mb-1">Prix (€ TTC)</label>
                       <input type="number" min={0} step={1} value={e.prix}
                         onChange={ev => setTarifsVetoExtra(prev => prev.map((x, j) => j === i ? { ...x, prix: Number(ev.target.value) } : x))}
                         className={`${inputCls} text-right`} />
@@ -2109,7 +2109,7 @@ function ForfaitModal({ onClose, onSave, catPro }: {
           <div className="grid grid-cols-2 gap-3">
             <input type="number" value={nbSeances} onChange={e => setNbSeances(e.target.value)} placeholder={`Nb ${unite}`}
               className="px-3 py-2 border border-gray-200 rounded-xl text-sm" />
-            <input type="number" value={prix} onChange={e => setPrix(e.target.value)} placeholder="Prix (€)"
+            <input type="number" value={prix} onChange={e => setPrix(e.target.value)} placeholder="Prix (€ TTC)"
               className="px-3 py-2 border border-gray-200 rounded-xl text-sm" />
           </div>
           <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optionnel)" rows={2}

@@ -263,7 +263,7 @@ class _PrestationToilettageFormState extends State<_PrestationToilettageForm> {
           }).toList()),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: _field(_prixBaseCtrl, 'Prix de base (€)', type: TextInputType.number)),
+            Expanded(child: _field(_prixBaseCtrl, 'Prix de base (€ TTC)', type: TextInputType.number)),
             const SizedBox(width: 8),
             Expanded(child: _field(_dureeCtrl, 'Durée (min)', type: TextInputType.number)),
           ]),
@@ -297,7 +297,7 @@ class _PrestationToilettageFormState extends State<_PrestationToilettageForm> {
                 Expanded(child: TextFormField(
                   initialValue: t['prix']?.toString() ?? '',
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Prix (€)', isDense: true, border: OutlineInputBorder()),
+                  decoration: const InputDecoration(labelText: 'Prix (€ TTC)', isDense: true, border: OutlineInputBorder()),
                   onChanged: (v) => _grille[i]['prix'] = double.tryParse(v) ?? 0,
                 )),
                 IconButton(

@@ -760,13 +760,13 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
         Expanded(child: TextField(
           controller: e.prixSeul,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(labelText: pensionTarifEquin(e.key) ? 'Box (€/nuit)' : 'Prix seul (€/nuit)', isDense: true, border: const OutlineInputBorder()),
+          decoration: InputDecoration(labelText: pensionTarifEquin(e.key) ? 'Box (€ TTC/nuit)' : 'Prix seul (€ TTC/nuit)', isDense: true, border: const OutlineInputBorder()),
         )),
         const SizedBox(width: 8),
         Expanded(child: TextField(
           controller: e.prixPartage,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(labelText: pensionTarifEquin(e.key) ? 'Pré (€/nuit)' : 'Prix partagé (€/nuit)', isDense: true, border: const OutlineInputBorder()),
+          decoration: InputDecoration(labelText: pensionTarifEquin(e.key) ? 'Pré (€ TTC/nuit)' : 'Prix partagé (€ TTC/nuit)', isDense: true, border: const OutlineInputBorder()),
         )),
       ]),
     ]),

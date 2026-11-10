@@ -107,10 +107,13 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
   const pension = (tarifNuit: number, nuits: number, red: number) =>
     Math.round(tarifNuit * nuits * (1 - Math.min(100, Math.max(0, red)) / 100) * 100) / 100;
   const autresInclus = autres.filter(a => a.inclus);
-  const sousTotal = pension(tarifNum, nuitsNum, reductionNum)
+  // Tarifs de la pension = prix TTC annoncés au client : la TVA est comprise
+  // (le HT en est déduit), jamais ajoutée par-dessus.
+  const totalTTC = pension(tarifNum, nuitsNum, reductionNum)
     + autresInclus.reduce((s, a) => s + pension(num(a.tarif), parseInt(a.nuits, 10) || 1, num(a.reduction)), 0) + suppNum;
-  const tvaAmt = avecTVA ? sousTotal * 0.2 : 0;
-  const total = sousTotal + tvaAmt;
+  const sousTotal = avecTVA ? Math.round(totalTTC / 1.2 * 100) / 100 : totalTTC;
+  const tvaAmt = Math.round((totalTTC - sousTotal) * 100) / 100;
+  const total = totalTTC;
   const pctNum = Math.min(100, Math.max(1, Math.round(parseFloat(acomptePct.replace(',', '.')) || 30)));
   // Montant réellement facturé : total du séjour, ou une fraction si c'est un acompte.
   const montantFacture = isAcompte ? Math.round(total * pctNum) / 100 : total;
@@ -138,18 +141,21 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
       const sortie = (e.date_sortie_effective ?? e.date_sortie_prevue) as string | null;
       return {
         description: `Pension du ${fmtIso(e.date_entree as string | null)} au ${fmtIso(sortie)}`,
-        quantite: nuits, prixUnitaire: tarifNuit, tva,
+        // Prix TTC : le moteur de facturation en déduit le HT selon le régime de TVA.
+        quantite: nuits, prixUnitaire: tva ? Math.round(tarifNuit / (1 + tva / 100) * 100) / 100 : tarifNuit, prixTTC: tarifNuit, tva,
         animalId: (e.animal_id as string | null) ?? null, animalNom: (e.animal_nom as string | null) ?? null,
         pensionEntreeId: String(e.id),
         ...(red > 0 ? { remise: red, remiseMotif: `Réduction long séjour (${nuits} nuit${nuits > 1 ? 's' : ''})` } : {}),
       };
     };
     const lignes = isAcompte
-      ? [{ description: `Acompte ${pctNum}% — ${desc}${groupe ? ` — ${noms}` : ''}`, quantite: 1, prixUnitaire: montantFacture, tva,
+      ? [{ description: `Acompte ${pctNum}% — ${desc}${groupe ? ` — ${noms}` : ''}`, quantite: 1,
+          prixUnitaire: tva ? Math.round(montantFacture / (1 + tva / 100) * 100) / 100 : montantFacture, prixTTC: montantFacture, tva,
           ...(groupe ? {} : { animalId: entree.animal_id ?? null, animalNom: entree.animal_nom ?? null }) }]
       : [
           lignePension(entree as unknown as Record<string, unknown>, tarifNum, nuitsNum, reductionNum),
-          ...(suppNum > 0 ? [{ description: suppDesc.trim() || 'Suppléments', quantite: 1, prixUnitaire: suppNum, tva,
+          ...(suppNum > 0 ? [{ description: suppDesc.trim() || 'Suppléments', quantite: 1,
+            prixUnitaire: tva ? Math.round(suppNum / (1 + tva / 100) * 100) / 100 : suppNum, prixTTC: suppNum, tva,
             animalId: entree.animal_id ?? null, animalNom: entree.animal_nom ?? null }] : []),
           ...autresInclus.map(a => lignePension(a.entree, num(a.tarif), parseInt(a.nuits, 10) || 1, num(a.reduction))),
         ];
@@ -198,7 +204,7 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16, marginBottom: 12 }}>
           <div>
-            <label style={lbl}>Tarif par nuit (€)</label>
+            <label style={lbl}>Tarif par nuit (€ TTC)</label>
             <input style={inp} type="number" step="0.01" placeholder="25" value={tarif} onChange={e => setTarif(e.target.value)} />
           </div>
           <div>
@@ -227,7 +233,7 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
                 </label>
                 {a.inclus && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 6 }}>
-                    {([['tarif', 'Tarif / nuit (€)'], ['nuits', 'Nuits'], ['reduction', 'Réduction (%)']] as const).map(([k, l]) => (
+                    {([['tarif', 'Tarif / nuit (€ TTC)'], ['nuits', 'Nuits'], ['reduction', 'Réduction (%)']] as const).map(([k, l]) => (
                       <div key={k}>
                         <label style={lbl}>{l}</label>
                         <input style={inp} type="number" step="0.01" value={a[k]}
@@ -245,7 +251,7 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
           <input style={inp} placeholder="Ex : Frais vétérinaires, médicaments…" value={suppDesc} onChange={e => setSuppDesc(e.target.value)} />
         </div>
         <div style={{ marginBottom: 16 }}>
-          <label style={lbl}>Montant suppléments (€)</label>
+          <label style={lbl}>Montant suppléments (€ TTC)</label>
           <input style={inp} type="number" step="0.01" placeholder="0" value={suppMontant} onChange={e => setSuppMontant(e.target.value)} />
         </div>
 

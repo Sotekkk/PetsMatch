@@ -450,7 +450,7 @@ export default function EducationPrestationsPage() {
                   <label className="text-xs text-gray-500">Nombre de séances
                     <input type="number" min={1} value={formForfait.nb} onChange={e => setFormForfait({ ...formForfait, nb: e.target.value })} className={`${inputCls} mt-1`} />
                   </label>
-                  <label className="text-xs text-gray-500">Prix total (€)
+                  <label className="text-xs text-gray-500">Prix total (€ TTC)
                     <input type="number" min={0} value={formForfait.prix} onChange={e => setFormForfait({ ...formForfait, prix: e.target.value })} className={`${inputCls} mt-1`} />
                   </label>
                 </div>
@@ -501,7 +501,7 @@ export default function EducationPrestationsPage() {
           </Bloc>
 
           <Bloc titre="Options tarifaires" sousTitre="S'ajoutent au prix d'un cours. Le supplément à domicile est ajouté automatiquement aux réservations à domicile.">
-            <label className="text-xs font-medium text-gray-500 block mb-3">Supplément à domicile (€)
+            <label className="text-xs font-medium text-gray-500 block mb-3">Supplément à domicile (€ TTC)
               <input type="number" min={0} value={tarifs.domicile_supplement ?? 0}
                 onChange={e => modifier(setTarifs)({ ...tarifs, domicile_supplement: Number(e.target.value) || 0 })}
                 className={`${inputCls} mt-1 max-w-[160px]`} />
@@ -514,7 +514,7 @@ export default function EducationPrestationsPage() {
                     <input placeholder="Nom de l'option" value={e.label}
                       onChange={ev => modifier(setExtra)(extra.map((x, j) => j === i ? { ...x, label: ev.target.value } : x))}
                       className={`${inputCls} flex-1`} />
-                    <input type="number" min={0} value={e.prix} aria-label="Prix (€)"
+                    <input type="number" min={0} value={e.prix} aria-label="Prix (€ TTC)"
                       onChange={ev => modifier(setExtra)(extra.map((x, j) => j === i ? { ...x, prix: Number(ev.target.value) } : x))}
                       className={`${inputCls} !w-24`} />
                     <button type="button" onClick={() => modifier(setExtra)(extra.filter((_, j) => j !== i))}

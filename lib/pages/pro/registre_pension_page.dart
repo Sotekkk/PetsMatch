@@ -3755,8 +3755,10 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
   double _pension(double tarifNuit, int nuits, double red) => (tarifNuit * nuits * (1 - red / 100) * 100).roundToDouble() / 100;
   double get _sousTotal => _pension(_tarif, _nbNuits, _reduction)
       + _autresInclus.fold<double>(0, (s, a) => s + _pension(a.prix, a.n, a.red)) + _supp;
-  double get _tva       => _avecTVA ? _sousTotal * 0.20 : 0;
-  double get _total     => _sousTotal + _tva;
+  // Tarifs de la pension = prix TTC annoncés au client : la TVA est comprise
+  // (le HT en est déduit), jamais ajoutée par-dessus.
+  double get _tva       => _avecTVA ? ((_sousTotal - _sousTotal / 1.2) * 100).round() / 100 : 0;
+  double get _total     => _sousTotal;
   int    get _acomptePct     => (int.tryParse(_acomptePctCtrl.text) ?? 30).clamp(1, 100);
   // Montant réellement facturé : total du séjour, ou une fraction si acompte.
   double get _montantFacture => _isAcompte ? _total * _acomptePct / 100 : _total;
@@ -3835,7 +3837,7 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
 
                 // Tarif/nuit + nb nuits
                 Row(children: [
-                  Expanded(child: _field(_tarifCtrl, 'Tarif par nuit (€)', '25',
+                  Expanded(child: _field(_tarifCtrl, 'Tarif par nuit (€ TTC)', '25',
                       type: const TextInputType.numberWithOptions(decimal: true))),
                   const SizedBox(width: 12),
                   Expanded(child: _field(_nbNuitsCtrl, 'Nombre de nuits', '1',
@@ -3867,7 +3869,7 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
                         ),
                         if (a.inclus)
                           Row(children: [
-                            Expanded(child: _field(a.tarif, 'Tarif / nuit (€)', '25', type: const TextInputType.numberWithOptions(decimal: true))),
+                            Expanded(child: _field(a.tarif, 'Tarif / nuit (€ TTC)', '25', type: const TextInputType.numberWithOptions(decimal: true))),
                             const SizedBox(width: 8),
                             Expanded(child: _field(a.nuits, 'Nuits', '1', type: TextInputType.number)),
                             const SizedBox(width: 8),
@@ -3883,7 +3885,7 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
                 _field(_suppDescCtrl, 'Suppléments (optionnel)',
                     'Ex : Frais vétérinaires, médicaments...'),
                 const SizedBox(height: 8),
-                _field(_suppMontantCtrl, 'Montant suppléments (€)', '0',
+                _field(_suppMontantCtrl, 'Montant suppléments (€ TTC)', '0',
                     type: const TextInputType.numberWithOptions(decimal: true)),
                 const SizedBox(height: 16),
 
@@ -3978,7 +3980,7 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
                     ],
                     const Divider(height: 16, color: Color(0xFFE5E7EB)),
                     if (_avecTVA) ...[
-                      _totalRow('Sous-total HT', _fmt(_sousTotal)),
+                      _totalRow('Sous-total HT', _fmt(_sousTotal - _tva)),
                       const SizedBox(height: 4),
                       _totalRow('TVA 20%', _fmt(_tva)),
                       const Divider(height: 12, color: Color(0xFFE5E7EB)),
@@ -4095,7 +4097,9 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
       FacturePrefillLigne lignePension(Map<String, dynamic> s, double tarifNuit, int nuits, double red) => FacturePrefillLigne(
             designation: 'Pension du ${fmtDate(s['date_entree']?.toString())} au '
                 '${fmtDate((s['date_sortie_effective'] ?? s['date_sortie_prevue'])?.toString())}',
-            prixHT: tarifNuit, quantite: nuits.toDouble(), tauxTVA: tauxTVA,
+            // Prix TTC : le moteur de facturation en déduit le HT selon le régime de TVA.
+            prixHT: tauxTVA > 0 ? ((tarifNuit / (1 + tauxTVA / 100)) * 100).round() / 100 : tarifNuit,
+            prixTTC: tarifNuit, quantite: nuits.toDouble(), tauxTVA: tauxTVA,
             animalId: s['animal_id']?.toString(), animalNom: s['animal_nom']?.toString(),
             pensionEntreeId: s['id']?.toString(),
             remisePct: red > 0 ? red : null,
@@ -4105,14 +4109,16 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
         if (_isAcompte)
           FacturePrefillLigne(designation: 'Acompte $_acomptePct% — $desc'
                   '${_autresInclus.isNotEmpty ? ' — ${[e['animal_nom'], ..._autresInclus.map((a) => a.entree['animal_nom'])].where((x) => (x?.toString() ?? '').isNotEmpty).join(', ')}' : ''}',
-              prixHT: _montantFacture, tauxTVA: tauxTVA,
+              prixHT: tauxTVA > 0 ? ((_montantFacture / (1 + tauxTVA / 100)) * 100).round() / 100 : _montantFacture,
+              prixTTC: _montantFacture, tauxTVA: tauxTVA,
               animalId: _autresInclus.isEmpty ? animalId : null, animalNom: _autresInclus.isEmpty ? e['animal_nom']?.toString() : null)
         else ...[
           lignePension(e, _tarif, _nbNuits, _reduction),
           if (_supp > 0)
             FacturePrefillLigne(
                 designation: _suppDescCtrl.text.trim().isNotEmpty ? _suppDescCtrl.text.trim() : 'Suppléments',
-                prixHT: _supp, tauxTVA: tauxTVA, animalId: animalId, animalNom: e['animal_nom']?.toString()),
+                prixHT: tauxTVA > 0 ? ((_supp / (1 + tauxTVA / 100)) * 100).round() / 100 : _supp,
+                prixTTC: _supp, tauxTVA: tauxTVA, animalId: animalId, animalNom: e['animal_nom']?.toString()),
           for (final a in _autresInclus) lignePension(a.entree, a.prix, a.n, a.red),
         ],
       ];

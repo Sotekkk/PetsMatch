@@ -118,7 +118,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   // Durées par type de prestation (en minutes)
   Map<String, int> _dureesMotifs = {};
 
-  // Pension : tarifs par type de logement (€/nuit) + % d'arrhes
+  // Pension : tarifs par type de logement (€ TTC/nuit) + % d'arrhes
   Map<String, int> _tarifsLogements = {};
   int _arrhesPourcentage = 0;
 
@@ -559,7 +559,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                 decoration: InputDecoration(labelText: 'Nb ${unite()}', border: const OutlineInputBorder()))),
             const SizedBox(width: 8),
             Expanded(child: TextField(controller: prixCtrl, keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Prix (€)', border: OutlineInputBorder()))),
+                decoration: const InputDecoration(labelText: 'Prix (€ TTC)', border: OutlineInputBorder()))),
           ]),
           const SizedBox(height: 12),
           TextField(controller: descCtrl, maxLines: 2, decoration: const InputDecoration(
@@ -1473,7 +1473,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   // ── Tarifs garde (petsitter/promeneur) ─────────────────────
                   if (_catPro == 'garde') ...[
                     const SizedBox(height: 24),
-                    _sectionTitle('Tarifs par type de prestation (€)'),
+                    _sectionTitle('Tarifs par type de prestation (€ TTC)'),
                     const SizedBox(height: 4),
                     Text(
                       'Laissez à 0 les prestations que vous ne proposez pas.',
@@ -1547,7 +1547,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   // ── Tarifs santé (ostéo/kiné) ──────────────────────────────
                   if (_catPro == 'sante') ...[
                     const SizedBox(height: 24),
-                    _sectionTitle('Tarifs par type de prestation (€)'),
+                    _sectionTitle('Tarifs par type de prestation (€ TTC)'),
                     const SizedBox(height: 4),
                     Text(
                       'Laissez à 0 les prestations que vous ne proposez pas.',
@@ -1612,7 +1612,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   // ── Tarifs vétérinaire ────────────────────────────────────
                   if (_catPro == 'veterinaire') ...[
                     const SizedBox(height: 24),
-                    KeyedSubtree(key: _tarifsKey, child: _sectionTitle('Mes tarifs (€)')),
+                    KeyedSubtree(key: _tarifsKey, child: _sectionTitle('Mes tarifs (€ TTC)')),
                     const SizedBox(height: 4),
                     Text(
                       'Laissez à 0 ce que vous ne proposez pas. Ajoutez vos autres actes en bas.',

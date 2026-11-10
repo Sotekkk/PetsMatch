@@ -329,10 +329,10 @@ export default function PensionTarifsPage() {
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <input placeholder={pensionTarifEquin(e.key) ? 'Box (€/nuit)' : 'Prix seul (€/nuit)'} value={e.prixSeul} inputMode="decimal"
+                  <input placeholder={pensionTarifEquin(e.key) ? 'Box (€ TTC/nuit)' : 'Prix seul (€ TTC/nuit)'} value={e.prixSeul} inputMode="decimal"
                     onChange={ev => setEspeces(rows => rows.map((x, j) => j === i ? { ...x, prixSeul: ev.target.value } : x))}
                     className={`${inputCls} flex-1 min-w-[140px]`} />
-                  <input placeholder={pensionTarifEquin(e.key) ? 'Pré (€/nuit)' : 'Prix partagé (€/nuit)'} value={e.prixPartage} inputMode="decimal"
+                  <input placeholder={pensionTarifEquin(e.key) ? 'Pré (€ TTC/nuit)' : 'Prix partagé (€ TTC/nuit)'} value={e.prixPartage} inputMode="decimal"
                     onChange={ev => setEspeces(rows => rows.map((x, j) => j === i ? { ...x, prixPartage: ev.target.value } : x))}
                     className={`${inputCls} flex-1 min-w-[140px]`} />
                 </div>

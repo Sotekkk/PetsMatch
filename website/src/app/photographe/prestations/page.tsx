@@ -121,7 +121,7 @@ export default function PhotographePrestationsPage() {
             className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
           <div className="grid grid-cols-2 gap-3">
             <input type="number" value={form.prix} onChange={e => setForm({ ...form, prix: e.target.value })}
-              placeholder="Prix (€)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              placeholder="Prix (€ TTC)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
             <input type="number" value={form.duree_minutes} onChange={e => setForm({ ...form, duree_minutes: e.target.value })}
               placeholder="Durée (min)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
           </div>
@@ -129,7 +129,7 @@ export default function PhotographePrestationsPage() {
             <input type="number" value={form.nb_photos} onChange={e => setForm({ ...form, nb_photos: e.target.value })}
               placeholder="Photos incluses" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
             <input type="number" step="0.5" value={form.prix_photo_supp} onChange={e => setForm({ ...form, prix_photo_supp: e.target.value })}
-              placeholder="Prix photo suppl. (€)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              placeholder="Prix photo suppl. (€ TTC)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <input type="number" value={form.delai_livraison_jours} onChange={e => setForm({ ...form, delai_livraison_jours: e.target.value })}
@@ -139,7 +139,7 @@ export default function PhotographePrestationsPage() {
             <input type="number" value={form.deplacement_inclus_km} onChange={e => setForm({ ...form, deplacement_inclus_km: e.target.value })}
               placeholder="Km inclus" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
             <input type="number" value={form.prix_km_supp} onChange={e => setForm({ ...form, prix_km_supp: e.target.value })}
-              placeholder="Prix/km suppl. (€)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              placeholder="Prix/km suppl. (€ TTC)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
           </div>
           <input type="number" value={form.acompte_pourcentage} onChange={e => setForm({ ...form, acompte_pourcentage: e.target.value })}
             placeholder="Acompte (%)" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />

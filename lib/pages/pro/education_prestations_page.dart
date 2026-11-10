@@ -195,7 +195,7 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
         content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(controller: nom, decoration: const InputDecoration(labelText: 'Nom (ex : Pack 5 séances)')),
           TextField(controller: nb, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Nombre de séances')),
-          TextField(controller: prix, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Prix total (€)')),
+          TextField(controller: prix, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Prix total (€ TTC)')),
           DropdownButtonFormField<String>(
             initialValue: typeSeances,
             isExpanded: true,
@@ -428,7 +428,7 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
                       SizedBox(width: 200, child: TextField(controller: _supplementCtrl,
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
-                          decoration: const InputDecoration(labelText: 'Supplément à domicile (€)', border: OutlineInputBorder()))),
+                          decoration: const InputDecoration(labelText: 'Supplément à domicile (€ TTC)', border: OutlineInputBorder()))),
                       const SizedBox(height: 12),
                       for (var i = 0; i < _extra.length; i++)
                         Padding(
@@ -680,7 +680,7 @@ class _PrestationFormState extends State<_PrestationForm> {
           Row(children: [
             Expanded(child: _field(_dureeCtrl, 'Durée (min)', type: TextInputType.number)),
             const SizedBox(width: 8),
-            Expanded(child: _field(_prixCtrl, _type == 'collectif' ? 'Prix (€ par participant)' : 'Prix (€ par séance)',
+            Expanded(child: _field(_prixCtrl, _type == 'collectif' ? 'Prix (€ TTC par participant)' : 'Prix (€ TTC par séance)',
                 type: const TextInputType.numberWithOptions(decimal: true))),
           ]),
           if (_type == 'collectif') ...[
