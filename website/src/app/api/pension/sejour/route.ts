@@ -145,7 +145,18 @@ type Complet = { jour: string; occupes: number; restantes: number; especes: stri
  *  pension ne bloque pas une autre espèce).
  *  `besoin(jour)` = espèces des nouveaux animaux ce jour-là ('' = inconnue).
  *  Sans hébergement configuré (pension familiale), aucune limite connue. */
+/** Jours de désinfection d'un logement entre deux séjours (Tarifs). */
+async function joursDesinfection(proProfileId: string | null | undefined): Promise<number> {
+  if (!proProfileId) return 0;
+  const { data } = await admin.from('user_profiles').select('tarifs_pension').eq('id', proProfileId).maybeSingle();
+  const n = Number(((data as { tarifs_pension?: { desinfection_jours?: number } } | null)?.tarifs_pension)?.desinfection_jours);
+  return Number.isFinite(n) && n > 0 ? Math.min(7, Math.round(n)) : 0;
+}
+/** Date + n jours (AAAA-MM-JJ). */
+const plusJours = (iso: string, n: number) => { const d = new Date(`${iso.slice(0, 10)}T12:00:00`); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+
 async function joursComplets(proUid: string, proProfileId: string | null, jours: string[], besoin: (jour: string) => string[]) {
+  const desinf = await joursDesinfection(proProfileId);
   const { data: lg } = await admin.from('enclos_chenil').select('capacite, especes').eq('uid_eleveur', proUid);
   const logements = ((lg ?? []) as { capacite: number | null; especes: string[] | null }[])
     .map(l => ({ cap: l.capacite ?? 1, especes: Array.isArray(l.especes) ? l.especes : [] }));
@@ -156,8 +167,9 @@ async function joursComplets(proUid: string, proProfileId: string | null, jours:
     .eq('pro_uid', proUid).eq('statut', 'en_pension').lte('date_entree', tri[tri.length - 1]);
   const entrees = ((en ?? []) as { date_entree: string; date_sortie_prevue: string | null; pro_profile_id: string | null; espece: string | null }[])
     .filter(e => !proProfileId || !e.pro_profile_id || e.pro_profile_id === proProfileId);
+  // Place occupée jusqu'au départ, plus le temps de désinfection réglé par la pension.
   const occupe = (e: { date_entree: string; date_sortie_prevue: string | null }, j: string) =>
-    e.date_entree <= j && (!e.date_sortie_prevue || e.date_sortie_prevue > j || (e.date_sortie_prevue === e.date_entree && j === e.date_entree));
+    e.date_entree <= j && (!e.date_sortie_prevue || plusJours(e.date_sortie_prevue, desinf) > j || (e.date_sortie_prevue === e.date_entree && j <= plusJours(e.date_entree, desinf)));
   const complets: Complet[] = [];
   for (const j of tri) {
     const avant = new Map<string, number>();
@@ -360,8 +372,9 @@ export async function POST(req: NextRequest) {
         const { data: occ } = await admin.from('pension_entrees').select('date_entree, date_sortie_prevue, logement_id')
           .eq('pro_uid', d0.pro_uid as string).eq('statut', 'en_pension').in('logement_id', [...parId.keys()]).lte('date_entree', tousJours[tousJours.length - 1]);
         const occupations = (occ ?? []) as { date_entree: string; date_sortie_prevue: string | null; logement_id: string }[];
+        const desinf = await joursDesinfection(d0.pro_profile_id as string | null);
         const occupeJour = (e: { date_entree: string; date_sortie_prevue: string | null }, j: string) =>
-          e.date_entree <= j && (!e.date_sortie_prevue || e.date_sortie_prevue > j || (e.date_sortie_prevue === e.date_entree && j === e.date_entree));
+          e.date_entree <= j && (!e.date_sortie_prevue || plusJours(e.date_sortie_prevue, desinf) > j || (e.date_sortie_prevue === e.date_entree && j <= plusJours(e.date_entree, desinf)));
         for (const [lid, l] of parId) {
           const demandesIci = ouvertes.filter(d => choixLogement.get(d.id as string) === lid);
           for (const j of tousJours) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/pension_occupation.dart' show confirmerLogementLibre;
 import 'package:PetsMatch/utils/pension_protocoles.dart' show changerLogementSejour;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -116,6 +117,9 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
   }
 
   Future<void> _assign(String entreeId, String? logementId) async {
+    // Logement complet sur les dates du séjour : avertir avant de surbooker.
+    final sej = _entrees.where((x) => x['id'].toString() == entreeId).firstOrNull;
+    if (sej != null && !await confirmerLogementLibre(context, logementId, sej, exclure: [entreeId])) return;
     await _supa.from('pension_entrees').update({'logement_id': logementId}).eq('id', entreeId);
     // Protocoles du séjour : tâches à venir sur le nouveau logement.
     await changerLogementSejour([entreeId]);

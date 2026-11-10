@@ -5,6 +5,7 @@
 // Miroir site : components/pension/ArriveeDepartModal.tsx.
 // Le registre (registre_pension_page) garde son propre bouton « Sorti ».
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/pension_occupation.dart' show confirmerLogementLibre;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -257,6 +258,11 @@ Future<bool> confirmerArriveePension(BuildContext context, Map<String, dynamic> 
     if (t(alimCtrl) != null) 'Alimentation apportée : ${t(alimCtrl)}',
     if (t(traitCtrl) != null) 'Traitements apportés : ${t(traitCtrl)}',
   ].join('\n');
+  // Logement complet sur les dates du séjour : avertir avant de surbooker.
+  if (!context.mounted || !await confirmerLogementLibre(context, logementId, entree,
+      exclure: [entree['id'].toString(), for (final c in compagnons) if (coches[c['id'].toString()] == true) c['id'].toString()])) {
+    return false;
+  }
   await _maj(context, entree['id'].toString(), {
     'statut': 'en_pension',
     'arrivee_reelle_le': heure.toUtc().toIso8601String(),

@@ -223,6 +223,8 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
   // Essai : facturé ou non (au choix de la pension), et son prix.
   bool _essaiFacture = false;
   final _essaiPrix = TextEditingController();
+  /// Jours de désinfection d'un logement entre deux séjours (0 : resservi le jour du départ).
+  final _desinfection = TextEditingController(text: '0');
   // Durée d'une visite de la pension (RDV « visite », durees_motifs.visite).
   int _dureeVisite = 30;
   Map<String, dynamic> _dureesMotifs = {};
@@ -286,6 +288,7 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
       final px = (essai['prix'] as num?)?.toDouble();
       _essaiPrix.text = px != null && px > 0 ? px.toStringAsFixed(px % 1 == 0 ? 0 : 2) : '';
     }
+    _desinfection.text = '${(tarifs?['desinfection_jours'] as num?)?.toInt() ?? 0}';
     try {
       final dm = await _supa.from('user_profiles').select('durees_motifs').eq('id', User_Info.activeProfileId).maybeSingle();
       if (dm?['durees_motifs'] is Map) _dureesMotifs = Map<String, dynamic>.from(dm!['durees_motifs'] as Map);
@@ -419,6 +422,7 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
             'facture': _essaiFacture,
             'prix': _essaiFacture ? (double.tryParse(_essaiPrix.text.replaceAll(',', '.')) ?? 0) : null,
           },
+          'desinfection_jours': (int.tryParse(_desinfection.text.trim()) ?? 0).clamp(0, 7),
         },
       }).eq('id', pid);
       try {
@@ -609,6 +613,20 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                 const SizedBox(height: 12),
                 ..._buildEspeceCards(),
+                const SizedBox(height: 24),
+                const Text('Désinfection des logements',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                const SizedBox(height: 4),
+                Text('Temps entre deux séjours dans un même logement. Les réservations et les attributions en tiennent compte '
+                    '(0 : le logement peut resservir le jour du départ).',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                const SizedBox(height: 8),
+                Row(children: [
+                  SizedBox(width: 80, child: TextField(controller: _desinfection, keyboardType: TextInputType.number, textAlign: TextAlign.center,
+                      decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()))),
+                  const SizedBox(width: 8),
+                  const Text('jour(s) entre deux séjours', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                ]),
                 const SizedBox(height: 24),
                 const Text('Réductions séjour long',
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),

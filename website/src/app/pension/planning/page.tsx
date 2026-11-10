@@ -57,7 +57,8 @@ function packEntries(entries: Entree[], capacite: number): Entree[][] {
     for (const row of rows) {
       if (!row.some(other => rangesOverlap(other, e))) { row.push(e); placed = true; break; }
     }
-    if (!placed) rows[rows.length - 1].push(e);
+    // Logement surbooké : une ligne de plus (« En trop »), jamais un séjour caché.
+    if (!placed) rows.push([e]);
   }
   return rows;
 }
@@ -305,7 +306,9 @@ function PensionPlanningPageInner() {
                       ...rows.map((rowEntrees, slot) => (
                         <tr key={`${l.id}-${slot}`}>
                           <td className="sticky left-0 bg-white z-10 px-3 py-2 text-sm font-galey font-semibold text-gray-800 border-b border-gray-50 truncate max-w-32">
-                            {slot === 0 && <span className="truncate">{l.nom}</span>}
+                            {slot >= capacite
+                              ? <span className="text-xs font-bold text-red-600">En trop (complet)</span>
+                              : slot === 0 && <span className="truncate">{l.nom}</span>}
                           </td>
                           {days.map(d => {
                             const solo = entryForDay(soloEntrees, d);

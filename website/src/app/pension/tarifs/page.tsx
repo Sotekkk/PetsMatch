@@ -48,6 +48,8 @@ export default function PensionTarifsPage() {
   // Essai : facturé ou non (au choix de la pension), et son prix.
   const [essaiFacture, setEssaiFacture] = useState(false);
   const [essaiPrix, setEssaiPrix] = useState('');
+  // Jours de désinfection d'un logement entre deux séjours (0 : resservi le jour du départ).
+  const [desinfection, setDesinfection] = useState('0');
   // Durée d'une visite de la pension (RDV « visite », durees_motifs.visite).
   const [dureeVisite, setDureeVisite] = useState(30);
   const [dureesMotifs, setDureesMotifs] = useState<Record<string, number>>({});
@@ -142,6 +144,7 @@ export default function PensionTarifsPage() {
     const cfgEssai = (t as { essai?: { facture?: boolean; prix?: number | null } } | null)?.essai;
     setEssaiFacture(cfgEssai?.facture === true);
     setEssaiPrix(cfgEssai?.prix ? String(cfgEssai.prix) : '');
+    setDesinfection(String((t as { desinfection_jours?: number } | null)?.desinfection_jours ?? 0));
     const { data: dm } = await supabase.from('user_profiles').select('durees_motifs').eq('id', pid).maybeSingle();
     const dms = ((dm as { durees_motifs?: Record<string, number> | null } | null)?.durees_motifs ?? {}) as Record<string, number>;
     setDureesMotifs(dms);
@@ -184,7 +187,8 @@ export default function PensionTarifsPage() {
     await supabase.from('user_profiles')
       .update({ tarifs_pension: { especes: especesOut, reductions_long_sejour, afficher_public: afficherPublic,
         reglement: { arrhes_pct: arrhes ? (num(arrhesPct) ?? 0) : null, solde },
-        essai: { facture: essaiFacture, prix: essaiFacture ? (num(essaiPrix) ?? 0) : null } } })
+        essai: { facture: essaiFacture, prix: essaiFacture ? (num(essaiPrix) ?? 0) : null },
+        desinfection_jours: Math.max(0, Math.min(7, Math.round(num(desinfection) ?? 0))) } })
       .eq('id', profileId);
     await supabase.from('user_profiles')
       .update({ pension_essai_requis: essaiRequis, pension_essai_info: essaiInfo.trim() || null })
@@ -346,6 +350,17 @@ export default function PensionTarifsPage() {
             {showAutres ? '− Masquer les autres espèces' : '+ Tarif pour une autre espèce'}
           </button>
         )}
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm p-5 space-y-2 border border-teal-100">
+        <h2 className="font-bold font-galey text-teal-800">Désinfection des logements</h2>
+        <p className="text-xs font-galey text-gray-500">
+          Temps entre deux séjours dans un même logement. Les réservations et les attributions en tiennent compte (0 : le logement peut resservir le jour du départ).
+        </p>
+        <label className="flex items-center gap-2 text-sm font-galey">
+          <input type="number" min={0} max={7} step={1} value={desinfection} onChange={e => setDesinfection(e.target.value)} className={`${inputCls} w-20`} />
+          jour(s) entre deux séjours
+        </label>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-teal-100">

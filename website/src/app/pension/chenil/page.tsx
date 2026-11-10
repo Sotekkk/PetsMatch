@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
+import { avertissementLogementComplet } from '@/lib/pension-occupation';
 import { changerLogementSejour } from '@/lib/pension-protocoles';
 import { PENSION_ESPECES } from '@/lib/pension-especes';
 import { PENSION_LOGEMENT_TYPES, LOGEMENT_TYPE_LABEL } from '@/lib/pension-logements';
@@ -113,6 +114,10 @@ export default function PensionChenilPage() {
   };
 
   const assign = async (entreeId: string, logementId: string | null) => {
+    // Logement complet sur les dates du séjour : avertir avant de surbooker.
+    const sej = entrees.find(x => x.id === entreeId);
+    const alerte = logementId && sej ? await avertissementLogementComplet(supabase, logementId, sej as { date_entree?: string | null; date_sortie_prevue?: string | null }, [entreeId]) : null;
+    if (alerte) { window.alert(alerte); return; }
     await supabase.from('pension_entrees').update({ logement_id: logementId }).eq('id', entreeId);
     // Protocoles du séjour : tâches à venir sur le nouveau logement.
     try { await changerLogementSejour(supabase, [entreeId]); } catch { /* sans incidence */ }

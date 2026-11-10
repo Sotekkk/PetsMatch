@@ -5,6 +5,7 @@
 // lib/pages/pro/pension_arrivee_depart.dart.
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { avertissementLogementComplet } from '@/lib/pension-occupation';
 import { logementAccepteEspece } from '@/lib/pension-especes';
 import { appliquerProtocolesSejour, terminerTachesSejour } from '@/lib/pension-protocoles';
 
@@ -101,6 +102,12 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
         onDone();
         return;
       }
+    }
+    // Logement complet sur les dates du séjour : avertir avant de surbooker.
+    if (mode === 'arrivee' && logementId) {
+      const groupe = [sejour.id, ...Object.keys(coches).filter(k => coches[k])];
+      const alerte = await avertissementLogementComplet(supabase, logementId, sejour as unknown as { date_entree?: string | null; date_sortie_prevue?: string | null }, groupe);
+      if (alerte) { window.alert(alerte); return; }
     }
     setSaving(true);
     const [h, m] = heure.split(':').map(Number);

@@ -82,7 +82,8 @@ List<List<Map<String, dynamic>>> _packEntries(List<Map<String, dynamic>> entries
     for (final row in rows) {
       if (!row.any((other) => _rangesOverlap(other, e))) { row.add(e); placed = true; break; }
     }
-    if (!placed) rows.last.add(e);
+    // Logement surbooké : une ligne de plus (« En trop »), jamais un séjour caché.
+    if (!placed) rows.add([e]);
   }
   return rows;
 }
@@ -308,12 +309,17 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
                                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 11, color: _teal)),
                               ),
                               for (final l in grouped[type]!) ...[
-                                for (var slot = 0; slot < ((l['capacite'] as int?) ?? 1).clamp(1, 99); slot++)
+                                for (var slot = 0; slot < _packEntries(_entreesFor(l['id'] as String?), (l['capacite'] as int?) ?? 1).length; slot++)
                                   Container(
                                     height: 40, alignment: Alignment.centerLeft,
                                     padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
-                                    child: slot == 0
+                                    decoration: BoxDecoration(
+                                      color: slot >= ((l['capacite'] as int?) ?? 1) ? const Color(0xFFFDECEA) : null,
+                                      border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
+                                    child: slot >= ((l['capacite'] as int?) ?? 1)
+                                        ? const Text('En trop (complet)', overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFC0392B)))
+                                        : slot == 0
                                         ? Text(l['nom'] as String? ?? '', overflow: TextOverflow.ellipsis,
                                             style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600))
                                         : const SizedBox.shrink(),

@@ -2,6 +2,7 @@ import 'package:PetsMatch/utils/animal_proprietaire.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/pension_occupation.dart' show confirmerLogementLibre;
 import 'package:PetsMatch/utils/pension_protocoles.dart' show changerLogementSejour;
 import 'package:PetsMatch/utils/pension_impressions.dart' show imprimerFeuilleJour, imprimerFichesBox;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show logementAccepteEspece;
@@ -1265,6 +1266,8 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       ])),
     );
     if (choix == null) return;
+    // Logement complet sur les dates du séjour : avertir avant de surbooker.
+    if (!mounted || !await confirmerLogementLibre(context, choix, e, exclure: [e['id'].toString()])) return;
     try {
       await _supa.from('pension_entrees').update({'logement_id': choix.isEmpty ? null : choix}).eq('id', e['id'].toString());
       // Protocoles du séjour : tâches à venir sur le nouveau logement.
