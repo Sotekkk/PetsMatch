@@ -4,6 +4,9 @@ import { Fragment, Suspense, useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
+import { avertissementLogementComplet } from '@/lib/pension-occupation';
+import { changerLogementSejour } from '@/lib/pension-protocoles';
+import { logementAccepteEspece } from '@/lib/pension-especes';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { PensionEntreeModal, type PensionEntreePrefill } from '@/components/PensionEntreeModal';
 import { lookupAnimalByChip } from '@/lib/pension-chip-lookup';
@@ -126,6 +129,8 @@ function PensionPlanningPageInner() {
   const [loading, setLoading] = useState(true);
   const [windowStart, setWindowStart] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [editingEntree, setEditingEntree] = useState<Entree | null>(null);
+  // Glisser-déposer : séjour déplacé vers un autre logement (ligne survolée).
+  const [survol, setSurvol] = useState<string | null>(null);
   const [readOnlyEntree, setReadOnlyEntree] = useState<Entree | null>(null);
   const [filterEspece, setFilterEspece] = useState<string | null>(null);
   const [creatingFor, setCreatingFor] = useState<{ logementId: string; date: string } | null>(null);
@@ -168,6 +173,21 @@ function PensionPlanningPageInner() {
     })();
   }, [employerUid, user, activeProfileId, router]);
 
+  /** Séjour glissé sur un autre logement : espèce acceptée, place libre sur
+   *  tout le séjour (désinfection comprise), puis tâches à venir refaites. */
+  async function deplacer(entreeId: string, l: { id: string; nom: string; especes?: string[] | null }) {
+    const e = entrees.find(x => x.id === entreeId);
+    if (!e || e.logement_id === l.id) return;
+    if (!logementAccepteEspece(l.especes ?? [], e.espece)) { window.alert(`${l.nom} n'accueille pas cette espèce.`); return; }
+    const alerte = await avertissementLogementComplet(supabase, l.id, e as unknown as { date_entree?: string | null; date_sortie_prevue?: string | null; seul_dans_logement?: boolean | null; pro_profile_id?: string | null }, [e.id]);
+    if (alerte) { window.alert(alerte); return; }
+    if (!window.confirm(`Déplacer ${e.animal_nom} vers ${l.nom} pour tout son séjour ?`)) return;
+    const { error } = await supabase.from('pension_entrees').update({ logement_id: l.id }).eq('id', e.id);
+    if (error) { window.alert(`Déplacement impossible : ${error.message}`); return; }
+    try { await changerLogementSejour(supabase, [e.id]); } catch { /* sans incidence */ }
+    void load();
+  }
+
   const load = useCallback(async () => {
     if (!effectiveUid || !employerOk) return;
     const windowEnd = new Date(windowStart); windowEnd.setDate(windowEnd.getDate() + DAYS);
@@ -175,7 +195,7 @@ function PensionPlanningPageInner() {
     const windowEndStr = windowEnd.toISOString().slice(0, 10);
     const [{ data: log }, { data: ent }, { data: net }] = await Promise.all([
       supabase.from('enclos_chenil').select('id, nom, type, capacite, especes').eq('uid_eleveur', effectiveUid).order('nom'),
-      supabase.from('pension_entrees').select('id, pro_uid, animal_nom, espece, race, puce, proprietaire_nom, proprietaire_contact, proprietaire_email, proprietaire_adresse, logement_id, animal_id, seul_dans_logement, statut, date_entree, date_sortie_prevue, date_sortie_effective, notes, created_at')
+      supabase.from('pension_entrees').select('id, pro_uid, pro_profile_id, animal_nom, espece, race, puce, proprietaire_nom, proprietaire_contact, proprietaire_email, proprietaire_adresse, logement_id, animal_id, seul_dans_logement, statut, date_entree, date_sortie_prevue, date_sortie_effective, notes, created_at')
         .eq('pro_uid', effectiveUid).lte('date_entree', windowEndStr).order('date_entree'),
       supabase.from('pension_nettoyages').select('logement_id, date').eq('uid_eleveur', effectiveUid)
         .gte('date', windowStartStr).lte('date', windowEndStr),
@@ -298,13 +318,18 @@ function PensionPlanningPageInner() {
                     </td>
                   </tr>
                   {ls.map(l => {
+                    const deposer = {
+                      onDragOver: (ev: React.DragEvent) => { if (!readOnly) { ev.preventDefault(); setSurvol(l.id); } },
+                      onDragLeave: () => setSurvol(s => (s === l.id ? null : s)),
+                      onDrop: (ev: React.DragEvent) => { ev.preventDefault(); setSurvol(null); void deplacer(ev.dataTransfer.getData('text/plain'), l); },
+                    };
                     const logEntrees = entrees.filter(e => e.logement_id === l.id);
                     const soloEntrees = logEntrees.filter(e => e.seul_dans_logement);
                     const capacite = l.capacite || 1;
                     const rows = packEntries(logEntrees, capacite);
                     return [
                       ...rows.map((rowEntrees, slot) => (
-                        <tr key={`${l.id}-${slot}`}>
+                        <tr key={`${l.id}-${slot}`} {...deposer} className={survol === l.id ? 'bg-teal-50' : undefined}>
                           <td className="sticky left-0 bg-white z-10 px-3 py-2 text-sm font-galey font-semibold text-gray-800 border-b border-gray-50 truncate max-w-32">
                             {slot >= capacite
                               ? <span className="text-xs font-bold text-red-600">En trop (complet)</span>
@@ -319,7 +344,9 @@ function PensionPlanningPageInner() {
                                 {e && st ? (
                                   <button
                                     onClick={() => readOnly ? setReadOnlyEntree(e) : setEditingEntree(e)}
-                                    title={e.animal_nom}
+                                    draggable={!readOnly}
+                                    onDragStart={ev => { ev.dataTransfer.setData('text/plain', e.id); ev.dataTransfer.effectAllowed = 'move'; }}
+                                    title={readOnly ? e.animal_nom : `${e.animal_nom} — glisser vers un autre logement pour le déplacer`}
                                     className="w-full h-6 rounded relative flex items-center justify-center overflow-hidden px-0.5"
                                     style={{ backgroundColor: STATUT_COLOR[st], border: solo ? '1.5px solid #ef4444' : undefined }}
                                   >

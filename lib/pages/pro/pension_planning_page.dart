@@ -4,6 +4,9 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart' show PensionEntreeSheet, pickAnimalForAdmission, PensionEditSheet;
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show logementAccepteEspece;
+import 'package:PetsMatch/utils/pension_occupation.dart' show confirmerLogementLibre;
+import 'package:PetsMatch/utils/pension_protocoles.dart' show changerLogementSejour;
 
 class PensionPlanningPage extends StatefulWidget {
   final String? employerUid;  // vue employé : consulte le planning d'un employeur pension
@@ -111,6 +114,33 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
     final now = DateTime.now();
     _windowStart = DateTime(now.year, now.month, now.day);
     _load();
+  }
+
+  /// Séjour glissé sur un autre logement (appui long puis glisser) : espèce
+  /// acceptée, place libre sur tout le séjour (désinfection comprise), puis
+  /// tâches à venir refaites. Miroir site : deplacer (pension/planning).
+  Future<void> _deplacer(Map<String, dynamic> e, Map<String, dynamic> l) async {
+    if (e['logement_id']?.toString() == l['id']?.toString()) return;
+    final nom = l['nom']?.toString() ?? 'ce logement';
+    void info(String t) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t, style: const TextStyle(fontFamily: 'Galey'))));
+    if (!logementAccepteEspece(l['especes'] as List?, e['espece']?.toString())) { info("$nom n'accueille pas cette espèce."); return; }
+    if (!await confirmerLogementLibre(context, l['id'].toString(), e, exclure: [e['id'].toString()])) return;
+    if (!mounted) return;
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      content: Text('Déplacer ${e['animal_nom'] ?? 'cet animal'} vers $nom pour tout son séjour ?', style: const TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Déplacer')),
+      ],
+    ));
+    if (ok != true) return;
+    try {
+      await Supabase.instance.client.from('pension_entrees').update({'logement_id': l['id']}).eq('id', e['id'].toString());
+      await changerLogementSejour([e['id'].toString()]);
+    } catch (err) {
+      if (mounted) info('Déplacement impossible : $err');
+    }
+    await _load();
   }
 
   Future<void> _load() async {
@@ -364,6 +394,7 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
                                     for (final row in _packEntries(_entreesFor(l['id'] as String?), (l['capacite'] as int?) ?? 1))
                                       _LogementRow(
                                         days: days,
+                                        onDeposer: (e) => _deplacer(e, l),
                                         entrees: row,
                                         soloEntrees: _soloEntreesFor(l['id'] as String?),
                                         today: today,
@@ -432,19 +463,26 @@ class _LogementRow extends StatelessWidget {
   final DateTime today;
   final void Function(Map<String, dynamic>) onTapEntree;
   final void Function(DateTime) onTapEmpty;
+  /// Séjour glissé sur cette ligne (déplacement vers ce logement).
+  final void Function(Map<String, dynamic>)? onDeposer;
 
   const _LogementRow({
     required this.days, required this.entrees, required this.soloEntrees,
-    required this.today, required this.onTapEntree, required this.onTapEmpty,
+    required this.today, required this.onTapEntree, required this.onTapEmpty, this.onDeposer,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 40,
-      child: Row(children: [
-        for (final d in days) _dayCell(d),
-      ]),
+    return DragTarget<Map<String, dynamic>>(
+      onWillAcceptWithDetails: (_) => onDeposer != null,
+      onAcceptWithDetails: (d) => onDeposer?.call(d.data),
+      builder: (context, candidats, _) => Container(
+        height: 40,
+        color: candidats.isNotEmpty ? const Color(0xFFE6F4F1) : null,
+        child: Row(children: [
+          for (final d in days) _dayCell(d),
+        ]),
+      ),
     );
   }
 
@@ -476,7 +514,19 @@ class _LogementRow extends StatelessWidget {
       );
     }
     final st = _computeStatus(match, today);
-    return GestureDetector(
+    // Appui long puis glisser vers une autre ligne : changer de logement.
+    return LongPressDraggable<Map<String, dynamic>>(
+      data: match,
+      feedback: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(color: _stColors[st], borderRadius: BorderRadius.circular(8)),
+          child: Text(match['animal_nom']?.toString() ?? '',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: Colors.white)),
+        ),
+      ),
+      child: GestureDetector(
       onTap: () => onTapEntree(match),
       child: Container(
         width: 56, height: 40,
@@ -507,6 +557,7 @@ class _LogementRow extends StatelessWidget {
           ]),
         ),
       ),
+    ),
     );
   }
 }
