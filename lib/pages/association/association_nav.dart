@@ -154,12 +154,14 @@ class _AssociationNavState extends State<AssociationNav> {
                     setState(() => _selectedIndex = 0);
                   },
                 ),
+                // Regroupé par usage (refonte, miroir site MENU_ASSOCIATION) :
+                // mêmes entrées qu'avant, rien d'ajouté ni de supprimé.
                 _DrawerSection(
-                  icon: Icons.favorite_outline,
-                  label: 'Mon Association',
+                  icon: Icons.pets_outlined,
+                  label: 'Gestion des animaux',
                   children: [
                     _DrawerSubItem(
-                      label: 'Mes Animaux',
+                      label: 'Mes animaux',
                       icon: Icons.pets_outlined,
                       onTap: () {
                         Navigator.pop(context);
@@ -189,15 +191,21 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Inventaire',
-                      icon: Icons.inventory_2_outlined,
+                      label: 'Entrées / Sorties',
+                      icon: Icons.swap_horiz_outlined,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const InventairePage(),
+                          builder: (_) => const RegistreEntreeSortiePage(isAssociation: true),
                         ));
                       },
                     ),
+                  ],
+                ),
+                _DrawerSection(
+                  icon: Icons.health_and_safety_outlined,
+                  label: 'Santé & protocoles',
+                  children: [
                     _DrawerSubItem(
                       label: 'Protocoles',
                       icon: Icons.repeat_outlined,
@@ -218,33 +226,12 @@ class _AssociationNavState extends State<AssociationNav> {
                         ));
                       },
                     ),
-                    _DrawerSubItem(
-                      label: 'Mes employés et bénévoles',
-                      icon: Icons.groups_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const EquipePage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Entrées / Sorties',
-                      icon: Icons.swap_horiz_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const RegistreEntreeSortiePage(isAssociation: true),
-                        ));
-                      },
-                    ),
                   ],
                 ),
-                // Agenda & RDV (miroir site) : les RDV de visite d'adoption pris
-                // sur les annonces arrivent dans « Mon agenda RDV ».
+                // Les RDV de visite d'adoption pris sur les annonces arrivent dans « Mon agenda RDV ».
                 _DrawerSection(
                   icon: Icons.event_outlined,
-                  label: 'Agenda & RDV',
+                  label: 'Organisation',
                   children: [
                     _DrawerSubItem(
                       label: 'Agenda',
@@ -274,6 +261,26 @@ class _AssociationNavState extends State<AssociationNav> {
                         ));
                       },
                     ),
+                    _DrawerSubItem(
+                      label: 'Mes employés et bénévoles',
+                      icon: Icons.groups_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const EquipePage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Inventaire',
+                      icon: Icons.inventory_2_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const InventairePage(),
+                        ));
+                      },
+                    ),
                   ],
                 ),
                 _DrawerSection(
@@ -285,6 +292,52 @@ class _AssociationNavState extends State<AssociationNav> {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => page));
                     },
                   ),
+                ),
+                _DrawerSection(
+                  icon: Icons.admin_panel_settings_outlined,
+                  label: 'Administration',
+                  children: [
+                    _DrawerSubItem(
+                      label: 'Facturation',
+                      icon: Icons.receipt_long_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const FacturationPage(isAssociation: true),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Contrats d\'adoption',
+                      icon: Icons.handshake_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const ContratAdoptionPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Certificats d\'engagement',
+                      icon: Icons.edit_document,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const CertificatsEngagementPage(isAssociation: true),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Achats & crédits',
+                      icon: Icons.shopping_bag_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesAchatsPage(),
+                        ));
+                      },
+                    ),
+                  ],
                 ),
                 _DrawerSection(
                   icon: Icons.search_off_rounded,
@@ -334,7 +387,7 @@ class _AssociationNavState extends State<AssociationNav> {
                 ),
                 _DrawerItem(
                   icon: Icons.storefront_outlined,
-                  label: 'Services',
+                  label: 'Annuaire des professionnels',
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(
@@ -351,52 +404,6 @@ class _AssociationNavState extends State<AssociationNav> {
                       builder: (_) => const CommunauteHubPage(),
                     ));
                   },
-                ),
-                _DrawerSection(
-                  icon: Icons.admin_panel_settings_outlined,
-                  label: 'Administratif',
-                  children: [
-                    _DrawerSubItem(
-                      label: 'Facturation',
-                      icon: Icons.receipt_long_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const FacturationPage(isAssociation: true),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Contrats d\'adoption',
-                      icon: Icons.handshake_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const ContratAdoptionPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Certificats d\'engagement',
-                      icon: Icons.edit_document,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const CertificatsEngagementPage(isAssociation: true),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Achats & crédits',
-                      icon: Icons.shopping_bag_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const MesAchatsPage(),
-                        ));
-                      },
-                    ),
-                  ],
                 ),
                 const Divider(height: 24),
                 _DrawerItem(

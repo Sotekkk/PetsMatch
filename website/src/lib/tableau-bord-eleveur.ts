@@ -109,7 +109,7 @@ function rappelRemplace(table: string, r: Record<string, unknown>, lignes: Recor
 }
 
 /** Même rappel le même jour pour plusieurs animaux : une ligne (comme les notifications groupées). */
-function grouperRappels(lignes: LigneTB[]): LigneTB[] {
+function grouperRappels(lignes: LigneTB[], listeAnimaux = '/mes-animaux'): LigneTB[] {
   const groupes = new Map<string, LigneTB[]>();
   for (const l of lignes) {
     const k = l.groupe ?? l.cle;
@@ -121,12 +121,12 @@ function grouperRappels(lignes: LigneTB[]): LigneTB[] {
     animal: g.map(x => x.animal).filter(Boolean).join(', '),
     soin: g[0].soin ? { ...g[0].soin, animalIds: g.flatMap(x => x.soin?.animalIds ?? []) } : undefined,
     // Plusieurs animaux : la liste des animaux (la fiche de chacun s'ouvre de là).
-    lien: '/mes-animaux',
+    lien: listeAnimaux,
   });
 }
 
 /** Rappels du carnet à faire (en retard ou dans l'horizon) pour ces animaux. */
-async function rappelsCarnet(ids: string[], end: string, today: string): Promise<LigneTB[]> {
+async function rappelsCarnet(ids: string[], end: string, today: string, ficheBase = '/mes-animaux'): Promise<LigneTB[]> {
   if (!ids.length) return [];
   const morceaux: string[][] = [];
   for (let i = 0; i < ids.length; i += 100) morceaux.push(ids.slice(i, i + 100));
@@ -159,7 +159,7 @@ async function rappelsCarnet(ids: string[], end: string, today: string): Promise
       lignes.push({
         cle: `c_${c.table}_${r.id}`, titre: produit ? `${c.libelle} — ${produit}` : c.libelle,
         date: rappel, animal: noms.get(animalId) || null, fait: false, retard: rappel < today,
-        lien: `/mes-animaux/${animalId}?tab=sante&cat=${c.table}`, sousTitre: 'Carnet de santé',
+        lien: ficheBase === '/mes-animaux' ? `/mes-animaux/${animalId}?tab=sante&cat=${c.table}` : `${ficheBase}/${animalId}`, sousTitre: 'Carnet de santé',
         cleSoin: `${rappel}|${c.acte}|${animalId}`,
         soin: { typeActe: TYPE_SOIN[c.table], produit, animalIds: [animalId], ecartJours: ecart && ecart > 0 ? ecart : null },
         // Mots du produit triés : « Effitix Virbac » = « Virbac Effitix ».
@@ -199,10 +199,16 @@ const ACTE_RAPPEL = /^rappel\s+(vaccin|vermifuge|antiparasitaire)\s+—\s+/i;
 const acteDe = (titre: string, re: RegExp) => (sansPictos(titre).match(re)?.[1] ?? '').toLowerCase();
 
 /** Lien vers le jour de l'agenda de l'élevage. */
-export const lienJour = (date: string) => `/elevage/agenda?date=${date}`;
+export const lienJour = (date: string, base = '/elevage') => `${base}/agenda?date=${date}`;
 
-export async function chargerTableauBord(p: { userUid: string; ownerUid: string; activeProfileId: string }): Promise<DonneesTB> {
-  const { userUid, ownerUid, activeProfileId } = p;
+/** Accueil de l'association : mêmes blocs, liens et profil_source de l'association,
+ *  animaux = ceux de l'association (présents), sans contrats ni récupérations. */
+export interface OptionsAssociation { animalIds: string[] }
+
+export async function chargerTableauBord(p: { userUid: string; ownerUid: string; activeProfileId: string; association?: OptionsAssociation }): Promise<DonneesTB> {
+  const { userUid, ownerUid, activeProfileId, association } = p;
+  const base = association ? '/association' : '/elevage';
+  const lienJ = (d: string) => lienJour(d, base);
   const auj = new Date();
   const today = ymd(auj);
   const fin = new Date(auj); fin.setDate(fin.getDate() + HORIZON_JOURS);
@@ -212,7 +218,9 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
   // uid_eleveur + profil_source (tâches automatiques sans profile_id).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const avecProfil = async (q: () => any) => {
-    const repli = () => q().eq('uid_eleveur', ownerUid).or('profil_source.is.null,profil_source.eq.eleveur');
+    const repli = () => association
+      ? q().eq('uid_eleveur', ownerUid).eq('profil_source', 'association')
+      : q().eq('uid_eleveur', ownerUid).or('profil_source.is.null,profil_source.eq.eleveur');
     if (!activeProfileId) return repli();
     const strict = await q().eq('profile_id', activeProfileId);
     if ((strict.data ?? []).length > 0) return strict;
@@ -228,7 +236,8 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
     ? supabase.from('taches_elevage').select(colsT).eq('assigne_profile_id', activeProfileId)
     : supabase.from('taches_elevage').select(colsT).eq('assigne_a', userUid);
 
-  const carnetP = animauxDuProfil(ownerUid, activeProfileId).then(ids => rappelsCarnet(ids, end, today)).catch(() => [] as LigneTB[]);
+  const carnetP = (association ? Promise.resolve(association.animalIds) : animauxDuProfil(ownerUid, activeProfileId))
+    .then(ids => rappelsCarnet(ids, end, today, association ? '/association/animaux' : '/mes-animaux')).catch(() => [] as LigneTB[]);
 
   const [rVenir, rRetard, rMoi, rMoiRetard, tVenir, tRetard, tMoi, tMoiRetard, ev, membres, contrats, recups] = await Promise.all([
     avecProfil(() => supabase.from('plan_taches').select(colsR).gte('date_prevue', today).lte('date_prevue', end).limit(300)),
@@ -244,13 +253,13 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
       ? supabase.from('agenda_events').select('id,titre,date_debut,type,animal_id').eq('pro_profile_id', activeProfileId)
       : supabase.from('agenda_events').select('id,titre,date_debut,type,animal_id').eq('uid', userUid).or('pro_profile_id.is.null,pro_profile_id.eq.'))
       .gte('date_debut', new Date(`${today}T00:00:00`).toISOString()).lte('date_debut', `${end}T23:59:59`).order('date_debut').limit(300),
-    loadMembres(ownerUid, 'eleveur', userUid).catch(() => []),
+    loadMembres(ownerUid, association ? 'association' : 'eleveur', userUid).catch(() => []),
     // Contrats de l'élevage (app/elevage/contrat/page.tsx) qui attendent une action.
-    supabase.from('documents_animaux').select('id,titre,statut,animal_id,created_at')
+    association ? Promise.resolve({ data: [] }) : supabase.from('documents_animaux').select('id,titre,statut,animal_id,created_at')
       .eq('uid_eleveur', ownerUid).in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession', 'contrat_saillie'])
       .in('statut', ['brouillon', 'en_attente', 'partiellement_signe']).order('created_at', { ascending: false }).limit(50),
     // Demandes de récupération (app/mes-animaux/recuperations/page.tsx).
-    supabase.from('animal_recuperations').select('id,animal_id,created_at')
+    association ? Promise.resolve({ data: [] }) : supabase.from('animal_recuperations').select('id,animal_id,created_at')
       .eq('eleveur_uid', ownerUid).eq('statut', 'en_attente').order('created_at', { ascending: false }).limit(50),
   ]);
 
@@ -278,7 +287,7 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
     const fait = r.statut === 'fait';
     const ligne: LigneTB = {
       cle: `r_${r.id}`, titre: sansPictos(r.label || 'Tâche'), date, animal: r.animal_nom ?? null,
-      responsable: responsable(r.assigned_to), fait, retard: !fait && date < today, lien: lienJour(date),
+      responsable: responsable(r.assigned_to), fait, retard: !fait && date < today, lien: lienJ(date),
     };
     if (ACTES_CARNET.includes(r.type_acte ?? '')) {
       const k = `${date}|${r.etape_id ?? sansPictos(r.label || '')}`;
@@ -295,13 +304,13 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
       cle: `p_${k}`, titre: sansPictos(g[0].label || 'Soin'), date,
       animal: g.map(r => r.animal_nom).filter(Boolean).join(', ') || null,
       responsable: responsable(g[0].assigned_to), fait, retard: !fait && date < today,
-      lien: '/elevage/planning', sousTitre: fait ? 'Protocole — fait' : `Protocole${g.length > 1 ? ` — ${restantes.length}/${g.length} à faire` : ''}`,
+      lien: `${base}/planning`, sousTitre: fait ? 'Protocole — fait' : `Protocole${g.length > 1 ? ` — ${restantes.length}/${g.length} à faire` : ''}`,
       protocole: restantes,
     });
   }
 
   const carnet = await carnetP;
-  soins.push(...grouperRappels(carnet));
+  soins.push(...grouperRappels(carnet, association ? '/association/animaux' : '/mes-animaux'));
   const soinsDuJour = new Set(carnet.map(l => l.cleSoin!));
   for (const t of taches) {
     const date = t.date.slice(0, 10);
@@ -311,7 +320,7 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
       if (date < today && fait) continue;
       agenda.push({
         cle: `t_${t.id}`, titre: sansPictos(t.titre), date, heure: t.heure ?? null, animal: t.animal_nom ?? null,
-        responsable: resp, fait, retard: !fait && date < today, lien: lienJour(date), couleur: COULEUR_TYPE.visite,
+        responsable: resp, fait, retard: !fait && date < today, lien: lienJ(date), couleur: COULEUR_TYPE.visite,
         sousTitre: [t.rdv_veto_cabinet, t.rdv_veto_motif].filter(Boolean).join(' · ') || null,
       });
       continue;
@@ -319,7 +328,7 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
     const acte = acteDe(t.titre, ACTE_TITRE);
     const ligne: LigneTB = {
       cle: `t_${t.id}`, titre: sansPictos(t.titre), date, heure: t.heure ?? null, animal: t.animal_nom ?? null,
-      responsable: resp, fait, retard: !fait && date < today, lien: lienJour(date),
+      responsable: resp, fait, retard: !fait && date < today, lien: lienJ(date),
     };
     if (acte) {
       // Même rappel déjà listé depuis le carnet : la tâche du jour n'est pas répétée.
@@ -338,7 +347,7 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
     const d = new Date(e.date_debut);
     const heure = d.getHours() || d.getMinutes() ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : null;
     agenda.push({
-      cle: `e_${e.id}`, titre: sansPictos(e.titre), date, heure, fait: false, retard: false, lien: lienJour(date),
+      cle: `e_${e.id}`, titre: sansPictos(e.titre), date, heure, fait: false, retard: false, lien: lienJ(date),
       couleur: COULEUR_TYPE[e.type ?? ''] ?? COULEUR_TYPE.autre,
     });
   }

@@ -7,7 +7,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class FamillesAccueilPage extends StatefulWidget {
-  const FamillesAccueilPage({super.key});
+  /// « Ajouter une famille d'accueil » depuis l'accueil : formulaire ouvert.
+  final bool ouvrirAjout;
+  const FamillesAccueilPage({super.key, this.ouvrirAjout = false});
   @override
   State<FamillesAccueilPage> createState() => _FamillesAccueilPageState();
 }
@@ -25,6 +27,9 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
   void initState() {
     super.initState();
     _load();
+    if (widget.ouvrirAjout) {
+      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _showAddSheet(); });
+    }
   }
 
   Future<void> _load() async {

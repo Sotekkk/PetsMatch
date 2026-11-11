@@ -104,9 +104,14 @@ final _acteTitre = RegExp(r'^(vaccin|vermifuge|antiparasitaire|traitement)s?\s+�
 final _acteRappel = RegExp(r'^rappel\s+(vaccin|vermifuge|antiparasitaire)\s+—\s+', caseSensitive: false);
 String _acte(String titre, RegExp re) => (re.firstMatch(sansPictos(titre))?.group(1) ?? '').toLowerCase();
 
+/// [animauxAssociation] : accueil de l'association — mêmes blocs, tâches de
+/// l'association (profil_source), rappels du carnet de ces animaux (présents),
+/// sans contrats ni récupérations. Miroir site chargerTableauBord({ association }).
 Future<DonneesTB> chargerTableauBord({
   required String userUid, required String ownerUid, required String activeProfileId,
+  List<String>? animauxAssociation,
 }) async {
+  final asso = animauxAssociation != null;
   final supa = Supabase.instance.client;
   final pid = activeProfileId;
   final maintenant = DateTime.now();
@@ -128,8 +133,9 @@ Future<DonneesTB> chargerTableauBord({
       final List strict = await fin(supa.from(table).select(cols).eq('profile_id', pid));
       if (strict.isNotEmpty) return strict;
     }
-    return await fin(supa.from(table).select(cols).eq('uid_eleveur', ownerUid)
-        .or('profil_source.is.null,profil_source.eq.eleveur'));
+    final repli = supa.from(table).select(cols).eq('uid_eleveur', ownerUid);
+    return await fin(asso ? repli.eq('profil_source', 'association')
+        : repli.or('profil_source.is.null,profil_source.eq.eleveur'));
   }
 
   _Filtre routinesAMoi() => pid.isNotEmpty
@@ -148,7 +154,7 @@ Future<DonneesTB> chargerTableauBord({
         debugPrint('Tableau de bord éleveur, $quoi : $e');
         return quoi == 'equipe' ? <String, String>{} : <dynamic>[];
       });
-  final carnetF = _rappelsCarnet(ownerUid, pid, aujourdhui, end)
+  final carnetF = _rappelsCarnet(ownerUid, pid, aujourdhui, end, ids: animauxAssociation)
       .catchError((Object e) { debugPrint('Tableau de bord éleveur, carnet : $e'); return <LigneTB>[]; });
 
   final r = await Future.wait<dynamic>([
@@ -163,15 +169,15 @@ Future<DonneesTB> chargerTableauBord({
     sur(evQ.gte('date_debut', aujourdhui.toUtc().toIso8601String())
         .lte('date_debut', DateTime.parse('${end}T23:59:59').toUtc().toIso8601String())
         .order('date_debut').limit(300), 'agenda'),
-    sur(_membres(ownerUid, userUid), 'equipe'),
+    sur(_membres(ownerUid, userUid, source: asso ? 'association' : 'eleveur'), 'equipe'),
     // Contrats de l'élevage (contrat_reservation.dart) qui attendent une action.
-    sur(supa.from('documents_animaux').select('id,titre,statut,animal_id,created_at')
+    asso ? Future.value(<dynamic>[]) : sur(supa.from('documents_animaux').select('id,titre,statut,animal_id,created_at')
         .eq('uid_eleveur', ownerUid)
         .inFilter('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession', 'contrat_saillie'])
         .inFilter('statut', ['brouillon', 'en_attente', 'partiellement_signe'])
         .order('created_at', ascending: false).limit(50), 'contrats'),
     // Demandes de récupération (recuperations_page.dart).
-    sur(supa.from('animal_recuperations').select('id,animal_id,created_at')
+    asso ? Future.value(<dynamic>[]) : sur(supa.from('animal_recuperations').select('id,animal_id,created_at')
         .eq('eleveur_uid', ownerUid).eq('statut', 'en_attente')
         .order('created_at', ascending: false).limit(50), 'récupérations'),
   ]);
@@ -377,9 +383,9 @@ Future<int> stockBas({required String ownerUid, required String pid}) async {
 
 const _typeSoin = {'vaccinations': 'vaccination', 'vermifuges': 'vermifuge', 'antiparasitaires': 'antiparasitaire'};
 
-Future<List<LigneTB>> _rappelsCarnet(String ownerUid, String pid, DateTime aujourdhui, String end) async {
+Future<List<LigneTB>> _rappelsCarnet(String ownerUid, String pid, DateTime aujourdhui, String end, {List<String>? ids}) async {
   final supa = Supabase.instance.client;
-  final ids = await animauxDuProfil(ownerUid, pid);
+  ids ??= await animauxDuProfil(ownerUid, pid);
   if (ids.isEmpty) return [];
   final morceaux = [for (var i = 0; i < ids.length; i += 100) ids.sublist(i, i + 100 > ids.length ? ids.length : i + 100)];
   final noms = <String, String>{};
@@ -424,7 +430,7 @@ Future<List<LigneTB>> _rappelsCarnet(String ownerUid, String pid, DateTime aujou
 }
 
 /// Noms de l'équipe (moi + employés avec compte) — miroir site loadMembres.
-Future<Map<String, String>> _membres(String ownerUid, String moiUid) async {
+Future<Map<String, String>> _membres(String ownerUid, String moiUid, {String source = 'eleveur'}) async {
   final supa = Supabase.instance.client;
   String nom(Map? p, String repli) => p == null ? repli
       : (p['profile_type'] == 'eleveur' ? (p['nom'] ?? repli).toString()
@@ -435,7 +441,7 @@ Future<Map<String, String>> _membres(String ownerUid, String moiUid) async {
       supa.from('user_profiles_complet').select('firstname, lastname, nom, profile_type')
           .eq('uid', moiUid).eq('is_main', true).maybeSingle(),
       supa.from('employes').select('uid_employe, prenom, nom')
-          .eq('uid_eleveur', ownerUid).eq('actif', true).eq('profil_source', 'eleveur'),
+          .eq('uid_eleveur', ownerUid).eq('actif', true).eq('profil_source', source),
     ]);
     final m = <String, String>{moiUid: nom(res[0] as Map?, 'Moi')};
     final emp = [for (final e in res[1] as List) if (e['uid_employe'] != null) e];

@@ -473,7 +473,7 @@ function Indicateur({ valeur, label, icone, href, teinte = TEAL }: { valeur: num
     : <Link href={href} className={cls} style={style}>{contenu}</Link>;
 }
 
-function Raccourci({ label, icone, href }: { label: string; icone: string; href: string }) {
+export function Raccourci({ label, icone, href }: { label: string; icone: string; href: string }) {
   return (
     <Link href={href} className={`bg-white rounded-xl min-h-[64px] px-2 py-2.5 flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 text-center hover:shadow-md transition-shadow ${OMBRE}`}
       style={{ border: `1px solid ${BORDURE}` }}>
@@ -483,7 +483,7 @@ function Raccourci({ label, icone, href }: { label: string; icone: string; href:
   );
 }
 
-function Bloc({ id, titre, icone, lien, libelleLien = 'Voir tout', compteur, compteurAlerte = false, children }: {
+export function Bloc({ id, titre, icone, lien, libelleLien = 'Voir tout', compteur, compteurAlerte = false, children }: {
   id: string; titre: string; icone: string; lien?: string; libelleLien?: string; compteur?: number | null; compteurAlerte?: boolean; children: React.ReactNode;
 }) {
   return (
@@ -506,7 +506,7 @@ function Chargement() {
   return <div className="py-6 flex justify-center"><div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
 }
 
-function Liste({ lignes, vide, rendu }: { lignes: LigneTB[] | undefined; vide: string; rendu: (l: LigneTB) => React.ReactNode }) {
+export function Liste({ lignes, vide, rendu }: { lignes: LigneTB[] | undefined; vide: string; rendu: (l: LigneTB) => React.ReactNode }) {
   const [tout, setTout] = useState(false);
   if (!lignes) return <Chargement />;
   if (lignes.length === 0) return <p className="text-sm text-gray-500 py-3">{vide}</p>;
@@ -556,7 +556,7 @@ function LigneTache({ l, enCours, onCocher }: { l: LigneTB; enCours: boolean; on
   );
 }
 
-function LigneSimple({ l, onClick }: { l: LigneTB; onClick?: () => void }) {
+export function LigneSimple({ l, onClick }: { l: LigneTB; onClick?: () => void }) {
   const contenu = (
     <>
       <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: l.retard ? ROUGE : (l.couleur ?? '#FF9800') }} aria-hidden />

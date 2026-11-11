@@ -318,19 +318,19 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
         crossAxisCount: 3, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
         mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 1.45,
         children: [
-          _Raccourci(label: 'Ajouter un animal', icon: Icons.add_circle_outline,
+          TbRaccourci(label: 'Ajouter un animal', icon: Icons.add_circle_outline,
               onTap: () => _ouvrir(const MesAnimauxPage(ouvrirAjout: true))),
-          _Raccourci(label: 'Ajouter une tâche', icon: Icons.add_task_outlined,
+          TbRaccourci(label: 'Ajouter une tâche', icon: Icons.add_task_outlined,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (ctx) =>
                   AgendaPage(onBack: () => Navigator.pop(ctx), autoOpenAddTache: true))).then((_) { if (mounted) _charger(); })),
           // Agenda : déjà dans la barre du bas. Protocoles : formule Premium.
-          _Raccourci(label: 'Protocoles', icon: Icons.event_note_outlined, verrou: widget.planCode != 'premium',
+          TbRaccourci(label: 'Protocoles', icon: Icons.event_note_outlined, verrou: widget.planCode != 'premium',
               onTap: () => _ouvrir(widget.planCode == 'premium' ? const PlanTemplateListPage() : const AbonnementPage())),
-          _Raccourci(label: 'Créer une annonce', icon: Icons.campaign_outlined,
+          TbRaccourci(label: 'Créer une annonce', icon: Icons.campaign_outlined,
               onTap: () => _ouvrir(const CreateAnnoncePage())),
-          _Raccourci(label: 'Entrée / Sortie', icon: Icons.swap_horiz, verrou: gratuit,
+          TbRaccourci(label: 'Entrée / Sortie', icon: Icons.swap_horiz, verrou: gratuit,
               onTap: () => _ouvrir(gratuit ? const AbonnementPage() : const RegistreEntreeSortiePage())),
-          _Raccourci(label: 'Créer un contrat', icon: Icons.edit_document,
+          TbRaccourci(label: 'Créer un contrat', icon: Icons.edit_document,
               onTap: () => _ouvrir(const ContratReservationPage())),
         ],
       ),
@@ -345,23 +345,23 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
       ],
 
       const SizedBox(height: 16),
-      _Bloc(titre: 'À faire', icone: Icons.task_alt, compteur: aFaireOuvertes,
+      TbBloc(titre: 'À faire', icone: Icons.task_alt, compteur: aFaireOuvertes,
           voirTout: () => _ouvrirAgenda(),
-          child: _Liste(lignes: d?.aFaire, vide: 'Aucune tâche en attente ni prévue cette semaine.',
+          child: TbListe(lignes: d?.aFaire, vide: 'Aucune tâche en attente ni prévue cette semaine.',
               rendu: (l) => _LigneTache(l: l, enCours: _enCours == l.cle,
                   onCocher: () => _cocher(l), onOuvrir: () => _ouvrirLigne(l)))),
       const SizedBox(height: 14),
-      _Bloc(key: _cleSoins, titre: 'Soins et échéances', icone: Icons.vaccines_outlined, compteur: soinsRetard, compteurAlerte: true,
+      TbBloc(key: _cleSoins, titre: 'Soins et échéances', icone: Icons.vaccines_outlined, compteur: soinsRetard, compteurAlerte: true,
           libelleVoirTout: 'Suivi sanitaire',
           voirTout: () => _ouvrir(gratuit ? const AbonnementPage() : const RegistreSanitairePage()),
-          child: _Liste(lignes: d?.soins, vide: 'Aucun soin prévu cette semaine ni en retard.',
-              rendu: (l) => _LigneSimple(l: l, onTap: () => _ouvrirLigne(l)))),
+          child: TbListe(lignes: d?.soins, vide: 'Aucun soin prévu cette semaine ni en retard.',
+              rendu: (l) => TbLigneSimple(l: l, onTap: () => _ouvrirLigne(l)))),
       const SizedBox(height: 14),
-      _Bloc(titre: 'Agenda', icone: Icons.event_outlined, voirTout: () => _ouvrirAgenda(),
-          child: _Liste(lignes: d?.agenda, vide: 'Aucun événement dans les $kHorizonJours prochains jours.',
-              rendu: (l) => _LigneSimple(l: l, onTap: () => _ouvrirLigne(l)))),
+      TbBloc(titre: 'Agenda', icone: Icons.event_outlined, voirTout: () => _ouvrirAgenda(),
+          child: TbListe(lignes: d?.agenda, vide: 'Aucun événement dans les $kHorizonJours prochains jours.',
+              rendu: (l) => TbLigneSimple(l: l, onTap: () => _ouvrirLigne(l)))),
       const SizedBox(height: 14),
-      _Bloc(titre: 'Activité', icone: Icons.description_outlined,
+      TbBloc(titre: 'Activité', icone: Icons.description_outlined,
           compteur: d == null ? null : d.contrats.length + d.recuperations.length,
           child: d == null ? const _Chargement() : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             for (final c in d.contrats.take(_maxLignes))
@@ -478,12 +478,12 @@ class _Indicateur extends StatelessWidget {
       );
 }
 
-class _Raccourci extends StatelessWidget {
+class TbRaccourci extends StatelessWidget {
   final String label;
   final IconData icon;
   final VoidCallback onTap;
   final bool verrou;
-  const _Raccourci({required this.label, required this.icon, required this.onTap, this.verrou = false});
+  const TbRaccourci({required this.label, required this.icon, required this.onTap, this.verrou = false});
 
   @override
   Widget build(BuildContext context) => Material(
@@ -508,7 +508,7 @@ class _Raccourci extends StatelessWidget {
       );
 }
 
-class _Bloc extends StatelessWidget {
+class TbBloc extends StatelessWidget {
   final String titre;
   final IconData icone;
   final int? compteur;
@@ -516,7 +516,7 @@ class _Bloc extends StatelessWidget {
   final VoidCallback? voirTout;
   final String libelleVoirTout;
   final Widget child;
-  const _Bloc({super.key, required this.titre, required this.icone, required this.child, this.compteur,
+  const TbBloc({super.key, required this.titre, required this.icone, required this.child, this.compteur,
       this.compteurAlerte = false, this.voirTout, this.libelleVoirTout = 'Voir tout'});
 
   @override
@@ -556,16 +556,16 @@ class _Chargement extends StatelessWidget {
       );
 }
 
-class _Liste extends StatefulWidget {
+class TbListe extends StatefulWidget {
   final List<LigneTB>? lignes;
   final String vide;
   final Widget Function(LigneTB) rendu;
-  const _Liste({required this.lignes, required this.vide, required this.rendu});
+  const TbListe({required this.lignes, required this.vide, required this.rendu});
   @override
-  State<_Liste> createState() => _ListeState();
+  State<TbListe> createState() => _TbListeState();
 }
 
-class _ListeState extends State<_Liste> {
+class _TbListeState extends State<TbListe> {
   bool _tout = false;
   @override
   Widget build(BuildContext context) {
@@ -642,10 +642,10 @@ class _LigneTache extends StatelessWidget {
       ]);
 }
 
-class _LigneSimple extends StatelessWidget {
+class TbLigneSimple extends StatelessWidget {
   final LigneTB l;
   final VoidCallback onTap;
-  const _LigneSimple({required this.l, required this.onTap});
+  const TbLigneSimple({required this.l, required this.onTap});
 
   @override
   Widget build(BuildContext context) => InkWell(

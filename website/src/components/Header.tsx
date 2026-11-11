@@ -163,13 +163,14 @@ const NAV_ELEVEUR_GROUPES: GroupeNav[] = [
   { label: 'Annuaire', liens: NAV_PARTICULIER_GROUPES.find(g => g.label === 'Services')!.liens },
 ];
 
+// Barre de l'association (refonte) : cinq accès. Annonces, animaux perdus et
+// le reste du métier sont dans le menu latéral (MENU_ASSOCIATION).
 const NAV_ASSOCIATION = [
-  { href: '/association',              label: 'Mon Association' },
-  { href: '/association/animaux',      label: 'Mes Animaux' },
-  { href: '/association/annonces',     label: 'Mes Annonces' },
+  { href: '/association',              label: 'Accueil' },
+  { href: '/association/animaux',      label: 'Animaux' },
   { href: '/association/agenda',       label: 'Agenda' },
-  { href: '/animaux-perdus',           label: 'Animaux perdus' },
   { href: '/services',                 label: 'Annuaire des professionnels' },
+  { href: '/communaute',               label: 'Communauté' },
 ];
 
 // ── Menu drawer items (miroir des drawers de l'app) ──────────────────────────
@@ -588,23 +589,29 @@ const MENU_TOILETTAGE = [
   },
 ];
 
+// Menu de l'association regroupé par usage (refonte) : mêmes entrées
+// qu'avant, rien de supprimé, chaque lien vers la même page.
 const MENU_ASSOCIATION = [
   {
-    section: 'Mon Association',
+    section: 'Gestion des animaux',
     icon: '🐾',
     items: [
-      { href: '/association/animaux',                    label: 'Mes Animaux',           icon: '🐾' },
-      { href: '/association/familles-accueil',           label: 'Familles d\'accueil',   icon: '🏡' },
+      { href: '/association/animaux',                    label: 'Mes animaux',           icon: '🐾' },
+      { href: '/association/familles-accueil',           label: "Familles d'accueil",   icon: '🏡' },
       { href: '/association/chenil',                     label: 'Affectation des hébergements', icon: '🗓️' },
-      { href: '/association/planning',                   label: 'Protocoles',            icon: '📅' },
-      { href: '/association/registre-sanitaire',         label: 'Suivi sanitaire',       icon: '🏥' },
-      { href: '/association/inventaire',                 label: 'Inventaire',            icon: '📦' },
-      { href: '/association/equipe',                     label: 'Mes employés et bénévoles', icon: '👥' },
-      { href: '/association/registre-entree-sortie',     label: 'Entrée - Sortie',       icon: '📂' },
+      { href: '/association/registre-entree-sortie',     label: 'Entrées / Sorties',     icon: '📂' },
     ],
   },
   {
-    section: 'Agenda & RDV',
+    section: 'Santé & protocoles',
+    icon: '🏥',
+    items: [
+      { href: '/association/planning',                   label: 'Protocoles',            icon: '📅' },
+      { href: '/association/registre-sanitaire',         label: 'Suivi sanitaire',       icon: '🏥' },
+    ],
+  },
+  {
+    section: 'Organisation',
     icon: '🗓️',
     items: [
       { href: '/association/agenda', label: 'Agenda',    icon: '🗓️' },
@@ -612,25 +619,27 @@ const MENU_ASSOCIATION = [
       { href: '/mes-rdv',            label: 'Mon agenda RDV',   icon: '📅' },
       { href: '/pro/creneaux',       label: 'Mes créneaux de visite', icon: '⏰' },
       { href: '/mes-taches',         label: 'Mes tâches', icon: '✅' },
-    ],
-  },
-  {
-    section: 'Administratif',
-    icon: '📁',
-    items: [
-      { href: '/association/contrat',               label: 'Contrats d\'adoption', icon: '📋' },
-      { href: '/association/certificat-engagement', label: 'Certificats',           icon: '✍️' },
-      { href: '/association/facturation',           label: 'Facturation',           icon: '🧾' },
-      { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
+      { href: '/association/equipe', label: 'Mes employés et bénévoles', icon: '👥' },
+      { href: '/association/inventaire', label: 'Inventaire', icon: '📦' },
     ],
   },
   {
     section: 'Annonces',
     icon: '📢',
     items: [
-      { href: '/association/annonces',       label: 'Mes Annonces',         icon: '📣' },
+      { href: '/association/annonces',       label: 'Mes annonces',         icon: '📣' },
       { href: '/association/annonces/creer', label: 'Nouvelle annonce',     icon: '➕' },
       { href: '/annonces',                   label: 'Trouver un compagnon', icon: '❤️' },
+    ],
+  },
+  {
+    section: 'Administration',
+    icon: '📁',
+    items: [
+      { href: '/association/contrat',               label: "Contrats d'adoption", icon: '📋' },
+      { href: '/association/certificat-engagement', label: 'Certificats',           icon: '✍️' },
+      { href: '/association/facturation',           label: 'Facturation',           icon: '🧾' },
+      { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
     ],
   },
   {
@@ -650,6 +659,7 @@ const MENU_ASSOCIATION = [
     ],
   },
 ];
+
 
 const MENU_PARTICULIER = [
   {
@@ -1698,7 +1708,8 @@ export default function Header() {
   }
 
   const isActive = (href: string) =>
-    href === '/' ? pathname === '/' : pathname.startsWith(href.split('?')[0]);
+    // Accueils (/ et /association) : actifs sur la page elle-même seulement.
+    href === '/' || href === '/association' ? pathname === href : pathname.startsWith(href.split('?')[0]);
 
   // ── Menu professionnel : présentation commune (ordinateur + mobile) ───────
   // Purement visuel : mêmes sections, entrées, ordre, destinations et droits.

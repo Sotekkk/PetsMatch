@@ -99,6 +99,12 @@ export default function FamillesAccueilWebPage() {
   }, [user]);
 
   useEffect(() => { load(); loadUsers(); }, [load, loadUsers]);
+  // « Ajouter une famille d'accueil » depuis l'accueil (?ajouter=1) : formulaire ouvert.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('ajouter') !== '1') return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setShowForm(true);
+  }, []);
 
   const handleUserSearch = (q: string) => {
     setUserSearch(q);

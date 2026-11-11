@@ -1040,6 +1040,12 @@ export default function AgendaElevagePage() {
   // Élevage : RDV vétérinaire à venir, créé ici et validé par récapitulatif.
   const [showRdvVeto, setShowRdvVeto] = useState(false);
   const [validationRdvVeto, setValidationRdvVeto] = useState<TacheManuelle | null>(null);
+  // « Planifier un rendez-vous » depuis l'accueil (?nouveau=rdv) : formulaire RDV véto / ostéo.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('nouveau') !== 'rdv') return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setShowRdvVeto(true);
+  }, []);
   const [animaux, setAnimaux]           = useState<AnimalOption[]>([]);
   const [membresAssign, setMembresAssign] = useState<MembreOption[]>([]);
 
