@@ -115,6 +115,8 @@ Map<String, dynamic> _supaToUi(Map<String, dynamic> r) => {
   'datePaiement':       r['date_paiement'],
   'montantRegle':       r['montant_regle'],
   'uidEleveur':         r['uid_eleveur'],
+  // Ligne brute (colonnes Supabase, dates ISO) : pour le chiffre d'affaires.
+  '_ligne':             r,
 };
 
 const _kEscompteDefaut = 'Escompte pour paiement anticipé : néant.';
@@ -402,7 +404,13 @@ class _FacturationPageState extends State<FacturationPage> {
             itemCount: docs.length + 1,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (context, j) {
-              if (j == 0) return ChiffreAffairesCard(factures: docs);
+              if (j == 0) {
+                // Les docs sont renommés pour l'affichage (camelCase, dates
+                // JJ/MM/AAAA) : le calcul lit les colonnes d'origine.
+                return ChiffreAffairesCard(factures: [
+                  for (final d in docs) (d['_ligne'] as Map<String, dynamic>?) ?? d,
+                ]);
+              }
               final i = j - 1;
               final d = docs[i];
               final statut = d['statut'] ?? 'emise';
