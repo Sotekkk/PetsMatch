@@ -684,11 +684,21 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   /// Essai : nouveau client → l'essai est proposé (ou seul proposé s'il est obligatoire).
   Future<void> _chargerEssai(Object? tarifsGarde) async {
-    _essaiReg = ReglagesEssai.depuis(tarifsGarde);
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final pid = widget.proProfileId;
-    if (uid == null || pid == null || pid.isEmpty) return;
-    final e = await etatEssaiClient(uid, pid);
+    if (uid == null) return;
+    // Activité sur le compte principal (pas de profil pro séparé) : réglages
+    // lus sur la ligne du compte, comme la fiche publique.
+    if (pid == null || pid.isEmpty) {
+      try {
+        final r = await Supabase.instance.client.from('user_profiles_complet').select('tarifs_garde')
+            .eq('uid', widget.proUid).eq('is_main', true).maybeSingle();
+        tarifsGarde = r?['tarifs_garde'];
+      } catch (_) {}
+    }
+    _essaiReg = ReglagesEssai.depuis(tarifsGarde);
+    if (!_essaiReg.actif) return;
+    final e = await etatEssaiClient(uid, pid, proUid: widget.proUid);
     _essaiEtat = e.etat; _essaiDate = e.date; _essaiMotif = e.motif;
     if (_essaiReg.actif && _essaiEtat == 'nouveau') {
       _dureesMotifs = _essaiReg.obligatoire

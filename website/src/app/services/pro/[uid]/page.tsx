@@ -813,8 +813,8 @@ function ProDetailContent() {
     // Éducateur : un nouveau client ne peut réserver qu'un bilan tant qu'il
     // n'a pas eu de séance confirmée avec ce pro (sauf si le pro désactive
     // cette exigence dans son profil).
-    if (pro?.cat_pro === 'garde' && user && profileId) {
-      setEssaiClient(await etatEssaiClient(user.uid, profileId));
+    if (pro?.cat_pro === 'garde' && user) {
+      setEssaiClient(await etatEssaiClient(user.uid, profileId || null, uid));
     }
     if (pro?.cat_pro === 'education' && user) {
       const { data: priorRdv } = await supabase.from('rdv').select('id')

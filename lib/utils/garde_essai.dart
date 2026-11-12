@@ -19,12 +19,17 @@ class ReglagesEssai {
 }
 
 /// connu (déjà gardé ou essai concluant) · nouveau · en_attente · non_concluant.
-Future<({String etat, String? date, String? motif})> etatEssaiClient(String clientUid, String proProfileId) async {
+/// [proProfileId] : profil pro réservé ; sans profil (activité sur le compte
+/// principal du pet-sitter) : ses RDV sans profil, par [proUid].
+Future<({String etat, String? date, String? motif})> etatEssaiClient(String clientUid, String? proProfileId, {String? proUid}) async {
   final supa = Supabase.instance.client;
+  PostgrestFilterBuilder<T> duPro<T>(PostgrestFilterBuilder<T> q) => (proProfileId ?? '').isNotEmpty
+      ? q.eq('pro_profile_id', proProfileId!)
+      : q.eq('pro_uid', proUid ?? '').isFilter('pro_profile_id', null);
   try {
-    final l = await supa.from('rdv')
+    final l = await duPro(supa.from('rdv')
         .select('statut, date_heure, est_essai, essai_resultat, essai_motif')
-        .eq('client_uid', clientUid).eq('pro_profile_id', proProfileId)
+        .eq('client_uid', clientUid))
         .inFilter('statut', ['demande', 'confirme', 'termine']).order('date_heure', ascending: false).limit(200);
     if (l.any((r) => (r['est_essai'] != true && ['confirme', 'termine'].contains(r['statut'])) || r['essai_resultat'] == 'concluant')) {
       return (etat: 'connu', date: null, motif: null);
@@ -38,7 +43,7 @@ Future<({String etat, String? date, String? motif})> etatEssaiClient(String clie
   } catch (_) {
     // migration_garde_essai.sql pas encore passée : règle d'avant.
     try {
-      final d = await supa.from('rdv').select('id').eq('client_uid', clientUid).eq('pro_profile_id', proProfileId)
+      final d = await duPro(supa.from('rdv').select('id').eq('client_uid', clientUid))
           .inFilter('statut', ['confirme', 'termine']).limit(1);
       return (etat: d.isNotEmpty ? 'connu' : 'nouveau', date: null, motif: null);
     } catch (_) {

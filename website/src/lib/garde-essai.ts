@@ -23,15 +23,17 @@ export function reglagesEssai(tarifs?: Record<string, unknown> | null): Reglages
  *  résultat · essai non concluant. */
 export type EtatEssai = 'connu' | 'nouveau' | 'en_attente' | 'non_concluant';
 
-export async function etatEssaiClient(clientUid: string, proProfileId: string): Promise<{ etat: EtatEssai; date?: string; motif?: string | null }> {
-  const { data, error } = await supabase.from('rdv')
-    .select('statut, date_heure, est_essai, essai_resultat, essai_motif')
-    .eq('client_uid', clientUid).eq('pro_profile_id', proProfileId)
-    .in('statut', ['demande', 'confirme', 'termine']).order('date_heure', { ascending: false }).limit(200);
+/** proProfileId : profil pro réservé ; sans profil (activité sur le compte
+ *  principal du pet-sitter) : ses RDV sans profil, par son uid. */
+export async function etatEssaiClient(clientUid: string, proProfileId: string | null, proUid?: string): Promise<{ etat: EtatEssai; date?: string; motif?: string | null }> {
+  let q = supabase.from('rdv').select('statut, date_heure, est_essai, essai_resultat, essai_motif').eq('client_uid', clientUid);
+  q = proProfileId ? q.eq('pro_profile_id', proProfileId) : q.eq('pro_uid', proUid ?? '').is('pro_profile_id', null);
+  const { data, error } = await q.in('statut', ['demande', 'confirme', 'termine']).order('date_heure', { ascending: false }).limit(200);
   if (error) {
     // Migration migration_garde_essai.sql pas encore passée : règle d'avant.
-    const { data: d2 } = await supabase.from('rdv').select('id').eq('client_uid', clientUid).eq('pro_profile_id', proProfileId)
-      .in('statut', ['confirme', 'termine']).limit(1);
+    let q2 = supabase.from('rdv').select('id').eq('client_uid', clientUid);
+    q2 = proProfileId ? q2.eq('pro_profile_id', proProfileId) : q2.eq('pro_uid', proUid ?? '').is('pro_profile_id', null);
+    const { data: d2 } = await q2.in('statut', ['confirme', 'termine']).limit(1);
     return { etat: (d2 ?? []).length ? 'connu' : 'nouveau' };
   }
   const l = (data ?? []) as { statut: string; date_heure: string; est_essai?: boolean | null; essai_resultat?: string | null; essai_motif?: string | null }[];
