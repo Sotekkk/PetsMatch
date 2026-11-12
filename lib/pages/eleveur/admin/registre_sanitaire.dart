@@ -42,6 +42,12 @@ String _espLabel(String e) {
 
 // ── Helper public — appelé depuis animal_fiche.dart ────────────────────────────
 
+/// Nom de la personne connectée (« Administré par » par défaut).
+String moiIntervenant() {
+  String v(String x) => x.trim().toLowerCase() == 'none' ? '' : x.trim();
+  return [v(User_Info.firstname), v(User_Info.lastname)].where((x) => x.isNotEmpty).join(' ');
+}
+
 class RegistreHelper {
   static Future<void> writeActe({
     required String animalId,
@@ -80,7 +86,8 @@ class RegistreHelper {
         'sexe':           (d['sexe'] ?? '') as String,
         'date_acte':      dateActe.toIso8601String(),
         'type_acte':      typeActe,
-        'intervenant':    intervenant,
+        // « Administré par » laissé vide : c'est la personne connectée.
+        'intervenant':    intervenant.trim().isNotEmpty ? intervenant : moiIntervenant(),
         'description':    description,
         'ordonnance_num': ordonnanceNum,
         'profil_source':  User_Info.activeType == 'pension' ? 'pension'

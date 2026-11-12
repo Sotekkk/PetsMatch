@@ -334,7 +334,7 @@ exports.sendSanteReminders = functions
         // récap si plusieurs (cf. PushDigest).
         const digest = new PushDigest({type: "rappels_sante", icone: "🩺", libelle: "rappels santé"});
 
-        for (const {table, label, emoji, nomField} of TABLES) {
+        for (const {table, label, nomField} of TABLES) {
             for (const {key: palierKey, days, phrase} of PALIERS) {
                 const targetDate = dateStr(days);
 
@@ -393,9 +393,10 @@ exports.sendSanteReminders = functions
                         `${noms.slice(0, 4).join(", ")} +${noms.length - 4}` : noms.join(", ");
                     const animalIds = items.map((i) => String(i.row.animal_id));
                     const premier = animalIds[0];
+                    // Sans pictogramme (affichage de l'appli et du site).
                     const title = plusieurs ?
-                        `${emoji} ${label} — ${items.length} animaux` :
-                        `${emoji} ${label} — ${noms[0]}`;
+                        `${label} — ${items.length} animaux` :
+                        `${label} — ${noms[0]}`;
                     const body = `Rappel ${phrase} : ${produit} pour ${listeNoms}.`;
                     const data = {animalId: premier, animalIds, table, palier: palierKey};
 
@@ -432,7 +433,7 @@ exports.sendSanteReminders = functions
                                 produit !== label ? produit : null,
                                 plusieurs ? `Animaux : ${noms.join(", ")}` : null,
                             ].filter(Boolean).join(" — ") || null;
-                            const inserted = await supabaseInsertReturning("taches_elevage", [{
+                            const tache = {
                                 uid_eleveur: uid,
                                 titre: title,
                                 date: targetDate,
@@ -443,7 +444,22 @@ exports.sendSanteReminders = functions
                                 animal_id: plusieurs ? null : premier,
                                 animal_nom: plusieurs ? listeNoms : noms[0],
                                 ...(profileId ? {profile_id: profileId, eleveur_profile_id: profileId} : {}),
-                            }]);
+                            };
+                            // Soin + animaux : formulaire prérempli et carnet vérifié au
+                            // moment de cocher (migration_taches_soin_rappel.sql ; sans
+                            // la colonne, la tâche est créée comme avant).
+                            let inserted;
+                            try {
+                                inserted = await supabaseInsertReturning("taches_elevage", [{
+                                    ...tache, soin_rappel: {table, produit, animal_ids: animalIds},
+                                }]);
+                            } catch (_) {
+                                inserted = null;
+                            }
+                            // Erreur renvoyée en objet (colonne absente) : sans soin_rappel.
+                            if (!Array.isArray(inserted)) {
+                                inserted = await supabaseInsertReturning("taches_elevage", [tache]);
+                            }
                             const tacheId = Array.isArray(inserted) && inserted[0] ? inserted[0].id : null;
                             if (tacheId) {
                                 for (const it of items) {

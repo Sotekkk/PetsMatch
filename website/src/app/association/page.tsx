@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { Kpi, Icone, EnteteAccueil, BoutonPilule, Puce } from '@/components/dashboard/kit';
 import { Bloc, Liste, LigneSimple, Raccourci } from '@/components/EleveurDashboard';
+import { useSoinDepuisTache } from '@/components/animaux/SoinDepuisTache';
 import { chargerTableauBord, HORIZON_JOURS, type LigneTB } from '@/lib/tableau-bord-eleveur';
 
 interface Stats {
@@ -47,6 +48,8 @@ const jourCourt = (iso: string) => new Date(`${iso.slice(0, 10)}T12:00:00`).toLo
 
 export default function AssociationDashboard() {
   const { user, activeProfileId } = useAuth();
+  // Tâche « rappel du carnet » : carnet vérifié, puis formulaire de soin.
+  const soinTache = useSoinDepuisTache();
   const [stats, setStats] = useState<Stats>({ presents: 0, enSoin: 0, disponible: 0, enFa: 0, adopte: 0, benevoles: 0 });
   const [recentAnimaux, setRecentAnimaux] = useState<AnimalAsso[]>([]);
   const [mouvements, setMouvements] = useState<Mouvement[] | null>(null);
@@ -265,7 +268,7 @@ export default function AssociationDashboard() {
               <Bloc id="alertes" titre="Alertes et actions" icone="cloche" lien="/association/registre-sanitaire" libelleLien="Suivi sanitaire"
                 compteur={enRetard || null} compteurAlerte>
                 <Liste lignes={alertes} vide={`Aucun soin ni tâche en retard ou prévu dans les ${HORIZON_JOURS} jours.`}
-                  rendu={l => <LigneSimple l={l} />} />
+                  rendu={l => <LigneSimple l={l} onClick={l.tacheSoin && !l.fait ? () => { void soinTache.traiter(l.tacheSoin!, () => { void charger(); }); } : undefined} />} />
               </Bloc>
             </div>
             <div className="order-3 lg:order-none">
@@ -277,6 +280,7 @@ export default function AssociationDashboard() {
           </div>
         </div>
       </div>
+      {soinTache.modal}
     </div>
   );
 }

@@ -14,6 +14,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:PetsMatch/utils/tableau_bord_eleveur.dart';
 import 'package:PetsMatch/utils/valider_tache.dart';
+import 'package:PetsMatch/utils/soin_depuis_tache.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
@@ -188,7 +189,15 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
         CibleTB.jour => _ouvrirAgenda(jour: l.date),
         CibleTB.soin => _ouvrirSoin(l),
         CibleTB.protocole => _validerProtocole(l),
+        CibleTB.tacheSoin => _traiterTacheSoin(l),
       };
+
+  /// Tâche « rappel du carnet » : carnet vérifié, puis formulaire de soin
+  /// (animaux restants) ou simple coche ; sinon l'agenda du jour.
+  Future<void> _traiterTacheSoin(LigneTB l) async {
+    if (l.brut != null && await traiterTacheSoin(context, l.brut!, apres: () { if (mounted) _charger(); })) return;
+    if (mounted) _ouvrirAgenda(jour: l.date);
+  }
 
   /// Soins d'un protocole le même jour : animaux cochés, inscription au carnet et
   /// au registre cochée d'office, validés en une fois — même enregistrement que

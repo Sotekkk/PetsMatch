@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/soin_depuis_tache.dart';
 import 'package:PetsMatch/utils/protocoles.dart' show animauxPresents;
 import 'package:PetsMatch/utils/exercice_tache.dart';
 import 'package:intl/intl.dart';
@@ -1194,6 +1195,12 @@ class _AgendaPageState extends State<AgendaPage> {
               // RDV vétérinaire : récapitulatif (date réelle, animaux vus) avant carnet et registre.
               if (t['rdv_veto_cabinet'] != null && !isDone) {
                 if (await showValiderRdvVeto(context, t)) _loadTasks();
+                return;
+              }
+              // Rappel du carnet (Antiparasitaire — 5 animaux…) : carnet vérifié,
+              // puis formulaire de soin pour les animaux restants ou simple coche.
+              if (!isDone && t['rdv_veto_cabinet'] == null &&
+                  await traiterTacheSoin(context, t, apres: () { if (mounted) _loadTasks(); })) {
                 return;
               }
               if (t['rdv_veto_cabinet'] != null) {

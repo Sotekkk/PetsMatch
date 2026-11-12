@@ -14,6 +14,7 @@ import { usePlan, resolveOwnerUid } from '@/lib/use-plan';
 import { Icone, Puce, BORDURE, OMBRE, TEAL } from '@/components/dashboard/kit';
 import { chargerTableauBord, animauxDuProfil, ymd, type DonneesTB, type LigneTB, HORIZON_JOURS } from '@/lib/tableau-bord-eleveur';
 import PorteeSoinModal, { type SoinAnimal } from '@/components/animaux/PorteeSoinModal';
+import { useSoinDepuisTache } from '@/components/animaux/SoinDepuisTache';
 import AnnonceStatsModal from '@/components/AnnonceStatsModal';
 import ValiderSoinsProtocoleModal from '@/components/planning/ValiderSoinsProtocoleModal';
 import { basculerRoutine, basculerTacheManuelle } from '@/lib/valider-tache';
@@ -183,6 +184,8 @@ export default function EleveurDashboard() {
 
   // Rappel du carnet : formulaire de soin prérempli (soin, produit, prochain rappel,
   // animaux concernés cochés ; les autres animaux de l'élevage restent proposés).
+  const soinTache = useSoinDepuisTache();
+
   async function ouvrirSoin(l: LigneTB) {
     if (!user || !l.soin) return;
     const ownerUid = await resolveOwnerUid(user.uid, activeProfileId ?? '');
@@ -327,7 +330,7 @@ export default function EleveurDashboard() {
             <Bloc id="soins" titre="Soins et échéances" icone="seringue" lien="/elevage/registre-sanitaire" libelleLien="Suivi sanitaire"
               compteur={soinsRetard || null} compteurAlerte>
               <Liste lignes={donnees?.soins} vide="Aucun soin prévu cette semaine ni en retard."
-                rendu={l => <LigneSimple l={l} onClick={l.soin ? () => ouvrirSoin(l) : l.protocole?.length ? () => setProtoOuvert(l) : undefined} />} />
+                rendu={l => <LigneSimple l={l} onClick={l.soin ? () => ouvrirSoin(l) : l.protocole?.length ? () => setProtoOuvert(l) : l.tacheSoin && !l.fait ? () => { void soinTache.traiter(l.tacheSoin!, chargerTB); } : undefined} />} />
             </Bloc>
           </div>
           <div className="space-y-5">
@@ -427,6 +430,7 @@ export default function EleveurDashboard() {
           </div>
         </div>
       </div>
+      {soinTache.modal}
       {soinOuvert && soinOuvert.ligne.soin && (
         <PorteeSoinModal
           titre={soinOuvert.ligne.titre}

@@ -26,7 +26,9 @@ const kActesCarnet = ['vermifuge', 'antiparasitaire', 'vaccination', 'traitement
 /// Où mène une ligne : le jour de l'agenda, le planning du jour des
 /// protocoles (validation d'un soin avec inscription au carnet), ou l'onglet
 /// Santé de la fiche de l'animal (rappel du carnet).
-enum CibleTB { jour, planning, fiche, animaux, soin, protocole }
+/// tacheSoin : tâche « rappel du carnet » (brut = la tâche) — carnet vérifié,
+/// puis formulaire de soin (lib/utils/soin_depuis_tache.dart).
+enum CibleTB { jour, planning, fiche, animaux, soin, protocole, tacheSoin }
 
 /// Rappel du carnet : de quoi ouvrir le formulaire de soin prérempli (PorteeSoinSheet).
 class SoinTB {
@@ -252,7 +254,8 @@ Future<DonneesTB> chargerTableauBord({
         animal: t['animal_nom']?.toString(), responsable: responsable, fait: fait,
         retard: !fait && date.isBefore(aujourdhui),
         sousTitre: acte.isNotEmpty ? 'Rappel du carnet' : null,
-        tableCochable: acte.isNotEmpty ? null : 'taches_elevage', brut: acte.isNotEmpty ? null : t);
+        cible: acte.isNotEmpty && !fait ? CibleTB.tacheSoin : CibleTB.jour,
+        tableCochable: acte.isNotEmpty ? null : 'taches_elevage', brut: t);
     if (acte.isNotEmpty) {
       // Même rappel déjà listé depuis le carnet : la tâche du jour n'est pas répétée.
       if ((t['animal_id']?.toString() ?? '').isNotEmpty && soinsDuJour.contains('${_ymd(date)}|$acte|${t['animal_id']}')) continue;

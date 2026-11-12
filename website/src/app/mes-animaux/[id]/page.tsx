@@ -54,6 +54,7 @@ import { chargerReproducteurs, chargerReproducteursExterieurs, raisonNonEligible
 import ImagePrivee, { VideoPrivee } from '@/components/ImagePrivee';
 import { COLS_FORFAIT_SOUSCRIT, libelleCompteurs } from '@/lib/forfait-education';
 import { cocherTacheExercice } from '@/lib/exercice-tache';
+import { moiIntervenant, sourceRegistre } from '@/lib/registre-source';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -3750,10 +3751,10 @@ function AnimalFichePageInner() {
         sexe: cible.sexe ?? '',
         date_acte: dateActe,
         type_acte: typeActe,
-        intervenant: String(data.veterinaire ?? ''),
+        intervenant: String(data.veterinaire ?? '').trim() || moiIntervenant(userData),
         description: registreDescription(table, data),
         ordonnance_num: '',
-        profil_source: 'eleveur',
+        profil_source: sourceRegistre(availableProfiles, activeProfileId, userData),
         source_table: table,
         source_id: recordId,
       }, { onConflict: 'source_table,source_id' });

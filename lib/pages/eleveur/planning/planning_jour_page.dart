@@ -108,7 +108,8 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
     final hasSanitaire = group.any((t) =>
         (t['animal_id']?.toString() ?? '').isNotEmpty &&
         isSanitaire(t['type_acte']?.toString() ?? ''));
-    bool insertRegistre = false;
+    // Soin sanitaire : carnet + registre par défaut (décochable).
+    bool insertRegistre = true;
     // Sélection individuelle par animal (tous cochés par défaut)
     final selected = {for (final t in group) t['id'] as String: true};
 

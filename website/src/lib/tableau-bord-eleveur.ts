@@ -44,6 +44,9 @@ export interface LigneTB {
   soin?: { typeActe: string; produit: string; animalIds: string[]; ecartJours: number | null };
   /** Soins d'un protocole le même jour (une ligne) : tâches à valider ensemble. */
   protocole?: RoutineBrute[];
+  /** Tâche « rappel du carnet » (Antiparasitaire — 5 animaux…) : vérifiée puis
+   *  formulaire de soin (components/animaux/SoinDepuisTache.tsx). */
+  tacheSoin?: TacheBrute;
   /** Coche directe possible (tâches simples uniquement). */
   cochable?: { table: 'taches_elevage'; ligne: TacheBrute } | { table: 'plan_taches'; ligne: RoutineBrute };
 }
@@ -333,7 +336,7 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
     if (acte) {
       // Même rappel déjà listé depuis le carnet : la tâche du jour n'est pas répétée.
       if (t.animal_id && soinsDuJour.has(`${date}|${acte}|${t.animal_id}`)) continue;
-      soins.push({ ...ligne, sousTitre: 'Rappel du carnet' });
+      soins.push({ ...ligne, sousTitre: 'Rappel du carnet', tacheSoin: t });
     } else {
       aFaire.push({ ...ligne, cochable: { table: 'taches_elevage', ligne: t } });
     }

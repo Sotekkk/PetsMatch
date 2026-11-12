@@ -14,6 +14,7 @@ import 'package:PetsMatch/pages/eleveur/eleveur_dashboard.dart' show TbBloc, TbL
 import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/utils/tableau_bord_eleveur.dart';
+import 'package:PetsMatch/utils/soin_depuis_tache.dart';
 import 'package:PetsMatch/widgets/agenda/rdv_veto_sheets.dart';
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -244,6 +245,12 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
         _ouvrir(const MesAnimauxAssoPage());
       case CibleTB.jour:
         _ouvrirAgenda(jour: l.date);
+      case CibleTB.tacheSoin:
+        // Rappel du carnet : carnet vérifié, puis formulaire de soin ou simple coche.
+        () async {
+          if (l.brut != null && await traiterTacheSoin(context, l.brut!, apres: () { if (mounted) _loadStats(); })) return;
+          if (mounted) _ouvrirAgenda(jour: l.date);
+        }();
     }
   }
 

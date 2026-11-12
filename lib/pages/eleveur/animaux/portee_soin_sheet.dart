@@ -23,6 +23,23 @@ const _kActes = [
 
 typedef _Acte = ({String value, String label, IconData icon, Color color});
 
+/// Fréquence du soin → prochain rappel (date du soin + fréquence, modifiable).
+/// Miroir site : PorteeSoinModal (ajouterFrequence).
+const _kFreqRapides = [
+  (label: '1 semaine', n: 1, u: 'semaines'), (label: '1 mois', n: 1, u: 'mois'),
+  (label: '3 mois', n: 3, u: 'mois'), (label: '6 mois', n: 6, u: 'mois'), (label: '1 an', n: 12, u: 'mois'),
+];
+DateTime ajouterFrequence(DateTime d, int n, String u) {
+  if (u == 'mois') {
+    final r = DateTime(d.year, d.month + n, d.day);
+    // 31 janvier + 1 mois : dernier jour de février, pas le 3 mars.
+    return r.day != d.day ? DateTime(r.year, r.month, 0) : r;
+  }
+  return DateTime(d.year, d.month, d.day + n * (u == 'semaines' ? 7 : 1));
+}
+String libelleFrequence(int n, String u) =>
+    u == 'mois' && n == 12 ? '1 an' : '$n ${u == 'mois' ? 'mois' : n > 1 ? u : u.substring(0, u.length - 1)}';
+
 /// Soins avec prochain rappel (carnet de chaque animal + un rappel d'agenda pour le groupe).
 const _kLibelleRappel = {'vaccination': 'Rappel vaccin', 'vermifuge': 'Rappel vermifuge', 'antiparasitaire': 'Rappel antiparasitaire'};
 
@@ -38,18 +55,20 @@ class PorteeSoinSheet extends StatefulWidget {
   final String? produitInitial;
   final DateTime? rappelInitial;
   final Set<String>? selectionInitiale;
+  /// Ligne d'information sous les animaux (ex. soin déjà inscrit au carnet).
+  final String? info;
   const PorteeSoinSheet({super.key, required this.animals, this.eleveurUid,
-      this.titre, this.acteInitial, this.produitInitial, this.rappelInitial, this.selectionInitiale});
+      this.titre, this.acteInitial, this.produitInitial, this.rappelInitial, this.selectionInitiale, this.info});
 
   /// Ouvre le bottom sheet et retourne true si des soins ont été enregistrés.
   static Future<bool> show(BuildContext context, List<Map<String, dynamic>> animals, {String? eleveurUid,
-      String? titre, String? acteInitial, String? produitInitial, DateTime? rappelInitial, Set<String>? selectionInitiale}) async {
+      String? titre, String? acteInitial, String? produitInitial, DateTime? rappelInitial, Set<String>? selectionInitiale, String? info}) async {
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => PorteeSoinSheet(animals: animals, eleveurUid: eleveurUid, titre: titre, acteInitial: acteInitial,
-          produitInitial: produitInitial, rappelInitial: rappelInitial, selectionInitiale: selectionInitiale),
+          produitInitial: produitInitial, rappelInitial: rappelInitial, selectionInitiale: selectionInitiale, info: info),
     );
     return result ?? false;
   }
@@ -72,6 +91,12 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
   bool get _estRdv => _selectedActe.value == 'rdv_veto';
   bool get _estVisite => _selectedActe.value == 'visite';
   final _intervenantCtrl  = TextEditingController();
+  final _freqCtrl         = TextEditingController();
+  String _freqU = 'mois';
+  int get _freqN => int.tryParse(_freqCtrl.text.trim()) ?? 0;
+  void _majRappelDepuisFrequence() {
+    if (_freqN > 0) _dateRappel = ajouterFrequence(_date, _freqN, _freqU);
+  }
   final _descriptionCtrl  = TextEditingController();
   final _dosageCtrl       = TextEditingController();
   final _notesCtrl        = TextEditingController();
@@ -108,6 +133,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
   @override
   void dispose() {
     _intervenantCtrl.dispose();
+    _freqCtrl.dispose();
     _descriptionCtrl.dispose();
     _dosageCtrl.dispose();
     _notesCtrl.dispose();
@@ -130,7 +156,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
         child: child!,
       ),
     );
-    if (picked != null) setState(() => _date = picked);
+    if (picked != null) setState(() { _date = picked; _majRappelDepuisFrequence(); });
   }
 
   /// RDV à venir : tâche d'agenda ; carnet et registre à la validation.
@@ -176,7 +202,9 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
     final type        = _selectedActe.value;
     final desc        = _descriptionCtrl.text.trim();
     final dosage      = _dosageCtrl.text.trim();
-    final interv      = _intervenantCtrl.text.trim();
+    // « Administré par » vide : la personne connectée.
+    final interv      = _intervenantCtrl.text.trim().isNotEmpty ? _intervenantCtrl.text.trim() : moiIntervenant();
+    final frequence   = _freqN > 0 ? libelleFrequence(_freqN, _freqU) : '';
     final notes       = _notesCtrl.text.trim();
     final dateIso     = _date.toIso8601String();
     int success = 0;
@@ -207,7 +235,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
               'id': entryId, 'animal_id': id,
               'produit': desc, 'type': 'autre', 'date': dateIso, 'source': 'owner',
               if (rappelTxt != null) 'date_rappel': rappelTxt,
-              if (dosage.isNotEmpty) 'frequence': dosage,
+              if (frequence.isNotEmpty) 'frequence': frequence,
               if (notes.isNotEmpty) 'notes': notes,
             });
           case 'visite':
@@ -335,6 +363,15 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
               ),
             );
           }).toList()),
+          if (widget.info != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(10)),
+              child: Text(widget.info!, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _green)),
+            ),
+          ],
 
           const SizedBox(height: 20),
 
@@ -444,6 +481,53 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
           // Prochain rappel (vaccin, vermifuge, antiparasitaire).
           if (_avecRappel) ...[
             const SizedBox(height: 14),
+            const Text('Fréquence (optionnel)', style: TextStyle(fontFamily: 'Galey',
+                fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0C5C6C))),
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final f in _kFreqRapides)
+                ChoiceChip(
+                  label: Text(f.label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  selected: _freqN == f.n && _freqU == f.u,
+                  selectedColor: _teal.withValues(alpha: 0.18),
+                  onSelected: (_) => setState(() {
+                    _freqCtrl.text = '${f.n}'; _freqU = f.u; _majRappelDepuisFrequence();
+                  }),
+                ),
+            ]),
+            const SizedBox(height: 8),
+            Row(children: [
+              SizedBox(width: 100, child: TextField(
+                controller: _freqCtrl,
+                keyboardType: TextInputType.number,
+                onChanged: (_) => setState(_majRappelDepuisFrequence),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Nombre', isDense: true, filled: true, fillColor: const Color(0xFFF8F8F6),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _teal.withValues(alpha: 0.2))),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _teal.withValues(alpha: 0.2))),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+              )),
+              const SizedBox(width: 8),
+              Expanded(child: DropdownButtonFormField<String>(
+                initialValue: _freqU,
+                isDense: true,
+                decoration: InputDecoration(
+                  filled: true, fillColor: const Color(0xFFF8F8F6),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _teal.withValues(alpha: 0.2))),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _teal.withValues(alpha: 0.2))),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'jours', child: Text('jour(s)', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                  DropdownMenuItem(value: 'semaines', child: Text('semaine(s)', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                  DropdownMenuItem(value: 'mois', child: Text('mois', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                ],
+                onChanged: (v) => setState(() { _freqU = v ?? 'mois'; _majRappelDepuisFrequence(); }),
+              )),
+            ]),
+            const SizedBox(height: 14),
             const Text('Prochain rappel (optionnel)', style: TextStyle(fontFamily: 'Galey',
                 fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0C5C6C))),
             const SizedBox(height: 6),
@@ -473,18 +557,18 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
           ],
 
           // Dosage (visible pour vermifuge et antiparasitaire)
-          if (_selectedActe.value == 'vermifuge' || _selectedActe.value == 'antiparasitaire') ...[
+          if (_selectedActe.value == 'vermifuge') ...[
             const SizedBox(height: 14),
-            Text(
-              _selectedActe.value == 'antiparasitaire' ? 'Fréquence (optionnel)' : 'Dosage (optionnel)',
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0C5C6C)),
+            const Text(
+              'Dosage (optionnel)',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF0C5C6C)),
             ),
             const SizedBox(height: 6),
             TextField(
               controller: _dosageCtrl,
               style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
               decoration: InputDecoration(
-                hintText: _selectedActe.value == 'antiparasitaire' ? 'Ex : 1 mois' : 'Ex : 1 cp / 5 kg',
+                hintText: 'Ex : 1 cp / 5 kg',
                 hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFBDBDBD)),
                 filled: true, fillColor: const Color(0xFFF8F8F6),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
@@ -508,7 +592,8 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
             controller: _intervenantCtrl,
             style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
             decoration: InputDecoration(
-              hintText: _estRdv || _estVisite ? 'Nom du cabinet' : 'Éleveur, Dr. Dupont, …',
+              hintText: _estRdv || _estVisite ? 'Nom du cabinet'
+                  : moiIntervenant().isNotEmpty ? 'Laissé vide : ${moiIntervenant()}' : 'Éleveur, Dr. Dupont, …',
               hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFBDBDBD)),
               filled: true, fillColor: const Color(0xFFF8F8F6),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),

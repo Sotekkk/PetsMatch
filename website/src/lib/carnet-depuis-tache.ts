@@ -22,7 +22,7 @@ export interface TacheSanitaire {
 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-export async function inscrireTacheAuCarnet(t: TacheSanitaire, uidEleveur: string, profileId?: string | null) {
+export async function inscrireTacheAuCarnet(t: TacheSanitaire, uidEleveur: string, profileId?: string | null, intervenant = '') {
   const cible = TABLES[t.type_acte ?? ''];
   if (!t.animal_id || !cible) return;
   try {
@@ -42,12 +42,18 @@ export async function inscrireTacheAuCarnet(t: TacheSanitaire, uidEleveur: strin
     const { data: a } = await supabase.from('animaux')
       .select('nom, espece, date_naissance, identification, sexe').eq('id', t.animal_id).maybeSingle();
     const animal = (a ?? {}) as { nom?: string; espece?: string; date_naissance?: string; identification?: string; sexe?: string };
+    // Registre du profil (élevage ou association).
+    let source = 'eleveur';
+    if (profileId) {
+      const { data: pr } = await supabase.from('user_profiles').select('profile_type').eq('id', profileId).maybeSingle();
+      if ((pr as { profile_type?: string } | null)?.profile_type === 'association') source = 'association';
+    }
     await supabase.from('registre_sanitaire').upsert({
       uid_eleveur: uidEleveur, ...(profileId ? { eleveur_profile_id: profileId } : {}),
       animal_id: t.animal_id, animal_nom: animal.nom ?? '', espece: animal.espece ?? '',
       date_naissance: animal.date_naissance ?? null, identification: animal.identification ?? '', sexe: animal.sexe ?? '',
-      date_acte: t.date_prevue, type_acte: t.type_acte, intervenant: '', description: t.label ?? produit,
-      ordonnance_num: '', profil_source: 'eleveur', source_table: 'plan_taches', source_id: t.id,
+      date_acte: t.date_prevue, type_acte: t.type_acte, intervenant, description: t.label ?? produit,
+      ordonnance_num: '', profil_source: source, source_table: 'plan_taches', source_id: t.id,
     }, { onConflict: 'source_table,source_id' });
 
     // Carnet : une entrée par traitement.
@@ -75,14 +81,14 @@ export async function inscrireTacheAuCarnet(t: TacheSanitaire, uidEleveur: strin
  *  de chaque animal. Une seule implémentation pour les deux écrans. */
 export async function validerTachesProtocole(
   taches: (TacheSanitaire & { uid_eleveur?: string | null })[],
-  o: { uid: string; profileId: string | null; notes?: string; inscrire: boolean },
+  o: { uid: string; profileId: string | null; notes?: string; inscrire: boolean; intervenant?: string },
 ): Promise<void> {
   for (const t of taches) {
     await supabase.from('plan_taches').update({
       statut: 'fait', valide_par: o.uid, valide_par_profile_id: o.profileId,
       valide_at: new Date().toISOString(), notes_validation: o.notes?.trim() || null,
     }).eq('id', t.id);
-    if (o.inscrire && ACTES_CARNET.includes(t.type_acte ?? '')) await inscrireTacheAuCarnet(t, t.uid_eleveur ?? o.uid, o.profileId);
+    if (o.inscrire && ACTES_CARNET.includes(t.type_acte ?? '')) await inscrireTacheAuCarnet(t, t.uid_eleveur ?? o.uid, o.profileId, o.intervenant ?? '');
   }
 }
 

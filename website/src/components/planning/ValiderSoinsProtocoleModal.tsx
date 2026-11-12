@@ -5,6 +5,8 @@
 // jour (validerTachesProtocole). Miroir appli : _ValiderSoinsSheet (eleveur_dashboard.dart).
 import { useState } from 'react';
 import { validerTachesProtocole, type TacheSanitaire } from '@/lib/carnet-depuis-tache';
+import { useAuth } from '@/lib/auth-context';
+import { moiIntervenant } from '@/lib/registre-source';
 
 export type TacheProtocole = TacheSanitaire & { uid_eleveur?: string | null; animal_nom?: string | null };
 
@@ -13,6 +15,7 @@ export default function ValiderSoinsProtocoleModal({ titre, taches, uid, profile
   onClose: () => void; onValidated: () => void;
 }) {
   const [selected, setSelected] = useState<Record<string, boolean>>(() => Object.fromEntries(taches.map(t => [t.id, true])));
+  const { userData } = useAuth();
   const [inscrire, setInscrire] = useState(true);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -22,7 +25,7 @@ export default function ValiderSoinsProtocoleModal({ titre, taches, uid, profile
   async function valider() {
     setSaving(true); setErreur('');
     try {
-      await validerTachesProtocole(taches.filter(t => selected[t.id]), { uid, profileId, notes, inscrire });
+      await validerTachesProtocole(taches.filter(t => selected[t.id]), { uid, profileId, notes, inscrire, intervenant: moiIntervenant(userData) });
       onValidated();
     } catch (e) {
       setErreur(`Validation impossible : ${(e as Error).message}`);

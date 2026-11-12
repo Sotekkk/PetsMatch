@@ -15,6 +15,7 @@ import {
 import { ouvrirFicheProtocole } from '@/lib/protocole-pdf';
 import { SANTE_COULEURS, SANTE_COULEUR_ACTE } from '@/lib/sante-couleurs';
 import { useAuth } from '@/lib/auth-context';
+import { moiIntervenant } from '@/lib/registre-source';
 import { usePlan, usePensionPlan, usePlanGarde } from '@/lib/use-plan';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { useTypeProfilActif } from '@/hooks/useTypeProfilActif';
@@ -2477,6 +2478,7 @@ function ValidateModal({ groupe, uid, profileId, onClose, onValidated }: {
   groupe: TacheGroupe; uid: string; profileId: string | null; onClose: () => void; onValidated: () => void;
 }) {
   const { taches } = groupe;
+  const { userData } = useAuth();
   const [selected, setSelected] = useState<Record<string, boolean>>(
     Object.fromEntries(taches.map(t => [t.id, true]))
   );
@@ -2484,7 +2486,8 @@ function ValidateModal({ groupe, uid, profileId, onClose, onValidated }: {
   const [saving, setSaving] = useState(false);
   // Soin sanitaire : inscription au carnet de chaque animal + registre (comme l'appli).
   const sanitaire = ACTES_CARNET.includes(taches[0]?.type_acte ?? '');
-  const [inscrire, setInscrire] = useState(false);
+  // Carnet + registre par défaut (décochable), comme l'accueil.
+  const [inscrire, setInscrire] = useState(true);
 
   const allChecked = Object.values(selected).every(Boolean);
   const someChecked = Object.values(selected).some(Boolean);
@@ -2494,7 +2497,7 @@ function ValidateModal({ groupe, uid, profileId, onClose, onValidated }: {
   const validate = async () => {
     setSaving(true);
     // Fonction partagée avec l'accueil éleveur (lib/carnet-depuis-tache.ts).
-    await validerTachesProtocole(taches.filter(t => selected[t.id]), { uid, profileId, notes, inscrire: sanitaire && inscrire });
+    await validerTachesProtocole(taches.filter(t => selected[t.id]), { uid, profileId, notes, inscrire: sanitaire && inscrire, intervenant: moiIntervenant(userData) });
     onValidated();
   };
 

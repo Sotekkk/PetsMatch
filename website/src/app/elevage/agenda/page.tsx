@@ -9,6 +9,7 @@ import { usePlan } from '@/lib/use-plan';
 import { estHorsPriseEnCharge } from '@/lib/protocoles';
 import { sansAutresProfils } from '@/lib/cloisonnement-profils';
 import { basculerRoutine, basculerTacheManuelle } from '@/lib/valider-tache';
+import { useSoinDepuisTache } from '@/components/animaux/SoinDepuisTache';
 import { AddTacheModal, loadMembres, type AnimalOption, type MembreOption } from '@/components/agenda/AddTacheModal';
 import { NouveauRdvVetoModal, ValiderRdvVetoModal } from '@/components/agenda/RdvVetoModals';
 
@@ -1040,6 +1041,7 @@ export default function AgendaElevagePage() {
   // Élevage : RDV vétérinaire à venir, créé ici et validé par récapitulatif.
   const [showRdvVeto, setShowRdvVeto] = useState(false);
   const [validationRdvVeto, setValidationRdvVeto] = useState<TacheManuelle | null>(null);
+  const soinTache = useSoinDepuisTache();
   // « Planifier un rendez-vous » depuis l'accueil (?nouveau=rdv) : formulaire RDV véto / ostéo.
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('nouveau') !== 'rdv') return;
@@ -1281,13 +1283,16 @@ export default function AgendaElevagePage() {
   }, [load]);
 
   const toggleManuel = useCallback(async (t: TacheManuelle) => {
+    // Rappel du carnet (Antiparasitaire — 5 animaux…) : carnet vérifié, puis
+    // formulaire de soin pour les animaux restants (ou simple coche).
+    if (!t.rdv_veto_cabinet && await soinTache.traiter(t, load)) return;
     // RDV vétérinaire : récapitulatif (date réelle, animaux vus) avant carnet et registre.
     if (t.rdv_veto_cabinet && t.statut !== 'fait') { setValidationRdvVeto(t); return; }
     if (t.rdv_veto_cabinet && !confirm('Annuler la validation ? Les visites ajoutées au carnet et au registre pour ce RDV seront retirées.')) return;
     // Mise à jour + notification au gérant : lib/valider-tache.ts (partagé avec l'accueil éleveur).
     await basculerTacheManuelle(t, { uid: user!.uid, profileId: activeProfileId ?? null });
     load();
-  }, [user, activeProfileId, load]);
+  }, [user, activeProfileId, load, soinTache]);
 
   const toggleSelection = (key: string) => setSelection(prev => {
     const next = new Set(prev);
@@ -1886,6 +1891,7 @@ export default function AgendaElevagePage() {
           onSaved={() => { setShowRdvVeto(false); load(); loadMonth(); }}
         />
       )}
+      {soinTache.modal}
       {validationRdvVeto && (
         <ValiderRdvVetoModal
           tache={validationRdvVeto}
