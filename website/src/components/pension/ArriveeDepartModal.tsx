@@ -22,6 +22,8 @@ const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.g
 /** Autre animal du même client, attendu (arrivée) ou présent (départ) : arrivée / départ groupé. */
 interface Compagnon { id: string; animal_nom: string | null; espece: string | null; logement_id: string | null }
 
+const isoJour = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone }: {
   sejour: SejourPension; mode: 'arrivee' | 'depart'; uid: string; onClose: () => void;
   /** `ids` : séjours enregistrés (cet animal + ceux du même client cochés). */
@@ -37,6 +39,9 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
   // Espèce de l'animal : seuls les logements qui l'acceptent sont proposés.
   const [espece, setEspece] = useState<string | null>(sejour.espece ?? null);
   const [heure, setHeure] = useState(() => hhmm(new Date()));
+  // Jour réel : aujourd'hui, ou le jour prévu s'il est passé (arrivée / départ
+  // oublié dans l'appli) — jamais dans le futur.
+  const [jourReel, setJourReel] = useState(() => isoJour(new Date()));
   const [personne, setPersonne] = useState('');
   const [logementId, setLogementId] = useState(sejour.logement_id ?? '');
   const [alim, setAlim] = useState('');
@@ -68,8 +73,14 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
       setEspece(esp);
       setLogements((l ?? []) as { id: string; nom: string; type: string | null; especes?: string[] | null }[]);
       // Même client (e-mail ou nom), même pension : attendus le même jour (arrivée) ou présents (départ).
-      const { data: moi } = await supabase.from('pension_entrees').select('proprietaire_email, proprietaire_nom, date_entree, date_sortie_prevue, pro_profile_id').eq('id', sejour.id).maybeSingle();
-      const m = moi as { proprietaire_email?: string | null; proprietaire_nom?: string | null; date_entree?: string | null; date_sortie_prevue?: string | null; pro_profile_id?: string | null } | null;
+      const { data: moi } = await supabase.from('pension_entrees').select('proprietaire_email, proprietaire_nom, date_entree, date_sortie_prevue, heure_arrivee_prevue, heure_depart_prevue, pro_profile_id').eq('id', sejour.id).maybeSingle();
+      const m = moi as { proprietaire_email?: string | null; proprietaire_nom?: string | null; date_entree?: string | null; date_sortie_prevue?: string | null; heure_arrivee_prevue?: string | null; heure_depart_prevue?: string | null; pro_profile_id?: string | null } | null;
+      const prevu = (mode === 'arrivee' ? m?.date_entree : m?.date_sortie_prevue)?.slice(0, 10);
+      if (prevu && prevu < isoJour(new Date())) {
+        setJourReel(prevu);
+        const hp = (mode === 'arrivee' ? m?.heure_arrivee_prevue : m?.heure_depart_prevue)?.slice(0, 5);
+        if (hp && /^\d{1,2}:\d{2}$/.test(hp)) setHeure(hp.padStart(5, '0'));
+      }
       const cle = m?.proprietaire_email?.trim() ? { col: 'proprietaire_email', val: m.proprietaire_email.trim() } : m?.proprietaire_nom?.trim() ? { col: 'proprietaire_nom', val: m.proprietaire_nom.trim() } : null;
       if (cle && !annule) {
         let q = supabase.from('pension_entrees').select('id, animal_nom, espece, logement_id, date_entree, date_sortie_prevue, arrivee_reelle_le, pro_profile_id')
@@ -111,7 +122,9 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
     }
     setSaving(true);
     const [h, m] = heure.split(':').map(Number);
-    const d = new Date(); d.setHours(h || 0, m || 0, 0, 0);
+    const [ja, jm, jj] = jourReel.split('-').map(Number);
+    let d = ja ? new Date(ja, jm - 1, jj, h || 0, m || 0, 0, 0) : new Date();
+    if (d > new Date()) d = new Date();
     const v = (x: string) => x.trim() || null;
     let complet: Record<string, unknown>, minimal: Record<string, unknown>;
     if (mode === 'arrivee') {
@@ -165,7 +178,8 @@ export default function ArriveeDepartModal({ sejour, mode, uid, onClose, onDone 
       <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto space-y-3" onClick={e => e.stopPropagation()}
         style={{ fontFamily: 'Galey, sans-serif' }}>
         <h2 className="font-extrabold text-lg" style={{ color: TEAL }}>{mode === 'arrivee' ? 'Arrivée' : 'Départ'} — {sejour.animal_nom ?? 'Animal'}</h2>
-        <label className="flex items-center gap-2 text-sm">Heure réelle
+        <label className="flex flex-wrap items-center gap-2 text-sm">Date et heure réelles
+          <input type="date" value={jourReel} max={isoJour(new Date())} onChange={e => e.target.value && setJourReel(e.target.value)} className="border border-gray-200 rounded-lg px-2 py-1" />
           <input type="time" value={heure} onChange={e => setHeure(e.target.value)} className="border border-gray-200 rounded-lg px-2 py-1" />
         </label>
         {connus.length > 0 && (

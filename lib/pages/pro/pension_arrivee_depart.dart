@@ -24,6 +24,41 @@ bool sejourDuProfil(Map<String, dynamic> e) {
 
 String hmFr(DateTime d) => DateFormat('HH:mm').format(d);
 
+/// Heure proposée à l'ouverture : maintenant, sauf arrivée / départ prévu un
+/// jour passé (oublié dans l'appli) → ce jour-là, à l'heure prévue si connue
+/// (sinon l'heure actuelle). Jamais dans le futur.
+Future<DateTime> _heureInitiale(String entreeId, {required bool arrivee}) async {
+  final now = DateTime.now();
+  try {
+    final r = await Supabase.instance.client.from('pension_entrees')
+        .select(arrivee ? 'date_entree, heure_arrivee_prevue' : 'date_sortie_prevue, heure_depart_prevue')
+        .eq('id', entreeId).maybeSingle();
+    final jour = DateTime.tryParse((r?[arrivee ? 'date_entree' : 'date_sortie_prevue'] ?? '').toString());
+    if (jour == null || !DateTime(jour.year, jour.month, jour.day).isBefore(DateTime(now.year, now.month, now.day))) return now;
+    final hm = (r?[arrivee ? 'heure_arrivee_prevue' : 'heure_depart_prevue'] ?? '').toString().split(':');
+    final h = int.tryParse(hm.first) ?? now.hour, m = hm.length > 1 ? int.tryParse(hm[1]) ?? 0 : now.minute;
+    return DateTime(jour.year, jour.month, jour.day, h.clamp(0, 23), m.clamp(0, 59));
+  } catch (_) {
+    return now;
+  }
+}
+
+/// « Modifier » : le jour (jusqu'à aujourd'hui) puis l'heure. Une heure
+/// future est ramenée à maintenant.
+Future<DateTime?> _choisirDateHeure(BuildContext ctx, DateTime actuelle) async {
+  final now = DateTime.now();
+  final jour = await showDatePicker(
+    context: ctx, initialDate: actuelle.isAfter(now) ? now : actuelle,
+    firstDate: now.subtract(const Duration(days: 365)), lastDate: now,
+    locale: const Locale('fr', 'FR'),
+  );
+  if (jour == null || !ctx.mounted) return null;
+  final t = await showTimePicker(context: ctx, initialTime: TimeOfDay.fromDateTime(actuelle));
+  if (t == null) return null;
+  final d = DateTime(jour.year, jour.month, jour.day, t.hour, t.minute);
+  return d.isAfter(now) ? now : d;
+}
+
 Future<List<String>> _personnesConnues(Map<String, dynamic> entree) async {
   final noms = <String>[
     if ((entree['proprietaire_nom']?.toString() ?? '').trim().isNotEmpty) entree['proprietaire_nom'].toString().trim(),
@@ -174,7 +209,8 @@ Future<bool> confirmerArriveePension(BuildContext context, Map<String, dynamic> 
   final logsComp = <String, String?>{for (final c in compagnons) c['id'].toString(): c['logement_id']?.toString()};
   logements = [for (final l in logementsTous) if (logementAccepteEspece(l['especes'] as List?, espece) || l['id'].toString() == dejaAttribue) l];
   if (!context.mounted) return false;
-  var heure = DateTime.now();
+  var heure = await _heureInitiale(entree['id'].toString(), arrivee: true);
+  if (!context.mounted) return false;
   final deposeCtrl = TextEditingController(text: connus.isNotEmpty ? connus.first : '');
   final alimCtrl = TextEditingController();
   final traitCtrl = TextEditingController();
@@ -197,12 +233,12 @@ Future<bool> confirmerArriveePension(BuildContext context, Map<String, dynamic> 
         ListTile(
           contentPadding: EdgeInsets.zero, dense: true,
           leading: const Icon(Icons.schedule, color: _teal),
-          title: Text('Heure réelle : ${DateFormat('dd/MM').format(heure)} à ${hmFr(heure)}',
+          title: Text('Date et heure réelles : ${DateFormat('dd/MM').format(heure)} à ${hmFr(heure)}',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
           trailing: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', color: _teal)),
           onTap: () async {
-            final t = await showTimePicker(context: ctx, initialTime: TimeOfDay.fromDateTime(heure));
-            if (t != null) setS(() => heure = DateTime(heure.year, heure.month, heure.day, t.hour, t.minute));
+            final d = await _choisirDateHeure(ctx, heure);
+            if (d != null) setS(() => heure = d);
           },
         ),
         if (connus.length > 1)
@@ -301,7 +337,8 @@ Future<bool> enregistrerDepartPension(BuildContext context, Map<String, dynamic>
   final compagnons = await _compagnons(entree, arrivee: false);
   final coches = {for (final c in compagnons) c['id'].toString(): true};
   if (!context.mounted) return false;
-  var heure = DateTime.now();
+  var heure = await _heureInitiale(entree['id'].toString(), arrivee: false);
+  if (!context.mounted) return false;
   final recupCtrl = TextEditingController(text: connus.isNotEmpty ? connus.first : '');
   final obsCtrl = TextEditingController();
   bool effetsRendus = false, traitementsRendus = false, reglement = false;
@@ -322,12 +359,12 @@ Future<bool> enregistrerDepartPension(BuildContext context, Map<String, dynamic>
           ListTile(
             contentPadding: EdgeInsets.zero, dense: true,
             leading: const Icon(Icons.schedule, color: _teal),
-            title: Text('Heure réelle : ${DateFormat('dd/MM').format(heure)} à ${hmFr(heure)}',
+            title: Text('Date et heure réelles : ${DateFormat('dd/MM').format(heure)} à ${hmFr(heure)}',
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
             trailing: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', color: _teal)),
             onTap: () async {
-              final tm = await showTimePicker(context: ctx, initialTime: TimeOfDay.fromDateTime(heure));
-              if (tm != null) setS(() => heure = DateTime(heure.year, heure.month, heure.day, tm.hour, tm.minute));
+              final d = await _choisirDateHeure(ctx, heure);
+              if (d != null) setS(() => heure = d);
             },
           ),
           if (connus.isNotEmpty) ...[
