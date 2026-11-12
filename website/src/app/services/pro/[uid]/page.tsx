@@ -1,5 +1,6 @@
 'use client';
 import { libelleMoyens, moyensPaiement } from '@/lib/moyens-paiement';
+import { etatEssaiClient, MOTIF_ESSAI, reglagesEssai, type EtatEssai } from '@/lib/garde-essai';
 import { portfolioPublic, type ItemPortfolio } from '@/lib/portfolio';
 import { questionnaire } from '@/lib/consignes-rdv';
 import { dureeImposeeGarde } from '@/lib/garde-facturation';
@@ -382,6 +383,8 @@ function ProDetailContent() {
   const [inscriptionAnimalId, setInscriptionAnimalId] = useState<number | null>(null);
   const [inscrivant, setInscrivant] = useState(false);
   const [isFirstTimeEducationClient, setIsFirstTimeEducationClient] = useState(false);
+  // Pet-sitter : visite d'essai d'un nouveau client (lib/garde-essai.ts).
+  const [essaiClient, setEssaiClient] = useState<{ etat: EtatEssai; date?: string; motif?: string | null }>({ etat: 'connu' });
 
   // Prestations (photographe / toilettage)
   const [prestations, setPrestations] = useState<Prestation[]>([]);
@@ -810,6 +813,9 @@ function ProDetailContent() {
     // Éducateur : un nouveau client ne peut réserver qu'un bilan tant qu'il
     // n'a pas eu de séance confirmée avec ce pro (sauf si le pro désactive
     // cette exigence dans son profil).
+    if (pro?.cat_pro === 'garde' && user && profileId) {
+      setEssaiClient(await etatEssaiClient(user.uid, profileId));
+    }
     if (pro?.cat_pro === 'education' && user) {
       const { data: priorRdv } = await supabase.from('rdv').select('id')
         .eq('client_uid', user.uid).eq('pro_uid', uid).eq('pro_profile_id', profileId)
@@ -988,7 +994,7 @@ function ProDetailContent() {
       const motifInfo = (MOTIFS_BY_CAT[pro.cat_pro] ?? DEFAULT_MOTIFS).find(m => m.key === motifKey);
       const motifLabel = pro.cat_pro === 'photographe' && prestationPhotoId
         ? (prestations.find(x => x.id === prestationPhotoId)?.nom ?? 'Séance photo')
-        : (motifInfo?.label ?? motifKey);
+        : motifKey === 'essai' ? MOTIF_ESSAI : (motifInfo?.label ?? motifKey);
       const premiereSuffix = premiereVisite !== null ? `${premiereVisite ? ' (1ère visite)' : ''}` : '';
       // Plusieurs animaux : détail par animal (motif + durée), motif combiné.
       const nomAnimal = (id: number | string) => animaux.find(a => a.id === id)?.nom ?? '';
@@ -1039,7 +1045,8 @@ function ProDetailContent() {
 
       if (!selectedSlot) return;
       const slotRef = selectedSlot;
-      const targetSlots = occurrenceSlots();
+      // Visite d'essai : un seul passage.
+      const targetSlots = motifKey === 'essai' ? [selectedSlot] : occurrenceSlots();
       const skipReserve = pro.cat_pro === 'garde' && pro.garde_chevauchement_ok !== false;
       const serieId = pro.cat_pro === 'garde' && targetSlots.length > 1 ? crypto.randomUUID() : null;
       // Pet-sitting et photographe : plusieurs animaux (même tarif pour la séance photo).
@@ -1056,7 +1063,8 @@ function ProDetailContent() {
         const dateFin   = new Date(`${slot.date}T${slot.heureFin}`);
         // Pet-sitting : la durée est celle de la prestation (« Promenade 30 min »,
         // durée réglée par le pro pour une visite), pas la longueur du créneau.
-        const dureeGarde = pro.cat_pro === 'garde' && motifKey !== 'garde_journee'
+        const dureeGarde = pro.cat_pro === 'garde' && motifKey === 'essai' ? essaiReg.duree
+          : pro.cat_pro === 'garde' && motifKey !== 'garde_journee'
           ? (dureeImposeeGarde(motifKey) ?? (Number(dureesMotifsPro[motifKey]) || ((MOTIFS_BY_CAT.garde ?? []).find(m => m.key === motifKey)?.duree ?? null)))
           : null;
         const dureeMinutes = dureeGarde ?? Math.round((dateFin.getTime() - dateDebut.getTime()) / 60000);
@@ -1073,6 +1081,7 @@ function ProDetailContent() {
           date_heure: dateDebut.toISOString(), duree_minutes: dureeMinutes,
           statut: 'demande',
           motif: `${motifRdv}${premiereSuffix}`,
+          ...(pro.cat_pro === 'garde' && motifKey === 'essai' ? { est_essai: true } : {}),
           ...(premiereVisite !== null ? { premiere_visite: premiereVisite } : {}),
           notes_client: (pro.cat_pro === 'garde' ? notesGarde : notes) || null,
           ...(pro.cat_pro === 'toilettage' && Object.values(consignesResa).some(v => v.trim())
@@ -1404,6 +1413,9 @@ function ProDetailContent() {
           ...Object.entries(GARDE_TARIF_LABELS)
             .filter(([k]) => (pro.tarifs_garde?.[k] ?? 0) > 0)
             .map(([k, label]) => ({ label, prix: `${pro.tarifs_garde![k]} €` })),
+          ...(reglagesEssai(pro.tarifs_garde).actif
+            ? [{ label: "Visite d'essai (nouveau client)", prix: reglagesEssai(pro.tarifs_garde).prix > 0 ? `${reglagesEssai(pro.tarifs_garde).prix} €` : '—' }]
+            : []),
           ...(pro.tarifs_garde_extra ?? [])
             .filter(e => e.label?.trim())
             .map(e => ({
@@ -1451,8 +1463,18 @@ function ProDetailContent() {
     }
   }
 
+  // Pet-sitter : essai proposé (ou seul possible) pour un nouveau client ;
+  // essai en attente du résultat (obligatoire) ou non concluant : rien à réserver.
+  const essaiReg = reglagesEssai(pro?.tarifs_garde as Record<string, unknown> | undefined);
+  const essaiGarde = pro?.cat_pro === 'garde' && essaiReg.actif;
+  const essaiBloque = pro?.cat_pro === 'garde' && (essaiClient.etat === 'non_concluant'
+    || (essaiReg.actif && essaiReg.obligatoire && essaiClient.etat === 'en_attente'));
+  const motifEssai = { key: 'essai', label: MOTIF_ESSAI, icon: '🤝', duree: essaiReg.duree };
   const motifs = requiresBilanFirst
     ? (MOTIFS_BY_CAT.education ?? []).filter(m => m.key === 'evaluation')
+    : essaiBloque ? []
+    : essaiGarde && essaiClient.etat === 'nouveau'
+      ? (essaiReg.obligatoire ? [motifEssai] : [motifEssai, ...(MOTIFS_BY_CAT.garde ?? [])])
     : MOTIFS_BY_CAT[pro?.cat_pro ?? ''] ?? DEFAULT_MOTIFS;
   const catColor = CAT_COLORS[pro?.cat_pro ?? ''] ?? '#0C5C6C';
   const selectedEspece = animaux.find(a => a.id === selectedAnimalId)?.espece;
@@ -2312,6 +2334,22 @@ function ProDetailContent() {
                     {requiresBilanFirst && (
                       <p className="text-xs text-gray-500 mb-2.5">
                         Premier rendez-vous avec ce professionnel : un bilan est requis avant de réserver un cours.
+                      </p>
+                    )}
+                    {pro.cat_pro === 'garde' && essaiClient.etat === 'non_concluant' && (
+                      <p className="text-xs text-gray-600 bg-orange-50 rounded-lg px-3 py-2 mb-2.5">
+                        Le pet-sitter n&apos;a pas validé la visite d&apos;essai{essaiClient.date ? ` du ${new Date(essaiClient.date).toLocaleDateString('fr-FR')}` : ''}.{essaiClient.motif ? ` Motif : ${essaiClient.motif}` : ''} Contactez-le pour en parler.
+                      </p>
+                    )}
+                    {essaiBloque && essaiClient.etat === 'en_attente' && (
+                      <p className="text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2 mb-2.5">
+                        Visite d&apos;essai{essaiClient.date ? ` du ${new Date(essaiClient.date).toLocaleDateString('fr-FR')}` : ''} : vous pourrez réserver vos gardes dès que le pet-sitter l&apos;aura validée.
+                      </p>
+                    )}
+                    {!essaiBloque && essaiGarde && essaiClient.etat === 'nouveau' && (
+                      <p className="text-xs text-gray-600 bg-[#EEF5EA] rounded-lg px-3 py-2 mb-2.5">
+                        {essaiReg.obligatoire ? 'Première garde avec ce pet-sitter : une visite d\'essai est demandée d\'abord' : 'Première garde avec ce pet-sitter : une visite d\'essai est proposée'}
+                        {' '}— il rencontre votre animal ({essaiReg.duree} min{essaiReg.prix > 0 ? `, ${essaiReg.prix} €` : ''}).
                       </p>
                     )}
                     <div className="grid grid-cols-2 gap-2">

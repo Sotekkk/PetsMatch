@@ -9,6 +9,7 @@ const FALLBACK: Record<string, string> = {
   promenade_2h: 'Promenade 2h',
   visite_domicile: 'Visite à domicile',
   garde_journee: 'Garde journée',
+  essai: "Visite d'essai",
 };
 
 export function gardeMotifLabel(keyOrLabel: string, espece?: string | null): string {

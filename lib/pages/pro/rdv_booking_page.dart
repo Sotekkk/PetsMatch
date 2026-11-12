@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/moyens_paiement.dart';
+import 'package:PetsMatch/utils/garde_essai.dart';
 import 'package:PetsMatch/utils/consignes_rdv.dart' show questionnaireConsignes;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -219,6 +220,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   // cette exigence dans son profil).
   bool _educationBilanRequis = true;
   bool _isFirstTimeEducationClient = false;
+  // Pet-sitter : visite d'essai d'un nouveau client (lib/utils/garde_essai.dart).
+  ReglagesEssai _essaiReg = const ReglagesEssai();
+  String _essaiEtat = 'connu';
+  String? _essaiDate, _essaiMotif;
+  bool get _essaiBloque => widget.isGarde && (_essaiEtat == 'non_concluant'
+      || (_essaiReg.actif && _essaiReg.obligatoire && _essaiEtat == 'en_attente'));
   String _educationBilanDescription = '';
   // Délai minimum (h) imposé par le pro entre maintenant et le début du RDV.
   int _delaiMinReservationH = 0;
@@ -251,7 +258,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     'visite': 'Visite', 'arrivee': 'Arrivée', 'depart': 'Départ',
     'promenade_30min': 'Promenade 30 min', 'promenade_1h': 'Promenade 1h',
     'promenade_2h': 'Promenade 2h', 'visite_domicile': 'Visite à domicile',
-    'garde_journee': 'Garde journée',
+    'garde_journee': 'Garde journée', 'essai': kMotifEssai,
     'cours_individuel': 'Cours individuel', 'cours_collectif': 'Cours collectif',
     'evaluation': 'Évaluation', 'bain': 'Bain',
     'toilettage_complet': 'Toilettage complet', 'coupe': 'Coupe',
@@ -274,6 +281,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     'promenade_2h': Icons.directions_walk,
     'visite_domicile': Icons.doorbell_outlined,
     'garde_journee': Icons.home_outlined,
+    'essai': Icons.handshake_outlined,
     'cours_individuel': Icons.school_outlined,
     'cours_collectif': Icons.groups_outlined,
     'evaluation': Icons.quiz_outlined,
@@ -637,7 +645,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final row = (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
           ? await Supabase.instance.client
               .from('user_profiles_complet')
-              .select('durees_motifs, profile_type, cat_pro, education_bilan_requis, education_bilan_description, delai_min_reservation_h, garde_chevauchement_ok, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng')
+              .select('durees_motifs, profile_type, cat_pro, education_bilan_requis, education_bilan_description, delai_min_reservation_h, garde_chevauchement_ok, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng, tarifs_garde')
               .eq('id', widget.proProfileId!)
               .maybeSingle()
           : await Supabase.instance.client
@@ -669,8 +677,25 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         _educationBilanDescription = (row['education_bilan_description'] ?? '').toString().trim();
         _delaiMinReservationH = (row['delai_min_reservation_h'] as num?)?.toInt() ?? 0;
         if (_catPro == 'education') await _checkFirstTimeEducationClient();
+        if (widget.isGarde) await _chargerEssai(row['tarifs_garde']);
       }
     } catch (_) {}
+  }
+
+  /// Essai : nouveau client → l'essai est proposé (ou seul proposé s'il est obligatoire).
+  Future<void> _chargerEssai(Object? tarifsGarde) async {
+    _essaiReg = ReglagesEssai.depuis(tarifsGarde);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final pid = widget.proProfileId;
+    if (uid == null || pid == null || pid.isEmpty) return;
+    final e = await etatEssaiClient(uid, pid);
+    _essaiEtat = e.etat; _essaiDate = e.date; _essaiMotif = e.motif;
+    if (_essaiReg.actif && _essaiEtat == 'nouveau') {
+      _dureesMotifs = _essaiReg.obligatoire
+          ? {'essai': _essaiReg.duree}
+          : {'essai': _essaiReg.duree, ..._dureesMotifs};
+    }
+    if (mounted) setState(() {});
   }
 
   // Un client est "nouveau" s'il n'a jamais eu de séance confirmée/terminée
@@ -1196,6 +1221,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       _snack('Indiquez s\'il s\'agit d\'une première fois', color: Colors.orange); return;
     }
 
+    if (_essaiBloque) { _snack("Réservation possible une fois la visite d'essai validée par le pet-sitter.", color: Colors.orange); return; }
+
     // Garde-journée : réservation sur une plage de dates (une ligne rdv/jour).
     if (_isGardeJournee) { await _submitGardeJournee(uid); return; }
 
@@ -1373,9 +1400,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       // (créneaux du pro + absence de conflit avec un RDV existant).
       final occurrenceDates = <DateTime>[slotDate];
       // Pet-sitting : fréquence + horaires (heure portée par chaque passage).
-      final gardePassages = widget.isGarde
+      final gardePassagesTous = widget.isGarde
           ? _gardeOccurrences(slotDate, _selectedSlot!['heure_debut'] as String, dureeToSend)
           : const <DateTime>[];
+      // Visite d'essai : un seul passage.
+      final gardePassages = _selectedMotifKey == 'essai' ? gardePassagesTous.take(1).toList() : gardePassagesTous;
       final serieId = gardePassages.length > 1 ? _uuidV4() : null;
       if (widget.isGarde) {
         occurrenceDates
@@ -1415,6 +1444,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             'nombre_animaux': detailAnimaux.length,
           } else if (!widget.isTaxi && _selectedAnimal?['nom'] != null) 'animal_nom_manuel': _selectedAnimal!['nom'].toString(),
           if (widget.isGarde) ...{
+            if (_selectedMotifKey == 'essai') 'est_essai': true,
             if (serieId != null) 'serie_id': serieId,
             if (_gardeAvecAdresse && _gardeChezClient && _accesLogement != null) 'acces_logement': _accesLogement,
             if (_forfaitId != null) 'forfait_id': _forfaitId,
@@ -2547,8 +2577,27 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   List<Widget> _buildDynamicMotif() {
     if (_dureesMotifs.isEmpty) return _buildStandardMotif();
+    String jourEssai() {
+      final d = DateTime.tryParse(_essaiDate ?? '')?.toLocal();
+      return d == null ? '' : ' du ${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+    }
+    Widget bandeau(String t, Color fond) => Container(
+          width: double.infinity, margin: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(color: fond, borderRadius: BorderRadius.circular(10)),
+          child: Text(t, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF4B5563))));
+    if (_essaiBloque) {
+      return [
+        _sectionTitle('Type de prestation *'),
+        _essaiEtat == 'non_concluant'
+            ? bandeau("Le pet-sitter n'a pas validé la visite d'essai${jourEssai()}.${(_essaiMotif ?? '').isNotEmpty ? ' Motif : $_essaiMotif' : ''} Contactez-le pour en parler.", const Color(0xFFFFF4E5))
+            : bandeau("Visite d'essai${jourEssai()} : vous pourrez réserver vos gardes dès que le pet-sitter l'aura validée.", const Color(0xFFF3F4F6)),
+      ];
+    }
     return [
       _sectionTitle('Type de prestation *'),
+      if (widget.isGarde && _essaiReg.actif && _essaiEtat == 'nouveau')
+        bandeau("${_essaiReg.obligatoire ? "Première garde avec ce pet-sitter : une visite d'essai est demandée d'abord" : "Première garde avec ce pet-sitter : une visite d'essai est proposée"} — il rencontre votre animal (${_essaiReg.duree} min${_essaiReg.prix > 0 ? ', ${_essaiReg.prix} €' : ''}).", const Color(0xFFEEF5EA)),
       if (_catPro == 'education' && _educationBilanRequis && _isFirstTimeEducationClient) ...[
         const SizedBox(height: 6),
         Text('Premier rendez-vous avec ce professionnel : un bilan est requis avant de réserver un cours.',

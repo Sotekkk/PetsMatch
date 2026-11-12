@@ -15,6 +15,8 @@ import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 /// déduite du motif du RDV.
 String gardePrestationKey(String? motif) {
   final m = (motif ?? '').toLowerCase();
+  // « Visite d'essai » : tarif d'essai (avant « visite »).
+  if (m.contains('essai')) return 'essai';
   if (m.contains('visite')) return 'visite';
   if (m.contains('promenade') && m.contains('30')) return 'promenade_30min';
   if (m.contains('promenade') && m.contains('2')) return 'promenade_2h';
@@ -76,7 +78,7 @@ String gardeMotifLabel(String keyOrLabel, String? espece) {
   const fallback = <String, String>{
     'promenade_30min': 'Promenade 30 min', 'promenade_1h': 'Promenade 1h',
     'promenade_2h': 'Promenade 2h', 'visite_domicile': 'Visite à domicile',
-    'garde_journee': 'Garde journée',
+    'garde_journee': 'Garde journée', 'essai': "Visite d'essai",
   };
   final base = fallback[keyOrLabel] ?? keyOrLabel;
   if (!isEquide) return base;

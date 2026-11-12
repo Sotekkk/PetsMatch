@@ -145,6 +145,19 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
     router.push('/elevage/facturation');
   }
 
+  // Devis avant la garde (le client l'accepte ; acompte possible ensuite).
+  function devis() {
+    const qs = new URLSearchParams({
+      prefill: '1', rdv: first.id, clientUid: first.client_uid ?? '',
+      ...(first.client_profile_id ? { clientProfileId: first.client_profile_id } : {}),
+      ...(first.animal_id ? { animal: String(first.animal_id) } : {}),
+      nom: first.clientName ?? '',
+      lignes: JSON.stringify(lignes.map(x => ({ d: x.description, q: x.quantite, p: x.prixUnitaire }))),
+    });
+    onClose();
+    router.push(`/garde/devis?${qs.toString()}`);
+  }
+
   async function cle() {
     const desc = window.prompt('Description de la clé (aucun code d\'accès ici)', 'Clé du logement');
     if (desc === null || !proProfileId) return;
@@ -191,6 +204,7 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
         <p className="text-xs font-bold text-gray-400 uppercase tracking-wide pt-2">Facturation</p>
         {premium ? (
           <>
+            {tuile('📝', 'Envoyer un devis', total > 0 ? `Avant la garde — ${eur(total)}, à accepter par le client` : 'Avant la garde, à accepter par le client', devis)}
             {tuile('🧾', 'Facturer maintenant', total > 0 ? `Paiement d'avance — ${eur(total)}` : "Paiement d'avance (tarif à compléter)", () => facturer(false))}
             {tuile('💶', 'Demander un acompte', total > 0 ? `30 % — ${eur(total * 0.3)} (modifiable)` : 'Montant à saisir', () => facturer(true))}
           </>

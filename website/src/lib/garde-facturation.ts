@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase';
 
 export function gardePrestationKey(motif?: string | null): string {
   const m = (motif ?? '').toLowerCase();
+  // « Visite d'essai » : tarif d'essai (avant « visite »).
+  if (m.includes('essai')) return 'essai';
   if (m.includes('visite')) return 'visite';
   if (m.includes('promenade') && m.includes('30')) return 'promenade_30min';
   if (m.includes('promenade') && m.includes('2')) return 'promenade_2h';

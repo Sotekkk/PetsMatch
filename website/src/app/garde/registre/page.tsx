@@ -1,5 +1,7 @@
 'use client';
 
+import { useAuth } from '@/lib/auth-context';
+import { poserResultatEssai } from '@/lib/garde-essai';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useGardeAccess } from '@/hooks/useGardeAccess';
@@ -14,6 +16,8 @@ const TEAL = '#0C5C6C';
 
 interface Rdv extends GardeRdvRow {
   facture_id?: string | null;
+  /** Visite d'essai (lib/garde-essai.ts) et son résultat. */
+  est_essai?: boolean | null; essai_resultat?: string | null; essai_motif?: string | null;
   _client_email?: string;
   _client_tel?: string;
   _animal_espece?: string;
@@ -41,6 +45,9 @@ export default function RegistreVisitesPage() {
   const { user, userData, isGarde, loading: authLoading } = useGardeAccess();
   const router = useRouter();
   const activeProfileId = useActiveProfile();
+  const { availableProfiles } = useAuth();
+  const nomPro = (availableProfiles.find(p => p.id === activeProfileId)?.nom as string | undefined)
+    || [userData?.firstname, userData?.lastname].filter(Boolean).join(' ') || 'Votre pet-sitter';
 
   const [tab, setTab] = useState<'a_venir' | 'passees' | 'registre'>('a_venir');
   const [registreFiltre, setRegistreFiltre] = useState<'a_venir' | 'en_garde' | 'termine' | 'tous'>('tous');
@@ -60,12 +67,16 @@ export default function RegistreVisitesPage() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    let q = supabase.from('rdv')
-      .select('id, animal_id, client_uid, client_profile_id, client_nom_manuel, client_telephone_manuel, client_email_manuel, animal_nom_manuel, date_heure, motif, statut, arrivee_validee_le, depart_valide_le, facture_id')
-      .eq('pro_uid', user.uid);
-    if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId) as typeof q;
-    const { data } = await q.in('statut', ['confirme', 'termine']).order('date_heure', { ascending: true });
-    const rows = (data ?? []) as Rdv[];
+    const cols = 'id, animal_id, client_uid, client_profile_id, client_nom_manuel, client_telephone_manuel, client_email_manuel, animal_nom_manuel, date_heure, motif, statut, arrivee_validee_le, depart_valide_le, facture_id';
+    const lire = (c: string) => {
+      let q = supabase.from('rdv').select(c).eq('pro_uid', user.uid);
+      if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId) as typeof q;
+      return q.in('statut', ['confirme', 'termine']).order('date_heure', { ascending: true });
+    };
+    // Colonnes de l'essai : migration_garde_essai.sql (sinon lecture d'avant).
+    let res = await lire(`${cols}, est_essai, essai_resultat, essai_motif`);
+    if (res.error) res = await lire(cols);
+    const rows = (res.data ?? []) as unknown as Rdv[];
 
     // client_uid → client_profile_id (le profil qui a réservé — jamais
     // is_main, qui peut renvoyer un autre profil du même compte
@@ -297,7 +308,14 @@ export default function RegistreVisitesPage() {
               onValiderArrivee={() => validerArrivee(item)} onValiderDepart={() => validerDepart(item)}
               onFacturer={() => setFacturingSejour(item)} />
           ) : (
-            <VisiteCard key={item.id} rdv={item} onTerminer={() => marquerTermine(item)} onRapport={() => setCompteRenduFor(item)} />
+            <VisiteCard key={item.id} rdv={item} onTerminer={() => marquerTermine(item)} onRapport={() => setCompteRenduFor(item)}
+              onResultatEssai={async (concluant) => {
+                const motif = concluant ? null : window.prompt("Motif (facultatif, transmis au client) :", '');
+                if (!concluant && motif === null) return;
+                const e = await poserResultatEssai({ id: item.id, client_uid: item.client_uid ?? '', client_profile_id: item.client_profile_id, date_heure: item.date_heure },
+                  concluant, motif, nomPro);
+                if (e) alert(`Enregistrement impossible : ${e}`); else load();
+              }} />
           ))}
         </div>
       )}
@@ -337,14 +355,19 @@ export default function RegistreVisitesPage() {
   );
 }
 
-function VisiteCard({ rdv, onTerminer, onRapport }: { rdv: Rdv; onTerminer: () => void; onRapport: () => void }) {
+function VisiteCard({ rdv, onTerminer, onRapport, onResultatEssai }: { rdv: Rdv; onTerminer: () => void; onRapport: () => void; onResultatEssai: (concluant: boolean) => void }) {
   const isTermine = rdv.statut === 'termine';
   return (
     <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between mb-3">
         <div>
           <p className="font-bold font-galey text-sm text-[#1F2A2E]">{rdv._animal_nom} — {rdv._client_nom}</p>
-          <p className="text-xs text-gray-400 font-galey">🚶 Visite / promenade · animal chez son propriétaire</p>
+          <p className="text-xs text-gray-400 font-galey">{rdv.est_essai ? "Visite d'essai · nouveau client" : '🚶 Visite / promenade · animal chez son propriétaire'}</p>
+          {rdv.est_essai && rdv.essai_resultat && (
+            <p className={`text-xs font-semibold font-galey ${rdv.essai_resultat === 'concluant' ? 'text-[#6E9E57]' : 'text-orange-600'}`}>
+              {rdv.essai_resultat === 'concluant' ? 'Essai concluant' : `Essai non concluant${rdv.essai_motif ? ` — ${rdv.essai_motif}` : ''}`}
+            </p>
+          )}
           <p className="text-xs text-gray-400 font-galey">Prévu : {fmtDate(rdv.date_heure)}</p>
           {(rdv.arrivee_validee_le || rdv.depart_valide_le) && (
             <p className="text-xs font-semibold font-galey text-[#0C5C6C]">
@@ -371,6 +394,14 @@ function VisiteCard({ rdv, onTerminer, onRapport }: { rdv: Rdv; onTerminer: () =
           Rapport de visite
         </button>
       </div>
+      {rdv.est_essai && !rdv.essai_resultat && (
+        <div className="flex gap-2 mt-2">
+          <button onClick={() => onResultatEssai(true)}
+            className="flex-1 text-xs font-semibold font-galey rounded-xl py-2 bg-[#EEF5EA] text-[#6E9E57]">Essai concluant</button>
+          <button onClick={() => onResultatEssai(false)}
+            className="flex-1 text-xs font-semibold font-galey rounded-xl py-2 bg-orange-50 text-orange-700">Non concluant</button>
+        </div>
+      )}
     </div>
   );
 }

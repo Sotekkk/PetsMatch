@@ -13,6 +13,7 @@ import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/garde_facture_helper.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
+import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill;
 
 const _teal = Color(0xFF0C5C6C);
 
@@ -304,6 +305,23 @@ Future<void> apresAcceptationGarde(BuildContext context, List<Map<String, dynami
           }),
           const SizedBox(height: 4),
           const Text('Facturation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: Colors.grey)),
+          tuile(Icons.request_quote_outlined, 'Envoyer un devis',
+              c.totalHT > 0 ? 'Avant la garde — ${eur(c.totalHT)}, à accepter par le client' : 'Avant la garde, à accepter par le client', () {
+            Navigator.pop(ctx);
+            // Devis avant la garde (acompte possible ensuite, depuis la facturation).
+            Navigator.push(context, MaterialPageRoute(builder: (_) => DevisPage(prefill: DevisPrefill(
+              rdvId: first['id']?.toString(),
+              animalId: first['animal_id']?.toString(),
+              clientUid: first['client_uid']?.toString(),
+              clientProfileId: first['client_profile_id']?.toString(),
+              clientNom: first['_client_name']?.toString(),
+              lignes: [for (final l in c.lignes) {
+                'description': [l.designation, l.description].where((x) => x.trim().isNotEmpty).join(' — '),
+                // Tarif du pet-sitter (prix annoncé au client), par passage.
+                'quantite': l.quantite, 'prix_unitaire': l.prixTTC ?? l.prixHT,
+              }],
+            ))));
+          }),
           tuile(Icons.receipt_long_outlined, 'Facturer maintenant',
               c.totalHT > 0 ? 'Paiement d\'avance — ${eur(c.totalHT)}' : 'Paiement d\'avance (tarif à compléter)', () {
             Navigator.pop(ctx);

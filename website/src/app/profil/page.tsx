@@ -1744,6 +1744,39 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                 </div>
               ))}
             </div>
+            {/* Visite d'essai d'un nouveau client (lib/garde-essai.ts), comme la pension. */}
+            <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+              <label className="flex items-start gap-2 text-sm text-gray-700">
+                <input type="checkbox" className="mt-0.5" checked={tarifsGarde.essai_actif === 1}
+                  onChange={e => setTarifsGarde(t => ({ ...t, essai_actif: e.target.checked ? 1 : 0 }))} />
+                <span>Proposer une visite d&apos;essai aux nouveaux clients
+                  <span className="block text-xs text-gray-500">Vous rencontrez l&apos;animal avant la première garde, puis indiquez si l&apos;essai est concluant.</span>
+                </span>
+              </label>
+              {tarifsGarde.essai_actif === 1 && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 block mb-1">Prix de l&apos;essai (€ TTC)</label>
+                      <input type="number" min={0} step={1} value={tarifsGarde.essai ?? 0}
+                        onChange={e => setTarifsGarde(t => ({ ...t, essai: Number(e.target.value) }))} className={inputCls} />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 block mb-1">Durée (minutes)</label>
+                      <input type="number" min={15} step={15} value={tarifsGarde.essai_duree ?? 30}
+                        onChange={e => setTarifsGarde(t => ({ ...t, essai_duree: Number(e.target.value) }))} className={inputCls} />
+                    </div>
+                  </div>
+                  <label className="flex items-start gap-2 text-sm text-gray-700">
+                    <input type="checkbox" className="mt-0.5" checked={tarifsGarde.essai_obligatoire === 1}
+                      onChange={e => setTarifsGarde(t => ({ ...t, essai_obligatoire: e.target.checked ? 1 : 0 }))} />
+                    <span>Essai obligatoire avant une première garde
+                      <span className="block text-xs text-gray-500">Un nouveau client ne peut réserver que l&apos;essai, puis ses gardes une fois l&apos;essai concluant.</span>
+                    </span>
+                  </label>
+                </>
+              )}
+            </div>
           </Card>
         )}
 

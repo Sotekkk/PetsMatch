@@ -5,6 +5,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/garde_essai.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 import 'package:PetsMatch/pages/pro/garde_facture_helper.dart';
@@ -306,6 +307,36 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
     }
   }
 
+  /// Visite d'essai : concluant (le client peut réserver ses gardes) ou non
+  /// (motif facultatif, transmis au client). Miroir site : registre /garde.
+  Future<void> _resultatEssai(Map<String, dynamic> rdv, bool concluant) async {
+    String? motif;
+    if (!concluant) {
+      final ctrl = TextEditingController();
+      final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+        title: const Text('Essai non concluant', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: TextField(controller: ctrl, maxLines: 3,
+            decoration: const InputDecoration(labelText: 'Motif (facultatif, transmis au client)')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Valider')),
+        ],
+      ));
+      if (ok != true) return;
+      motif = ctrl.text;
+    }
+    final nom = User_Info.nameElevage.trim().isNotEmpty && User_Info.nameElevage != 'none'
+        ? User_Info.nameElevage.trim()
+        : [User_Info.firstname, User_Info.lastname].where((x) => x.isNotEmpty && x != 'none').join(' ');
+    final e = await poserResultatEssai(rdv, concluant: concluant, motif: motif, proNom: nom.isEmpty ? 'Votre pet-sitter' : nom);
+    if (!mounted) return;
+    if (e != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Enregistrement impossible : $e')));
+      return;
+    }
+    _load();
+  }
+
   Future<void> _marquerTermine(Map<String, dynamic> rdv) async {
     try {
       await _supa.from('rdv').update({
@@ -529,6 +560,7 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
                     final cu = rdv['client_uid']?.toString();
                     if (cu != null && cu.isNotEmpty) _openClientContrat(cu, rdv);
                   },
+                  onResultatEssai: (concluant) => _resultatEssai(rdv, concluant),
                 );
               },
             );
@@ -655,6 +687,8 @@ class _TabChip extends StatelessWidget {
 class _VisiteCard extends StatelessWidget {
   final Map<String, dynamic> rdv;
   final bool factured;
+  /// Visite d'essai (rdv.est_essai) : résultat posé par le pet-sitter.
+  final void Function(bool concluant)? onResultatEssai;
   final VoidCallback onTerminer;
   final VoidCallback onRapport;
   final VoidCallback? onFacturer;
@@ -669,6 +703,7 @@ class _VisiteCard extends StatelessWidget {
     required this.onContrat,
     this.onFacturer,
     this.factured = false,
+    this.onResultatEssai,
   });
 
   @override
@@ -695,8 +730,16 @@ class _VisiteCard extends StatelessWidget {
                 Text('${rdv['_animal_nom']} — ${rdv['_client_nom']}',
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                 const SizedBox(height: 2),
-                Text('🚶 ${gardeMotifLabel(gardePrestationKey(rdv['motif']?.toString()), rdv['_animal_espece']?.toString())} · animal chez son propriétaire',
+                Text(rdv['est_essai'] == true
+                        ? "Visite d'essai · nouveau client"
+                        : '🚶 ${gardeMotifLabel(gardePrestationKey(rdv['motif']?.toString()), rdv['_animal_espece']?.toString())} · animal chez son propriétaire',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+                if (rdv['est_essai'] == true && rdv['essai_resultat'] != null)
+                  Text(rdv['essai_resultat'] == 'concluant'
+                          ? 'Essai concluant'
+                          : "Essai non concluant${(rdv['essai_motif']?.toString() ?? '').isNotEmpty ? ' — ${rdv['essai_motif']}' : ''}",
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700,
+                          color: rdv['essai_resultat'] == 'concluant' ? _green : const Color(0xFFC2410C))),
                 const SizedBox(height: 2),
                 Text('Prévu : $dateStr', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
                 if (debutReel != null || finReelle != null)
@@ -767,6 +810,22 @@ class _VisiteCard extends StatelessWidget {
                       ),
                     ),
                   ),
+          ],
+          if (rdv['est_essai'] == true && rdv['essai_resultat'] == null && onResultatEssai != null) ...[
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: OutlinedButton(
+                onPressed: () => onResultatEssai!(true),
+                style: OutlinedButton.styleFrom(foregroundColor: _green, side: const BorderSide(color: _green)),
+                child: const Text('Essai concluant', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              )),
+              const SizedBox(width: 8),
+              Expanded(child: OutlinedButton(
+                onPressed: () => onResultatEssai!(false),
+                style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFC2410C), side: const BorderSide(color: Color(0xFFC2410C))),
+                child: const Text('Non concluant', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              )),
+            ]),
           ],
         ]),
       ),
