@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/moyens_paiement.dart';
 import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/site_api.dart';
@@ -573,6 +574,9 @@ class _MesSejoursPensionPageState extends State<MesSejoursPensionPage> {
                             style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
                         if (d['statut'] == 'refusee' && (d['motif_refus']?.toString() ?? '').isNotEmpty)
                           Text('Motif : ${d['motif_refus']}', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+                        // Moyens de paiement de la pension (+ RIB si virement).
+                        if (d['statut'] != 'refusee' && d['statut'] != 'annulee')
+                          MoyensPaiementDuPro(proProfileId: d['pro_profile_id']?.toString()),
                         if (d['statut'] == 'demande')
                           Align(alignment: Alignment.centerLeft, child: TextButton(
                             onPressed: _enCours == id ? null : () => _annuler(d),

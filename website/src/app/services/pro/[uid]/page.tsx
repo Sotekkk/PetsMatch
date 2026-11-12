@@ -1,4 +1,5 @@
 'use client';
+import { libelleMoyens, moyensPaiement } from '@/lib/moyens-paiement';
 import { portfolioPublic, type ItemPortfolio } from '@/lib/portfolio';
 import { questionnaire } from '@/lib/consignes-rdv';
 import { dureeImposeeGarde } from '@/lib/garde-facturation';
@@ -75,6 +76,10 @@ interface ProData {
   tarifs_education_visibles?: boolean;
   tarifs_education_extra?: { label: string; prix: number; description?: string }[];
   education_bilan_description?: string;
+  /** Moyens de paiement acceptés (lib/moyens-paiement.ts). */
+  moyens_paiement?: string[];
+  /** Profil pro (user_profiles.id). */
+  profile_id?: string;
   delai_min_reservation_h?: number | null;
   forfaits_education?: { id: string; nom: string; nb_seances: number; prix: number }[];
   tarifs_taxi?: { prise_en_charge?: number; prix_km?: number; minimum?: number };
@@ -420,6 +425,7 @@ function ProDetailContent() {
           tarifs_education_visibles: (data.tarifs_education_visibles as boolean) ?? false,
           tarifs_education_extra: Array.isArray(data.tarifs_education_extra) ? data.tarifs_education_extra : [],
           education_bilan_description: (data.education_bilan_description as string) ?? '',
+          moyens_paiement: moyensPaiement(data.moyens_paiement),
           tarifs_taxi: (data.tarifs_taxi as ProData['tarifs_taxi']) ?? {},
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
@@ -468,6 +474,7 @@ function ProDetailContent() {
           tarifs_education_visibles: (data.tarifs_education_visibles as boolean) ?? false,
           tarifs_education_extra: Array.isArray(data.tarifs_education_extra) ? data.tarifs_education_extra : [],
           education_bilan_description: (data.education_bilan_description as string) ?? '',
+          moyens_paiement: moyensPaiement(data.moyens_paiement),
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
           tarifs_garde_extra: Array.isArray(data.tarifs_garde_extra) ? data.tarifs_garde_extra : [],
@@ -1804,6 +1811,12 @@ function ProDetailContent() {
                 <p className="text-sm text-gray-600 leading-relaxed" style={{ fontFamily: 'Galey, sans-serif' }}>{pro.tarifs}</p>
               </div>
             )}
+            {libelleMoyens(pro.moyens_paiement) && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="font-bold text-[#1E2025] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Moyens de paiement</p>
+                <p className="text-sm text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>{libelleMoyens(pro.moyens_paiement)}</p>
+              </div>
+            )}
             {pro.cat_pro === 'education' && coursCollectifs.length > 0 && (
               <div className="bg-white rounded-2xl p-4 shadow-sm">
                 <p className="font-bold text-[#1E2025] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>Cours collectifs disponibles</p>
@@ -2759,6 +2772,11 @@ function ProDetailContent() {
                       {(pro.cat_pro === 'garde' || pro.cat_pro === 'photographe') && animauxGarde.length > 0 && (
                         <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
                           🐾 {animauxGarde.map(id => animaux.find(a => a.id === id)?.nom).filter(Boolean).join(' + ')}
+                        </p>
+                      )}
+                      {libelleMoyens(pro.moyens_paiement) && (
+                        <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          Paiement accepté : {libelleMoyens(pro.moyens_paiement)}
                         </p>
                       )}
                     </div>

@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/moyens_paiement.dart';
 import 'package:PetsMatch/utils/soin_depuis_tache.dart';
 import 'package:PetsMatch/utils/protocoles.dart' show animauxPresents;
 import 'package:PetsMatch/utils/exercice_tache.dart';
@@ -3169,6 +3170,9 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
                   const SizedBox(height: 12),
                   if (!_iAmPro)
                     _InfoRow(icon: Icons.person_outlined, text: _proName(), bold: true),
+                  // Client : moyens de paiement du pro (+ RIB s'il accepte le virement).
+                  if (!_iAmPro && _rdv?['statut'] != 'annule' && (_rdv?['pro_profile_id']?.toString() ?? '').isNotEmpty)
+                    MoyensPaiementDuPro(proProfileId: _rdv!['pro_profile_id'].toString()),
                   if (_iAmPro && _ownerName.isNotEmpty)
                     _InfoRow(icon: Icons.person_outlined, text: _ownerName, bold: true),
 

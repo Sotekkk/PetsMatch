@@ -2,6 +2,7 @@
 // Mes séjours en pension (client) : demandes de séjour du profil actif, statut,
 // annulation tant que la pension n'a pas répondu. Miroir appli :
 // MesSejoursPensionPage (pension_reservation_page.dart).
+import { MoyensPaiementDuPro } from '@/components/pro/MoyensPaiement';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -82,6 +83,7 @@ export default function MesSejoursPage() {
                 </div>
                 <p className="text-sm text-gray-600 mt-0.5">Du {jour(d.date_arrivee)} au {jour(d.date_depart)}{d.essai_date ? ` · essai le ${jour(d.essai_date)}` : ''}</p>
                 {d.statut === 'refusee' && d.motif_refus && <p className="text-xs text-gray-500 mt-0.5">Motif : {d.motif_refus}</p>}
+                {d.statut !== 'refusee' && d.statut !== 'annulee' && <div className="mt-1.5"><MoyensPaiementDuPro proProfileId={d.pro_profile_id} /></div>}
                 {d.statut === 'demande' && (
                   <button onClick={() => annuler(d)} disabled={enCours === d.id} className="mt-1 text-sm font-semibold text-[#B3261E] disabled:opacity-50">
                     {enCours === d.id ? 'Annulation…' : 'Annuler la demande'}

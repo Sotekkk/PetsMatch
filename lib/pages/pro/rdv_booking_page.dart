@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/moyens_paiement.dart';
 import 'package:PetsMatch/utils/consignes_rdv.dart' show questionnaireConsignes;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -369,7 +370,32 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     super.initState();
     _places = GoogleMapsPlaces(apiKey: getApiKey());
     _loadAll();
+    _chargerMoyensPaiement();
   }
+
+  // Moyens de paiement acceptés par le pro (récapitulatif avant l'envoi).
+  String _moyensPaiement = '';
+  Future<void> _chargerMoyensPaiement() async {
+    try {
+      final q = Supabase.instance.client.from('user_profiles_complet').select('moyens_paiement');
+      final r = widget.proProfileId != null
+          ? await q.eq('id', widget.proProfileId!).maybeSingle()
+          : await q.eq('uid', widget.proUid).eq('is_main', true).maybeSingle();
+      if (mounted) setState(() => _moyensPaiement = libelleMoyens(r?['moyens_paiement']));
+    } catch (_) {}
+  }
+
+  Widget _lignePaiement() => _moyensPaiement.isEmpty
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(children: [
+            const Icon(Icons.payments_outlined, size: 16, color: Color(0xFF6B7280)),
+            const SizedBox(width: 6),
+            Expanded(child: Text('Paiement accepté : $_moyensPaiement',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF4B5563)))),
+          ]),
+        );
 
   @override
   void dispose() {
@@ -1983,6 +2009,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             ]),
             const SizedBox(height: 16),
           ],
+          _lignePaiement(),
           RdvPrimaryButton(
             label: 'Confirmer le rendez-vous',
             color: c,
@@ -3306,7 +3333,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     ],
   );
 
-  Widget _buildSubmitButton() => SizedBox(
+  Widget _buildSubmitButton() => Column(mainAxisSize: MainAxisSize.min, children: [
+    _lignePaiement(),
+    SizedBox(
     width: double.infinity,
     child: ElevatedButton(
       onPressed: _saving ? null : _submit,
@@ -3322,7 +3351,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           : const Text('Envoyer la demande',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
     ),
-  );
+  ),
+  ]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
 

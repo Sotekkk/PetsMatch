@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/moyens_paiement.dart';
 import 'package:PetsMatch/pages/pro/pension_reservation_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart' show portfolioPublic;
 import 'package:cached_network_image/cached_network_image.dart';
@@ -102,6 +103,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             'site_web':                  raw['site_web'] ?? '',
             'instagram':                 raw['instagram'] ?? '',
             'facebook':                  raw['facebook'] ?? '',
+            'moyens_paiement':           raw['moyens_paiement'],
             'rayon_intervention':        raw['rayon_intervention'] ?? 0,
             'cat_pro':                   raw['profile_type'] ?? raw['cat_pro'] ?? '',
             'profession_pro':            raw['profession_pro'] ?? '',
@@ -136,6 +138,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             'site_web':                  raw['site_web'] ?? '',
             'instagram':                 raw['instagram'] ?? '',
             'facebook':                  raw['facebook'] ?? '',
+            'moyens_paiement':           raw['moyens_paiement'],
             'rayon_intervention':        raw['rayon_intervention'] ?? 0,
             'cat_pro':                   raw['cat_pro'] ?? '',
             'profession_pro':            raw['profession_pro'] ?? '',
@@ -1235,6 +1238,20 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                 _sectionTitle('Tarifs'),
                 const SizedBox(height: 8),
                 Text(_tarifs, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5, color: Color(0xFF444444))),
+              ],
+            )),
+          ],
+
+          // Moyens de paiement acceptés (profil pro).
+          if (libelleMoyens(_proData?['moyens_paiement']).isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle('Moyens de paiement'),
+                const SizedBox(height: 8),
+                Text(libelleMoyens(_proData?['moyens_paiement']),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5, color: Color(0xFF444444))),
               ],
             )),
           ],

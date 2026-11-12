@@ -1,4 +1,5 @@
 'use client';
+import { MoyensPaiementDuPro } from '@/components/pro/MoyensPaiement';
 import { validerExerciceDepuisTache } from '@/lib/exercice-tache';
 
 import { useEffect, useState, useCallback } from 'react';
@@ -1902,6 +1903,10 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnim
           </button>
           {openDetails && e.rdv && (
             <RdvDetails rdv={e.rdv} viewerUid={viewerUid} onNavigateToAnimal={onNavigateToAnimal} />
+          )}
+          {/* Client : moyens de paiement du pro (+ RIB s'il accepte le virement). */}
+          {openDetails && e.rdv && viewerUid !== e.rdv.pro_uid && e.rdv.statut !== 'annule' && (
+            <MoyensPaiementDuPro proProfileId={e.rdv.pro_profile_id} />
           )}
         </>
       )}

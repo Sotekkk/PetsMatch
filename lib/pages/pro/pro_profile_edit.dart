@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/moyens_paiement.dart';
 import 'package:PetsMatch/widgets/pro/consignes_preop_editor.dart';
 import 'package:PetsMatch/pages/pro/education_prestations_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
@@ -97,6 +98,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   final _rcsCtrl            = TextEditingController();
   final _rmCtrl             = TextEditingController();
   final _ibanCtrl           = TextEditingController();
+  List<String> _moyensPaiement = [];
   final _bicCtrl            = TextEditingController();
   bool _tvaFranchise = false;
 
@@ -269,6 +271,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         'rm_pro':              _rmCtrl.text.trim(),
         'iban_pro':            _ibanCtrl.text.trim(),
         'bic_pro':             _bicCtrl.text.trim(),
+        'moyens_paiement':     _moyensPaiement,
         'regime_tva_pro':      _tvaFranchise ? 'franchise' : 'normal',
       };
 
@@ -313,6 +316,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         _rmCtrl.text             = row['rm_pro']             ?? '';
         _ibanCtrl.text           = row['iban_pro']           ?? '';
         _bicCtrl.text            = row['bic_pro']            ?? '';
+        _moyensPaiement          = [...moyensPaiement(row['moyens_paiement'])];
         _tvaFranchise            = (row['regime_tva_pro'] ?? '') == 'franchise';
         _photoUrl  = isSecondary ? row['avatar_url'] as String? : row['profile_picture_url_pro'] as String?;
         _bannerUrl = row['banner_url'] as String?;
@@ -1246,6 +1250,19 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   _field(_ibanCtrl, 'IBAN (pour le règlement par virement)', Icons.account_balance_wallet_outlined),
                   const SizedBox(height: 12),
                   _field(_bicCtrl, 'BIC', Icons.badge_outlined),
+                  const SizedBox(height: 12),
+                  const Text('Moyens de paiement acceptés',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700)),
+                  Wrap(spacing: 4, children: [
+                    for (final m in kMoyensPaiement)
+                      FilterChip(
+                        label: Text(m.label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                        selected: _moyensPaiement.contains(m.value),
+                        onSelected: (v) => setState(() => v ? _moyensPaiement.add(m.value) : _moyensPaiement.remove(m.value)),
+                      ),
+                  ]),
+                  Text('Affichés sur votre fiche et à la prise de rendez-vous. Virement : votre RIB est donné à vos clients dans leur rendez-vous.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
 
                   // ── Disponibilité & intervention ──────────────────────────
                   const SizedBox(height: 24),

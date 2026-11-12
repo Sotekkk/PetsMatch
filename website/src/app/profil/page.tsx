@@ -1,5 +1,6 @@
 'use client';
 
+import { MOYENS_PAIEMENT, moyensPaiement } from '@/lib/moyens-paiement';
 import ConsignesPreopCard from '@/components/pro/ConsignesPreopCard';
 import ChoixEspecesPastilles from '@/components/ChoixEspecesPastilles';
 import { bornesNaissancePersonne, erreurNaissancePersonne } from '@/lib/ages-plausibles';
@@ -877,6 +878,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [rcsPro, setRcsPro] = useState('');
   const [rmPro, setRmPro] = useState('');
   const [ibanPro, setIbanPro] = useState('');
+  const [moyensPaie, setMoyensPaie] = useState<string[]>([]);
   const [bicPro, setBicPro] = useState('');
   const [tvaFranchise, setTvaFranchise] = useState(false);
   const [rue, setRue] = useState('');
@@ -967,6 +969,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         setRcsPro((r.rcs_pro as string) ?? '');
         setRmPro((r.rm_pro as string) ?? '');
         setIbanPro((r.iban_pro as string) ?? '');
+        setMoyensPaie(moyensPaiement(r.moyens_paiement));
         setBicPro((r.bic_pro as string) ?? '');
         setTvaFranchise((r.regime_tva_pro as string) === 'franchise');
         setRue((r.rue as string) ?? '');
@@ -1233,6 +1236,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       rm_pro: rmPro.trim(),
       iban_pro: ibanPro.trim(),
       bic_pro: bicPro.trim(),
+      moyens_paiement: moyensPaie,
       regime_tva_pro: tvaFranchise ? 'franchise' : 'normal',
       rue: rue.trim(),
       ville: ville.trim(),
@@ -2044,6 +2048,18 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </Field>
           <Field label="BIC">
             <input value={bicPro} onChange={e => setBicPro(e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="Moyens de paiement acceptés">
+            <div className="flex flex-wrap gap-x-4 gap-y-2 pt-1">
+              {MOYENS_PAIEMENT.map(m => (
+                <label key={m.value} className="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={moyensPaie.includes(m.value)}
+                    onChange={e => setMoyensPaie(l => e.target.checked ? [...l, m.value] : l.filter(x => x !== m.value))} />
+                  {m.label}
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Affichés sur votre fiche et à la prise de rendez-vous. Virement : votre RIB (IBAN ci-dessus) est donné à vos clients dans leur rendez-vous.</p>
           </Field>
         </Card>
 
