@@ -187,6 +187,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   // domicile ; l'origine peut être changée créneau par créneau (pro_agenda.dart).
   String _trajetOrigineDefaut = 'cabinet';
   final _autreDomicileCtrl = TextEditingController();
+  // Toiletteur : supplément déplacement des RDV à domicile (€ TTC).
+  final _supplementDomicileCtrl = TextEditingController();
   double? _autreDomicileLat, _autreDomicileLng;
 
   static const _defaultDureesByCatPro = <String, Map<String, int>>{
@@ -428,6 +430,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         _annulationLimiteH = (row['annulation_limite_h'] as num?)?.toInt() ?? 0;
         _trajetOrigineDefaut = row['trajet_origine_defaut']?.toString() ?? 'cabinet';
         _autreDomicileCtrl.text = row['autre_domicile_adresse']?.toString() ?? '';
+        _supplementDomicileCtrl.text = row['supplement_domicile'] != null ? (row['supplement_domicile'] as num).toString() : '';
         _autreDomicileLat = (row['autre_domicile_lat'] as num?)?.toDouble();
         _autreDomicileLng = (row['autre_domicile_lng'] as num?)?.toDouble();
         _tarifsSanteVisibles = row['tarifs_sante_visibles'] as bool? ?? false;
@@ -865,7 +868,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           ..._billingFields,
           ..._vetoFields,
           if (_catPro == 'veterinaire') 'urgences_24h': _urgences24h,
-          if (_catPro == 'veterinaire' || _catPro == 'sante') 'retard_alerte_auto': _retardAlerteAuto,
+          if (_catPro == 'veterinaire' || _catPro == 'sante' || _catPro == 'toilettage') 'retard_alerte_auto': _retardAlerteAuto,
+          if (_catPro == 'toilettage') 'supplement_domicile': (double.tryParse(_supplementDomicileCtrl.text.trim().replaceAll(',', '.')) ?? 0) > 0
+              ? double.parse(_supplementDomicileCtrl.text.trim().replaceAll(',', '.')) : null,
           'cat_pro':            _catPro,
           'is_pro':             true,
           'durees_motifs':      _dureesMotifs,
@@ -973,7 +978,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           ..._billingFields,
           ..._vetoFields,
           if (_catPro == 'veterinaire') 'urgences_24h': _urgences24h,
-          if (_catPro == 'veterinaire' || _catPro == 'sante') 'retard_alerte_auto': _retardAlerteAuto,
+          if (_catPro == 'veterinaire' || _catPro == 'sante' || _catPro == 'toilettage') 'retard_alerte_auto': _retardAlerteAuto,
+          if (_catPro == 'toilettage') 'supplement_domicile': (double.tryParse(_supplementDomicileCtrl.text.trim().replaceAll(',', '.')) ?? 0) > 0
+              ? double.parse(_supplementDomicileCtrl.text.trim().replaceAll(',', '.')) : null,
           'cat_pro':            _catPro,
           'is_pro':             true,
           'durees_motifs':      _dureesMotifs,
@@ -1293,8 +1300,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     const SizedBox(height: 12),
                     _retardAutoToggle(),
                   ],
-                  // Ostéo / santé : alerte retard, trajets compris.
-                  if (_catPro == 'sante') ...[
+                  // Ostéo / santé et toiletteur : alerte retard, trajets compris.
+                  if (_catPro == 'sante' || _catPro == 'toilettage') ...[
                     const SizedBox(height: 12),
                     _retardAutoToggle(),
                   ],
@@ -1795,6 +1802,19 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                             borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
                       ),
                     ),
+                    if (_catPro == 'toilettage') ...[
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: _supplementDomicileCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                        decoration: const InputDecoration(
+                          labelText: 'Supplément déplacement à domicile (€ TTC)',
+                          helperText: 'Annoncé au client à la réservation à domicile, puis ajouté à la facture.',
+                          isDense: true,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     Text('Départ par défaut', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
                     const SizedBox(height: 6),

@@ -183,6 +183,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   // Ostéo / santé et toiletteur : à domicile sur les créneaux marqués (trajet vérifié).
   bool get _hasDomicileOption => _catPro == 'sante' || _catPro == 'toilettage' || widget.isToilettage;
   bool _domicile = false;
+  // Toiletteur : supplément déplacement des RDV à domicile (figé sur le RDV).
+  double _supplementDomicile = 0;
+  bool get _avecSupplement => widget.isToilettage && _domicile && _supplementDomicile > 0;
   bool _geocodingDomicile = false;
   final _adresseDomicileCtrl = TextEditingController();
   String _origineDefaut = 'cabinet';
@@ -394,14 +397,17 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     } catch (_) {}
   }
 
-  Widget _lignePaiement() => _moyensPaiement.isEmpty
+  Widget _lignePaiement() => _moyensPaiement.isEmpty && !_avecSupplement
       ? const SizedBox.shrink()
       : Padding(
           padding: const EdgeInsets.only(bottom: 10),
           child: Row(children: [
             const Icon(Icons.payments_outlined, size: 16, color: Color(0xFF6B7280)),
             const SizedBox(width: 6),
-            Expanded(child: Text('Paiement accepté : $_moyensPaiement',
+            Expanded(child: Text([
+              if (_avecSupplement) 'Supplément déplacement à domicile : ${_supplementDomicile.toStringAsFixed(_supplementDomicile % 1 == 0 ? 0 : 2)} €',
+              if (_moyensPaiement.isNotEmpty) 'Paiement accepté : $_moyensPaiement',
+            ].join('\n'),
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF4B5563)))),
           ]),
         );
@@ -646,7 +652,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final row = (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
           ? await Supabase.instance.client
               .from('user_profiles_complet')
-              .select('durees_motifs, profile_type, cat_pro, education_bilan_requis, education_bilan_description, delai_min_reservation_h, garde_chevauchement_ok, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng, tarifs_garde')
+              .select('durees_motifs, profile_type, cat_pro, education_bilan_requis, education_bilan_description, delai_min_reservation_h, garde_chevauchement_ok, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng, tarifs_garde, supplement_domicile')
               .eq('id', widget.proProfileId!)
               .maybeSingle()
           : await Supabase.instance.client
@@ -679,6 +685,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         _delaiMinReservationH = (row['delai_min_reservation_h'] as num?)?.toInt() ?? 0;
         if (_catPro == 'education') await _checkFirstTimeEducationClient();
         if (widget.isGarde) await _chargerEssai(row['tarifs_garde']);
+        _supplementDomicile = (row['supplement_domicile'] as num?)?.toDouble() ?? 0;
       }
     } catch (_) {}
   }
@@ -1454,6 +1461,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             'animaux_detail': detailAnimaux,
             'nombre_animaux': detailAnimaux.length,
           } else if (!widget.isTaxi && _selectedAnimal?['nom'] != null) 'animal_nom_manuel': _selectedAnimal!['nom'].toString(),
+          if (_avecSupplement) 'supplement_deplacement': _supplementDomicile,
           if (widget.isGarde) ...{
             if (_selectedMotifKey == 'essai') 'est_essai': true,
             if (serieId != null) 'serie_id': serieId,

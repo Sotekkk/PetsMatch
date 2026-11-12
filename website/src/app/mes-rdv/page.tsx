@@ -2327,7 +2327,7 @@ export default function MesRdvPage() {
   // Ostéo / santé : coordonnées du cabinet (trajets des retards en cascade).
   const [cabinet, setCabinet] = useState<{ lat: number; lng: number } | null>(null);
   useEffect(() => {
-    if (catPro !== 'sante' || !activeProfileId) return;
+    if ((catPro !== 'sante' && catPro !== 'toilettage') || !activeProfileId) return;
     supabase.from('user_profiles_complet').select('latitude, longitude, lat, lng').eq('id', activeProfileId).maybeSingle()
       .then(({ data }) => {
         const p = data as { latitude?: number | null; longitude?: number | null; lat?: number | null; lng?: number | null } | null;
@@ -2584,7 +2584,8 @@ export default function MesRdvPage() {
   const estVeto = catPro === 'veterinaire';
   // Ostéo / santé : retard estimé en cascade, trajets compris.
   const retards = estVeto ? retardsEnCascade(rdvs)
-    : catPro === 'sante' ? retardsEnCascade(rdvs, now, { avecTrajets: true, cabinet }) : {};
+    // Toiletteur : même calcul (RDV à domicile possibles).
+    : catPro === 'sante' || catPro === 'toilettage' ? retardsEnCascade(rdvs, now, { avecTrajets: true, cabinet }) : {};
   // Tous les pros : un RDV confirmé reste « À venir » jusqu'à « Terminé »
   // (badge « À clôturer » une fois passé) — miroir appli _clotureManuelle.
   const clotureManuelle = true;

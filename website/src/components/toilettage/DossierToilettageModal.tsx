@@ -260,6 +260,10 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
         });
       }
     }
+    // À domicile : supplément déplacement figé à la réservation (rdv.supplement_deplacement).
+    const supplement = Number((r as unknown as { supplement_deplacement?: number | null }).supplement_deplacement ?? 0);
+    const ligneDeplacement = !lignesDevis && supplement > 0
+      ? [{ description: 'Déplacement à domicile', quantite: 1, prixUnitaire: 0, prixTTC: supplement, tva: 20, commune: true }] : [];
     try {
       // Prix TTC affiché : le HT est déduit selon le régime de TVA du pro.
       sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
@@ -271,10 +275,11 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
         // Après l'émission : retour au RDV en cours de traitement.
         retour: `/mes-rdv?onglet=a_venir&rdv=${encodeURIComponent(r.id)}`,
         // Plusieurs animaux : une ligne par animal, rattachée à lui (section du PDF).
-        lignes: lignesDevis ?? (plusieurs
+        lignes: lignesDevis ?? [...(plusieurs
           ? lignesAnimaux.map(l => ({ description: `${l.prestation} — ${l.nom} — ${debut.toLocaleDateString('fr-FR')}`, quantite: 1, prixUnitaire: 0,
               prixTTC: Number(l.prix ?? 0), tva: 20, animalId: l.id, animalNom: l.nom }))
           : [{ description: [prestation.nom, animalNom].filter(Boolean).join(' — ') + ` — ${debut.toLocaleDateString('fr-FR')}`, quantite: 1, prixUnitaire: 0, prixTTC: Number(prestation.prix ?? 0), tva: 20 }]),
+          ...ligneDeplacement],
       }));
     } catch { /* facture vierge */ }
     router.push('/elevage/facturation');

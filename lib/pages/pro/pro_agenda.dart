@@ -176,7 +176,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   ({double lat, double lng})? _cabinet;
 
   Future<void> _loadCabinet() async {
-    if (AgendaContexte.catPro != 'sante') return;
+    if (AgendaContexte.catPro != 'sante' && AgendaContexte.catPro != 'toilettage') return;
     final pid = _resolveProProfileId();
     if (pid.isEmpty) return;
     try {
@@ -1047,7 +1047,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       ];
     }
     // Ostéo / santé : retard estimé en cascade, trajets compris.
-    final retards = AgendaContexte.catPro == 'sante'
+    // Toiletteur : même calcul (RDV à domicile possibles).
+    final retards = AgendaContexte.catPro == 'sante' || AgendaContexte.catPro == 'toilettage'
         ? retardsEnCascade(_rdvs, cabinet: _cabinet, avecTrajets: true) : const <String, int>{};
     return [
       for (final r in _rdvsFiltres)

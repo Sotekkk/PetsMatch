@@ -909,6 +909,8 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [tarifsEducationExtra, setTarifsEducationExtra] = useState<{ label: string; prix: number; description: string }[]>([]);
   const [educationBilanDescription, setEducationBilanDescription] = useState('');
   const [trajetOrigineDefaut, setTrajetOrigineDefaut] = useState('cabinet');
+  // Toiletteur : supplément déplacement des RDV à domicile (€ TTC).
+  const [supplementDomicile, setSupplementDomicile] = useState('');
   const [autreDomicileAdresse, setAutreDomicileAdresse] = useState('');
   const [autreDomicileLatLng, setAutreDomicileLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const [forfaits, setForfaits] = useState<{ id: string; nom: string; nb_seances: number; prix: number; affiche_public: boolean; type_prestation?: string }[]>([]);
@@ -1050,6 +1052,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         setAnnulationLimiteH((r.annulation_limite_h as number | null) ?? 0);
         setTrajetOrigineDefaut((r.trajet_origine_defaut as string) ?? 'cabinet');
         setAutreDomicileAdresse((r.autre_domicile_adresse as string) ?? '');
+        setSupplementDomicile(r.supplement_domicile != null ? String(r.supplement_domicile) : '');
         if (r.autre_domicile_lat != null && r.autre_domicile_lng != null) {
           setAutreDomicileLatLng({ lat: r.autre_domicile_lat as number, lng: r.autre_domicile_lng as number });
         }
@@ -1213,7 +1216,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       contact_messages: contactMessages,
       contact_email: contactEmail,
       ...(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire' ? { urgences_24h: urgences24h, retard_alerte_auto: retardAlerteAuto } : {}),
-      ...(catPro === 'sante' ? { retard_alerte_auto: retardAlerteAuto } : {}),
+      ...(catPro === 'sante' || catPro === 'toilettage' ? { retard_alerte_auto: retardAlerteAuto } : {}),
       ...(catPro === 'veterinaire'
         ? {
             tarifs_veto: tarifsVeto,
@@ -1276,6 +1279,8 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             autre_domicile_adresse: autreDomicileAdresse.trim(),
             autre_domicile_lat: autreDomicileGeo?.lat ?? null,
             autre_domicile_lng: autreDomicileGeo?.lng ?? null,
+            ...((data?.profile_type ?? data?.cat_pro) === 'toilettage'
+              ? { supplement_domicile: Number(supplementDomicile.replace(',', '.')) > 0 ? Number(supplementDomicile.replace(',', '.')) : null } : {}),
           }
         : {}),
       ...(['garde', 'education'].includes((data?.profile_type ?? data?.cat_pro) ?? '')
@@ -1495,12 +1500,12 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
 
           {/* Alerte retard automatique — vétérinaires et ostéo / santé, trajets
               compris pour la santé (Cloud Function sendRetardsAutomatiques) */}
-          {(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire' || catPro === 'sante') && (
+          {(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire' || catPro === 'sante' || catPro === 'toilettage') && (
             <div className="flex items-center justify-between gap-3 py-2 px-3 rounded-xl"
               style={{ backgroundColor: retardAlerteAuto ? 'rgba(12,92,108,0.06)' : 'transparent', border: retardAlerteAuto ? '1px solid rgba(12,92,108,0.25)' : '1px solid transparent' }}>
               <div>
                 <p className="text-sm font-medium" style={{ color: retardAlerteAuto ? '#0C5C6C' : '#1F2A2E' }}>⏱ Alerte retard automatique</p>
-                <p className="text-xs text-gray-400">Prévenir les clients dès 30 min de retard dans l&apos;enchaînement des RDV (calculé quand vous marquez un RDV terminé).{catPro === 'sante' ? ' Le temps de trajet entre vos rendez-vous est pris en compte.' : ''}</p>
+                <p className="text-xs text-gray-400">Prévenir les clients dès 30 min de retard dans l&apos;enchaînement des RDV (calculé quand vous marquez un RDV terminé).{catPro === 'sante' || catPro === 'toilettage' ? ' Le temps de trajet entre vos rendez-vous est pris en compte.' : ''}</p>
               </div>
               <button type="button" onClick={() => setRetardAlerteAuto(v => !v)}
                 className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${retardAlerteAuto ? 'bg-[#0C5C6C]' : 'bg-gray-400'}`}>
@@ -1913,6 +1918,14 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             <label className="text-xs font-medium text-gray-500 block mb-1">Autre domicile (optionnel)</label>
             <input value={autreDomicileAdresse} onChange={e => setAutreDomicileAdresse(e.target.value)}
               placeholder="Ex : 12 rue des Lilas, 75011 Paris" className={`${inputCls} w-full`} />
+            {catPro === 'toilettage' && (
+              <div className="mt-3">
+                <label className="text-xs font-medium text-gray-500 block mb-1">Supplément déplacement à domicile (€ TTC)</label>
+                <input type="number" min={0} step={1} value={supplementDomicile} onChange={e => setSupplementDomicile(e.target.value)}
+                  placeholder="0 = pas de supplément" className={`${inputCls} w-full`} />
+                <p className="text-xs text-gray-400 mt-1">Annoncé au client à la réservation à domicile, puis ajouté à la facture de la séance.</p>
+              </div>
+            )}
             <label className="text-xs font-medium text-gray-500 block mt-4 mb-1">Départ par défaut</label>
             <div className="flex gap-2">
               <button type="button" onClick={() => setTrajetOrigineDefaut('cabinet')}

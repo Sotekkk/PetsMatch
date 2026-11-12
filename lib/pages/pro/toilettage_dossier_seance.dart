@@ -462,6 +462,12 @@ Future<void> facturerToilettage(BuildContext context, Map<String, dynamic> rdv, 
     devis = await Supabase.instance.client.from('devis').select('id, lignes').eq('rdv_id', rdv['id']).eq('statut', 'accepte')
         .order('created_at', ascending: false).limit(1).maybeSingle();
   } catch (_) {}
+  // À domicile : supplément déplacement figé à la réservation (rdv.supplement_deplacement).
+  double supplement = 0;
+  try {
+    final r = await Supabase.instance.client.from('rdv').select('supplement_deplacement').eq('id', rdv['id']).maybeSingle();
+    supplement = (r?['supplement_deplacement'] as num?)?.toDouble() ?? 0;
+  } catch (_) {}
   if (!context.mounted) return;
   final debut = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
   final animalNom = (animal ?? rdv['_animal_nom']?.toString() ?? '').trim();
@@ -476,7 +482,7 @@ Future<void> facturerToilettage(BuildContext context, Map<String, dynamic> rdv, 
     clientNom: v('nom') ?? nomClient ?? rdv['_client_name']?.toString(),
     clientPrenom: v('prenom'), clientEmail: v('email'), clientTel: v('tel'),
     clientRue: v('rue'), clientCp: v('cp'), clientVille: v('ville'),
-    lignesPrefill: lignesDevis.isNotEmpty ? lignesDevis
+    lignesPrefill: [...(lignesDevis.isNotEmpty ? lignesDevis
         : lignesAnimaux.isNotEmpty
             // Plusieurs animaux : une ligne par animal, rattachée à lui (section du PDF).
             ? [for (final l in lignesAnimaux)
@@ -484,7 +490,11 @@ Future<void> facturerToilettage(BuildContext context, Map<String, dynamic> rdv, 
                     animalId: l.id, animalNom: l.nom)]
             : [FacturePrefillLigne(
                 designation: [pr.nom, if (animalNom.isNotEmpty) animalNom].join(' — ') + dateTxt,
-                prixTTC: pr.prix ?? 0, quantite: 1, tauxTVA: 20)],
+                prixTTC: pr.prix ?? 0, quantite: 1, tauxTVA: 20)]),
+        // À domicile : supplément déplacement figé à la réservation.
+        if (lignesDevis.isEmpty && supplement > 0)
+          FacturePrefillLigne(designation: 'Déplacement à domicile', prixTTC: supplement,
+              quantite: 1, tauxTVA: 20, commune: true)],
     devisId: devis?['id']?.toString(),
     animauxIds: [for (final l in lignesAnimaux) l.id],
     sourceRdvId: rdv['id']?.toString(),

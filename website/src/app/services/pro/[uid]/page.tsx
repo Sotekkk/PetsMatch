@@ -79,6 +79,8 @@ interface ProData {
   education_bilan_description?: string;
   /** Moyens de paiement acceptés (lib/moyens-paiement.ts). */
   moyens_paiement?: string[];
+  /** Toiletteur : supplément déplacement des RDV à domicile (€ TTC). */
+  supplement_domicile?: number | null;
   /** Profil pro (user_profiles.id). */
   profile_id?: string;
   delai_min_reservation_h?: number | null;
@@ -432,6 +434,7 @@ function ProDetailContent() {
           tarifs_education_extra: Array.isArray(data.tarifs_education_extra) ? data.tarifs_education_extra : [],
           education_bilan_description: (data.education_bilan_description as string) ?? '',
           moyens_paiement: moyensPaiement(data.moyens_paiement),
+          supplement_domicile: data.supplement_domicile != null ? Number(data.supplement_domicile) : null,
           tarifs_taxi: (data.tarifs_taxi as ProData['tarifs_taxi']) ?? {},
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
@@ -481,6 +484,7 @@ function ProDetailContent() {
           tarifs_education_extra: Array.isArray(data.tarifs_education_extra) ? data.tarifs_education_extra : [],
           education_bilan_description: (data.education_bilan_description as string) ?? '',
           moyens_paiement: moyensPaiement(data.moyens_paiement),
+          supplement_domicile: data.supplement_domicile != null ? Number(data.supplement_domicile) : null,
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
           tarifs_garde_extra: Array.isArray(data.tarifs_garde_extra) ? data.tarifs_garde_extra : [],
@@ -1104,6 +1108,8 @@ function ProDetailContent() {
             lieu: adresseDomicile.trim(),
             ...(gardeGeo ? { lieu_lat: gardeGeo.lat, lieu_lng: gardeGeo.lng } : {}),
           } : {}),
+          // Toiletteur à domicile : supplément figé à la réservation (repris sur la facture).
+          ...(pro.cat_pro === 'toilettage' && domicile && (pro.supplement_domicile ?? 0) > 0 ? { supplement_deplacement: pro.supplement_domicile } : {}),
           ...(domicilePossible(pro.cat_pro) && domicile ? {
             lieu: adresseDomicile.trim(),
             ...(domicileLatLng ? { lieu_lat: domicileLatLng.lat, lieu_lng: domicileLatLng.lng } : {}),
@@ -2813,6 +2819,11 @@ function ProDetailContent() {
                       {(pro.cat_pro === 'garde' || pro.cat_pro === 'photographe') && animauxGarde.length > 0 && (
                         <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
                           🐾 {animauxGarde.map(id => animaux.find(a => a.id === id)?.nom).filter(Boolean).join(' + ')}
+                        </p>
+                      )}
+                      {pro.cat_pro === 'toilettage' && domicile && (pro.supplement_domicile ?? 0) > 0 && (
+                        <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          Supplément déplacement à domicile : {pro.supplement_domicile} €
                         </p>
                       )}
                       {libelleMoyens(pro.moyens_paiement) && (

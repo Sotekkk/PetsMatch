@@ -94,7 +94,7 @@ exports.sendRetardsAutomatiques = functions
         const supa = getSupabase();
         const {data: profils} = await supa.from("user_profiles")
             .select("id, uid, nom, profile_type, latitude, longitude, lat, lng")
-            .eq("retard_alerte_auto", true).in("profile_type", ["veterinaire", "sante"]);
+            .eq("retard_alerte_auto", true).in("profile_type", ["veterinaire", "sante", "toilettage"]);
         if (!profils || profils.length === 0) return null;
 
         const now = Date.now();
@@ -107,7 +107,8 @@ exports.sendRetardsAutomatiques = functions
         for (const p of profils) {
             const {data: rdvs} = await supa.from("rdv")
                 .select("id, client_uid, client_profile_id, date_heure, duree_minutes, statut, " +
-                    "termine_at, instructeur_profile_id, retard_notifie_min, motif, lieu, lieu_lat, lieu_lng, salle_id")
+                    "termine_at, instructeur_profile_id, employe_id, retard_notifie_min, motif, " +
+                    "lieu, lieu_lat, lieu_lng, salle_id")
                 .eq("pro_profile_id", p.id)
                 .in("statut", ["confirme", "termine"])
                 .gte("date_heure", new Date(debutJour).toISOString())
@@ -115,10 +116,11 @@ exports.sendRetardsAutomatiques = functions
                 .order("date_heure", {ascending: true});
             if (!rdvs || rdvs.length === 0) continue;
 
-            // Par praticien (titulaire = sans praticien).
+            // Par praticien (titulaire = sans praticien) ; toiletteur : par employé.
             const groupes = {};
             for (const r of rdvs) {
-                const k = r.instructeur_profile_id || "";
+                const k = r.instructeur_profile_id ||
+                    (p.profile_type === "toilettage" && r.employe_id ? `emp:${r.employe_id}` : "");
                 if (!groupes[k]) groupes[k] = [];
                 groupes[k].push(r);
             }
@@ -126,7 +128,8 @@ exports.sendRetardsAutomatiques = functions
             const noms = {};
             for (const [praticien, liste] of Object.entries(groupes)) {
                 // Ostéo / santé : trajets entre les RDV (domicile ↔ cabinet / domicile).
-                const sante = p.profile_type === "sante";
+                // Toiletteur : RDV à domicile possibles, même calcul.
+                const sante = p.profile_type === "sante" || p.profile_type === "toilettage";
                 const cLat = p.latitude ?? p.lat;
                 const cLng = p.longitude ?? p.lng;
                 const retards = retardsEnCascade(liste, now, {
@@ -140,8 +143,9 @@ exports.sendRetardsAutomatiques = functions
 
                     if (noms[praticien] === undefined) {
                         noms[praticien] = (p.nom || "").trim() ||
-                            (p.profile_type === "sante" ? "Votre praticien" : "Votre vétérinaire");
-                        if (praticien) {
+                            (p.profile_type === "sante" ? "Votre praticien" :
+                                p.profile_type === "toilettage" ? "Votre toiletteur" : "Votre vétérinaire");
+                        if (praticien && !praticien.startsWith("emp:")) {
                             const {data: v} = await supa.from("user_profiles")
                                 .select("firstname, lastname").eq("id", praticien).maybeSingle();
                             const n = `${v?.firstname || ""} ${v?.lastname || ""}`.trim();
