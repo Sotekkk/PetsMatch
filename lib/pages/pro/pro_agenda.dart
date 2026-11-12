@@ -4993,7 +4993,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               // Options éducateur/comportementaliste (type de cours) et
               // santé/ostéo (domicile ou cabinet) — encadré teinté pour
               // qu'on pense à les régler.
-              if ((AgendaContexte.catPro == 'education' || AgendaContexte.catPro == 'sante') && isDisp) ...[
+              if ((AgendaContexte.catPro == 'education' || AgendaContexte.catPro == 'sante' || AgendaContexte.catPro == 'toilettage') && isDisp) ...[
                 const SizedBox(height: 16),
                 Container(
                   width: double.infinity,
@@ -5053,7 +5053,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       ],
                       const Divider(height: 20),
                     ],
-                    if (AgendaContexte.catPro == 'sante') ...[
+                    if (AgendaContexte.catPro == 'sante' || AgendaContexte.catPro == 'toilettage') ...[
                       const Text('Lieu du rendez-vous', style: TextStyle(
                           fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700,
                           color: Color(0xFF0C5C6C))),

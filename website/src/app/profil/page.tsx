@@ -1270,7 +1270,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       ...((data?.profile_type ?? data?.cat_pro) === 'taxi_animalier'
         ? { tarifs_taxi: tarifsTaxi }
         : {}),
-      ...(['education', 'sante'].includes((data?.profile_type ?? data?.cat_pro) ?? '')
+      ...(['education', 'sante', 'toilettage'].includes((data?.profile_type ?? data?.cat_pro) ?? '')
         ? {
             trajet_origine_defaut: trajetOrigineDefaut,
             autre_domicile_adresse: autreDomicileAdresse.trim(),
@@ -1904,7 +1904,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         )}
 
         {/* Trajet à domicile (éducateur/comportementaliste et santé/ostéo) */}
-        {(catPro === 'education' || catPro === 'sante') && (
+        {(catPro === 'education' || catPro === 'sante' || catPro === 'toilettage') && (
           <Card title="Trajet à domicile">
             <p className="text-xs text-gray-500 mb-3">
               Adresse de départ utilisée pour estimer le temps de trajet des rendez-vous à domicile.
@@ -1922,7 +1922,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                   backgroundColor: trajetOrigineDefaut === 'cabinet' ? '#7B5EA715' : 'white',
                   color: trajetOrigineDefaut === 'cabinet' ? '#7B5EA7' : '#6B7280',
                 }}>
-                Cabinet
+                {catPro === 'toilettage' ? 'Salon' : 'Cabinet'}
               </button>
               <button type="button"
                 disabled={!autreDomicileAdresse.trim()}

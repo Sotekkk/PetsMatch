@@ -180,7 +180,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   // (creneaux_pro.domicile_ok/trajet_origine, user_profiles.trajet_origine_defaut/
   // autre_domicile_*, rdv.lieu_lat/lieu_lng), adapté au flux générique à un
   // seul écran (pas de vue semaine dédiée).
-  bool get _hasDomicileOption => _catPro == 'sante';
+  // Ostéo / santé et toiletteur : à domicile sur les créneaux marqués (trajet vérifié).
+  bool get _hasDomicileOption => _catPro == 'sante' || _catPro == 'toilettage' || widget.isToilettage;
   bool _domicile = false;
   bool _geocodingDomicile = false;
   final _adresseDomicileCtrl = TextEditingController();
@@ -3302,7 +3303,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             side: BorderSide(color: widget.categoryColor),
             padding: const EdgeInsets.symmetric(vertical: 12),
           ),
-          child: const Text('Au cabinet', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          child: Text(widget.isToilettage ? 'Au salon' : 'Au cabinet', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
         )),
         const SizedBox(width: 10),
         Expanded(child: OutlinedButton(

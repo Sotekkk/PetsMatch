@@ -131,6 +131,9 @@ const CAT_COLORS: Record<string, string> = {
   taxi_animalier: '#00838F',
 };
 
+// Rendez-vous à domicile possible (créneaux marqués « à domicile », trajet vérifié).
+const domicilePossible = (cat?: string | null) => cat === 'sante' || cat === 'toilettage';
+
 const MOTIFS_BY_CAT: Record<string, { key: string; label: string; icon: string; duree: number }[]> = {
   veterinaire: [
     { key: 'consultation', label: 'Consultation',  icon: '🩺', duree: 30 },
@@ -704,7 +707,7 @@ function ProDetailContent() {
     setDomicileLatLng(null);
     setSlotsLoading(true);
     const profileId = profileTableId ?? '';
-    if (pro?.cat_pro === 'sante') {
+    if (domicilePossible(pro?.cat_pro)) {
       setCabinetLatLng(
         pro.latitude != null && pro.longitude != null ? { lat: pro.latitude, lng: pro.longitude }
         : pro.lat != null && pro.lng != null ? { lat: pro.lat, lng: pro.lng }
@@ -799,7 +802,7 @@ function ProDetailContent() {
       animauxQ,
       ownQ,
       fetchRdvsDuJour(),
-      (pro?.cat_pro === 'sante' || pro?.cat_pro === 'garde') && user ? getClientKnownAddress(user.uid, activeProfileId) : Promise.resolve(null),
+      (domicilePossible(pro?.cat_pro) || pro?.cat_pro === 'garde') && user ? getClientKnownAddress(user.uid, activeProfileId) : Promise.resolve(null),
     ]);
     setRdvsDuJourByDate(rdvsDuJour);
     if (clientAdresse) {
@@ -972,7 +975,7 @@ function ProDetailContent() {
     if (!isGardeJournee && !selectedSlot) return;
     if (premiereRequise && premiereVisite === null) return;
     if (isTaxi && (!adresseDepart.trim() || !adresseArrivee.trim() || animauxTaxiIds.length === 0)) return;
-    if (pro.cat_pro === 'sante' && domicile && !domicileLatLng) {
+    if (domicilePossible(pro.cat_pro) && domicile && !domicileLatLng) {
       alert('Veuillez indiquer et valider votre adresse.');
       return;
     }
@@ -1101,7 +1104,7 @@ function ProDetailContent() {
             lieu: adresseDomicile.trim(),
             ...(gardeGeo ? { lieu_lat: gardeGeo.lat, lieu_lng: gardeGeo.lng } : {}),
           } : {}),
-          ...(pro.cat_pro === 'sante' && domicile ? {
+          ...(domicilePossible(pro.cat_pro) && domicile ? {
             lieu: adresseDomicile.trim(),
             ...(domicileLatLng ? { lieu_lat: domicileLatLng.lat, lieu_lng: domicileLatLng.lng } : {}),
           } : {}),
@@ -1275,7 +1278,7 @@ function ProDetailContent() {
     const hm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}:00`;
     const parDate: Record<string, { s: number; e: number; origine: string | null }[]> = {};
     for (const sl of slots) {
-      if (pro?.cat_pro === 'sante' && domicile && !sl.domicileOk) continue;
+      if (domicilePossible(pro?.cat_pro) && domicile && !sl.domicileOk) continue;
       (parDate[sl.date] ??= []).push({ s: toMin(sl.heureDebut), e: toMin(sl.heureFin), origine: sl.trajetOrigine ?? null });
     }
     const out: Record<string, Slot[]> = {};
@@ -1294,7 +1297,7 @@ function ProDetailContent() {
           const fin = debut + duree * 60000;
           if (occupes.some(o => debut < o.fin && fin > o.debut)) continue;
           const s: Slot = { date, heureDebut: hm(t), heureFin: hm(t + duree), domicileOk: true, trajetOrigine: w.origine };
-          if (pro?.cat_pro === 'sante' && domicile && !trajetOk(s)) continue;
+          if (domicilePossible(pro?.cat_pro) && domicile && !trajetOk(s)) continue;
           (out[date] ??= []).push(s);
         }
       }
@@ -1358,7 +1361,7 @@ function ProDetailContent() {
     if (pro?.cat_pro === 'garde' && !slotForPrestation(s)) return acc;
     if (!chevauchementOk && estOccupe(s)) return acc;
     if (pro?.cat_pro === 'garde' && placesManquantes(s)) return acc;
-    if (pro?.cat_pro === 'sante' && domicile && (!s.domicileOk || !trajetOk(s))) return acc;
+    if (domicilePossible(pro?.cat_pro) && domicile && (!s.domicileOk || !trajetOk(s))) return acc;
     const [dy, dmo, dd] = s.date.split('-').map(Number);
     const [sh, sm] = s.heureDebut.split(':').map(Number);
     if (new Date(dy, dmo - 1, dd, sh || 0, sm || 0) < earliestBookable) return acc;
@@ -2392,8 +2395,8 @@ function ProDetailContent() {
                     </div>
                   )}
 
-                  {/* Lieu du rendez-vous (santé/ostéo uniquement) */}
-                  {pro.cat_pro === 'sante' && (
+                  {/* Lieu du rendez-vous (santé/ostéo, toiletteur) — à domicile sur les créneaux marqués */}
+                  {domicilePossible(pro.cat_pro) && (
                     <div>
                       <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5"
                         style={{ fontFamily: 'Galey, sans-serif' }}>Lieu du rendez-vous</p>
@@ -2406,7 +2409,7 @@ function ProDetailContent() {
                             backgroundColor: !domicile ? catColor : 'white',
                             color: !domicile ? 'white' : catColor,
                           }}>
-                          Au cabinet
+                          {pro.cat_pro === 'toilettage' ? 'Au salon' : 'Au cabinet'}
                         </button>
                         <button onClick={() => { setDomicile(true); setSelectedSlot(null); }}
                           className="flex-1 py-2.5 rounded-xl border text-sm font-semibold transition-all"

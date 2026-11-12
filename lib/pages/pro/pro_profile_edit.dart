@@ -777,7 +777,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       // Géocode "l'autre domicile" (éducateur/santé, trajet à domicile) si
       // une adresse est saisie — refait à chaque save pour rester à jour si
       // le pro modifie le texte.
-      if ((_catPro == 'education' || _catPro == 'sante') && _autreDomicileCtrl.text.trim().isNotEmpty) {
+      if ((_catPro == 'education' || _catPro == 'sante' || _catPro == 'toilettage') && _autreDomicileCtrl.text.trim().isNotEmpty) {
         try {
           final locs = await geo.locationFromAddress(_autreDomicileCtrl.text.trim());
           if (locs.isNotEmpty) {
@@ -881,10 +881,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_isBookingPro) 'delai_min_reservation_h': _delaiMinReservationH,
           if (_isBookingPro) 'annulation_limite_h': _annulationLimiteH,
-          if (_catPro == 'education' || _catPro == 'sante') 'trajet_origine_defaut': _trajetOrigineDefaut,
-          if (_catPro == 'education' || _catPro == 'sante') 'autre_domicile_adresse': _autreDomicileCtrl.text.trim(),
-          if (_catPro == 'education' || _catPro == 'sante') 'autre_domicile_lat': _autreDomicileLat,
-          if (_catPro == 'education' || _catPro == 'sante') 'autre_domicile_lng': _autreDomicileLng,
+          if (_catPro == 'education' || _catPro == 'sante' || _catPro == 'toilettage') 'trajet_origine_defaut': _trajetOrigineDefaut,
+          if (_catPro == 'education' || _catPro == 'sante' || _catPro == 'toilettage') 'autre_domicile_adresse': _autreDomicileCtrl.text.trim(),
+          if (_catPro == 'education' || _catPro == 'sante' || _catPro == 'toilettage') 'autre_domicile_lat': _autreDomicileLat,
+          if (_catPro == 'education' || _catPro == 'sante' || _catPro == 'toilettage') 'autre_domicile_lng': _autreDomicileLng,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
@@ -989,10 +989,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_isBookingPro) 'delai_min_reservation_h': _delaiMinReservationH,
           if (_isBookingPro) 'annulation_limite_h': _annulationLimiteH,
-          if (_catPro == 'education' || _catPro == 'sante') 'trajet_origine_defaut': _trajetOrigineDefaut,
-          if (_catPro == 'education' || _catPro == 'sante') 'autre_domicile_adresse': _autreDomicileCtrl.text.trim(),
-          if (_catPro == 'education' || _catPro == 'sante') 'autre_domicile_lat': _autreDomicileLat,
-          if (_catPro == 'education' || _catPro == 'sante') 'autre_domicile_lng': _autreDomicileLng,
+          if (_catPro == 'education' || _catPro == 'sante' || _catPro == 'toilettage') 'trajet_origine_defaut': _trajetOrigineDefaut,
+          if (_catPro == 'education' || _catPro == 'sante' || _catPro == 'toilettage') 'autre_domicile_adresse': _autreDomicileCtrl.text.trim(),
+          if (_catPro == 'education' || _catPro == 'sante' || _catPro == 'toilettage') 'autre_domicile_lat': _autreDomicileLat,
+          if (_catPro == 'education' || _catPro == 'sante' || _catPro == 'toilettage') 'autre_domicile_lng': _autreDomicileLng,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
@@ -1771,7 +1771,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   // — les deux peuvent proposer des créneaux à domicile avec
                   // calcul intelligent du temps de trajet, cf. "Mes créneaux"
                   // et la réservation côté client) ────────────────────────────
-                  if (_catPro == 'education' || _catPro == 'sante') ...[
+                  if (_catPro == 'education' || _catPro == 'sante' || _catPro == 'toilettage') ...[
                     const SizedBox(height: 24),
                     _sectionTitle('Trajet à domicile'),
                     const SizedBox(height: 4),

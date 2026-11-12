@@ -657,8 +657,8 @@ export default function ProCreneauxPage() {
               </div>
             )}
 
-            {(catPro === 'education' || catPro === 'sante') && addMode === 'disponible' && (() => {
-              const accent = catPro === 'sante' ? '#0C5C6C' : '#7B5EA7';
+            {(catPro === 'education' || catPro === 'sante' || catPro === 'toilettage') && addMode === 'disponible' && (() => {
+              const accent = catPro === 'education' ? '#7B5EA7' : '#0C5C6C';
               return (
                 <div className="rounded-xl p-3 flex items-center justify-between gap-4"
                   style={{ background: `${accent}0F`, border: `1.5px solid ${accent}59` }}>
