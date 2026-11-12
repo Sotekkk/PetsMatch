@@ -1,5 +1,8 @@
 'use client';
 
+import { useSoinDepuisTache } from '@/components/animaux/SoinDepuisTache';
+import { ACTES_CARNET, validerTachesProtocole } from '@/lib/carnet-depuis-tache';
+import { moiIntervenant } from '@/lib/registre-source';
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -30,6 +33,10 @@ interface Tache {
   animal_nom?: string;
   animal_portee?: string;
   source: 'manuel' | 'protocole';
+  uid_eleveur: string;
+  eleveur_profile_id: string | null;
+  /** Tâche de protocole : de quoi l'inscrire au carnet et au registre. */
+  type_acte?: string | null; etape_id?: string | null; jour_traitement?: number | null; total_jours?: number | null;
 }
 
 interface InventaireItem {
@@ -199,7 +206,8 @@ function TacheDetailModal({ tache, uid, activeProfileId, onClose }: {
 }
 
 export default function MesEmployeursPage() {
-  const { user, loading: authLoading, activeProfileId } = useAuth();
+  const { user, userData, loading: authLoading, activeProfileId } = useAuth();
+  const soinTache = useSoinDepuisTache();
   const router = useRouter();
   const [employers, setEmployers] = useState<Employer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -277,7 +285,8 @@ export default function MesEmployeursPage() {
     type UserRow = { uid: string; firstname: string | null; lastname: string | null; name_elevage: string | null; is_elevage: boolean; cat_pro: string | null; profile_picture_url: string | null; profile_picture_url_elevage: string | null };
     type AnimalRow = { id: string; nom: string | null; espece: string | null; race: string | null; sexe: string | null; photo_url: string | null; uid_eleveur: string; portee_id: string | null; nom_mere: string | null; date_naissance: string | null; reproducteur: boolean | null; identification: string | null };
     type TacheRow = { id: string; titre: string; date: string; statut: string; animal_id: string | null; uid_eleveur: string; eleveur_profile_id: string | null };
-    type PlanRow  = { id: string; label: string | null; date_prevue: string; statut: string; animal_id: string | null; uid_eleveur: string; eleveur_profile_id: string | null };
+    type PlanRow  = { id: string; label: string | null; date_prevue: string; statut: string; animal_id: string | null; uid_eleveur: string; eleveur_profile_id: string | null;
+      type_acte?: string | null; etape_id?: string | null; jour_traitement?: number | null; total_jours?: number | null };
     type InvRow   = InventaireItem & { eleveur_profile_id: string };
 
     const [
@@ -295,7 +304,7 @@ export default function MesEmployeursPage() {
           profile_picture_url_elevage: p.profile_picture_url_pro,
         })) as UserRow[] })),
       supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur, eleveur_profile_id').in('uid_eleveur', uids).eq('assigne_profile_id', profileId).neq('statut', 'fait').order('date') as unknown as Promise<{ data: TacheRow[] | null }>,
-      supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur, eleveur_profile_id').in('uid_eleveur', uids).eq('assigned_profile_id', profileId).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue') as unknown as Promise<{ data: PlanRow[] | null }>,
+      supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur, eleveur_profile_id, type_acte, etape_id, jour_traitement, total_jours').in('uid_eleveur', uids).eq('assigned_profile_id', profileId).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue') as unknown as Promise<{ data: PlanRow[] | null }>,
     ]);
 
     // Profils user_profiles précis utilisés à l'invitation (peut différer du
@@ -383,7 +392,7 @@ export default function MesEmployeursPage() {
           id: t.id, titre: t.titre, date: t.date, statut: t.statut,
           animal_id: t.animal_id, animal_nom: t.animal_id ? animalNames[t.animal_id] : undefined,
           animal_portee: t.animal_id ? animalPortees[t.animal_id] : undefined,
-          source: 'manuel' as const,
+          source: 'manuel' as const, uid_eleveur: t.uid_eleveur, eleveur_profile_id: t.eleveur_profile_id,
         }));
 
       const protocoles: Tache[] = (planTachesRaw ?? [])
@@ -392,7 +401,8 @@ export default function MesEmployeursPage() {
           id: t.id, titre: t.label ?? 'Tâche protocole', date: t.date_prevue, statut: t.statut,
           animal_id: t.animal_id, animal_nom: t.animal_id ? animalNames[t.animal_id] : undefined,
           animal_portee: t.animal_id ? animalPortees[t.animal_id] : undefined,
-          source: 'protocole' as const,
+          source: 'protocole' as const, uid_eleveur: t.uid_eleveur, eleveur_profile_id: t.eleveur_profile_id,
+          type_acte: t.type_acte, etape_id: t.etape_id, jour_traitement: t.jour_traitement, total_jours: t.total_jours,
         }));
 
       const taches = [...manuel, ...protocoles].sort(
@@ -432,6 +442,16 @@ export default function MesEmployeursPage() {
   useEffect(() => { load(); }, [load]);
 
   async function marquerFait(tache: Tache, employerUid: string) {
+    // Rappel du carnet (Antiparasitaire — 5 animaux…) : carnet vérifié, puis
+    // formulaire de soin (registre de l'employeur) ou simple coche.
+    if (tache.source === 'manuel' && await soinTache.traiter(tache, load)) return;
+    // Soin d'un protocole : carnet + registre de l'employeur, comme chez l'éleveur.
+    if (tache.source === 'protocole' && ACTES_CARNET.includes(tache.type_acte ?? '')) {
+      await validerTachesProtocole([{ ...tache, label: tache.titre, date_prevue: tache.date }],
+        { uid: user!.uid, profileId: activeProfileId || null, inscrire: true, intervenant: moiIntervenant(userData) });
+      load();
+      return;
+    }
     if (tache.source === 'manuel') {
       await supabase.from('taches_elevage').update({
         statut: 'fait', fait_par: user!.uid, fait_par_profile_id: activeProfileId, fait_a: new Date().toISOString(),
@@ -702,6 +722,7 @@ export default function MesEmployeursPage() {
           onClose={() => setCongeFor(null)}
         />
       )}
+      {soinTache.modal}
     </div>
   );
 }

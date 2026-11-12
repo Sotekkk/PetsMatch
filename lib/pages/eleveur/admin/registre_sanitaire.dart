@@ -72,12 +72,33 @@ class RegistreHelper {
     try {
       final supa = Supabase.instance.client;
       final rows = await supa.from('animaux')
-          .select('nom, espece, date_naissance, identification, sexe')
+          .select('nom, espece, date_naissance, identification, sexe, uid_eleveur, profile_id')
           .eq('id', animalId);
       final d = (rows as List).isNotEmpty ? (rows.first as Map<String, dynamic>) : <String, dynamic>{};
+      // Animal d'un employeur (employé / cogérant) : son registre à lui, sur le
+      // profil de l'élevage où l'on travaille — jamais le profil de l'employé
+      // (RLS can_access_registre_sanitaire). Miroir site : cibleRegistre.
+      final proprio = (d['uid_eleveur']?.toString() ?? '').isNotEmpty && d['uid_eleveur'] != uid ? d['uid_eleveur'].toString() : uid;
+      String? profilCible = User_Info.activeProfileId;
+      String? typeCible;
+      if (proprio != uid) {
+        final e = await supa.from('employes').select('eleveur_profile_id')
+            .eq('uid_eleveur', proprio).eq('uid_employe', uid).eq('actif', true).limit(1).maybeSingle();
+        profilCible = e?['eleveur_profile_id']?.toString();
+        if (profilCible == null) {
+          final c = await supa.from('elevage_cogerants').select('elevage_profile_id')
+              .eq('uid_gerant', proprio).eq('uid_cogerant', uid).eq('statut', 'actif').isFilter('date_fin', null).limit(1).maybeSingle();
+          profilCible = c?['elevage_profile_id']?.toString();
+        }
+        profilCible ??= d['profile_id']?.toString();
+        if (profilCible != null) {
+          final p = await supa.from('user_profiles').select('profile_type').eq('id', profilCible).maybeSingle();
+          typeCible = p?['profile_type']?.toString();
+        }
+      }
       final payload = {
-        'uid_eleveur':    uid,
-        if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
+        'uid_eleveur':    proprio,
+        if (profilCible != null && profilCible.isNotEmpty) 'eleveur_profile_id': profilCible,
         'animal_id':      animalId,
         'animal_nom':     (d['nom'] ?? '') as String,
         'espece':         (d['espece'] ?? '') as String,
@@ -90,7 +111,9 @@ class RegistreHelper {
         'intervenant':    intervenant.trim().isNotEmpty ? intervenant : moiIntervenant(),
         'description':    description,
         'ordonnance_num': ordonnanceNum,
-        'profil_source':  User_Info.activeType == 'pension' ? 'pension'
+        'profil_source':  proprio != uid
+            ? (typeCible == 'association' || typeCible == 'pension' ? typeCible : 'eleveur')
+            : User_Info.activeType == 'pension' ? 'pension'
             : (User_Info.activeType == 'association' || User_Info.isAssociation) ? 'association' : 'eleveur',
       };
       if (sourceTable != null && sourceId != null) {

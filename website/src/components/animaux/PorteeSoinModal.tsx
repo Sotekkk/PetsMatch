@@ -6,7 +6,7 @@ import { erreursDatesSante } from '@/lib/controle-dates';
 import { useAuth } from '@/lib/auth-context';
 import { aujourdhuiLocal, creerRdvVeto } from '@/lib/rdv-veto';
 import { poserRappelAgenda } from '@/lib/rappel-agenda';
-import { moiIntervenant, sourceRegistre } from '@/lib/registre-source';
+import { cibleRegistre, moiIntervenant } from '@/lib/registre-source';
 
 // Fréquence du soin → prochain rappel (date du soin + fréquence, modifiable).
 type Unite = 'jours' | 'semaines' | 'mois';
@@ -67,7 +67,7 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
   info?: string;
   initial?: { typeActe?: string; description?: string; dateRappel?: string; selection?: string[] };
 }) {
-  const { user, userData, availableProfiles } = useAuth();
+  const { user, userData } = useAuth();
   const [typeActe, setTypeActe]       = useState(initial?.typeActe ?? 'vermifuge');
   const [dateRappel, setDateRappel]   = useState(initial?.dateRappel ?? '');
   const [heure, setHeure]             = useState('');
@@ -117,7 +117,8 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
     const desc    = description.trim();
     // « Administré par » vide : la personne connectée.
     const interv  = intervenant.trim() || moiIntervenant(userData);
-    const source  = sourceRegistre(availableProfiles, activeProfileId, userData);
+    // Registre de l'élevage propriétaire (employé : celui de son employeur).
+    const cible   = await cibleRegistre(uid, user?.uid ?? uid, activeProfileId);
     const nFreq   = Number(freqN);
     const frequence = nFreq > 0 ? libelleFrequence(nFreq, freqU) : '';
     let success = 0;
@@ -168,7 +169,7 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
         if (typeActe !== 'visite' && typeActe !== 'osteopathie') await supabase.from('registre_sanitaire').insert({
           id:          `rs_${entryId}`,
           uid_eleveur: uid,
-          ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
+          ...(cible.profileId ? { eleveur_profile_id: cible.profileId } : {}),
           animal_id:   animal.id,
           animal_nom:  animal.nom ?? '',
           espece:      animal.espece ?? '',
@@ -180,7 +181,7 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
           intervenant:    interv,
           description:    desc,
           ordonnance_num: ordonnance.trim(),
-          profil_source:  source,
+          profil_source:  cible.source,
         });
         success++;
       } catch { /* continue */ }
@@ -194,7 +195,7 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
     setSaving(false);
     if (success > 0) { onSaved?.(traites); setSaved(true); setTimeout(onClose, 1200); }
     else setError('Erreur lors de l\'enregistrement. Vérifiez votre connexion.');
-  }, [animals, uid, user?.uid, activeProfileId, typeActe, date, heure, description, dosage, lot, notes, intervenant, ordonnance, onClose, onSaved, selectedIds, dateRappel, userData, availableProfiles, freqN, freqU]);
+  }, [animals, uid, user?.uid, activeProfileId, typeActe, date, heure, description, dosage, lot, notes, intervenant, ordonnance, onClose, onSaved, selectedIds, dateRappel, userData, freqN, freqU]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">

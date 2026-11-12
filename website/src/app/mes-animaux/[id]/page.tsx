@@ -54,7 +54,7 @@ import { chargerReproducteurs, chargerReproducteursExterieurs, raisonNonEligible
 import ImagePrivee, { VideoPrivee } from '@/components/ImagePrivee';
 import { COLS_FORFAIT_SOUSCRIT, libelleCompteurs } from '@/lib/forfait-education';
 import { cocherTacheExercice } from '@/lib/exercice-tache';
-import { moiIntervenant, sourceRegistre } from '@/lib/registre-source';
+import { cibleRegistre, moiIntervenant } from '@/lib/registre-source';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -3740,9 +3740,12 @@ function AnimalFichePageInner() {
     const dateActe = String(data.date ?? '');
     if (!dateActe) return;
     try {
+      // Registre de l'élevage propriétaire (employé / cogérant : celui de l'employeur).
+      const proprio = animal.uid_eleveur ?? ownerUid ?? user.uid;
+      const reg = await cibleRegistre(proprio, user.uid, activeProfileId ?? null, (animal as { profile_id?: string | null }).profile_id ?? null);
       await supabase.from('registre_sanitaire').upsert({
-        uid_eleveur: animal.uid_eleveur ?? ownerUid ?? user.uid,
-        ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
+        uid_eleveur: proprio,
+        ...(reg.profileId ? { eleveur_profile_id: reg.profileId } : {}),
         animal_id: cible.id,
         animal_nom: cible.nom ?? '',
         espece: cible.espece ?? '',
@@ -3754,7 +3757,7 @@ function AnimalFichePageInner() {
         intervenant: String(data.veterinaire ?? '').trim() || moiIntervenant(userData),
         description: registreDescription(table, data),
         ordonnance_num: '',
-        profil_source: sourceRegistre(availableProfiles, activeProfileId, userData),
+        profil_source: reg.source,
         source_table: table,
         source_id: recordId,
       }, { onConflict: 'source_table,source_id' });

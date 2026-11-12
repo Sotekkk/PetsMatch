@@ -34,6 +34,7 @@
 //   ALTER TABLE employes ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}';
 
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/soin_depuis_tache.dart';
 import 'package:PetsMatch/widgets/rattachement_picker.dart' show chargerAnimauxRattachement;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -4946,7 +4947,8 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
         validateurUid: _uid,
         validateurProfileId: profileId,
         tacheData: t,
-        insertRegistre: false,
+        // Soin sanitaire : carnet + registre de l'employeur (RegistreHelper).
+        insertRegistre: true,
       );
       _loadPlanTaches();
       final moi = profileId != null
@@ -5002,6 +5004,9 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
   }
 
   Future<void> _marquerFait(Map<String, dynamic> t) async {
+    // Rappel du carnet (Antiparasitaire — 5 animaux…) : carnet vérifié, puis
+    // formulaire de soin (registre de l'employeur) ou simple coche.
+    if (await traiterTacheSoin(context, t, apres: () { if (mounted) _loadTaches(); })) return;
     final profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
     await _supa.from('taches_elevage').update({
       'statut': 'fait', 'fait_par': _uid, 'fait_par_profile_id': profileId,
