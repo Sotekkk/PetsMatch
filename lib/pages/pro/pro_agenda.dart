@@ -12,6 +12,7 @@ import 'package:PetsMatch/pages/pro/photographe_dossier_seance.dart' show showDo
 import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show showDossierToilettage, genererContratToilettage, facturerToilettage;
 import 'package:PetsMatch/pages/pro/garde_fiche_animal_page.dart';
 import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
+import 'package:PetsMatch/pages/pro/garde_dossier.dart' show showDossierGarde;
 import 'package:PetsMatch/pages/pro/garde_acceptation.dart' show apresAcceptationGarde;
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -6018,7 +6019,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                             rdvId: rdv['id']?.toString(), dossier: true)));
                           _loadRdvs();
                         }
-                      : null,
+                      // Pet-sitter : dossier de la garde (contrat, devis, acompte, clés, compte rendu, facture).
+                      : AgendaContexte.catPro == 'garde' && showProTools && const {'confirme', 'termine'}.contains(rdv['statut'])
+                          ? () => showDossierGarde(context, rdv, onChanged: _loadRdvs)
+                          : null,
           onFiche: (showProTools && AgendaContexte.catPro == 'toilettage' && hasAnimal)
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => ToilettageFicheClientPage(
@@ -6888,10 +6892,10 @@ class _RdvCard extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(color: const Color(0xFF0C5C6C), borderRadius: BorderRadius.circular(10)),
-                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.folder_open_outlined, size: 15, color: Colors.white),
-                      SizedBox(width: 4),
-                      Text('Dossier de la séance', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.folder_open_outlined, size: 15, color: Colors.white),
+                      const SizedBox(width: 4),
+                      Text(AgendaContexte.catPro == 'garde' ? 'Dossier de la garde' : 'Dossier de la séance', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
                     ]),
                   ),
                 ),

@@ -12,6 +12,8 @@ import { supabase } from '@/lib/supabase';
 import { usePlanGarde } from '@/lib/use-plan';
 import { gardeTarif } from '@/lib/garde-facturation';
 import { accesLogementLabel } from '@/lib/garde-labels';
+import CompteRenduExpressModal from '@/components/garde/CompteRenduExpressModal';
+import { useAuth } from '@/lib/auth-context';
 
 const TEAL = '#0C5C6C';
 
@@ -32,9 +34,21 @@ function periode(rdvs: RdvAccepte[]) {
   return d.length === 1 ? `le ${f(d[0])}` : `du ${f(d[0])} au ${f(d[d.length - 1])}`;
 }
 
-export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose }: {
+interface EtatDoc { texte: string; couleur: string }
+const GRIS = '#6B7280', VERT = '#5B8648', ORANGE = '#C0661B';
+
+/** dossier : « Dossier de la garde » depuis le RDV (état de chaque document,
+ *  compte rendu de visite, facture) — miroir appli garde_dossier.dart. */
+export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose, dossier = false, onChanged }: {
   rdvs: RdvAccepte[]; proProfileId: string | null; onClose: () => void;
+  dossier?: boolean; onChanged?: () => void;
 }) {
+  const { user, userData } = useAuth();
+  const [etats, setEtats] = useState<{
+    contrat?: EtatDoc; devis?: EtatDoc; devisId?: string; acompte?: EtatDoc; acompteFait?: boolean;
+    facture?: EtatDoc; factureFaite?: boolean; rapports?: EtatDoc; cles?: EtatDoc; nbCles?: number;
+  }>({});
+  const [compteRendu, setCompteRendu] = useState(false);
   const router = useRouter();
   const { plan } = usePlanGarde();
   const premium = plan === 'premium';
@@ -80,6 +94,68 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Dossier : où en est chaque document de la garde.
+  const idsCle = rdvs.map(r => r.id).join(',');
+  useEffect(() => {
+    if (!dossier) return;
+    let alive = true;
+    (async () => {
+      const ids = rdvs.map(r => r.id);
+      const [ct, dv, fa, ac, pu, cl] = await Promise.all([
+        supabase.from('documents_animaux').select('statut, metadata').eq('uid_eleveur', first.pro_uid).eq('type', 'contrat_garde')
+          .eq('metadata->>client_uid', first.client_uid)
+          .or(proProfileId ? `pro_profile_id.eq.${proProfileId},pro_profile_id.is.null` : 'pro_profile_id.is.null')
+          .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('devis').select('id, statut').in('rdv_id', ids).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('factures').select('statut, type_facture, numero_affichage, total_ttc').in('source_rdv_id', ids).neq('statut', 'annulee')
+          .order('created_at', { ascending: false }),
+        proProfileId && first.client_profile_id
+          ? supabase.from('factures').select('statut, numero_affichage, total_ttc').eq('profile_id', proProfileId)
+            .eq('client_profile_id', first.client_profile_id).eq('type_facture', 'acompte').neq('statut', 'annulee')
+            .order('created_at', { ascending: false }).limit(1).maybeSingle()
+          : Promise.resolve({ data: null }),
+        supabase.from('pension_updates').select('id').in('rdv_id', ids),
+        supabase.from('cles_clients').select('id, date_restitution').eq('pro_uid', first.pro_uid).eq('owner_uid', first.client_uid),
+      ]);
+      if (!alive) return;
+      const c = ct.data as { statut?: string; metadata?: Record<string, unknown> } | null;
+      const contratE: EtatDoc = c?.statut === 'signe' ? { texte: 'Signé par les deux parties', couleur: VERT }
+        : c?.statut === 'partiellement_signe' ? (c.metadata?.signature_eleveur
+          ? { texte: 'Signé par vous — en attente du client', couleur: ORANGE }
+          : { texte: 'Signé par le client — à signer par vous', couleur: ORANGE })
+        : c ? { texte: 'Préparé — à signer et envoyer', couleur: ORANGE } : { texte: 'À envoyer', couleur: GRIS };
+      const d = dv.data as { id: string; statut?: string } | null;
+      const devisE: EtatDoc = d?.statut === 'accepte' ? { texte: 'Accepté par le client', couleur: VERT }
+        : d?.statut === 'envoye' ? { texte: 'Envoyé — en attente de réponse', couleur: ORANGE }
+        : d?.statut === 'refuse' ? { texte: 'Refusé par le client', couleur: '#DC2626' }
+        : d ? { texte: 'Brouillon — à envoyer', couleur: ORANGE } : { texte: 'Facultatif — aucun devis', couleur: GRIS };
+      type F = { statut?: string; type_facture?: string | null; numero_affichage?: string | null; total_ttc?: number | null };
+      const liste = (fa.data ?? []) as F[];
+      const fac = liste.find(f => f.type_facture !== 'acompte' && f.type_facture !== 'avoir') ?? null;
+      const acp = (ac.data as F | null) ?? liste.find(f => f.type_facture === 'acompte') ?? null;
+      const etatF = (f: F | null, vide: string): EtatDoc => !f ? { texte: vide, couleur: GRIS }
+        : f.statut === 'payee' ? { texte: `${f.numero_affichage ?? 'Facture'} — payée`, couleur: VERT }
+        : { texte: `${f.numero_affichage ?? 'Facture'} — ${eur(Number(f.total_ttc) || 0)}, en attente de paiement`, couleur: ORANGE };
+      const nbR = (pu.data ?? []).length;
+      const cles = (cl.data ?? []) as { date_restitution?: string | null }[];
+      const enCours = cles.filter(k => !k.date_restitution).length;
+      const termine = rdvs.every(r => (r as RdvAccepte & { statut?: string }).statut === 'termine');
+      setEtats({
+        contrat: contratE, devis: devisE, devisId: d?.id,
+        acompte: etatF(acp, 'Facultatif — aucun acompte'), acompteFait: !!acp,
+        facture: etatF(fac, termine ? 'À faire' : 'Après la prestation, ou d\u2019avance'), factureFaite: !!fac,
+        rapports: nbR > 0 ? { texte: `${nbR} message${nbR > 1 ? 's' : ''} envoyé${nbR > 1 ? 's' : ''} au client`, couleur: VERT }
+          : { texte: 'Nouvelles et photos au client — aucun envoi', couleur: GRIS },
+        cles: cles.length === 0 ? { texte: 'Remise des clés prévue — à enregistrer', couleur: ORANGE }
+          : enCours > 0 ? { texte: `${enCours} clé${enCours > 1 ? 's' : ''} en votre possession`, couleur: VERT }
+          : { texte: 'Clés rendues', couleur: VERT },
+        nbCles: cles.length,
+      });
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dossier, idsCle]);
 
   async function contrat() {
     if (!proProfileId) return;
@@ -177,14 +253,16 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
     setMsg(error ? `Clé : ${error.message}` : 'Clé enregistrée dans « Gestion des clés ».');
   }
 
-  const tuile = (icone: string, titre: string, sous: string, onClick: () => void, cle?: string) => (
+  const tuile = (icone: string, titre: string, sous: string, onClick: () => void, cle?: string, etat?: EtatDoc, action?: string) => (
     <button type="button" onClick={onClick} disabled={!!busy}
       className="w-full flex items-center gap-3 text-left py-2.5 px-1 rounded-xl hover:bg-gray-50 disabled:opacity-50">
       <span className="w-9 h-9 rounded-full flex items-center justify-center text-base flex-shrink-0" style={{ background: `${TEAL}18` }}>{icone}</span>
       <span className="flex-1 min-w-0">
         <span className="block text-sm font-bold text-[#1E2025]">{busy === cle && cle ? '…' : titre}</span>
-        <span className="block text-xs text-gray-500">{sous}</span>
+        {etat ? <span className="block text-xs font-semibold" style={{ color: etat.couleur }}>{etat.texte}</span>
+          : <span className="block text-xs text-gray-500">{sous}</span>}
       </span>
+      {action && <span className="text-xs font-bold" style={{ color: TEAL }}>{action}</span>}
       <span className="text-gray-400">›</span>
     </button>
   );
@@ -193,6 +271,45 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
       Contrat et facturation inclus dans la formule Premium. <Link href="/garde/abonnement" className="underline font-semibold">Voir les plans</Link>
     </p>
   );
+
+  if (dossier) {
+    const nomPro = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre pet-sitter';
+    const aller = (href: string) => { onClose(); router.push(href); };
+    const nbCles = etats.nbCles ?? 0;
+    return (
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4" onClick={onClose}>
+        <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-1 max-h-[90vh] overflow-y-auto"
+          onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
+          <h2 className="font-extrabold text-lg" style={{ color: TEAL }}>Dossier de la garde</h2>
+          <p className="text-xs text-gray-600">
+            {[first.animalNom, first.clientName, rdvs.length > 1 ? `${rdvs.length} passages` : '', total > 0 ? eur(total) : ''].filter(Boolean).join(' · ')}
+          </p>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide pt-2">Avant la garde</p>
+          {premium ? (
+            <>
+              {tuile('✍️', 'Contrat de garde', '', contrat, 'contrat', etats.contrat, etats.contrat?.texte === 'À envoyer' ? 'Envoyer' : 'Ouvrir')}
+              {tuile('📝', 'Devis', '', () => (etats.devisId ? aller('/garde/devis') : devis()), undefined, etats.devis, etats.devisId ? 'Voir' : 'Créer')}
+              {tuile('💶', 'Acompte', '', () => (etats.acompteFait ? aller('/elevage/facturation') : facturer(true)), undefined, etats.acompte, etats.acompteFait ? 'Voir' : 'Demander')}
+            </>
+          ) : verrou}
+          {(first.acces_logement === 'remise_cles' || nbCles > 0) &&
+            tuile('🔑', 'Clés du logement', '', () => (nbCles > 0 ? aller('/garde/cles') : cle()), 'cle', etats.cles, nbCles > 0 ? 'Voir' : 'Enregistrer')}
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide pt-2">Pendant et après la garde</p>
+          {first.animal_id && tuile('📷', 'Compte rendu de visite', '', () => setCompteRendu(true), undefined, etats.rapports, 'Envoyer')}
+          {premium && tuile('🧾', 'Facture', '', () => (etats.factureFaite ? aller('/elevage/facturation') : facturer(false)), undefined, etats.facture, etats.factureFaite ? 'Voir' : 'Facturer')}
+          {msg && <p className="text-xs text-gray-600 pt-1">{msg}</p>}
+          <button type="button" onClick={onClose} className="w-full mt-2 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
+        </div>
+        {compteRendu && user && first.animal_id && (
+          <CompteRenduExpressModal
+            rdv={{ id: first.id, animal_id: first.animal_id, client_uid: first.client_uid, client_profile_id: first.client_profile_id, motif: first.motif }}
+            animalNom={first.animalNom ?? ''} proUid={user.uid} proNom={nomPro}
+            onClose={() => setCompteRendu(false)}
+            onEnvoye={() => { setCompteRendu(false); onChanged?.(); onClose(); }} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4" onClick={onClose}>

@@ -1593,7 +1593,7 @@ function RefuserModal({ rdv, label, type, onClose, onDone }: {
 
 // ── Carte RDV ──────────────────────────────────────────────────────────────────
 
-function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onRouvrir, onDelete, onOpenAnimal, onModifier, onHistorique, onDossier, crParAnimal, onFinConsultation, onFacturer, onDocumentPro }: {
+function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onRouvrir, onDelete, onOpenAnimal, onModifier, onHistorique, onDossier, libelleDossier, crParAnimal, onFinConsultation, onFacturer, onDocumentPro }: {
   rdv: Rdv;
   /** Tous les pros : charger mon propre compte rendu ou mon contrat (PDF / photo). */
   onDocumentPro?: (mode: 'compte_rendu' | 'contrat') => void;
@@ -1619,6 +1619,7 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
   onModifier?: () => void;
   /** Photographe : dossier de la séance (le client est le propriétaire, pas de fiche santé). */
   onDossier?: () => void;
+  libelleDossier?: string;
 }) {
   const [confirmDel, setConfirmDel] = useState(false);
   // Plusieurs animaux : choix de la fiche à ouvrir.
@@ -1727,7 +1728,7 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
             <button onClick={onDossier}
               className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
               style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
-              Dossier de la séance
+              {libelleDossier ?? 'Dossier de la séance'}
             </button>
           )}
           {rdv.animal_id && !onDossier && (
@@ -2252,6 +2253,7 @@ export default function MesRdvPage() {
   const [modalSerie, setModalSerie]       = useState<{ serie: Rdv[]; mode: 'accepter' | 'refuser' } | null>(null);
   // Pet-sitter : contrat, facture, clés après acceptation (ApresAcceptationGardeModal).
   const [apresAcceptation, setApresAcceptation] = useState<Rdv[] | null>(null);
+  const [dossierGarde, setDossierGarde] = useState<Rdv[] | null>(null);
   const [modalModifier, setModalModifier] = useState<Rdv | null>(null);
   const [modalAnnuler, setModalAnnuler]   = useState<Rdv | null>(null);
   const [historiqueRdv, setHistoriqueRdv] = useState<Rdv | null>(null);
@@ -2839,7 +2841,12 @@ export default function MesRdvPage() {
                     : (catPro === 'veterinaire' || catPro === 'sante') && rdv.statut !== 'annule' && rdv.statut !== 'refuse' ? () => setDossierSoins(rdv)
                     : catPro === 'photographe' ? () => setDossierRdv(rdv)
                     : catPro === 'toilettage' ? () => setDossierToilettage(rdv)
-                    : catPro === 'education' ? () => setDossierEducation({ id: rdv.id, nomClient: rdv.clientName ?? rdv.client_nom_manuel ?? 'Client' }) : undefined}
+                    : catPro === 'education' ? () => setDossierEducation({ id: rdv.id, nomClient: rdv.clientName ?? rdv.client_nom_manuel ?? 'Client' })
+                    // Pet-sitter : dossier de la garde (série = une seule garde).
+                    : catPro === 'garde' && (rdv.statut === 'confirme' || rdv.statut === 'termine') && rdv.client_uid
+                      ? () => setDossierGarde(rdv.serie_id ? rdvs.filter(x => x.serie_id === rdv.serie_id && x.statut !== 'annule' && x.statut !== 'refuse') : [rdv])
+                    : undefined}
+                  libelleDossier={catPro === 'garde' ? 'Dossier de la garde' : undefined}
                   // Éducateur : compte rendu / contrat dans le dossier de la séance.
                   onDocumentPro={!['education', 'veterinaire', 'sante'].includes(catPro) && activeTab !== 'demandes' && rdv.statut !== 'annule' && rdv.statut !== 'refuse'
                     ? mode => setDocPro({ rdv, mode }) : undefined}
@@ -2944,6 +2951,10 @@ export default function MesRdvPage() {
       {apresAcceptation && (
         <ApresAcceptationGardeModal rdvs={apresAcceptation} proProfileId={activeProfileId || null}
           onClose={() => setApresAcceptation(null)} />
+      )}
+      {dossierGarde && dossierGarde.length > 0 && (
+        <ApresAcceptationGardeModal dossier rdvs={dossierGarde} proProfileId={activeProfileId || null}
+          onClose={() => setDossierGarde(null)} onChanged={() => fetchRdvs(true)} />
       )}
       {modalSerie && (
         <SerieModal serie={modalSerie.serie} mode={modalSerie.mode} proName={proName}

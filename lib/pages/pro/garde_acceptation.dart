@@ -234,7 +234,7 @@ Future<void> facturerGardeAcceptee(BuildContext context, List<Map<String, dynami
   ));
 }
 
-Future<void> _enregistrerCle(BuildContext context, Map<String, dynamic> rdv) async {
+Future<void> enregistrerCleGarde(BuildContext context, Map<String, dynamic> rdv) async {
   final ctrl = TextEditingController(text: 'Clé du logement');
   final ok = await showDialog<bool>(
     context: context,
@@ -348,7 +348,7 @@ Future<void> apresAcceptationGarde(BuildContext context, List<Map<String, dynami
             const Text('Clés', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: Colors.grey)),
             tuile(Icons.vpn_key_outlined, 'Enregistrer la clé du client', 'Le client vous remet ses clés', () {
               Navigator.pop(ctx);
-              _enregistrerCle(context, first);
+              enregistrerCleGarde(context, first);
             }),
           ],
         ]),
