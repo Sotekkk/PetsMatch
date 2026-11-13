@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { coordonneesClientRdv, prefillClient } from '@/lib/coordonnees-client-rdv';
 import { gardeJoursAFacturer, gardeTarif, gardePeriodeLabel, type GardeRdvFacture } from '@/lib/garde-facturation';
 
 const TEAL = '#0C5C6C';
@@ -51,13 +52,16 @@ export function GardeFacturationModal({ rdv, proUid, proProfileId, animalNom, cl
   const totalTTC = totalHT + totalTVA;
   const periode = gardePeriodeLabel(jours);
 
-  function continuer() {
+  async function continuer() {
     if (tarifNum <= 0) { setError('Renseignez un tarif par jour.'); return; }
     const designation = n > 1 ? `Garde à domicile — ${n} jours (${periode})` : `Garde journée — ${animalNom}`;
+    // Coordonnées complètes du client ; celles passées par l'appelant en secours.
+    const coord = await coordonneesClientRdv(rdv.id, rdv.client_profile_id).catch(() => null);
+    const pc = coord ? prefillClient(coord, clientNom) : { nomClient: clientNom };
     const prefill = {
-      nomClient: clientNom,
-      emailClient: clientEmail ?? '',
-      telClient: clientTel ?? '',
+      ...pc,
+      emailClient: ('emailClient' in pc && pc.emailClient) || clientEmail || '',
+      telClient: ('telClient' in pc && pc.telClient) || clientTel || '',
       lignes: [{ description: designation, quantite: n, prixUnitaire: tarifNum, tva: 20 }],
       sourceRdvId: rdv.id,
       sourceRdvIds: jours.map(j => j.id),

@@ -6,6 +6,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show coordonneesClientRdv;
 
 /// Helpers partagés pour facturer une prestation de garde depuis un `rdv`
 /// (registre des visites ET agenda pro). La facture elle-même passe par le
@@ -256,12 +257,20 @@ Future<void> facturerGardeDepuisRdv(BuildContext context, Map<String, dynamic> r
   final designation = n > 1
       ? 'Garde à domicile — $n jours (${gardePeriodeLabel(rdvsAFacturer)})'
       : gardeDesignation(rdv);
+  final coord = await coordonneesClientRdv(rdv);
+  String? v(String k) => (coord[k] ?? '').trim().isEmpty ? null : coord[k]!.trim();
+  if (!context.mounted) return;
 
   await Navigator.push(context, MaterialPageRoute(
     builder: (_) => CreerFacturePage(
-      clientNom: gardeClientNom(rdv),
-      clientEmail: (rdv['_client_email'] ?? rdv['client_email_manuel'])?.toString(),
-      clientTel: (rdv['_client_tel'] ?? rdv['client_tel_manuel'])?.toString(),
+      // Coordonnées du client (profil, compte, saisie manuelle) — miroir toiletteur.
+      clientNom: v('nom') ?? gardeClientNom(rdv),
+      clientPrenom: v('nom') != null ? v('prenom') : null,
+      clientEmail: v('email'),
+      clientTel: v('tel'),
+      clientRue: v('rue'),
+      clientCp: v('cp'),
+      clientVille: v('ville'),
       lignesPrefill: [
         FacturePrefillLigne(designation: designation, prixHT: prixJour, quantite: n.toDouble(), tauxTVA: 20),
       ],

@@ -4,6 +4,7 @@
 // acompte / après la prestation), enregistrement de la clé si le client la
 // remet. Miroir appli : lib/pages/pro/garde_acceptation.dart.
 // Scopé au profil pet-sitter actif (pro_profile_id) — jamais l'uid seul.
+import { coordonneesClientRdv, prefillClient } from '@/lib/coordonnees-client-rdv';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -128,12 +129,14 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
     } finally { setBusy(''); }
   }
 
-  function facturer(acompte: boolean) {
+  async function facturer(acompte: boolean) {
     const l: Ligne[] = acompte
       ? [{ description: `Acompte — ${first.motif ?? 'Prestation'} (${periode(rdvs)})`, quantite: 1, prixUnitaire: Math.round(total * 30) / 100, tva: 20 }]
       : lignes;
+    // Nom, prénom, e-mail, téléphone, adresse du client (profil, compte, saisie manuelle).
+    const coord = await coordonneesClientRdv(first.id, first.client_profile_id).catch(() => null);
     const prefill = {
-      nomClient: first.clientName ?? '',
+      ...(coord ? prefillClient(coord, first.clientName ?? '') : { nomClient: first.clientName ?? '' }),
       lignes: l,
       ...(acompte ? { typeFacture: 'acompte' } : { sourceRdvId: first.id, sourceRdvIds: rdvs.map(r => r.id) }),
       sourceAnimalId: first.animal_id ?? undefined,

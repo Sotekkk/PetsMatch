@@ -14,6 +14,7 @@ import 'package:PetsMatch/pages/pro/garde_facture_helper.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill;
+import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show coordonneesClientRdv;
 
 const _teal = Color(0xFF0C5C6C);
 
@@ -208,11 +209,19 @@ Future<void> facturerGardeAcceptee(BuildContext context, List<Map<String, dynami
           designation: 'Acompte — ${(first['motif'] ?? 'Prestation').toString()}',
           description: _periode(rdvs), prixHT: double.parse((c.totalHT * 0.3).toStringAsFixed(2)), tauxTVA: 20)]
       : c.lignes;
+  final coord = await coordonneesClientRdv(first);
+  String? v(String k) => (coord[k] ?? '').trim().isEmpty ? null : coord[k]!.trim();
+  if (!context.mounted) return;
   await Navigator.push(context, MaterialPageRoute(
     builder: (_) => CreerFacturePage(
-      clientNom: gardeClientNom(first),
-      clientEmail: (first['_client_email'] ?? first['client_email_manuel'])?.toString(),
-      clientTel: (first['_client_tel'] ?? first['client_tel_manuel'])?.toString(),
+      // Coordonnées du client (profil, compte, saisie manuelle) — miroir toiletteur.
+      clientNom: v('nom') ?? gardeClientNom(first),
+      clientPrenom: v('nom') != null ? v('prenom') : null,
+      clientEmail: v('email'),
+      clientTel: v('tel'),
+      clientRue: v('rue'),
+      clientCp: v('cp'),
+      clientVille: v('ville'),
       lignesPrefill: lignes,
       typeFacture: acompte ? 'acompte' : null,
       // Acompte : les passages restent « à facturer » (solde ensuite).

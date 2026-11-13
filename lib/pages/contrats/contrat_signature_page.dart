@@ -25,6 +25,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/contrats/contrat_finalize.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 import 'package:PetsMatch/widgets/signature_pad.dart';
+import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro, signerEtEnregistrer;
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
 
@@ -1469,6 +1470,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
                 canSign: !isFinal && _isEleveur && sigElv == null,
                 signedAt: meta['signe_eleveur_le'] as String?,
                 onSign: (d) => _signerDocument('eleveur', d),
+                signaturePro: _signatureProAuto,
                 signataireNom: (meta['signataire_eleveur_uid'] != null &&
                         meta['signataire_eleveur_uid'] != _doc?['uid_eleveur'])
                     ? meta['signataire_eleveur_nom'] as String?
@@ -1686,6 +1688,29 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     );
   }
 
+  /// Pet-sitter : contrat de garde signé avec sa signature enregistrée
+  /// (signatures_pro, comme les comptes rendus du vétérinaire) ; la première
+  /// fois, il la dessine et elle est gardée pour les suivants.
+  bool get _signatureProAuto =>
+      _doc?['type'] == 'contrat_garde' && _myUid.isNotEmpty && _myUid == _doc?['uid_eleveur'];
+  String? _maSignature;
+  bool _maSignatureLue = false;
+
+  Future<void> _lireMaSignature() async {
+    if (_maSignatureLue || !_signatureProAuto) return;
+    _maSignatureLue = true;
+    final s = await maSignaturePro();
+    if (mounted && s != null) setState(() => _maSignature = s);
+  }
+
+  Future<void> _signerAvecSignaturePro(Future<void> Function(String) onSign) async {
+    var sig = _maSignature ?? await maSignaturePro();
+    if (sig == null && mounted) sig = await signerEtEnregistrer(context);
+    if (sig == null) return;
+    _maSignature = sig;
+    await onSign(sig);
+  }
+
   Future<void> _ouvrirSignatureFullScreen(String label, Future<void> Function(String) onSign) async {
     final dataUrl = await Navigator.push<String?>(context, MaterialPageRoute(
       builder: (_) => SignatureFullScreen(titre: label),
@@ -1700,8 +1725,10 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     required String? signedAt,
     required Future<void> Function(String) onSign,
     String? signataireNom,
+    bool signaturePro = false,
   }) {
     final signed = existing != null;
+    if (signaturePro && canSign && !signed) _lireMaSignature();
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1731,11 +1758,14 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _saving ? null : () => _ouvrirSignatureFullScreen(label, onSign),
+              onPressed: _saving ? null : () => signaturePro
+                  ? _signerAvecSignaturePro(onSign)
+                  : _ouvrirSignatureFullScreen(label, onSign),
               icon: _saving
                   ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                   : const Icon(Icons.draw_outlined, size: 18),
-              label: const Text('Signer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+              label: Text(signaturePro && _maSignature != null ? 'Signer avec ma signature enregistrée' : 'Signer',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: _green, foregroundColor: Colors.white, elevation: 0,
                 minimumSize: const Size(0, 46),

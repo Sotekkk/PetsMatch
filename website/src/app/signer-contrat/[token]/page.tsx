@@ -16,6 +16,7 @@ import { generateContratPrestationMarechalHTML } from '@/lib/contrat-marechal';
 import { generateContratEducationHTML, type LigneEducation } from '@/lib/contrat-education';
 import { generateContratSanteHTML, type LigneSante } from '@/lib/contrat-sante';
 import { useAuth } from '@/lib/auth-context';
+import { maSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
 import { apiFetch } from '@/lib/api-fetch';
 
 import LienDocument from '@/components/LienDocument';
@@ -67,6 +68,13 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   const [html, setHtml]     = useState('');
   const [status, setStatus] = useState<'loading' | 'ready' | 'not_found'>('loading');
   const [saving, setSaving]       = useState<'eleveur' | 'acquereur' | null>(null);
+  // Pet-sitter : signature enregistrée (signatures_pro), comme le vétérinaire.
+  const [maSig, setMaSig] = useState<string | null>(null);
+  const signatureProAuto = !!user && !!doc && doc.type === 'contrat_garde' && user.uid === doc.uid_eleveur;
+  useEffect(() => {
+    if (!signatureProAuto || !user) return;
+    maSignaturePro(user.uid).then(setMaSig).catch(() => {});
+  }, [signatureProAuto, user]);
   const [saved, setSaved]         = useState<{ eleveur?: boolean; acquereur?: boolean }>({});
   const [refuseModal, setRefuseModal] = useState(false);
   const [refuseReason, setRefuseReason] = useState('');
@@ -671,17 +679,20 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     };
   }
 
-  async function signer(role: 'eleveur' | 'acquereur') {
+  async function signer(role: 'eleveur' | 'acquereur', signatureEnregistree?: string) {
     const canvas = role === 'eleveur' ? canvasElvRef.current : canvasAcqRef.current;
-    if (!canvas || !doc) return;
-    const dataUrl = canvas.toDataURL('image/png');
-    // Vérifier qu'il y a bien une signature (non-blanc)
-    const ctx = canvas.getContext('2d');
-    const imgData = ctx?.getImageData(0, 0, canvas.width, canvas.height);
-    // Parcours direct des pixels (Array.from copiait des millions de valeurs : lent sur mobile).
-    let hasInk = false;
-    if (imgData) for (let i = 3; i < imgData.data.length; i += 4) { if (imgData.data[i] > 0) { hasInk = true; break; } }
-    if (!hasInk) { alert('Veuillez dessiner votre signature avant de valider.'); return; }
+    if (!doc || (!canvas && !signatureEnregistree)) return;
+    let dataUrl = signatureEnregistree ?? '';
+    if (!signatureEnregistree && canvas) {
+      dataUrl = canvas.toDataURL('image/png');
+      // Vérifier qu'il y a bien une signature (non-blanc)
+      const ctx = canvas.getContext('2d');
+      const imgData = ctx?.getImageData(0, 0, canvas.width, canvas.height);
+      // Parcours direct des pixels (Array.from copiait des millions de valeurs : lent sur mobile).
+      let hasInk = false;
+      if (imgData) for (let i = 3; i < imgData.data.length; i += 4) { if (imgData.data[i] > 0) { hasInk = true; break; } }
+      if (!hasInk) { alert('Veuillez dessiner votre signature avant de valider.'); return; }
+    }
 
     setSaving(role);
     try {
@@ -696,6 +707,10 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       });
       const json = await res.json();
       if (!res.ok) { alert(json.error ?? 'Erreur lors de la signature'); setSaving(null); return; }
+      // Première signature du pet-sitter : gardée pour ses prochains contrats.
+      if (role === 'eleveur' && signatureProAuto && !maSig && user) {
+        if (await enregistrerSignaturePro(user.uid, dataUrl).catch(() => false)) setMaSig(dataUrl);
+      }
 
       const mergedMeta = json.metadata as Record<string, unknown>;
       const notBlank = (v: unknown) => v != null && String(v).trim() !== '';
@@ -1065,6 +1080,14 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
 
           {/* Signature vendeur / association */}
+          <div>
+          {signatureProAuto && maSig && !saved.eleveur && !isFinal && (
+            <button onClick={() => signer('eleveur', maSig)} disabled={saving === 'eleveur'}
+              className="w-full mb-2 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+              style={{ backgroundColor: '#6E9E57' }}>
+              {saving === 'eleveur' ? 'Signature…' : 'Signer avec ma signature enregistrée'}
+            </button>
+          )}
           <SignatureZone
             label={signerLabels.vendeur}
             sublabel={saved.eleveur && doc?.metadata?.signataire_eleveur_uid && doc.metadata.signataire_eleveur_uid !== doc?.uid_eleveur
@@ -1080,6 +1103,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             disabled={!isOwner}
             reservedFor={signerLabels.vendeurA}
           />
+          </div>
 
           {/* Signature acquéreur / adoptant — grisée pour l'autre partie */}
           <SignatureZone
