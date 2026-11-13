@@ -56,6 +56,12 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
   const [forfait, setForfait] = useState<ForfaitGardeClient | null>(null);
   const [aFacturer, setAFacturer] = useState<string[]>(rdvs.map(r => r.id));
   const router = useRouter();
+  // Depuis « Mes RDV » : facture, devis, contrat s'ouvrent dans le panneau de
+  // la page (on reste sur le RDV, comme le vétérinaire) ; sinon navigation.
+  const ouvrirPage = (url: string, titre: string) => {
+    onClose();
+    if (onOuvrirPage) onOuvrirPage(url, titre); else router.push(url);
+  };
   const { plan } = usePlanGarde();
   const premium = plan === 'premium';
   const first = rdvs[0];
@@ -262,8 +268,7 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
       clientProfileId: first.client_profile_id ?? undefined,
     };
     try { sessionStorage.setItem('pm_facture_prefill', JSON.stringify(prefill)); } catch { /* ignore */ }
-    onClose();
-    router.push('/elevage/facturation');
+    ouvrirPage('/elevage/facturation', 'Facture');
   }
 
   async function facturerForfait() {
@@ -279,8 +284,7 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
       clientProfileId: first.client_profile_id ?? undefined,
     };
     try { sessionStorage.setItem('pm_facture_prefill', JSON.stringify(prefill)); } catch { /* ignore */ }
-    onClose();
-    router.push('/elevage/facturation');
+    ouvrirPage('/elevage/facturation', 'Facture');
   }
 
   // Devis avant la garde (le client l'accepte ; acompte possible ensuite).
@@ -292,8 +296,7 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
       nom: first.clientName ?? '',
       lignes: JSON.stringify(lignes.map(x => ({ d: x.description, q: x.quantite, p: x.prixUnitaire }))),
     });
-    onClose();
-    router.push(`/garde/devis?${qs.toString()}`);
+    ouvrirPage(`/garde/devis?${qs.toString()}`, 'Devis');
   }
 
   async function cle() {
@@ -333,7 +336,7 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
 
   if (dossier) {
     const nomPro = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre pet-sitter';
-    const aller = (href: string) => { onClose(); router.push(href); };
+    const aller = (href: string) => ouvrirPage(href, 'Dossier de la garde');
     const nbCles = etats.nbCles ?? 0;
     return (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4" onClick={onClose}>
