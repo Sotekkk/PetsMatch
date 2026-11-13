@@ -96,9 +96,11 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
         // (email/uid de test) l'a fait remonter dans la requête ci-dessus —
         // il doit rester dans la vue pro qui l'a créé (devis, registre…), pas
         // apparaître comme un contrat que je reçois.
-        if (uid != null && uid.isNotEmpty && d['uid_eleveur'] == uid) return false;
         final meta = (d['metadata'] as Map?) ?? {};
         final target = (meta['client_profile_id'] ?? meta['acquereur_profile_id']) as String?;
+        // Même compte, autre profil (pet-sitter → mon profil particulier) : reçu.
+        final autreProfil = (target ?? '').isNotEmpty && target != d['pro_profile_id']?.toString();
+        if (uid != null && uid.isNotEmpty && d['uid_eleveur'] == uid && !autreProfil) return false;
         if (target == null || target.isEmpty || activePid == null || activePid.isEmpty) return true;
         return target == activePid;
       }).toList()

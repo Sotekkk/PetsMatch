@@ -423,6 +423,17 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
                 .eq('id', cpid).maybeSingle() ?? {});
           } catch (_) {}
         }
+        // Compte du client : RPC réservée au pro du RDV, ou mon propre compte.
+        if (m('client_email').isEmpty || m('client_tel').isEmpty) {
+          if (m('rdv_id').isNotEmpty) {
+            try {
+              final cc = await _supa.rpc('pm_contact_client_rdv', params: {'p_rdv_id': m('rdv_id')}) as Map?;
+              if ((cp['email_contact'] ?? '').toString().isEmpty && cc?['email'] != null) cp['email_contact'] = cc!['email'];
+              if ((cp['phone_number'] ?? '').toString().isEmpty && cc?['telephone'] != null) cp['phone_number'] = cc!['telephone'];
+            } catch (_) {}
+          }
+          if ((cp['email_contact'] ?? '').toString().isEmpty && m('client_uid') == _myUid) cp['email_contact'] = _myEmail ?? '';
+        }
         String p(String k) => (cp[k] ?? '').toString().trim();
         final adresseProfil = [p('rue'), [p('code_postal'), p('ville')].where((x) => x.isNotEmpty).join(' ')]
             .where((x) => x.isNotEmpty).join(', ');
@@ -644,6 +655,13 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     // Contrat de garde / prestation : le client est identifié par client_uid /
     // client_email dans les métadonnées (pas d'acquéreur au sens cession).
     final clientUid = meta['client_uid'] as String?;
+    // Même compte que le pro (profils différents) : client seulement depuis
+    // le profil client, jamais depuis le profil qui a émis le contrat.
+    final clientPid = meta['client_profile_id']?.toString() ?? '';
+    final actif = User_Info.activeProfileId;
+    if (clientUid == _myUid && _myUid == _doc!['uid_eleveur']) {
+      return clientPid.isNotEmpty && actif.isNotEmpty && actif == clientPid;
+    }
     if (clientUid != null && clientUid.isNotEmpty && clientUid == _myUid) return true;
     final clientEmail = (meta['client_email'] as String?)?.toLowerCase();
     if (clientEmail != null && clientEmail.isNotEmpty && clientEmail == _myEmail) return true;

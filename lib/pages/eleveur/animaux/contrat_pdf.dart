@@ -195,6 +195,8 @@ _Parties _parties(Map<String, dynamic> eleveur) {
   final siret = (eleveur['siret'] as String?) ?? '';
   var tel = '${eleveur['code_iso_elevage'] ?? '+33'} ${eleveur['numero_elevage'] ?? ''}'.trim();
   tel = tel.replaceAll(RegExp(r'^\+33\s*$'), '');
+  // Pros sans numéro d'élevage (pet-sitter…) : téléphone du profil.
+  if (tel.isEmpty) tel = (eleveur['phone_number'] ?? eleveur['phone'] ?? '').toString().trim();
   final email = (eleveur['email'] as String?) ?? (eleveur['email_contact'] as String?) ?? '';
   return _Parties(nom, adresse, siret, tel, email);
 }

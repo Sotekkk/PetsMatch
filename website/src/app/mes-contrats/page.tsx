@@ -80,7 +80,10 @@ export default function MesContratsPage() {
           // Un document que J'AI ÉMIS en tant que pro (uid_eleveur = moi)
           // n'est jamais « reçu » par moi-même — il reste dans la vue pro qui
           // l'a créé, jamais dans mes contrats reçus.
-          if (user?.uid && d.uid_eleveur === user.uid) return false;
+          // Même compte, autre profil (pet-sitter → mon profil particulier) : reçu.
+          const cible = (d.metadata?.client_profile_id ?? d.metadata?.acquereur_profile_id) as string | null | undefined;
+          const autreProfil = !!cible && cible !== (d as { pro_profile_id?: string | null }).pro_profile_id;
+          if (user?.uid && d.uid_eleveur === user.uid && !autreProfil) return false;
           // Multi-profil : si le document porte un profil destinataire
           // (client_profile_id / acquereur_profile_id) et qu'il diffère du
           // profil actif, il appartient à un autre profil du compte — à ne

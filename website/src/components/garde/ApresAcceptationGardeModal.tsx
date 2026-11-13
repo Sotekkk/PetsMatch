@@ -193,6 +193,7 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
       const nomComplet = [co?.prenom, co?.nom].filter(Boolean).join(' ');
       const adresseClient = [co?.rue, [co?.cp, co?.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ');
       const details: Record<string, unknown> = {
+        rdv_id: first.id,
         ...(nomComplet ? { client_nom: nomComplet } : {}),
         ...(co?.email ? { client_email: co.email } : {}),
         ...(co?.tel ? { client_tel: co.tel } : {}),

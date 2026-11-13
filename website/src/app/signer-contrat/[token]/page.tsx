@@ -16,6 +16,7 @@ import { generateContratPrestationMarechalHTML } from '@/lib/contrat-marechal';
 import { generateContratEducationHTML, type LigneEducation } from '@/lib/contrat-education';
 import { generateContratSanteHTML, type LigneSante } from '@/lib/contrat-sante';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { maSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
 import { apiFetch } from '@/lib/api-fetch';
 
@@ -64,6 +65,7 @@ interface DocRow {
 export default function SignerContratPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
   const { user }  = useAuth();
+  const activePidSigne = useActiveProfile();
   const [doc, setDoc]       = useState<DocRow | null>(null);
   const [html, setHtml]     = useState('');
   const [status, setStatus] = useState<'loading' | 'ready' | 'not_found'>('loading');
@@ -154,7 +156,10 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
 
       const meta = (data.metadata ?? {}) as Record<string, string>;
       const elvNom  = profil?.name_elevage || `${profil?.firstname ?? ''} ${profil?.lastname ?? ''}`.trim() || 'Éleveur';
-      const elvTel  = profil ? `${profil.code_iso_elevage ?? '+33'} ${profil.numero_elevage ?? ''}`.trim() : '';
+      // Numéro d'élevage, sinon téléphone du profil (pet-sitter…) ; jamais « +33 » seul.
+      const elvTel  = profil?.numero_elevage?.trim()
+        ? `${profil.code_iso_elevage ?? '+33'} ${profil.numero_elevage.trim()}`
+        : String(profil?.phone_number ?? '').trim();
       const villeElevage = profil?.ville_elevage ?? profil?.ville ?? '';
 
       const eleveur: EleveurContrat = {
@@ -288,6 +293,14 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             adresse: [cp2.rue, [cp2.code_postal, cp2.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '),
           };
         }
+        // E-mail / téléphone du compte du client : RPC réservée au pro du RDV,
+        // ou mon propre compte (même compte, profil client).
+        if ((!clientInfo.contact || !clientInfo.tel) && meta.rdv_id) {
+          const { data: cc } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: meta.rdv_id });
+          const c = cc as { email?: string; telephone?: string } | null;
+          clientInfo = { ...clientInfo, contact: clientInfo.contact || c?.email || '', tel: clientInfo.tel || c?.telephone || '' };
+        }
+        if (!clientInfo.contact && clientUid && user && user.uid === clientUid && user.email) clientInfo = { ...clientInfo, contact: user.email };
         if (!clientInfo.nom && clientUid) {
           const { data: cp2 } = await supabase.from('user_profiles_complet')
             .select('firstname, lastname, nom, email_contact').eq('uid', clientUid).eq('is_main', true).maybeSingle();
@@ -889,7 +902,12 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   const isExpired   = doc?.statut === 'expire';
   const isFinal     = isSigned || isRefused || isCancelled || isExpired;
   // Éleveur/propriétaire = peut modifier les champs du contrat. Acquéreur = lecture seule sur les champs vendeur.
-  const isOwner = !!user && !!doc && (user.uid === doc.uid_eleveur || isCogerantActif);
+  // Même compte que le pro (profils différents) : depuis le profil client, je
+  // suis le client — pas le pro qui a émis le contrat.
+  const clientPidDoc = (doc?.metadata as Record<string, unknown> | undefined)?.client_profile_id as string | undefined;
+  const commeClient = !!user && !!doc && user.uid === doc.uid_eleveur && !!clientPidDoc && !!activePidSigne
+    && activePidSigne === clientPidDoc && activePidSigne !== (doc as { pro_profile_id?: string | null }).pro_profile_id;
+  const isOwner = !!user && !!doc && !commeClient && (user.uid === doc.uid_eleveur || isCogerantActif);
   // Non modifiable une fois transmis au client / signé par l'acquéreur.
   const acqHasSigned = !!doc?.metadata?.signature_acquereur;
   const ownerCanEdit = isOwner && !isFinal && !isEnAttente && !acqHasSigned;

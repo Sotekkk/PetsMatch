@@ -204,6 +204,7 @@ Future<void> ouvrirContratGardeDepuisRdv(BuildContext context, List<Map<String, 
   final adresseClient = [co('rue'), [co('cp'), co('ville')].where((x) => x.isNotEmpty).join(' ')]
       .where((x) => x.isNotEmpty).join(', ');
   final details = <String, dynamic>{
+    'rdv_id': first['id']?.toString(),
     if (nomComplet.isNotEmpty) 'client_nom': nomComplet,
     if (co('email').isNotEmpty) 'client_email': co('email'),
     if (co('tel').isNotEmpty) 'client_tel': co('tel'),
