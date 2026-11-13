@@ -20,6 +20,9 @@ class PensionJournalPage extends StatefulWidget {
   final String journalKind; // 'pension' (défaut) | 'garde'
   final String? clientUid;        // garde : propriétaire (rdv.client_uid)
   final String? clientProfileId;  // garde : profil du propriétaire (rdv.client_profile_id)
+  /// Garde de plusieurs animaux : les autres animaux gardés reçoivent la même
+  /// nouvelle (compte rendu commun, onglet « Pension & Garde » de chaque fiche).
+  final List<String> autresAnimauxIds;
 
   const PensionJournalPage({
     super.key,
@@ -30,6 +33,7 @@ class PensionJournalPage extends StatefulWidget {
     this.journalKind = 'pension',
     this.clientUid,
     this.clientProfileId,
+    this.autresAnimauxIds = const [],
   });
 
   bool get isGarde => journalKind == 'garde';
@@ -118,14 +122,17 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
         final path = 'pension_updates/${uid}_${DateTime.now().millisecondsSinceEpoch}.$ext';
         videoUrl = await storage.uploadDocument(_videoFile!, path);
       }
-      await _supa.from('pension_updates').insert({
+      final ligne = {
         'pension_entree_id': widget.pensionEntreeId,
-        'animal_id':         widget.animalId,
         'pro_uid':            uid,
         'photo_url':          photoUrl,
         'video_url':          videoUrl,
         'note':               _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
-      });
+      };
+      await _supa.from('pension_updates').insert([
+        {...ligne, 'animal_id': widget.animalId},
+        for (final a in widget.autresAnimauxIds) if (a != widget.animalId) {...ligne, 'animal_id': a},
+      ]);
       unawaited(_notifyOwner(hasMedia: photoUrl != null || videoUrl != null));
       _photoFile = null;
       _videoFile = null;

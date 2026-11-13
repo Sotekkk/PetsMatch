@@ -13,6 +13,16 @@ List<Map<String, dynamic>> animauxDetailRdv(Map<String, dynamic> rdv) {
   return [for (final x in d) if (x is Map) Map<String, dynamic>.from(x)];
 }
 
+/// Tous les animaux du RDV (garde de plusieurs animaux : rdv.animaux_ids),
+/// sinon l'animal du RDV.
+List<String> idsAnimauxRdv(Map<String, dynamic> rdv) {
+  final l = rdv['animaux_ids'];
+  final ids = l is List ? [for (final x in l) if ((x?.toString() ?? '').isNotEmpty) x.toString()] : <String>[];
+  if (ids.isNotEmpty) return ids;
+  final a = rdv['animal_id']?.toString() ?? '';
+  return a.isEmpty ? const [] : [a];
+}
+
 String dureeRdvLabel(int minutes) {
   if (minutes < 60) return '$minutes min';
   final h = minutes ~/ 60, m = minutes % 60;

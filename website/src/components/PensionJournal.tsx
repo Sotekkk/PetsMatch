@@ -17,7 +17,9 @@ interface Update {
   created_at: string;
 }
 
-export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, readOnly = false, onClose }: {
+export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, readOnly = false, onClose, autresAnimauxIds = [] }: {
+  /** Garde de plusieurs animaux : la même nouvelle sur chaque fiche (compte rendu commun). */
+  autresAnimauxIds?: string[];
   animalId?: string | null;
   pensionEntreeId?: string | null;
   animalNom: string;
@@ -80,14 +82,17 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
           setError(`Échec de l'envoi de la vidéo : ${upErr.message}`);
         }
       }
-      await supabase.from('pension_updates').insert({
+      const ligne = {
         pension_entree_id: pensionEntreeId ?? null,
-        animal_id: animalId ?? null,
         pro_uid: proUid,
         photo_url: photoUrl,
         video_url: videoUrl,
         note: note.trim() || null,
-      });
+      };
+      await supabase.from('pension_updates').insert([
+        { ...ligne, animal_id: animalId ?? null },
+        ...autresAnimauxIds.filter(a => a && a !== animalId).map(a => ({ ...ligne, animal_id: a })),
+      ]);
       notifyOwner(!!photoUrl || !!videoUrl);
       setNote('');
       setPhotoFile(null);

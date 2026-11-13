@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/rdv_animaux.dart' show idsAnimauxRdv;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -29,6 +30,7 @@ Future<void> sendGardeNews(BuildContext context, Map<String, dynamic> rdv) async
         journalKind: 'garde',
         clientUid: rdv['client_uid']?.toString(),
         clientProfileId: rdv['client_profile_id']?.toString(),
+        autresAnimauxIds: idsAnimauxRdv(rdv),
       ),
     ));
     return;
@@ -146,16 +148,20 @@ Future<bool> showVisiteRapportSheet(BuildContext context, Map<String, dynamic> r
         for (final u in urls.skip(1)) {'note': null, 'photo_url': u},
       ];
       for (final (i, l) in lignes.indexed) {
-        final base = <String, dynamic>{'animal_id': rdv['animal_id'], 'pro_uid': uid, ...l};
-        try {
-          await supa.from('pension_updates').insert({
-            ...base,
-            if (rdv['id'] != null) 'rdv_id': rdv['id'],
-            if (i == 0) 'incident': incident,
-          });
-        } on PostgrestException {
-          // Migration migration_garde_compte_rendu_express.sql pas encore passée.
-          await supa.from('pension_updates').insert(base);
+        // Garde de plusieurs animaux : compte rendu commun, posté sur chaque fiche.
+        final animaux = idsAnimauxRdv(rdv);
+        for (final aid in animaux.isEmpty ? <String?>[rdv['animal_id']?.toString()] : animaux) {
+          final base = <String, dynamic>{'animal_id': aid, 'pro_uid': uid, ...l};
+          try {
+            await supa.from('pension_updates').insert({
+              ...base,
+              if (rdv['id'] != null) 'rdv_id': rdv['id'],
+              if (i == 0) 'incident': incident,
+            });
+          } on PostgrestException {
+            // Migration migration_garde_compte_rendu_express.sql pas encore passée.
+            await supa.from('pension_updates').insert(base);
+          }
         }
       }
       final ownerUid = rdv['client_uid']?.toString();

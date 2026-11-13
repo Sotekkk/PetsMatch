@@ -370,7 +370,7 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
         </div>
         {compteRendu && user && first.animal_id && (
           <CompteRenduExpressModal
-            rdv={{ id: first.id, animal_id: first.animal_id, client_uid: first.client_uid, client_profile_id: first.client_profile_id, motif: first.motif }}
+            rdv={{ id: first.id, animal_id: first.animal_id ?? null, client_uid: first.client_uid, client_profile_id: first.client_profile_id, motif: first.motif, animaux_ids: first.animaux_ids }}
             animalNom={first.animalNom ?? ''} proUid={user.uid} proNom={nomPro}
             onClose={() => setCompteRendu(false)}
             onEnvoye={() => { setCompteRendu(false); onChanged?.(); onClose(); }} />

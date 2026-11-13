@@ -67,7 +67,7 @@ export default function RegistreVisitesPage() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const cols = 'id, animal_id, client_uid, client_profile_id, client_nom_manuel, client_telephone_manuel, client_email_manuel, animal_nom_manuel, date_heure, motif, statut, arrivee_validee_le, depart_valide_le, facture_id';
+    const cols = 'id, animal_id, client_uid, client_profile_id, client_nom_manuel, client_telephone_manuel, client_email_manuel, animal_nom_manuel, date_heure, motif, statut, arrivee_validee_le, depart_valide_le, facture_id, animaux_ids';
     const lire = (c: string) => {
       let q = supabase.from('rdv').select(c).eq('pro_uid', user.uid);
       if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId) as typeof q;
@@ -333,6 +333,7 @@ export default function RegistreVisitesPage() {
       {journalFor && (
         <PensionJournal
           animalId={journalFor.animal_id}
+          autresAnimauxIds={(((journalFor as { animaux_ids?: unknown[] | null }).animaux_ids) ?? []).map(x => String(x ?? '')).filter(Boolean)}
           animalNom={journalFor._animal_nom || 'Animal'}
           proUid={user?.uid}
           onClose={() => setJournalFor(null)}

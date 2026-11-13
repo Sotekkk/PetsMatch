@@ -78,6 +78,8 @@ async function uploadPhotoPrive(file: File, path: string): Promise<string> {
 
 export interface RdvCompteRendu {
   id: string; animal_id: string | null; client_uid: string | null; client_profile_id?: string | null; motif?: string | null;
+  /** Garde de plusieurs animaux : compte rendu commun posté sur chaque fiche. */
+  animaux_ids?: unknown[] | null;
 }
 
 /** Enregistre et envoie le compte rendu (après validation du pet-sitter). */
@@ -92,13 +94,22 @@ export async function envoyerCompteRendu(o: {
     { note: o.message, photo_url: urls[0] ?? null },
     ...urls.slice(1).map(u => ({ note: null, photo_url: u })),
   ];
+  // Tous les animaux gardés (rdv.animaux_ids), sinon l'animal du RDV.
+  let ids = (o.rdv.animaux_ids ?? []).map(x => String(x ?? '')).filter(Boolean);
+  if (!ids.length) {
+    const { data: r } = await supabase.from('rdv').select('animaux_ids').eq('id', o.rdv.id).maybeSingle();
+    ids = (((r as { animaux_ids?: unknown[] | null } | null)?.animaux_ids) ?? []).map(x => String(x ?? '')).filter(Boolean);
+  }
+  if (!ids.length && o.rdv.animal_id) ids = [o.rdv.animal_id];
   for (let i = 0; i < lignes.length; i++) {
-    const base = { animal_id: o.rdv.animal_id, pro_uid: o.proUid, ...lignes[i] };
-    const { error } = await supabase.from('pension_updates').insert({ ...base, rdv_id: o.rdv.id, ...(i === 0 ? { incident: o.incident } : {}) });
-    // Migration pas encore passée (colonnes rdv_id / incident absentes) → insertion simple.
-    if (error) {
-      const { error: e2 } = await supabase.from('pension_updates').insert(base);
-      if (e2) throw e2;
+    for (const aid of ids.length ? ids : [o.rdv.animal_id]) {
+      const base = { animal_id: aid, pro_uid: o.proUid, ...lignes[i] };
+      const { error } = await supabase.from('pension_updates').insert({ ...base, rdv_id: o.rdv.id, ...(i === 0 ? { incident: o.incident } : {}) });
+      // Migration pas encore passée (colonnes rdv_id / incident absentes) → insertion simple.
+      if (error) {
+        const { error: e2 } = await supabase.from('pension_updates').insert(base);
+        if (e2) throw e2;
+      }
     }
   }
   const owner = o.rdv.client_uid;
