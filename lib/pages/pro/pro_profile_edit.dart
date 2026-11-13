@@ -5,6 +5,7 @@ import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart' show AgendaContexte;
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/tarifs_clients_page.dart' show TarifsClientsPage;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
@@ -130,23 +131,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     ('prise_en_charge', 'Prise en charge'), ('prix_km', 'Prix au km'), ('minimum', 'Minimum de course'),
   ];
 
-  // Garde (petsitter/promeneur) : tarifs par type de prestation (€)
-  Map<String, int> _tarifsGarde = {};
-  static const _prestationsGarde = [
-    ('promenade_30min', 'Promenade (30 min)'),
-    ('promenade_1h',    'Promenade (1h)'),
-    ('promenade_2h',    'Promenade (2h)'),
-    ('visite',          'Visite à domicile'),
-    ('garde_journee',   'Garde à domicile (journée)'),
-    ('animal_supplementaire', 'Animal supplémentaire (par passage)'),
-    ('autre',           'Autre prestation'),
-  ];
-
-  // Garde : forfaits (packs de visites / promenades). Éducateur : tarifs,
-  // bilan et forfaits dans EducationPrestationsPage.
-  List<Map<String, dynamic>> _forfaits = [];
-  bool _loadingForfaits = false;
-
   // Santé (ostéo/kiné) : tarifs par type de prestation (€)
   Map<String, int> _tarifsSante = {};
   static const _prestationsSante = [
@@ -178,9 +162,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     'toilettage', 'photographe', 'marechal_ferrant', 'taxi_animalier',
   };
   bool get _isBookingPro => _catProAvecRdv.contains(_catPro);
-
-  // Prestations libres nommées par le pet-sitter / promeneur : [{label, prix, description}]
-  List<Map<String, dynamic>> _tarifsGardeExtra = [];
 
   // Éducateur : trajet à domicile — origine par défaut (cabinet ou "autre
   // domicile") utilisée pour calculer le temps de trajet des créneaux à
@@ -411,11 +392,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             (row['tarifs_logements'] as Map).map((k, v) =>
                 MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
         }
-        if (row['tarifs_garde'] is Map) {
-          _tarifsGarde = Map<String, int>.from(
-            (row['tarifs_garde'] as Map).map((k, v) =>
-                MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
-        }
         if (row['tarifs_sante'] is Map) {
           _tarifsSante = Map<String, int>.from(
             (row['tarifs_sante'] as Map).map((k, v) =>
@@ -435,17 +411,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         _autreDomicileLng = (row['autre_domicile_lng'] as num?)?.toDouble();
         _tarifsSanteVisibles = row['tarifs_sante_visibles'] as bool? ?? false;
         _tarifsToilettageVisibles = row['tarifs_toilettage_visibles'] as bool? ?? true;
-        if (row['tarifs_garde_extra'] is List) {
-          _tarifsGardeExtra = [
-            for (final e in (row['tarifs_garde_extra'] as List))
-              if (e is Map)
-                {
-                  'label': e['label']?.toString() ?? '',
-                  'prix': (e['prix'] as num?)?.toInt() ?? 0,
-                  'description': e['description']?.toString() ?? '',
-                },
-          ];
-        }
         if (row['tarifs_sante_extra'] is List) {
           _tarifsSanteExtra = [
             for (final e in (row['tarifs_sante_extra'] as List))
@@ -504,106 +469,12 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         if (c != null) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 400), alignment: 0.05);
       });
     }
-    if (_catPro == 'garde') await _loadForfaits();
   }
-
-  String get _forfaitsTable => _catPro == 'garde' ? 'forfaits_garde' : 'forfaits_education';
-  String get _forfaitsCountCol => _catPro == 'garde' ? 'nb_visites' : 'nb_seances';
 
   // Pros disposant d'une galerie publique éditée ici. Le photographe a sa
   // page « Mon portfolio » (catégories, couverture, masquage…) : jamais
   // réécrit depuis le profil.
   bool get _hasGalerie => _catPro == 'pension' || _catPro == 'education';
-
-  Future<void> _loadForfaits() async {
-    setState(() => _loadingForfaits = true);
-    try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;
-      final rows = await _supa.from(_forfaitsTable).select()
-          .eq('pro_uid', uid).eq('actif', true).order('created_at');
-      if (mounted) setState(() => _forfaits = List<Map<String, dynamic>>.from(rows as List));
-    } catch (_) {
-    } finally {
-      if (mounted) setState(() => _loadingForfaits = false);
-    }
-  }
-
-  Future<void> _ajouterForfait() async {
-    // Pet-sitter : pack de visites ou de promenades (forfaits_garde.type_prestation).
-    var typeGarde = 'visite';
-    String unite() => _catPro == 'garde' ? (typeGarde == 'promenade' ? 'promenades' : 'visites') : 'séances';
-    final nomCtrl = TextEditingController();
-    final seancesCtrl = TextEditingController(text: '5');
-    final prixCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    final result = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
-        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Nouveau forfait', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 16),
-          if (_catPro == 'garde') ...[
-            Wrap(spacing: 8, children: [
-              for (final t in const [('visite', 'Visites'), ('promenade', 'Promenades')])
-                ChoiceChip(
-                  label: Text(t.$2, style: TextStyle(fontFamily: 'Galey',
-                      color: typeGarde == t.$1 ? Colors.white : const Color(0xFF1F2A2E))),
-                  selected: typeGarde == t.$1, showCheckmark: false,
-                  selectedColor: const Color(0xFF0C5C6C),
-                  onSelected: (_) => setSheet(() => typeGarde = t.$1),
-                ),
-            ]),
-            const SizedBox(height: 12),
-          ],
-          TextField(controller: nomCtrl, decoration: InputDecoration(
-              labelText: 'Nom du forfait', hintText: 'Ex : Pack 5 ${unite()}', border: const OutlineInputBorder())),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: TextField(controller: seancesCtrl, keyboardType: TextInputType.number,
-                decoration: InputDecoration(labelText: 'Nb ${unite()}', border: const OutlineInputBorder()))),
-            const SizedBox(width: 8),
-            Expanded(child: TextField(controller: prixCtrl, keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Prix (€ TTC)', border: OutlineInputBorder()))),
-          ]),
-          const SizedBox(height: 12),
-          TextField(controller: descCtrl, maxLines: 2, decoration: const InputDecoration(
-              labelText: 'Description (optionnel)', border: OutlineInputBorder())),
-          const SizedBox(height: 20),
-          SizedBox(width: double.infinity, child: ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7B5EA7), padding: const EdgeInsets.symmetric(vertical: 14)),
-            child: const Text('Créer le forfait', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
-          )),
-        ]),
-      )),
-    );
-    if (result != true || nomCtrl.text.trim().isEmpty) return;
-    try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;
-      await _supa.from(_forfaitsTable).insert({
-        'pro_uid': uid,
-        if (widget.secondaryProfileId != null) 'pro_profile_id': widget.secondaryProfileId,
-        'nom': nomCtrl.text.trim(),
-        _forfaitsCountCol: int.tryParse(seancesCtrl.text.trim()) ?? 1,
-        'prix': double.tryParse(prixCtrl.text.trim()) ?? 0,
-        if (descCtrl.text.trim().isNotEmpty) 'description': descCtrl.text.trim(),
-        if (_catPro == 'garde') 'type_prestation': typeGarde,
-      });
-      await _loadForfaits();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
-      }
-    }
-  }
-
-  Future<void> _supprimerForfait(String id) async {
-    await _supa.from(_forfaitsTable).update({'actif': false}).eq('id', id);
-    await _loadForfaits();
-  }
 
   // Prestations libres : on ne garde que les lignes avec un libellé.
   List<Map<String, dynamic>> _cleanTarifsExtra(List<Map<String, dynamic>> src) => [
@@ -616,21 +487,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                 'description': e['description'].toString().trim(),
             },
       ];
-
-  // Éducateur : afficher ou non ce forfait sur la fiche publique.
-  Future<void> _toggleForfaitPublic(String id, bool value) async {
-    setState(() {
-      _forfaits = [
-        for (final f in _forfaits)
-          if (f['id'] == id) {...f, 'affiche_public': value} else f,
-      ];
-    });
-    try {
-      await _supa.from(_forfaitsTable).update({'affiche_public': value}).eq('id', id);
-    } catch (_) {
-      await _loadForfaits();
-    }
-  }
 
   // ── Geocoding ─────────────────────────────────────────────────────────────────
 
@@ -876,8 +732,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'durees_motifs':      _dureesMotifs,
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
-          if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
-          if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
           if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
           if (_catPro == 'sante') 'se_deplace': _seDeplace,
           if (_catPro == 'sante') 'tarifs_sante_visibles': _tarifsSanteVisibles,
@@ -936,8 +790,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'durees_motifs':        _dureesMotifs,
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
-          if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
-          if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
           if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
           if (_catPro == 'sante') 'se_deplace': _seDeplace,
           if (_catPro == 'sante') 'tarifs_sante_visibles': _tarifsSanteVisibles,
@@ -986,8 +838,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'durees_motifs':      _dureesMotifs,
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
-          if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
-          if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
           if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
           if (_catPro == 'sante') 'se_deplace': _seDeplace,
           if (_catPro == 'sante') 'tarifs_sante_visibles': _tarifsSanteVisibles,
@@ -1494,100 +1344,21 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     )),
                   ],
 
-                  // ── Tarifs garde (petsitter/promeneur) ─────────────────────
+                  // ── Pet-sitter : tarifs, essai et forfaits dans « Tarifs & forfaits »
+                  // (lib/pages/pro/tarifs_clients_page.dart), source unique des prix.
                   if (_catPro == 'garde') ...[
                     const SizedBox(height: 24),
-                    _sectionTitle('Tarifs par type de prestation (€ TTC)'),
+                    _sectionTitle('Tarifs, essai et forfaits'),
                     const SizedBox(height: 4),
-                    Text(
-                      'Laissez à 0 les prestations que vous ne proposez pas.',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
-                    ),
-                    const SizedBox(height: 12),
-                    ..._prestationsGarde.map((t) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(children: [
-                        Expanded(child: Text(t.$2,
-                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
-                                fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
-                        const SizedBox(width: 12),
-                        SizedBox(
-                          width: 90,
-                          child: TextFormField(
-                            initialValue: (_tarifsGarde[t.$1] ?? 0).toString(),
-                            keyboardType: TextInputType.number,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                            decoration: InputDecoration(
-                              suffixText: '€',
-                              suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
-                              filled: true, fillColor: Colors.white,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
-                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
-                            ),
-                            onChanged: (val) {
-                              final v = int.tryParse(val);
-                              if (v != null && v >= 0) {
-                                setState(() => _tarifsGarde = {..._tarifsGarde, t.$1: v});
-                              }
-                            },
-                          ),
-                        ),
-                      ]),
-                    )),
-                    // Visite d'essai d'un nouveau client (lib/utils/garde_essai.dart), comme la pension.
-                    const Divider(height: 20),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: _tarifsGarde['essai_actif'] == 1,
-                      activeThumbColor: const Color(0xFF6E9E57),
-                      onChanged: (v) => setState(() => _tarifsGarde = {..._tarifsGarde, 'essai_actif': v ? 1 : 0}),
-                      title: const Text("Proposer une visite d'essai aux nouveaux clients",
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
-                      subtitle: Text("Vous rencontrez l'animal avant la première garde, puis indiquez si l'essai est concluant.",
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
-                    ),
-                    if (_tarifsGarde['essai_actif'] == 1) ...[
-                      Row(children: [
-                        Expanded(child: TextFormField(
-                          initialValue: (_tarifsGarde['essai'] ?? 0).toString(),
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: "Prix de l'essai (€ TTC)", isDense: true),
-                          onChanged: (val) { final v = int.tryParse(val); if (v != null && v >= 0) setState(() => _tarifsGarde = {..._tarifsGarde, 'essai': v}); },
-                        )),
-                        const SizedBox(width: 12),
-                        Expanded(child: TextFormField(
-                          initialValue: (_tarifsGarde['essai_duree'] ?? 30).toString(),
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Durée (minutes)', isDense: true),
-                          onChanged: (val) { final v = int.tryParse(val); if (v != null && v > 0) setState(() => _tarifsGarde = {..._tarifsGarde, 'essai_duree': v}); },
-                        )),
-                      ]),
-                      CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        value: _tarifsGarde['essai_obligatoire'] == 1,
-                        onChanged: (v) => setState(() => _tarifsGarde = {..._tarifsGarde, 'essai_obligatoire': v == true ? 1 : 0}),
-                        title: const Text('Essai obligatoire avant une première garde',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
-                        subtitle: Text("Un nouveau client ne peut réserver que l'essai, puis ses gardes une fois l'essai concluant.",
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
-                      ),
-                    ],
-                    const SizedBox(height: 4),
-                    Text('Prestations sur mesure',
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                            fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
-                    const SizedBox(height: 6),
-                    _tarifsExtraEditor(
-                      _tarifsGardeExtra,
-                      (v) => setState(() => _tarifsGardeExtra = v),
-                      accent: const Color(0xFF0C5C6C),
+                    Text("Vos tarifs, la visite d'essai, vos forfaits et les prix par client se règlent dans « Tarifs & forfaits ». "
+                        'Vous y choisissez aussi de les afficher ou non sur votre fiche.',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TarifsClientsPage())),
+                      icon: const Icon(Icons.sell_outlined, size: 18),
+                      label: const Text('Ouvrir Tarifs & forfaits', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF0C5C6C)),
                     ),
                   ],
 
@@ -1833,61 +1604,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                             : (_) => setState(() => _trajetOrigineDefaut = 'autre_domicile'),
                       )),
                     ]),
-                  ],
-
-                  // ── Forfaits garde (éducateur : dans Prestations & tarifs) ─
-                  if (_catPro == 'garde') ...[
-                    const SizedBox(height: 24),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                      _sectionTitle(_catPro == 'garde' ? 'Forfaits (packs de visites ou de promenades)' : 'Forfaits (packs de séances)'),
-                      TextButton.icon(
-                        onPressed: _ajouterForfait,
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                        style: TextButton.styleFrom(foregroundColor: const Color(0xFF7B5EA7)),
-                      ),
-                    ]),
-                    const SizedBox(height: 8),
-                    if (_loadingForfaits)
-                      const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Center(child: CircularProgressIndicator()))
-                    else if (_forfaits.isEmpty)
-                      Text('Aucun forfait pour l\'instant.', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500))
-                    else
-                      ..._forfaits.map((f) => Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: const Color(0xFFF8F8F6), borderRadius: BorderRadius.circular(12)),
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Row(children: [
-                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(f['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
-                              Text('${f[_forfaitsCountCol]} ${_catPro == 'garde' ? (f['type_prestation'] == 'promenade' ? 'promenades' : 'visites') : 'séances'} — ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €',
-                                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
-                            ])),
-                            IconButton(
-                              onPressed: () => _supprimerForfait(f['id'] as String),
-                              icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
-                            ),
-                          ]),
-                          if (_catPro == 'education')
-                            InkWell(
-                              onTap: () => _toggleForfaitPublic(
-                                  f['id'] as String, !(f['affiche_public'] as bool? ?? false)),
-                              child: Row(children: [
-                                SizedBox(
-                                  width: 34, height: 34,
-                                  child: Checkbox(
-                                    value: f['affiche_public'] as bool? ?? false,
-                                    activeColor: const Color(0xFF7B5EA7),
-                                    onChanged: (v) => _toggleForfaitPublic(f['id'] as String, v ?? false),
-                                  ),
-                                ),
-                                Text('Afficher sur ma fiche publique',
-                                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
-                              ]),
-                            ),
-                        ]),
-                      )),
                   ],
 
                   // ── Horaires ──────────────────────────────────────────────

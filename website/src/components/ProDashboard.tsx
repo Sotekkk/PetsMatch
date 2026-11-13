@@ -380,7 +380,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
                 <Tuile href="/garde/registre" icone="livre" label="Registre des visites" />
                 <Tuile href="/garde/cles" icone="cle" label="Gestion des clés" />
                 <Tuile href="/garde/devis" icone="crayon" label="Devis" />
-                <Tuile href="/garde/tarifs-clients" icone="euro" label="Tarifs clients" />
+                <Tuile href="/garde/tarifs-clients" icone="euro" label="Tarifs & forfaits" />
                 <Tuile href="/garde/abonnement" icone="etoile" label="Mon abonnement" />
               </>
             )}

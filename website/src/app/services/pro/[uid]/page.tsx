@@ -88,6 +88,7 @@ interface ProData {
   tarifs_taxi?: { prise_en_charge?: number; prix_km?: number; minimum?: number };
   tarifs_garde?: Record<string, number>;
   tarifs_garde_extra?: { label: string; prix: number; description?: string }[];
+  tarifs_garde_visibles?: boolean;
   garde_chevauchement_ok?: boolean;
   tarifs_sante?: Record<string, number>;
   tarifs_sante_visibles?: boolean;
@@ -373,7 +374,7 @@ function ProDetailContent() {
   const [horairesSupp, setHorairesSupp] = useState<string[]>([]);
   const [animauxGarde, setAnimauxGarde] = useState<(number | string)[]>([]);
   const [accesLogement, setAccesLogement] = useState<string | null>(null);
-  const [forfaitsGarde, setForfaitsGarde] = useState<{ id: string; nom: string; nb_visites: number; prix: number }[]>([]);
+  const [forfaitsGarde, setForfaitsGarde] = useState<{ id: string; nom: string; nb_visites: number; prix: number; type_prestation?: string }[]>([]);
   const [forfaitId, setForfaitId] = useState<string | null>(null);
 
   // Cours collectifs (éducateur/comportementaliste)
@@ -439,6 +440,7 @@ function ProDetailContent() {
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
           tarifs_garde_extra: Array.isArray(data.tarifs_garde_extra) ? data.tarifs_garde_extra : [],
+          tarifs_garde_visibles: data.tarifs_garde_visibles !== false,
           tarifs_sante: (data.tarifs_sante as Record<string, number>) ?? {},
           tarifs_sante_visibles: (data.tarifs_sante_visibles as boolean) ?? false,
           tarifs_sante_extra: Array.isArray(data.tarifs_sante_extra) ? data.tarifs_sante_extra : [],
@@ -488,6 +490,7 @@ function ProDetailContent() {
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
           tarifs_garde_extra: Array.isArray(data.tarifs_garde_extra) ? data.tarifs_garde_extra : [],
+          tarifs_garde_visibles: data.tarifs_garde_visibles !== false,
           tarifs_sante: (data.tarifs_sante as Record<string, number>) ?? {},
           tarifs_sante_visibles: (data.tarifs_sante_visibles as boolean) ?? false,
           tarifs_sante_extra: Array.isArray(data.tarifs_sante_extra) ? data.tarifs_sante_extra : [],
@@ -1414,10 +1417,14 @@ function ProDetailContent() {
     promenade_2h: 'Promenade (2h)',
     visite: 'Visite à domicile',
     garde_journee: 'Garde à domicile (journée)',
+    animal_supplementaire: 'Animal supplémentaire (par passage)',
     autre: 'Autre prestation',
   };
+  // Pet-sitter : tarifs masqués dans « Tarifs & forfaits » → « sur demande »
+  // (le prix reste affiché à la réservation).
+  const gardeTarifsMasques = pro?.cat_pro === 'garde' && pro.tarifs_garde_visibles === false;
   const gardeTarifs: { label: string; prix: string }[] =
-    pro?.cat_pro === 'garde'
+    pro?.cat_pro === 'garde' && !gardeTarifsMasques
       ? [
           ...Object.entries(GARDE_TARIF_LABELS)
             .filter(([k]) => (pro.tarifs_garde?.[k] ?? 0) > 0)
@@ -1431,6 +1438,10 @@ function ProDetailContent() {
               label: e.description?.trim() ? `${e.label.trim()} — ${e.description.trim()}` : e.label.trim(),
               prix: (e.prix ?? 0) > 0 ? `${e.prix} €` : '—',
             })),
+          ...forfaitsGarde.map(f => ({
+            label: `Forfait ${f.nom} (${f.nb_visites} ${f.type_prestation === 'promenade' ? 'promenades' : 'visites'})`,
+            prix: `${Number(f.prix).toFixed(0)} €`,
+          })),
         ]
       : [];
 
@@ -1776,6 +1787,12 @@ function ProDetailContent() {
                     );
                   })}
                 </div>
+              </div>
+            )}
+            {gardeTarifsMasques && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="font-bold text-[#1E2025] mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>Tarifs</p>
+                <p className="text-sm text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>Tarifs sur demande. Le prix vous est indiqué au moment de réserver.</p>
               </div>
             )}
             {pro.cat_pro === 'garde' && gardeTarifs.length > 0 && (

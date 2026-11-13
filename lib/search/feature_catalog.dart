@@ -721,8 +721,8 @@ List<QuickAction> _all(BuildContext ctx) => [
     visible: () => _catPro == 'garde', open: (c) => _push(c, const ClesClientsPage()),
   ),
   QuickAction(
-    label: 'Tarifs clients',
-    keywords: ['prix', 'tarifs personnalisés', 'grille'],
+    label: 'Tarifs & forfaits',
+    keywords: ['prix', 'tarifs', 'forfaits', 'packs', 'tarifs clients', 'tarifs personnalisés', 'grille', 'visite essai'],
     icon: Icons.sell_outlined, group: 'Administratif',
     visible: () => _catPro == 'garde', open: (c) => _push(c, const TarifsClientsPage()),
   ),

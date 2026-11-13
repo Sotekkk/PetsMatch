@@ -54,6 +54,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   bool _inscrivant = false;
   List<Map<String, dynamic>> _prestations = [];
   List<Map<String, dynamic>> _forfaitsPublics = []; // éducateur : forfaits affiche_public
+  List<Map<String, dynamic>> _forfaitsGarde = []; // pet-sitter : forfaits proposés
   // Éducateur : catalogue (cours actifs) — source des prix affichés.
   List<Map<String, dynamic>> _prestationsEdu = [];
   /// Pets Social n'est accessible aux PROS que premium (santé plafonne à
@@ -146,6 +147,14 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             'lng':                       raw['longitude'] ?? raw['lng'],
           };
         }
+      }
+      // Pet-sitter : forfaits proposés sur la fiche (Tarifs & forfaits).
+      if (row != null && row['cat_pro'] == 'garde' && row['id'] != null) {
+        try {
+          final fg = await _supa.from('forfaits_garde').select()
+              .eq('pro_profile_id', row['id'].toString()).eq('actif', true).order('nb_visites');
+          _forfaitsGarde = [for (final f in fg as List) if ((f as Map)['affiche_public'] != false) Map<String, dynamic>.from(f)];
+        } catch (_) {}
       }
       if (mounted) setState(() { _proData = row; _loading = false; });
       if (row?['cat_pro'] == 'education') {
@@ -545,15 +554,19 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       (_proData?['education_bilan_description'] ?? '').toString().trim();
 
   /// Pet-sitter / promeneur : grille tarifaire standard (`tarifs_garde`),
-  /// affichée dès qu'au moins une prestation a un prix.
+  /// essai et forfaits, sauf si le pet-sitter les masque
+  /// (`tarifs_garde_visibles`, réglé dans « Tarifs & forfaits »).
+  bool get _tarifsGardeMasques => _proData?['cat_pro'] == 'garde' && _proData?['tarifs_garde_visibles'] == false;
+
   List<(String, String)> get _tarifsGardePublics {
-    if (_proData?['cat_pro'] != 'garde') return [];
+    if (_proData?['cat_pro'] != 'garde' || _tarifsGardeMasques) return [];
     const labels = {
       'promenade_30min': 'Promenade (30 min)',
       'promenade_1h': 'Promenade (1h)',
       'promenade_2h': 'Promenade (2h)',
       'visite': 'Visite à domicile',
       'garde_journee': 'Garde à domicile (journée)',
+      'animal_supplementaire': 'Animal supplémentaire (par passage)',
       'autre': 'Autre prestation',
     };
     final out = <(String, String)>[];
@@ -563,6 +576,14 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
         final v = (t[entry.key] as num?)?.toDouble() ?? 0;
         if (v > 0) out.add((entry.value, '${v.toStringAsFixed(0)} €'));
       }
+      if ((t['essai_actif'] as num?)?.toInt() == 1) {
+        final p = (t['essai'] as num?)?.toDouble() ?? 0;
+        out.add(("Visite d'essai (nouveau client)", p > 0 ? '${p.toStringAsFixed(0)} €' : '—'));
+      }
+    }
+    for (final f in _forfaitsGarde) {
+      final unite = f['type_prestation'] == 'promenade' ? 'promenades' : 'visites';
+      out.add(('Forfait ${f['nom']} (${f['nb_visites']} $unite)', '${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €'));
     }
     final extra = _proData?['tarifs_garde_extra'];
     if (extra is List) {
@@ -1127,7 +1148,17 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             )),
           ],
 
-          // Tarifs pet-sitter / promeneur (grille standard)
+          // Tarifs pet-sitter / promeneur masqués par le pro : sur demande.
+          if (_tarifsGardeMasques) ...[
+            const SizedBox(height: 12),
+            _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _sectionTitle('Tarifs'),
+              const SizedBox(height: 6),
+              Text('Tarifs sur demande. Le prix vous est indiqué au moment de réserver.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Colors.grey.shade700)),
+            ])),
+          ],
+          // Tarifs pet-sitter / promeneur (grille standard, essai, forfaits)
           if (_tarifsGardePublics.isNotEmpty) ...[
             const SizedBox(height: 12),
             _card(child: Column(

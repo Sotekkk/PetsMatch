@@ -436,7 +436,7 @@ const MENU_GARDE = [
     items: [
       { href: '/garde/devis',          label: 'Devis',          icon: '📝' },
       { href: '/garde/contrat',        label: 'Mes contrats',   icon: '✍️' },
-      { href: '/garde/tarifs-clients', label: 'Tarifs clients', icon: '🏷️' },
+      { href: '/garde/tarifs-clients', label: 'Tarifs & forfaits', icon: '🏷️' },
       { href: '/elevage/facturation',  label: 'Facturation',    icon: '🧾', premium: true },
       { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
     ],
@@ -776,7 +776,7 @@ const SEARCH_KEYWORDS: Record<string, string[]> = {
   '/garde/devis': ['devis garde'],
   '/garde/contrat': ['contrat garde'],
   '/garde/cles': ['cles', 'trousseau', 'gestion des cles'],
-  '/garde/tarifs-clients': ['tarifs clients', 'prix garde'],
+  '/garde/tarifs-clients': ['tarifs et forfaits', 'tarifs clients', 'prix garde', 'forfaits', 'packs', 'visite essai'],
   '/garde/abonnement': ['abonnement garde', 'formule garde'],
   // Éducation
   '/education/prestations': ['mes cours', 'prestations', 'tarifs', 'prix', 'bilan', 'forfaits'],

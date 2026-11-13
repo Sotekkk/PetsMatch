@@ -473,7 +473,7 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
             ),
             _DrawerItem(
               icon: Icons.sell_outlined,
-              label: 'Tarifs clients',
+              label: 'Tarifs & forfaits',
               onTap: () => _push(const TarifsClientsPage()),
             ),
           ],

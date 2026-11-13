@@ -407,7 +407,7 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
-                        label: 'Tarifs clients',
+                        label: 'Tarifs & forfaits',
                         icon: Icons.sell_outlined,
                         onTap: () {
                           Navigator.pop(context);

@@ -761,16 +761,6 @@ const PRESTATIONS_SANTE = [
   { value: 'autre', label: 'Autre prestation' },
 ];
 
-const PRESTATIONS_GARDE = [
-  { value: 'promenade_30min', label: 'Promenade (30 min)' },
-  { value: 'promenade_1h', label: 'Promenade (1h)' },
-  { value: 'promenade_2h', label: 'Promenade (2h)' },
-  { value: 'visite', label: 'Visite à domicile' },
-  { value: 'garde_journee', label: 'Garde à domicile (journée)' },
-  { value: 'animal_supplementaire', label: 'Animal supplémentaire (par passage)' },
-  { value: 'autre', label: 'Autre prestation' },
-];
-
 const TARIFS_TAXI_FIELDS = [
   { value: 'prise_en_charge', label: 'Prise en charge', suffix: '€' },
   { value: 'prix_km', label: 'Prix au km', suffix: '€/km' },
@@ -891,7 +881,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [durees, setDurees] = useState<Record<string, number>>({});
   const [tarifsLogements, setTarifsLogements] = useState<Record<string, number>>({});
   const [tarifsEducation, setTarifsEducation] = useState<Record<string, number>>({});
-  const [tarifsGarde, setTarifsGarde] = useState<Record<string, number>>({});
   const [tarifsSante, setTarifsSante] = useState<Record<string, number>>({});
   const [tarifsSanteVisibles, setTarifsSanteVisibles] = useState(false);
   const [tarifsToilettageVisibles, setTarifsToilettageVisibles] = useState(true);
@@ -913,9 +902,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [supplementDomicile, setSupplementDomicile] = useState('');
   const [autreDomicileAdresse, setAutreDomicileAdresse] = useState('');
   const [autreDomicileLatLng, setAutreDomicileLatLng] = useState<{ lat: number; lng: number } | null>(null);
-  const [forfaits, setForfaits] = useState<{ id: string; nom: string; nb_seances: number; prix: number; affiche_public: boolean; type_prestation?: string }[]>([]);
-  const [loadingForfaits, setLoadingForfaits] = useState(false);
-  const [showForfaitModal, setShowForfaitModal] = useState(false);
   const [arrhesPourcentage, setArrhesPourcentage] = useState(0);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -1013,9 +999,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         if (r.tarifs_education && typeof r.tarifs_education === 'object') {
           setTarifsEducation(r.tarifs_education as Record<string, number>);
         }
-        if (r.tarifs_garde && typeof r.tarifs_garde === 'object') {
-          setTarifsGarde(r.tarifs_garde as Record<string, number>);
-        }
         if (r.tarifs_sante && typeof r.tarifs_sante === 'object') {
           setTarifsSante(r.tarifs_sante as Record<string, number>);
         }
@@ -1071,7 +1054,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         setAcacedNum(((r.acaced_numero ?? r.acaced) as string) ?? '');
         setAcacedDocUrl((r.acaced_doc_url as string) ?? null);
         setLoading(false);
-        if (cat === 'education' || cat === 'garde') loadForfaits();
       });
   }, [profileId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1126,47 +1108,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         setAdresseSearch(rueVal);
       }
     );
-  }
-
-  function forfaitsTable() {
-    const cat = data?.profile_type ?? data?.cat_pro ?? '';
-    return cat === 'garde' ? 'forfaits_garde' : 'forfaits_education';
-  }
-  function forfaitsCountCol() {
-    return forfaitsTable() === 'forfaits_garde' ? 'nb_visites' : 'nb_seances';
-  }
-
-  async function loadForfaits() {
-    setLoadingForfaits(true);
-    const { data: rows } = await supabase.from(forfaitsTable())
-      .select('*').eq('pro_uid', uid).eq('actif', true).order('created_at');
-    setForfaits(((rows ?? []) as Record<string, unknown>[]).map(r => ({
-      id: r.id as string, nom: r.nom as string, prix: r.prix as number,
-      nb_seances: (r[forfaitsCountCol()] as number) ?? 1,
-      affiche_public: (r.affiche_public as boolean) ?? false,
-      type_prestation: (r.type_prestation as string | undefined) ?? 'visite',
-    })));
-    setLoadingForfaits(false);
-  }
-
-  async function ajouterForfait(nom: string, nbSeances: number, prix: number, description: string, typePrestation = 'visite') {
-    await supabase.from(forfaitsTable()).insert({
-      pro_uid: uid, pro_profile_id: profileId, nom, [forfaitsCountCol()]: nbSeances, prix,
-      description: description || null,
-      ...(forfaitsTable() === 'forfaits_garde' ? { type_prestation: typePrestation } : {}),
-    });
-    setShowForfaitModal(false);
-    loadForfaits();
-  }
-
-  async function supprimerForfait(id: string) {
-    await supabase.from(forfaitsTable()).update({ actif: false }).eq('id', id);
-    loadForfaits();
-  }
-
-  async function toggleForfaitPublic(id: string, value: boolean) {
-    setForfaits(prev => prev.map(f => f.id === id ? { ...f, affiche_public: value } : f));
-    await supabase.from(forfaitsTable()).update({ affiche_public: value }).eq('id', id);
   }
 
   async function handleSave() {
@@ -1250,9 +1191,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       durees_motifs: durees,
       ...((data?.profile_type ?? data?.cat_pro) === 'pension'
         ? { tarifs_logements: tarifsLogements, arrhes_pourcentage: arrhesPourcentage }
-        : {}),
-      ...((data?.profile_type ?? data?.cat_pro) === 'garde'
-        ? { tarifs_garde: tarifsGarde }
         : {}),
       // Toiletteur : prix du catalogue affichés ou non sur la fiche publique.
       ...((data?.profile_type ?? data?.cat_pro) === 'toilettage' ? { tarifs_toilettage_visibles: tarifsToilettageVisibles } : {}),
@@ -1734,54 +1672,12 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </Card>
         )}
 
-        {/* Tarifs garde (petsitter/promeneur) */}
+        {/* Pet-sitter : tarifs, essai, forfaits et prix par client dans
+            « Tarifs & forfaits » (source unique des prix). */}
         {catPro === 'garde' && (
-          <Card title="Tarifs par type de prestation (€ TTC)">
-            <p className="text-xs text-gray-400 mb-3">Laissez à 0 les prestations que vous ne proposez pas.</p>
-            <div className="grid grid-cols-2 gap-3">
-              {PRESTATIONS_GARDE.map(({ value, label }) => (
-                <div key={value}>
-                  <label className="text-xs font-medium text-gray-500 block mb-1">{label}</label>
-                  <input type="number" min={0} step={1}
-                    value={tarifsGarde[value] ?? 0}
-                    onChange={e => setTarifsGarde(t => ({ ...t, [value]: Number(e.target.value) }))}
-                    className={inputCls} />
-                </div>
-              ))}
-            </div>
-            {/* Visite d'essai d'un nouveau client (lib/garde-essai.ts), comme la pension. */}
-            <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
-              <label className="flex items-start gap-2 text-sm text-gray-700">
-                <input type="checkbox" className="mt-0.5" checked={tarifsGarde.essai_actif === 1}
-                  onChange={e => setTarifsGarde(t => ({ ...t, essai_actif: e.target.checked ? 1 : 0 }))} />
-                <span>Proposer une visite d&apos;essai aux nouveaux clients
-                  <span className="block text-xs text-gray-500">Vous rencontrez l&apos;animal avant la première garde, puis indiquez si l&apos;essai est concluant.</span>
-                </span>
-              </label>
-              {tarifsGarde.essai_actif === 1 && (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-medium text-gray-500 block mb-1">Prix de l&apos;essai (€ TTC)</label>
-                      <input type="number" min={0} step={1} value={tarifsGarde.essai ?? 0}
-                        onChange={e => setTarifsGarde(t => ({ ...t, essai: Number(e.target.value) }))} className={inputCls} />
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-gray-500 block mb-1">Durée (minutes)</label>
-                      <input type="number" min={15} step={15} value={tarifsGarde.essai_duree ?? 30}
-                        onChange={e => setTarifsGarde(t => ({ ...t, essai_duree: Number(e.target.value) }))} className={inputCls} />
-                    </div>
-                  </div>
-                  <label className="flex items-start gap-2 text-sm text-gray-700">
-                    <input type="checkbox" className="mt-0.5" checked={tarifsGarde.essai_obligatoire === 1}
-                      onChange={e => setTarifsGarde(t => ({ ...t, essai_obligatoire: e.target.checked ? 1 : 0 }))} />
-                    <span>Essai obligatoire avant une première garde
-                      <span className="block text-xs text-gray-500">Un nouveau client ne peut réserver que l&apos;essai, puis ses gardes une fois l&apos;essai concluant.</span>
-                    </span>
-                  </label>
-                </>
-              )}
-            </div>
+          <Card title="Tarifs, essai et forfaits">
+            <p className="text-xs text-gray-500 mb-2">Vos tarifs, la visite d&apos;essai, vos forfaits et les prix par client se règlent dans « Tarifs &amp; forfaits ». Vous y choisissez aussi de les afficher ou non sur votre fiche.</p>
+            <a href="/garde/tarifs-clients" className="text-sm font-semibold text-[#0C5C6C]">Ouvrir Tarifs &amp; forfaits</a>
           </Card>
         )}
 
@@ -1952,37 +1848,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </Card>
         )}
 
-        {/* Forfaits garde (éducateur : dans Prestations & tarifs) */}
-        {catPro === 'garde' && (
-          <Card title="Forfaits (packs de visites ou de promenades)">
-            {loadingForfaits ? (
-              <p className="text-sm text-gray-400">Chargement…</p>
-            ) : forfaits.length === 0 ? (
-              <p className="text-sm text-gray-400 mb-3">Aucun forfait pour l&apos;instant.</p>
-            ) : (
-              <div className="space-y-2 mb-3">
-                {forfaits.map(f => (
-                  <div key={f.id} className="bg-gray-50 rounded-xl px-3 py-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-[#1E2025]">{f.nom}</p>
-                        <p className="text-xs text-gray-500">{f.nb_seances} {catPro === 'garde' ? (f.type_prestation === 'promenade' ? 'promenades' : 'visites') : 'séances'} — {f.prix} €</p>
-                      </div>
-                      <button onClick={() => supprimerForfait(f.id)} className="text-red-400 hover:text-red-600 text-sm">
-                        Supprimer
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <button onClick={() => setShowForfaitModal(true)}
-              className="text-sm font-semibold text-[#7B5EA7] hover:underline">
-              + Ajouter un forfait
-            </button>
-          </Card>
-        )}
-
         {/* Certifications */}
         <Card title="Certifications & diplômes">
           {certifications.map((c, i) => (
@@ -2132,62 +1997,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         </div>
       </div>
 
-      {showForfaitModal && (
-        <ForfaitModal onClose={() => setShowForfaitModal(false)} onSave={ajouterForfait} catPro={catPro} />
-      )}
-    </div>
-  );
-}
-
-function ForfaitModal({ onClose, onSave, catPro }: {
-  onClose: () => void;
-  onSave: (nom: string, nbSeances: number, prix: number, description: string, typePrestation?: string) => void;
-  catPro?: string;
-}) {
-  // Pet-sitter : pack de visites ou de promenades.
-  const [typePrestation, setTypePrestation] = useState('visite');
-  const unite = catPro === 'garde' ? (typePrestation === 'promenade' ? 'promenades' : 'visites') : 'séances';
-  const [nom, setNom] = useState('');
-  const [nbSeances, setNbSeances] = useState('5');
-  const [prix, setPrix] = useState('');
-  const [description, setDescription] = useState('');
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
-        <h3 className="font-bold text-base mb-4 text-[#1E2025]">Nouveau forfait</h3>
-        <div className="space-y-3">
-          {catPro === 'garde' && (
-            <div className="flex gap-2">
-              {([['visite', 'Visites'], ['promenade', 'Promenades']] as const).map(([k, l]) => (
-                <button key={k} type="button" onClick={() => setTypePrestation(k)}
-                  className="px-3 py-1.5 rounded-full text-sm font-semibold"
-                  style={typePrestation === k ? { background: '#0C5C6C', color: 'white' } : { background: '#F1F4F3', color: '#1F2A2E' }}>{l}</button>
-              ))}
-            </div>
-          )}
-          <input value={nom} onChange={e => setNom(e.target.value)} placeholder={`Nom du forfait (ex : Pack 5 ${unite})`}
-            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
-          <div className="grid grid-cols-2 gap-3">
-            <input type="number" value={nbSeances} onChange={e => setNbSeances(e.target.value)} placeholder={`Nb ${unite}`}
-              className="px-3 py-2 border border-gray-200 rounded-xl text-sm" />
-            <input type="number" value={prix} onChange={e => setPrix(e.target.value)} placeholder="Prix (€ TTC)"
-              className="px-3 py-2 border border-gray-200 rounded-xl text-sm" />
-          </div>
-          <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optionnel)" rows={2}
-            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-none" />
-        </div>
-        <div className="flex gap-3 mt-4">
-          <button onClick={onClose} className="flex-1 border border-gray-200 rounded-xl py-2.5 text-sm font-semibold">
-            Annuler
-          </button>
-          <button
-            onClick={() => nom.trim() && onSave(nom.trim(), parseInt(nbSeances, 10) || 1, parseFloat(prix) || 0, description.trim(), typePrestation)}
-            className="flex-1 text-white rounded-xl py-2.5 text-sm font-semibold" style={{ backgroundColor: '#7B5EA7' }}>
-            Créer
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
