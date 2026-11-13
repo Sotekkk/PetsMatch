@@ -16,6 +16,7 @@ import 'dart:async';
 import 'package:PetsMatch/pages/settings/avertissements_page.dart';
 import 'package:PetsMatch/pages/nature/mes_contributions_nature_page.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/pro/mon_abonnement_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -715,6 +716,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
     // Fin d'abonnement / d'essai gratuit (functions/abonnements.js) → page
     // d'abonnement du métier concerné.
+    // Pause, résiliation, prélèvement refusé, rappel de renouvellement
+    // (lib/abonnement-gestion.ts côté site) → « Mon abonnement ».
+    if (type == 'abonnement_gestion') {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const MonAbonnementPage()));
+      return;
+    }
     if (type == 'abonnement_expiration') {
       final profil = (data is Map ? data['profilType']?.toString() : null) ?? User_Info.catPro;
       final Widget page = switch (profil) {

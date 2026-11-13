@@ -1,6 +1,7 @@
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/pro/mon_abonnement_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class PensionAbonnementPage extends StatefulWidget {
@@ -105,8 +106,8 @@ class _PensionAbonnementPageState extends State<PensionAbonnementPage> {
                 ],
                 const SizedBox(height: 10),
                 TextButton(
-                  onPressed: () => _openWebsite('/pension/abonnement'),
-                  child: const Text('Gérer mon abonnement sur le site →',
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MonAbonnementPage())),
+                  child: const Text('Mon abonnement (pause, résiliation, carte) →',
                       style: TextStyle(fontFamily: 'Galey', color: _teal)),
                 ),
                 const SizedBox(height: 24),

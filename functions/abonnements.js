@@ -1,7 +1,44 @@
 const functions = require("firebase-functions/v1");
 const https = require("https");
 
-const {SUPABASE_URL, SUPABASE_AUTH_HEADERS} = require("./config");
+const {SUPABASE_URL, SUPABASE_AUTH_HEADERS, STRIPE_SECRET_KEY, INTERNAL_API_SECRET} = require("./config");
+
+// Site : e-mail + notification au pro (route /api/abonnement/email).
+const SITE_URL = process.env.SITE_URL || "https://petsmatchapp.com";
+
+/** Message d'abonnement au pro (notification + e-mail), via le site. */
+function prevenirPro(abonnementId, type, extra = {}) {
+    return new Promise((resolve) => {
+        try {
+            const body = JSON.stringify({abonnement_id: abonnementId, type, ...extra});
+            const u = new URL(`${SITE_URL}/api/abonnement/email`);
+            const req = https.request({
+                hostname: u.hostname, path: u.pathname, method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Content-Length": Buffer.byteLength(body),
+                    ...(INTERNAL_API_SECRET ? {"x-internal-secret": INTERNAL_API_SECRET} : {}),
+                },
+            }, (res) => {
+                res.on("data", () => {});
+                res.on("end", () => resolve(res.statusCode === 200));
+            });
+            req.on("error", () => resolve(false));
+            req.write(body);
+            req.end();
+        } catch (_) {
+            resolve(false);
+        }
+    });
+}
+
+/** Une seule fois par clé (notifs_sent). */
+async function uneFois(key, nowIso) {
+    const deja = await supabaseGet(`notifs_sent?key=eq.${encodeURIComponent(key)}`);
+    if (deja.length > 0) return false;
+    await supabaseInsert("notifs_sent", [{key, sent_at: nowIso}]);
+    return true;
+}
 
 // ─── Helpers Supabase (dupliqués par fichier — convention déjà suivie par
 // annonces.js/agenda.js/chaleurs.js/etc., pas de module partagé à extraire) ──
@@ -187,6 +224,99 @@ exports.processAbonnementsExpiration = functions
                 }
             }
         }
+
+        // ── 1 bis. Abonnements Stripe (prélèvement automatique) ──────────────
+        // Gestion : page « Mon abonnement » (migration_abonnements_gestion.sql).
+        const stripe = STRIPE_SECRET_KEY ? require("stripe")(STRIPE_SECRET_KEY) : null;
+        const montantDe = async (subId) => {
+            if (!stripe) return null;
+            try {
+                const sub = await stripe.subscriptions.retrieve(subId, {expand: ["items.data.price"]});
+                const p = sub.items.data[0]?.price?.unit_amount;
+                return p != null ? `${(p / 100).toFixed(2).replace(".", ",")} €` : null;
+            } catch (_) {
+                return null;
+            }
+        };
+        let rappelsStripe = 0;
+        // Renouvellement annuel : J-30 et J-7 (jamais pour le mensuel).
+        for (const jours of [30, 7]) {
+            const {start, end} = dayRange(jours);
+            const rows = await supabaseGet(
+                `abonnements?statut=eq.actif&periodicite=eq.annuel&stripe_subscription_id=not.is.null` +
+                "&resiliation_prevue=eq.false" +
+                `&date_fin=gte.${encodeURIComponent(start)}&date_fin=lt.${encodeURIComponent(end)}` +
+                "&select=id,stripe_subscription_id,date_fin",
+            );
+            for (const a of rows) {
+                const cle = `abonnement_renouvellement_j${jours}_${a.id}_${String(a.date_fin).slice(0, 10)}`;
+                if (!await uneFois(cle, nowIso)) continue;
+                const montant = await montantDe(a.stripe_subscription_id);
+                await prevenirPro(a.id, "renouvellement", {date: a.date_fin, jours, montant});
+                rappelsStripe++;
+            }
+        }
+        // Résiliation demandée : fin d'accès dans 3 jours.
+        {
+            const {start, end} = dayRange(3);
+            const rows = await supabaseGet(
+                `abonnements?statut=in.(actif,grace)&resiliation_prevue=eq.true` +
+                `&date_fin=gte.${encodeURIComponent(start)}&date_fin=lt.${encodeURIComponent(end)}&select=id,date_fin`,
+            );
+            for (const a of rows) {
+                if (!await uneFois(`abonnement_fin_resiliation_${a.id}`, nowIso)) continue;
+                await prevenirPro(a.id, "fin_resiliation", {date: a.date_fin});
+                rappelsStripe++;
+            }
+        }
+        // Prélèvement refusé, 7 jours de grâce dépassés : profil en gratuit
+        // (données conservées) ; tout revient au paiement (webhook invoice.paid).
+        {
+            const rows = await supabaseGet(
+                `abonnements?statut=eq.grace&grace_jusquau=lt.${encodeURIComponent(nowIso)}` +
+                "&select=id,uid,profile_id,profil_type",
+            );
+            for (const a of rows) {
+                try {
+                    await supabasePatch(`abonnements?id=eq.${a.id}`, {statut: "suspendu", updated_at: nowIso});
+                    const profilePatch = {plan_code: "free", is_premium: false, plan_until: null};
+                    if (a.profile_id) await supabasePatch(`user_profiles?id=eq.${a.profile_id}`, profilePatch);
+                    else await supabasePatch(`user_profiles?uid=eq.${a.uid}&is_main=eq.true`, profilePatch);
+                    await supabasePatch(`users?uid=eq.${a.uid}`, {plan_code: "free", is_premium: false});
+                    await prevenirPro(a.id, "suspendu");
+                    rappelsStripe++;
+                } catch (e) {
+                    console.error(`suspension abonnement ${a.id}:`, e.message);
+                }
+            }
+        }
+        // Carte bientôt expirée (ce mois-ci ou le suivant) : une fois par mois.
+        if (stripe && new Date().getDate() === 1) {
+            const rows = await supabaseGet(
+                "abonnements?statut=eq.actif&resiliation_prevue=eq.false&stripe_subscription_id=not.is.null" +
+                "&select=id,stripe_subscription_id",
+            );
+            const now = new Date();
+            const mois = now.getFullYear() * 12 + now.getMonth() + 1;
+            for (const a of rows) {
+                try {
+                    const sub = await stripe.subscriptions.retrieve(a.stripe_subscription_id, {
+                        expand: ["default_payment_method", "customer.invoice_settings.default_payment_method"],
+                    });
+                    const pm = sub.default_payment_method || sub.customer?.invoice_settings?.default_payment_method;
+                    const c = pm && pm.card;
+                    if (!c) continue;
+                    const exp = c.exp_year * 12 + c.exp_month;
+                    if (exp < mois || exp > mois + 1) continue;
+                    if (!await uneFois(`abonnement_carte_${a.id}_${c.exp_year}${c.exp_month}`, nowIso)) continue;
+                    await prevenirPro(a.id, "carte_expire");
+                    rappelsStripe++;
+                } catch (e) {
+                    console.error(`carte abonnement ${a.id}:`, e.message);
+                }
+            }
+        }
+        reminders += rappelsStripe;
 
         // ── 2. Expiration ────────────────────────────────────────────────────
 

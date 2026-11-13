@@ -1,6 +1,7 @@
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/pro/mon_abonnement_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Formules Toiletteur — Gratuit/Pro/Premium, sur le modèle de
@@ -108,8 +109,8 @@ class _ToilettageAbonnementPageState extends State<ToilettageAbonnementPage> {
                 ],
                 const SizedBox(height: 10),
                 TextButton(
-                  onPressed: _openWebsite,
-                  child: const Text('Gérer mon abonnement sur le site →',
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MonAbonnementPage())),
+                  child: const Text('Mon abonnement (pause, résiliation, carte) →',
                       style: TextStyle(fontFamily: 'Galey', color: _orange)),
                 ),
                 const SizedBox(height: 24),

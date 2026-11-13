@@ -776,6 +776,7 @@ const SEARCH_KEYWORDS: Record<string, string[]> = {
   '/garde/devis': ['devis garde'],
   '/garde/contrat': ['contrat garde'],
   '/garde/cles': ['cles', 'trousseau', 'gestion des cles'],
+  '/mon-abonnement': ['mon abonnement', 'resilier', 'résilier', 'pause abonnement', 'suspendre', 'carte bancaire', 'factures abonnement', 'renouvellement'],
   '/garde/tarifs-clients': ['tarifs et forfaits', 'tarifs clients', 'prix garde', 'forfaits', 'packs', 'visite essai'],
   '/garde/abonnement': ['abonnement garde', 'formule garde'],
   // Éducation
@@ -1082,6 +1083,9 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'toilettage_cr':
       return d.animalId ? `/mes-animaux/${d.animalId}?tab=consultations` : null;
     // Fin d'abonnement / d'essai gratuit (functions/abonnements.js) → abonnement du métier.
+    // Pause, résiliation, prélèvement refusé, rappel de renouvellement.
+    case 'abonnement_gestion':
+      return '/mon-abonnement';
     case 'abonnement_expiration': {
       const p = String(d.profilType ?? '');
       const routes: Record<string, string> = {

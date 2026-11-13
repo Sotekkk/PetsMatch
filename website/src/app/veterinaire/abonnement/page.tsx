@@ -53,7 +53,6 @@ function VeterinaireAbonnementContent() {
   const [currentPlan, setCurrentPlan] = useState('free');
   const [periodicite, setPeriodicite] = useState<'mensuel' | 'annuel'>('mensuel');
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
-  const [loadingPortal, setLoadingPortal] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'info'; text: string } | null>(null);
 
   useEffect(() => {
@@ -150,19 +149,6 @@ function VeterinaireAbonnementContent() {
     finally { setLoadingPlan(null); }
   };
 
-  const handlePortal = async () => {
-    if (!user) return;
-    setLoadingPortal(true);
-    try {
-      const res = await apiFetch('/api/stripe/portal', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: user.uid, returnPath: '/veterinaire/abonnement' }),
-      });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-      else setMessage({ type: 'info', text: data.error ?? 'Portail Stripe non disponible.' });
-    } finally { setLoadingPortal(false); }
-  };
 
   if (authLoading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
 
@@ -177,7 +163,7 @@ function VeterinaireAbonnementContent() {
         <div className={`mb-6 p-4 rounded-xl text-sm font-medium ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
           {message.text}
           {currentPlan !== 'free' && message.type === 'success' && (
-            <button onClick={handlePortal} disabled={loadingPortal} className="ml-4 underline text-xs">
+            <button onClick={() => { window.location.href = '/mon-abonnement'; }} className="ml-4 underline text-xs">
               Gérer mon abonnement
             </button>
           )}
@@ -249,9 +235,9 @@ function VeterinaireAbonnementContent() {
 
       {currentPlan !== 'free' && user && (
         <div className="text-center mb-4">
-          <button onClick={handlePortal} disabled={loadingPortal}
+          <button onClick={() => { window.location.href = '/mon-abonnement'; }}
             className="text-sm text-gray-500 hover:text-[#0C5C6C] underline">
-            {loadingPortal ? 'Chargement…' : 'Gérer mon abonnement (factures, annulation)'}
+            Mon abonnement (pause, résiliation, carte, factures)
           </button>
         </div>
       )}

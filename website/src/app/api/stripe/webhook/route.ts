@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
 import { createClient } from '@supabase/supabase-js';
+import { appliquerPlan, prevenirPro, type LigneAbonnement } from '@/lib/abonnement-gestion';
 import { mailTransporter, MAIL_FROM } from '@/lib/mailer';
 
 const supabase = createClient(
@@ -238,10 +239,61 @@ export async function POST(req: NextRequest) {
         const sub = event.data.object as Stripe.Subscription;
         const periodEnd = sub.items.data[0]?.current_period_end ?? null;
         const dateFin = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
-        const statut = sub.status === 'active' ? 'actif' : sub.status === 'past_due' ? 'grace' : 'annule';
-        await supabase.from('abonnements')
-          .update({ statut, date_fin: dateFin, updated_at: new Date().toISOString() })
-          .eq('stripe_subscription_id', sub.id);
+        const { data: avant } = await supabase.from('abonnements').select('*').eq('stripe_subscription_id', sub.id).limit(1).maybeSingle();
+        const a = avant as LigneAbonnement | null;
+        // Pause (mensuel) : Stripe garde l'abonnement « active » sans prélever.
+        const enPause = !!sub.pause_collection;
+        const statut = enPause ? 'pause'
+          : sub.status === 'active' || sub.status === 'trialing' ? 'actif'
+          : sub.status === 'past_due' ? (a?.statut === 'suspendu' ? 'suspendu' : 'grace') : 'annule';
+        await supabase.from('abonnements').update({
+          statut, date_fin: dateFin, resiliation_prevue: sub.cancel_at_period_end,
+          pause_jusquau: sub.pause_collection?.resumes_at ? new Date(sub.pause_collection.resumes_at * 1000).toISOString() : null,
+          ...(statut === 'actif' ? { grace_jusquau: null } : {}),
+          updated_at: new Date().toISOString(),
+        }).eq('stripe_subscription_id', sub.id);
+        // Fin de pause (reprise automatique) : fonctionnalités rendues.
+        if (a && a.statut === 'pause' && statut === 'actif') {
+          await appliquerPlan(supabase, a, true, dateFin);
+          await prevenirPro(supabase, a, 'reprise');
+        }
+        break;
+      }
+
+      // ── Prélèvement refusé : 7 jours de grâce, pro prévenu ────────────────
+      case 'invoice.payment_failed': {
+        const inv = event.data.object as Stripe.Invoice & { subscription?: string | Stripe.Subscription | null };
+        const subId = typeof inv.subscription === 'string' ? inv.subscription : inv.subscription?.id
+          ?? (inv as unknown as { parent?: { subscription_details?: { subscription?: string } } }).parent?.subscription_details?.subscription;
+        if (!subId) break;
+        const { data: l } = await supabase.from('abonnements').select('*').eq('stripe_subscription_id', subId).limit(1).maybeSingle();
+        const a = l as LigneAbonnement | null;
+        if (!a) break;
+        // Première relance seulement : le délai de grâce ne se rallonge pas à chaque nouvel essai.
+        const grace = a.grace_jusquau ?? new Date(Date.now() + 7 * 86400_000).toISOString();
+        await supabase.from('abonnements').update({
+          statut: a.statut === 'suspendu' ? 'suspendu' : 'grace', grace_jusquau: grace, updated_at: new Date().toISOString(),
+        }).eq('id', a.id);
+        if (!a.grace_jusquau) {
+          await prevenirPro(supabase, a, 'paiement_refuse', {
+            date: grace, montant: inv.amount_due != null ? `${(inv.amount_due / 100).toFixed(2).replace('.', ',')} €` : null,
+          });
+        }
+        break;
+      }
+
+      // ── Paiement reçu : abonnement remis d'aplomb après un refus ──────────
+      case 'invoice.paid': {
+        const inv = event.data.object as Stripe.Invoice & { subscription?: string | Stripe.Subscription | null };
+        const subId = typeof inv.subscription === 'string' ? inv.subscription : inv.subscription?.id
+          ?? (inv as unknown as { parent?: { subscription_details?: { subscription?: string } } }).parent?.subscription_details?.subscription;
+        if (!subId) break;
+        const { data: l } = await supabase.from('abonnements').select('*').eq('stripe_subscription_id', subId).limit(1).maybeSingle();
+        const a = l as LigneAbonnement | null;
+        if (!a || (a.statut !== 'grace' && a.statut !== 'suspendu')) break;
+        await supabase.from('abonnements').update({ statut: 'actif', grace_jusquau: null, updated_at: new Date().toISOString() }).eq('id', a.id);
+        if (a.statut === 'suspendu') await appliquerPlan(supabase, a, true);
+        await prevenirPro(supabase, a, 'paiement_ok');
         break;
       }
 

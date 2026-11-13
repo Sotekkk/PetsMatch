@@ -1,6 +1,7 @@
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/pro/mon_abonnement_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class AbonnementPage extends StatefulWidget {
@@ -170,8 +171,8 @@ class _AbonnementPageState extends State<AbonnementPage> {
 
                 const SizedBox(height: 12),
                 TextButton(
-                  onPressed: () => _openWebsite('/abonnement'),
-                  child: const Text('Gérer mon abonnement sur le site →',
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MonAbonnementPage())),
+                  child: const Text('Mon abonnement (pause, résiliation, carte) →',
                       style: TextStyle(fontFamily: 'Galey', color: Color(0xFF0C5C6C))),
                 ),
                 const SizedBox(height: 24),
