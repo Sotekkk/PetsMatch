@@ -11,6 +11,7 @@ import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart' show sendGardeNew
 import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill;
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage;
 import 'package:PetsMatch/pages/pro/cles_clients_page.dart' show ClesClientsPage;
+import 'package:PetsMatch/utils/forfait_garde.dart';
 
 const _teal = Color(0xFF0C5C6C);
 const _vert = Color(0xFF6E9E57);
@@ -66,13 +67,24 @@ Future<void> showDossierGarde(BuildContext context, Map<String, dynamic> rdv, {V
   final devis = premier(res[1]);
   final factures = res[2] is List ? [for (final f in res[2] as List) Map<String, dynamic>.from(f as Map)] : <Map<String, dynamic>>[];
   final facture = factures.where((f) => f['type_facture'] != 'acompte' && f['type_facture'] != 'avoir').firstOrNull;
-  final acompte = premier(res[3]) ?? factures.where((f) => f['type_facture'] == 'acompte').firstOrNull;
+  // Acompte rattaché à la garde ; sinon (avant la migration) le dernier du client.
+  final acomptesLies = await acomptesGarde(ids);
+  final acompte = acomptesLies.lastOrNull ?? premier(res[3]) ?? factures.where((f) => f['type_facture'] == 'acompte').firstOrNull;
   final nbRapports = res[4] is List ? (res[4] as List).length : 0;
   final cles = res[5] is List ? (res[5] as List) : const [];
   final clesEnCours = cles.where((c) => (c as Map)['date_restitution'] == null).length;
   if (!context.mounted) return;
 
   final c = await chiffrerGarde(rdvs);
+  // Forfait du client : sa facture (à l'achat).
+  final fg = c.forfait;
+  Map<String, dynamic>? factureForfait;
+  if (fg != null && fg.facture) {
+    try {
+      factureForfait = await supa.from('factures').select('statut, numero_affichage, total_ttc')
+          .eq('id', fg.souscription['facture_id'].toString()).maybeSingle();
+    } catch (_) {}
+  }
   if (!context.mounted) return;
   String eur(num v) => '${v.toStringAsFixed(2).replaceAll('.', ',')} €';
 
@@ -151,6 +163,15 @@ Future<void> showDossierGarde(BuildContext context, Map<String, dynamic> rdv, {V
                     }],
                   ))));
           }),
+          if (fg != null)
+            ligne(Icons.card_giftcard_outlined, 'Forfait ${fg.nom}',
+                _Etat('${fg.utilises}/${fg.total} ${uniteForfaitGarde(fg.type)} utilisés · '
+                    '${factureForfait == null ? 'à facturer' : factureForfait['statut'] == 'payee' ? 'payé' : 'facturé, en attente de paiement'}',
+                    factureForfait?['statut'] == 'payee' ? _vert : _orange),
+                factureForfait == null ? 'Facturer' : 'Voir',
+                () async => factureForfait == null
+                    ? facturerForfaitGarde(context, fg, rdv)
+                    : Navigator.push(context, MaterialPageRoute(builder: (_) => const FacturationPage()))),
           ligne(Icons.savings_outlined, 'Acompte', etatFacture(acompte, 'Facultatif — aucun acompte'),
               acompte == null ? 'Demander' : 'Voir',
               () async => acompte == null
@@ -173,7 +194,10 @@ Future<void> showDossierGarde(BuildContext context, Map<String, dynamic> rdv, {V
                   ? _Etat('$nbRapports message${nbRapports > 1 ? 's' : ''} envoyé${nbRapports > 1 ? 's' : ''} au client', _vert)
                   : const _Etat('Nouvelles et photos au client — aucun envoi', Colors.grey),
               'Envoyer', () => sendGardeNews(context, rdv)),
-          ligne(Icons.receipt_long_outlined, 'Facture', etatFacture(facture, termine ? 'À faire' : 'Après la prestation, ou d\'avance'),
+          ligne(Icons.receipt_long_outlined, 'Facture',
+              fg != null && c.nbAFacturer == 0 && facture == null
+                  ? const _Etat('Tous les passages sont dans le forfait', _vert)
+                  : etatFacture(facture, termine ? 'À faire${acompte != null ? ' (acompte déduit)' : ''}' : 'Après la prestation, ou d\'avance'),
               facture == null ? 'Facturer' : 'Voir',
               () async => facture == null
                   ? facturerGardeAcceptee(context, rdvs, acompte: false)

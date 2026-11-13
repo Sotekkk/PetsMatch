@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { coordonneesClientRdv, prefillClient } from '@/lib/coordonnees-client-rdv';
+import { rattacherForfaitGarde, deductionsAcompteGarde } from '@/lib/forfait-garde';
 import { gardeJoursAFacturer, gardeTarif, gardePeriodeLabel, type GardeRdvFacture } from '@/lib/garde-facturation';
 
 const TEAL = '#0C5C6C';
@@ -54,7 +55,14 @@ export function GardeFacturationModal({ rdv, proUid, proProfileId, animalNom, cl
 
   async function continuer() {
     if (tarifNum <= 0) { setError('Renseignez un tarif par jour.'); return; }
-    const designation = n > 1 ? `Garde à domicile — ${n} jours (${periode})` : `Garde journée — ${animalNom}`;
+    // Jours couverts par le forfait du client (facturé à l'achat) : exclus ; acompte déduit.
+    const fg = await rattacherForfaitGarde(jours.map(j => j.id));
+    const couverts = new Set(fg?.couverts ?? []);
+    const horsForfait = jours.filter(j => !couverts.has(j.id));
+    if (!horsForfait.length) { setError('Ces jours sont couverts par le forfait du client : rien à facturer.'); return; }
+    const deductions = await deductionsAcompteGarde(jours.map(j => j.id));
+    const nf = horsForfait.length;
+    const designation = nf > 1 ? `Garde à domicile — ${nf} jours (${gardePeriodeLabel(horsForfait)})` : `Garde journée — ${animalNom}`;
     // Coordonnées complètes du client ; celles passées par l'appelant en secours.
     const coord = await coordonneesClientRdv(rdv.id, rdv.client_profile_id).catch(() => null);
     const pc = coord ? prefillClient(coord, clientNom) : { nomClient: clientNom };
@@ -62,9 +70,14 @@ export function GardeFacturationModal({ rdv, proUid, proProfileId, animalNom, cl
       ...pc,
       emailClient: ('emailClient' in pc && pc.emailClient) || clientEmail || '',
       telClient: ('telClient' in pc && pc.telClient) || clientTel || '',
-      lignes: [{ description: designation, quantite: n, prixUnitaire: tarifNum, tva: 20 }],
-      sourceRdvId: rdv.id,
-      sourceRdvIds: jours.map(j => j.id),
+      lignes: [
+        { description: designation, quantite: nf, prixUnitaire: tarifNum, tva: 20 },
+        ...(fg && couverts.size ? [{ description: `${fg.nom} — ${couverts.size} jour${couverts.size > 1 ? 's' : ''} inclus dans le forfait (facturé à l'achat)`, quantite: 1, prixUnitaire: 0, tva: 20 }] : []),
+        ...deductions,
+      ],
+      ...(deductions.length ? { typeFacture: 'solde' } : {}),
+      sourceRdvId: horsForfait[0].id,
+      sourceRdvIds: horsForfait.map(j => j.id),
       sourceAnimalId: rdv.animal_id ?? undefined,
       clientUid: rdv.client_uid ?? undefined,
       clientProfileId: rdv.client_profile_id ?? undefined,

@@ -7,6 +7,8 @@ import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show coordonneesClientRdv;
+import 'package:PetsMatch/utils/forfait_garde.dart';
+import 'package:PetsMatch/pages/pro/garde_acceptation.dart' show deductionsAcompteGarde;
 
 /// Helpers partagés pour facturer une prestation de garde depuis un `rdv`
 /// (registre des visites ET agenda pro). La facture elle-même passe par le
@@ -250,12 +252,23 @@ Future<void> facturerGardeDepuisRdv(BuildContext context, Map<String, dynamic> r
     if (choix == 'tous') rdvsAFacturer = jours;
   }
 
-  final n = rdvsAFacturer.length;
+  // Jours couverts par le forfait du client (facturé à l'achat) : exclus.
+  final fg = await rattacherForfaitGarde(rdvsAFacturer);
+  final couverts = fg?.couverts.toSet() ?? <String>{};
+  final horsForfait = [for (final r in rdvsAFacturer) if (!couverts.contains(r['id']?.toString())) r];
+  if (!context.mounted) return;
+  if (horsForfait.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Ces jours sont couverts par le forfait du client : rien à facturer.')));
+    return;
+  }
+  final deductions = await deductionsAcompteGarde(rdvsAFacturer);
+  final n = horsForfait.length;
   final prixJour = await gardeTarif(rdv);
   if (!context.mounted) return;
 
   final designation = n > 1
-      ? 'Garde à domicile — $n jours (${gardePeriodeLabel(rdvsAFacturer)})'
+      ? 'Garde à domicile — $n jours (${gardePeriodeLabel(horsForfait)})'
       : gardeDesignation(rdv);
   final coord = await coordonneesClientRdv(rdv);
   String? v(String k) => (coord[k] ?? '').trim().isEmpty ? null : coord[k]!.trim();
@@ -273,9 +286,14 @@ Future<void> facturerGardeDepuisRdv(BuildContext context, Map<String, dynamic> r
       clientVille: v('ville'),
       lignesPrefill: [
         FacturePrefillLigne(designation: designation, prixHT: prixJour, quantite: n.toDouble(), tauxTVA: 20),
+        if (fg != null && couverts.isNotEmpty)
+          FacturePrefillLigne(designation: '${fg.nom} — ${couverts.length} jour${couverts.length > 1 ? 's' : ''} inclus dans le forfait',
+              description: 'Forfait facturé à l\'achat', prixHT: 0, quantite: 1, tauxTVA: 20),
+        ...deductions,
       ],
+      typeFacture: deductions.isNotEmpty ? 'solde' : null,
       sourceRdvId: rdv['id']?.toString(),
-      sourceRdvIds: rdvsAFacturer.map((r) => r['id']?.toString() ?? '').where((s) => s.isNotEmpty).toList(),
+      sourceRdvIds: horsForfait.map((r) => r['id']?.toString() ?? '').where((s) => s.isNotEmpty).toList(),
       sourceAnimalId: rdv['animal_id']?.toString(),
       clientUid: rdv['client_uid']?.toString(),
       clientProfileId: rdv['client_profile_id']?.toString(),

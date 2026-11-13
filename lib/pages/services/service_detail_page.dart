@@ -1,4 +1,5 @@
 import 'package:PetsMatch/utils/moyens_paiement.dart';
+import 'package:PetsMatch/utils/forfait_garde.dart' show uniteForfaitGarde;
 import 'package:PetsMatch/pages/pro/pension_reservation_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart' show portfolioPublic;
 import 'package:cached_network_image/cached_network_image.dart';
@@ -582,7 +583,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       }
     }
     for (final f in _forfaitsGarde) {
-      final unite = f['type_prestation'] == 'promenade' ? 'promenades' : 'visites';
+      final unite = uniteForfaitGarde(f['type_prestation']?.toString());
       out.add(('Forfait ${f['nom']} (${f['nb_visites']} $unite)', '${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €'));
     }
     final extra = _proData?['tarifs_garde_extra'];

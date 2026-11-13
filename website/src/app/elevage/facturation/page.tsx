@@ -109,8 +109,11 @@ interface FacturePrefill {
    *  séance (avec CR, ordonnance…), pas à l'émission. */
   envoiEnFinDeSeance?: boolean;
   sourceRdvIds?: string[];
-  /** Acompte (pet-sitting : demande acceptée) — les RDV restent à facturer. */
-  typeFacture?: 'acompte';
+  /** Acompte (pet-sitting : demande acceptée) — les RDV restent à facturer.
+   *  Solde : facture finale d'une garde dont l'acompte est déduit. */
+  typeFacture?: 'acompte' | 'solde';
+  /** Acompte d'une garde : son 1er RDV (factures.acompte_rdv_id), déduit ensuite. */
+  acompteRdvId?: string;
   sourceAnimalId?: string;
   clientUid?: string;
   clientProfileId?: string;
@@ -827,7 +830,8 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       profil_source:  profilSource,
       regime_tva:     franchise ? 'franchise' : 'normal',
       ...(isAvoir ? { type_facture: 'avoir', facture_parente_id: avoirDe!.id } : {}),
-      ...(!isAvoir && prefill?.typeFacture === 'acompte' ? { type_facture: 'acompte' } : {}),
+      ...(!isAvoir && prefill?.typeFacture ? { type_facture: prefill.typeFacture } : {}),
+      ...(!isAvoir && prefill?.typeFacture === 'acompte' && prefill.acompteRdvId ? { acompte_rdv_id: prefill.acompteRdvId } : {}),
       ...(prefill?.sourcePensionEntreeId ? { source_pension_entree_id: prefill.sourcePensionEntreeId } : {}),
       ...(prefill?.sourceRdvId ? { source_rdv_id: prefill.sourceRdvId } : {}),
       ...(prefill?.sourceAnimalId ? { source_animal_id: prefill.sourceAnimalId } : {}),
@@ -870,7 +874,13 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       total_tva:      totalTVA,
       total_ttc:      totalTTC,
     };
-    const { data, error } = await supabase.from('factures').insert(payload).select().single();
+    let { data, error } = await supabase.from('factures').insert(payload).select().single();
+    // migration_garde_acompte_forfaits.sql pas encore passée.
+    if (error && 'acompte_rdv_id' in payload && /acompte_rdv_id/.test(error.message)) {
+      const sans: Record<string, unknown> = { ...payload };
+      delete sans.acompte_rdv_id;
+      ({ data, error } = await supabase.from('factures').insert(sans).select().single());
+    }
     if (error || !data) {
       if (error) alert(`Erreur : ${error.message}`);
       setSaving(false);

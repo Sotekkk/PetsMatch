@@ -779,6 +779,8 @@ class CreerFacturePage extends StatefulWidget {
   final String? noteInitiale;
   final String? typeFacture; // 'acompte' | 'solde' | 'avoir' | null
   final String? factureParenteId; // facture corrigée (pour un avoir)
+  /// Acompte d'une garde : son 1er RDV (factures.acompte_rdv_id), déduit ensuite.
+  final String? acompteRdvId;
   final bool franchiseInitiale;
   // Traçabilité optionnelle (facture émise depuis un RDV / un animal — garde…).
   /// Facture d'un forfait éducateur : reliée à forfaits_souscrits.facture_id.
@@ -810,6 +812,7 @@ class CreerFacturePage extends StatefulWidget {
     this.noteInitiale,
     this.typeFacture,
     this.factureParenteId,
+    this.acompteRdvId,
     this.franchiseInitiale = false,
     this.sourceRdvId,
     this.forfaitSouscritId,
@@ -1217,7 +1220,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
       final uid = FirebaseAuth.instance.currentUser!.uid;
       final d = _buildData();
       // Le numéro (AAAA-NNNN, séquence sans rupture) est attribué par le serveur.
-      final inserted = await Supabase.instance.client.from('factures').insert({
+      final ligneFacture = <String, dynamic>{
         'id':                  _uuid(),
         'uid_eleveur':         uid,
         if (_profileId != null) 'profile_id': _profileId,
@@ -1269,7 +1272,18 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
         'conditions_escompte': d['conditionsEscompte'],
         'note_complementaire': d['noteComplementaire'],
         'statut':              'emise',
-      }).select('id, numero_affichage, numero_facture').single();
+        if (widget.acompteRdvId != null) 'acompte_rdv_id': widget.acompteRdvId,
+      };
+      Map<String, dynamic> inserted;
+      try {
+        inserted = await Supabase.instance.client.from('factures').insert(ligneFacture)
+            .select('id, numero_affichage, numero_facture').single();
+      } on PostgrestException catch (e) {
+        // migration_garde_acompte_forfaits.sql pas encore passée.
+        if (widget.acompteRdvId == null || !e.message.contains('acompte_rdv_id')) rethrow;
+        inserted = await Supabase.instance.client.from('factures').insert(ligneFacture..remove('acompte_rdv_id'))
+            .select('id, numero_affichage, numero_facture').single();
+      }
       final factureId = inserted['id'] as String;
       d['numeroAffichage'] = inserted['numero_affichage'];
       d['numeroFacture'] = inserted['numero_facture'];

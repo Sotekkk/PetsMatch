@@ -15,6 +15,7 @@ import { useGardeAccess } from '@/hooks/useGardeAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { nomClientProfil } from '@/lib/nom-client';
+import { uniteForfaitGarde } from '@/lib/forfait-garde';
 
 const TEAL = '#0C5C6C';
 
@@ -295,14 +296,14 @@ function TarifsForfaits() {
 
       {onglet === 'forfaits' && (
         <div className="space-y-3">
-          <p className="text-sm text-gray-600">Packs de visites ou de promenades à prix réduit. Le client les choisit à la réservation.</p>
+          <p className="text-sm text-gray-600">Packs de visites, de promenades ou de jours de garde, facturés à l&apos;achat puis décomptés à chaque passage. Le client les choisit à la réservation.</p>
           {forfaits.length === 0 && <p className="text-center text-gray-400 py-8">Aucun forfait pour l&apos;instant.</p>}
           {forfaits.map(f => (
             <div key={f.id} className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <button onClick={() => setForfaitEdite(f)} className="text-left">
                   <p className="text-sm font-bold text-[#1F2A2E]">{f.nom}</p>
-                  <p className="text-xs text-gray-600">{f.nb_visites} {f.type_prestation === 'promenade' ? 'promenades' : 'visites'} — {Number(f.prix).toFixed(0)} €</p>
+                  <p className="text-xs text-gray-600">{f.nb_visites} {uniteForfaitGarde(f.type_prestation)} — {Number(f.prix).toFixed(0)} €</p>
                   {f.description && <p className="text-xs text-gray-400">{f.description}</p>}
                 </button>
                 <div className="flex gap-3 text-sm flex-shrink-0">
@@ -384,7 +385,7 @@ function ForfaitModal({ forfait, uid, profileId, onClose, onSaved }: {
   const [publicOk, setPublicOk] = useState(forfait?.affiche_public !== false);
   const [saving, setSaving] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  const unite = type === 'promenade' ? 'promenades' : 'visites';
+  const unite = uniteForfaitGarde(type);
 
   async function save() {
     if (!nom.trim()) return;
@@ -410,7 +411,7 @@ function ForfaitModal({ forfait, uid, profileId, onClose, onSaved }: {
         <h3 className="font-bold text-base mb-4 text-[#1E2025]">{forfait ? 'Modifier le forfait' : 'Nouveau forfait'}</h3>
         <div className="space-y-3">
           <div className="flex gap-2">
-            {([['visite', 'Visites'], ['promenade', 'Promenades']] as const).map(([k, l]) => (
+            {([['visite', 'Visites'], ['promenade', 'Promenades'], ['garde_journee', 'Jours de garde']] as const).map(([k, l]) => (
               <button key={k} type="button" onClick={() => setType(k)}
                 className="px-3 py-1.5 rounded-full text-sm font-semibold"
                 style={type === k ? { background: TEAL, color: 'white' } : { background: '#F1F4F3', color: '#1F2A2E' }}>{l}</button>

@@ -14,6 +14,7 @@ import { gardeTarif } from '@/lib/garde-facturation';
 import { accesLogementLabel } from '@/lib/garde-labels';
 import CompteRenduExpressModal from '@/components/garde/CompteRenduExpressModal';
 import { useAuth } from '@/lib/auth-context';
+import { rattacherForfaitGarde, acomptesGarde, deductionsAcompteGarde, uniteForfaitGarde, type ForfaitGardeClient } from '@/lib/forfait-garde';
 
 const TEAL = '#0C5C6C';
 
@@ -24,7 +25,7 @@ export interface RdvAccepte {
   animaux_ids?: unknown[] | null; clientName?: string; animalNom?: string;
 }
 // commune : prestation pour tous les animaux du foyer (comptée une fois).
-type Ligne = { description: string; quantite: number; prixUnitaire: number; tva: number; commune?: boolean };
+type Ligne = { description: string; quantite: number; prixUnitaire: number; tva: number; commune?: boolean; prixTTC?: number };
 
 const eur = (v: number) => `${v.toFixed(2).replace('.', ',')} €`;
 function periode(rdvs: RdvAccepte[]) {
@@ -49,6 +50,9 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
     facture?: EtatDoc; factureFaite?: boolean; rapports?: EtatDoc; cles?: EtatDoc; nbCles?: number;
   }>({});
   const [compteRendu, setCompteRendu] = useState(false);
+  // Forfait acheté par le client (facturé à l'achat, passages décomptés).
+  const [forfait, setForfait] = useState<ForfaitGardeClient | null>(null);
+  const [aFacturer, setAFacturer] = useState<string[]>(rdvs.map(r => r.id));
   const router = useRouter();
   const { plan } = usePlanGarde();
   const premium = plan === 'premium';
@@ -66,6 +70,25 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
       const noms = first.animalNom ? ` — ${first.animalNom}` : '';
       // Plusieurs animaux : visites et forfait communs au foyer (section « Prestations communes »).
       const commune = Array.isArray(first.animaux_ids) && first.animaux_ids.length > 1;
+      // Forfait acheté : ses passages ne sont plus facturés (facture à l'achat).
+      const fg = await rattacherForfaitGarde(rdvs.map(r => r.id));
+      if (!alive) return;
+      setForfait(fg);
+      const couverts = new Set(fg?.couverts ?? []);
+      const horsForfait = rdvs.filter(r => !couverts.has(r.id));
+      setAFacturer(horsForfait.map(r => r.id));
+      const info: Ligne[] = fg && couverts.size
+        ? [{ description: `${fg.nom} — ${couverts.size} ${uniteForfaitGarde(fg.type, couverts.size > 1)} inclus dans le forfait (facturé à l'achat)`, quantite: 1, prixUnitaire: 0, tva: 20, commune: true }]
+        : [];
+      if (fg) {
+        const m = horsForfait.length;
+        if (!m) { setLignes(info); setTotal(0); return; }
+        const prixF = await gardeTarif(first.pro_uid, proProfileId, { ...first, animal_id: first.animal_id ?? null });
+        if (!alive) return;
+        setLignes([{ description: `${first.motif ?? 'Prestation'}${noms} (${periode(horsForfait)})`, quantite: m, prixUnitaire: prixF, tva: 20, ...(commune ? { commune } : {}) }, ...info]);
+        setTotal(prixF * m);
+        return;
+      }
       if (first.forfait_id) {
         const { data: f } = await supabase.from('forfaits_garde').select('nom, prix').eq('id', first.forfait_id).maybeSingle();
         const prix = Number(f?.prix) || 0;
@@ -133,7 +156,8 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
       type F = { statut?: string; type_facture?: string | null; numero_affichage?: string | null; total_ttc?: number | null };
       const liste = (fa.data ?? []) as F[];
       const fac = liste.find(f => f.type_facture !== 'acompte' && f.type_facture !== 'avoir') ?? null;
-      const acp = (ac.data as F | null) ?? liste.find(f => f.type_facture === 'acompte') ?? null;
+      const lies = await acomptesGarde(ids);
+      const acp = (lies[lies.length - 1] as F | undefined) ?? (ac.data as F | null) ?? liste.find(f => f.type_facture === 'acompte') ?? null;
       const etatF = (f: F | null, vide: string): EtatDoc => !f ? { texte: vide, couleur: GRIS }
         : f.statut === 'payee' ? { texte: `${f.numero_affichage ?? 'Facture'} — payée`, couleur: VERT }
         : { texte: `${f.numero_affichage ?? 'Facture'} — ${eur(Number(f.total_ttc) || 0)}, en attente de paiement`, couleur: ORANGE };
@@ -206,15 +230,36 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
   }
 
   async function facturer(acompte: boolean) {
+    if (!acompte && forfait && aFacturer.length === 0) { setMsg('Tous les passages sont couverts par le forfait du client : rien à facturer.'); return; }
+    // Facture finale : acomptes de la garde déduits.
+    const deductions = acompte ? [] : await deductionsAcompteGarde(rdvs.map(r => r.id));
     const l: Ligne[] = acompte
       ? [{ description: `Acompte — ${first.motif ?? 'Prestation'} (${periode(rdvs)})`, quantite: 1, prixUnitaire: Math.round(total * 30) / 100, tva: 20 }]
-      : lignes;
+      : [...lignes, ...deductions];
     // Nom, prénom, e-mail, téléphone, adresse du client (profil, compte, saisie manuelle).
     const coord = await coordonneesClientRdv(first.id, first.client_profile_id).catch(() => null);
     const prefill = {
       ...(coord ? prefillClient(coord, first.clientName ?? '') : { nomClient: first.clientName ?? '' }),
       lignes: l,
-      ...(acompte ? { typeFacture: 'acompte' } : { sourceRdvId: first.id, sourceRdvIds: rdvs.map(r => r.id) }),
+      ...(acompte ? { typeFacture: 'acompte', acompteRdvId: first.id }
+        : { sourceRdvId: aFacturer[0] ?? first.id, sourceRdvIds: aFacturer, ...(deductions.length ? { typeFacture: 'solde' } : {}) }),
+      sourceAnimalId: first.animal_id ?? undefined,
+      clientUid: first.client_uid,
+      clientProfileId: first.client_profile_id ?? undefined,
+    };
+    try { sessionStorage.setItem('pm_facture_prefill', JSON.stringify(prefill)); } catch { /* ignore */ }
+    onClose();
+    router.push('/elevage/facturation');
+  }
+
+  async function facturerForfait() {
+    if (!forfait) return;
+    const coord = await coordonneesClientRdv(first.id, first.client_profile_id).catch(() => null);
+    const prefill = {
+      ...(coord ? prefillClient(coord, first.clientName ?? '') : { nomClient: first.clientName ?? '' }),
+      lignes: [{ description: `Forfait ${forfait.nom}${first.animalNom ? ` — ${first.animalNom}` : ''} (${forfait.total} ${uniteForfaitGarde(forfait.type, forfait.total > 1)}, décomptés à chaque passage)`,
+        quantite: 1, prixUnitaire: 0, prixTTC: forfait.prix, tva: 20, commune: true }],
+      forfaitSouscritId: forfait.souscription.id,
       sourceAnimalId: first.animal_id ?? undefined,
       clientUid: first.client_uid,
       clientProfileId: first.client_profile_id ?? undefined,
@@ -289,6 +334,10 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
             <>
               {tuile('✍️', 'Contrat de garde', '', contrat, 'contrat', etats.contrat, etats.contrat?.texte === 'À envoyer' ? 'Envoyer' : 'Ouvrir')}
               {tuile('📝', 'Devis', '', () => (etats.devisId ? aller('/garde/devis') : devis()), undefined, etats.devis, etats.devisId ? 'Voir' : 'Créer')}
+              {forfait && tuile('🎁', `Forfait ${forfait.nom}`, '',
+                () => (forfait.factureId ? aller('/elevage/facturation') : facturerForfait()), undefined,
+                { texte: `${forfait.utilises}/${forfait.total} ${uniteForfaitGarde(forfait.type)} utilisés · ${forfait.factureId ? 'facturé' : 'à facturer'}`, couleur: forfait.factureId ? VERT : ORANGE },
+                forfait.factureId ? 'Voir' : 'Facturer')}
               {tuile('💶', 'Acompte', '', () => (etats.acompteFait ? aller('/elevage/facturation') : facturer(true)), undefined, etats.acompte, etats.acompteFait ? 'Voir' : 'Demander')}
             </>
           ) : verrou}
@@ -296,7 +345,9 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
             tuile('🔑', 'Clés du logement', '', () => (nbCles > 0 ? aller('/garde/cles') : cle()), 'cle', etats.cles, nbCles > 0 ? 'Voir' : 'Enregistrer')}
           <p className="text-xs font-bold text-gray-400 uppercase tracking-wide pt-2">Pendant et après la garde</p>
           {first.animal_id && tuile('📷', 'Compte rendu de visite', '', () => setCompteRendu(true), undefined, etats.rapports, 'Envoyer')}
-          {premium && tuile('🧾', 'Facture', '', () => (etats.factureFaite ? aller('/elevage/facturation') : facturer(false)), undefined, etats.facture, etats.factureFaite ? 'Voir' : 'Facturer')}
+          {premium && tuile('🧾', 'Facture', '', () => (etats.factureFaite ? aller('/elevage/facturation') : facturer(false)), undefined,
+            forfait && aFacturer.length === 0 && !etats.factureFaite ? { texte: 'Tous les passages sont dans le forfait', couleur: VERT } : etats.facture,
+            etats.factureFaite ? 'Voir' : 'Facturer')}
           {msg && <p className="text-xs text-gray-600 pt-1">{msg}</p>}
           <button type="button" onClick={onClose} className="w-full mt-2 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
         </div>
@@ -325,6 +376,7 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
         {premium ? (
           <>
             {tuile('📝', 'Envoyer un devis', total > 0 ? `Avant la garde — ${eur(total)}, à accepter par le client` : 'Avant la garde, à accepter par le client', devis)}
+            {forfait?.aFacturer && tuile('🎁', `Facturer le forfait ${forfait.nom}`, `${eur(forfait.prix)} — ${Math.max(0, forfait.total - forfait.utilises)} ${uniteForfaitGarde(forfait.type)} restants ensuite`, facturerForfait)}
             {tuile('🧾', 'Facturer maintenant', total > 0 ? `Paiement d'avance — ${eur(total)}` : "Paiement d'avance (tarif à compléter)", () => facturer(false))}
             {tuile('💶', 'Demander un acompte', total > 0 ? `30 % — ${eur(total * 0.3)} (modifiable)` : 'Montant à saisir', () => facturer(true))}
           </>

@@ -15,6 +15,7 @@ import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill;
 import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show coordonneesClientRdv;
+import 'package:PetsMatch/utils/forfait_garde.dart';
 
 const _teal = Color(0xFF0C5C6C);
 
@@ -23,7 +24,11 @@ const _teal = Color(0xFF0C5C6C);
 class GardeChiffrage {
   final List<FacturePrefillLigne> lignes;
   final double totalHT;
-  const GardeChiffrage(this.lignes, this.totalHT);
+  /// Forfait acheté par le client dont la garde puise des passages.
+  final ForfaitGardeClient? forfait;
+  /// Passages à facturer (hors forfait).
+  final int nbAFacturer;
+  const GardeChiffrage(this.lignes, this.totalHT, {this.forfait, this.nbAFacturer = 0});
 }
 
 int _nbAnimaux(Map<String, dynamic> r) {
@@ -41,13 +46,23 @@ String _periode(List<Map<String, dynamic>> rdvs) {
 
 Future<GardeChiffrage> chiffrerGarde(List<Map<String, dynamic>> rdvs) async {
   final first = rdvs.first;
-  final n = rdvs.length;
   final animaux = _nbAnimaux(first);
   final noms = (first['_animal_nom'] ?? first['animal_nom_manuel'] ?? '').toString();
   // Plusieurs animaux : visites et forfait communs au foyer (section « Prestations communes »).
   final commune = animaux > 1;
+  // Forfait acheté (facturé à l'achat) : ses passages ne sont plus facturés.
+  final fg = await rattacherForfaitGarde(rdvs);
+  final couverts = fg?.couverts.toSet() ?? <String>{};
+  final aFacturer = [for (final r in rdvs) if (!couverts.contains(r['id']?.toString())) r];
+  final lignes = <FacturePrefillLigne>[];
+  if (fg != null && couverts.isNotEmpty) {
+    lignes.add(FacturePrefillLigne(
+        designation: '${fg.nom} — ${couverts.length} ${uniteForfaitGarde(fg.type, pluriel: couverts.length > 1)} inclus dans le forfait',
+        description: 'Forfait facturé à l\'achat (${fg.utilises}/${fg.total} utilisés)', prixHT: 0, quantite: 1, tauxTVA: 20, commune: true));
+  }
+  // Sans la migration : forfait choisi à la réservation facturé comme avant.
   final forfaitId = first['forfait_id']?.toString();
-  if (forfaitId != null && forfaitId.isNotEmpty) {
+  if (fg == null && forfaitId != null && forfaitId.isNotEmpty) {
     try {
       final f = await Supabase.instance.client.from('forfaits_garde')
           .select('nom, prix, nb_visites').eq('id', forfaitId).maybeSingle();
@@ -56,16 +71,16 @@ Future<GardeChiffrage> chiffrerGarde(List<Map<String, dynamic>> rdvs) async {
         return GardeChiffrage([
           FacturePrefillLigne(designation: 'Forfait ${f['nom']}${noms.isNotEmpty ? ' — $noms' : ''}',
               description: _periode(rdvs), prixHT: prix, quantite: 1, tauxTVA: 20, commune: commune),
-        ], prix);
+        ], prix, nbAFacturer: rdvs.length);
       }
     } catch (_) {}
   }
+  final n = aFacturer.length;
+  if (n == 0) return GardeChiffrage(lignes, 0, forfait: fg);
   final prix = await gardeTarif(first);
-  final lignes = <FacturePrefillLigne>[
-    FacturePrefillLigne(
+  lignes.add(FacturePrefillLigne(
       designation: '${(first['motif'] ?? 'Prestation').toString()}${noms.isNotEmpty ? ' — $noms' : ''}',
-      description: _periode(rdvs), prixHT: prix, quantite: n.toDouble(), tauxTVA: 20, commune: commune),
-  ];
+      description: _periode(aFacturer), prixHT: prix, quantite: n.toDouble(), tauxTVA: 20, commune: commune));
   var total = prix * n;
   if (animaux > 1) {
     final supp = await _tarifAnimalSupp();
@@ -75,7 +90,48 @@ Future<GardeChiffrage> chiffrerGarde(List<Map<String, dynamic>> rdvs) async {
       total += supp * (animaux - 1) * n;
     }
   }
-  return GardeChiffrage(lignes, total);
+  return GardeChiffrage(lignes, total, forfait: fg, nbAFacturer: n);
+}
+
+/// Acomptes déjà demandés pour cette garde : lignes de déduction (montant TTC
+/// négatif) de la facture finale.
+Future<List<FacturePrefillLigne>> deductionsAcompteGarde(List<Map<String, dynamic>> rdvs) async {
+  final acs = await acomptesGarde([for (final r in rdvs) r['id']?.toString() ?? ''].where((x) => x.isNotEmpty).toList());
+  return [
+    for (final a in acs)
+      FacturePrefillLigne(
+        designation: 'Acompte versé — facture ${a['numero_affichage'] ?? ''}'.trim(),
+        description: a['statut'] == 'payee' ? 'Déduit du montant de la garde' : 'Déduit du montant de la garde (acompte non encore réglé)',
+        prixHT: 0, prixTTC: -((a['total_ttc'] as num?)?.toDouble() ?? 0), quantite: 1, tauxTVA: 20, commune: true),
+  ];
+}
+
+/// Facture du forfait acheté (une fois, à l'achat) : rattachée au forfait du
+/// client (forfaits_souscrits.facture_id).
+Future<void> facturerForfaitGarde(BuildContext context, ForfaitGardeClient f, Map<String, dynamic> rdv) async {
+  if (!await _premiumOuProposer(context, 'La facturation')) return;
+  final coord = await coordonneesClientRdv(rdv);
+  String? v(String k) => (coord[k] ?? '').trim().isEmpty ? null : coord[k]!.trim();
+  if (!context.mounted) return;
+  final noms = (rdv['_animal_nom'] ?? rdv['animal_nom_manuel'] ?? '').toString();
+  await Navigator.push(context, MaterialPageRoute(
+    builder: (_) => CreerFacturePage(
+      clientNom: v('nom') ?? gardeClientNom(rdv),
+      clientPrenom: v('nom') != null ? v('prenom') : null,
+      clientEmail: v('email'), clientTel: v('tel'),
+      clientRue: v('rue'), clientCp: v('cp'), clientVille: v('ville'),
+      lignesPrefill: [
+        FacturePrefillLigne(
+          designation: 'Forfait ${f.nom}${noms.isNotEmpty ? ' — $noms' : ''}',
+          description: '${f.total} ${uniteForfaitGarde(f.type, pluriel: f.total > 1)}, décomptés à chaque passage',
+          prixTTC: f.prix, quantite: 1, tauxTVA: 20, commune: true),
+      ],
+      forfaitSouscritId: f.souscription['id']?.toString(),
+      sourceAnimalId: rdv['animal_id']?.toString(),
+      clientUid: rdv['client_uid']?.toString(),
+      clientProfileId: rdv['client_profile_id']?.toString(),
+    ),
+  ));
 }
 
 Future<double> _tarifAnimalSupp() async {
@@ -204,11 +260,18 @@ Future<void> facturerGardeAcceptee(BuildContext context, List<Map<String, dynami
   final c = await chiffrerGarde(rdvs);
   if (!context.mounted) return;
   final first = rdvs.first;
+  if (!acompte && c.nbAFacturer == 0 && c.forfait != null) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Tous les passages sont couverts par le forfait du client : rien à facturer.')));
+    return;
+  }
+  final deductions = acompte ? <FacturePrefillLigne>[] : await deductionsAcompteGarde(rdvs);
+  if (!context.mounted) return;
   final lignes = acompte
       ? [FacturePrefillLigne(
           designation: 'Acompte — ${(first['motif'] ?? 'Prestation').toString()}',
           description: _periode(rdvs), prixHT: double.parse((c.totalHT * 0.3).toStringAsFixed(2)), tauxTVA: 20)]
-      : c.lignes;
+      : [...c.lignes, ...deductions];
   final coord = await coordonneesClientRdv(first);
   String? v(String k) => (coord[k] ?? '').trim().isEmpty ? null : coord[k]!.trim();
   if (!context.mounted) return;
@@ -223,7 +286,9 @@ Future<void> facturerGardeAcceptee(BuildContext context, List<Map<String, dynami
       clientCp: v('cp'),
       clientVille: v('ville'),
       lignesPrefill: lignes,
-      typeFacture: acompte ? 'acompte' : null,
+      typeFacture: acompte ? 'acompte' : (deductions.isNotEmpty ? 'solde' : null),
+      // Acompte rattaché à la garde (déduit de la facture finale).
+      acompteRdvId: acompte ? first['id']?.toString() : null,
       // Acompte : les passages restent « à facturer » (solde ensuite).
       sourceRdvId: acompte ? null : first['id']?.toString(),
       sourceRdvIds: acompte ? const [] : [for (final r in rdvs) r['id']?.toString() ?? ''].where((s) => s.isNotEmpty).toList(),
@@ -331,6 +396,12 @@ Future<void> apresAcceptationGarde(BuildContext context, List<Map<String, dynami
               }],
             ))));
           }),
+          if (c.forfait != null && c.forfait!.nouveau)
+            tuile(Icons.card_giftcard_outlined, 'Facturer le forfait ${c.forfait!.nom}',
+                '${c.forfait!.prix.toStringAsFixed(2).replaceAll('.', ',')} € — ${c.forfait!.restants} ${uniteForfaitGarde(c.forfait!.type)} restants ensuite', () {
+              Navigator.pop(ctx);
+              facturerForfaitGarde(context, c.forfait!, first);
+            }),
           tuile(Icons.receipt_long_outlined, 'Facturer maintenant',
               c.totalHT > 0 ? 'Paiement d\'avance — ${eur(c.totalHT)}' : 'Paiement d\'avance (tarif à compléter)', () {
             Navigator.pop(ctx);

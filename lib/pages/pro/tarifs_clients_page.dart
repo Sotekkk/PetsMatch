@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/nom_client.dart';
+import 'package:PetsMatch/utils/forfait_garde.dart' show uniteForfaitGarde;
 
 // ── Pet-sitter : « Tarifs & forfaits », page unique des prix (13/11/2026).
 //   • Tarifs : grille standard (user_profiles.tarifs_garde), visite d'essai
@@ -373,7 +374,7 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;
     var type = f?['type_prestation']?.toString() ?? 'visite';
     var public = f?['affiche_public'] != false;
-    String unite() => type == 'promenade' ? 'promenades' : 'visites';
+    String unite() => uniteForfaitGarde(type);
     final nomCtrl = TextEditingController(text: f?['nom']?.toString() ?? '');
     final nbCtrl = TextEditingController(text: (f?['nb_visites'] ?? 5).toString());
     final prixCtrl = TextEditingController(text: f == null ? '' : ((f['prix'] as num?)?.toStringAsFixed(0) ?? ''));
@@ -389,7 +390,7 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 14),
           Wrap(spacing: 8, children: [
-            for (final t in const [('visite', 'Visites'), ('promenade', 'Promenades')])
+            for (final t in const [('visite', 'Visites'), ('promenade', 'Promenades'), ('garde_journee', 'Jours de garde')])
               ChoiceChip(
                 label: Text(t.$2, style: TextStyle(fontFamily: 'Galey', color: type == t.$1 ? Colors.white : const Color(0xFF1F2A2E))),
                 selected: type == t.$1, showCheckmark: false, selectedColor: _teal,
@@ -483,7 +484,7 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
   Widget _ongletForfaits() => ListView(padding: const EdgeInsets.all(12), children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
-          child: Text('Packs de visites ou de promenades à prix réduit. Le client les choisit à la réservation.',
+          child: Text("Packs de visites, de promenades ou de jours de garde, facturés à l'achat puis décomptés à chaque passage. Le client les choisit à la réservation.",
               style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
         ),
         if (_forfaits.isEmpty)
@@ -504,7 +505,7 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
                     onTap: () => _editerForfait(f),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(f['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
-                      Text('${f['nb_visites']} ${f['type_prestation'] == 'promenade' ? 'promenades' : 'visites'} — ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €',
+                      Text('${f['nb_visites']} ${uniteForfaitGarde(f['type_prestation']?.toString())} — ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €',
                           style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
                       if ((f['description']?.toString() ?? '').isNotEmpty)
                         Text(f['description'].toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),

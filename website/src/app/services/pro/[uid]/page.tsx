@@ -1,4 +1,5 @@
 'use client';
+import { uniteForfaitGarde } from '@/lib/forfait-garde';
 import { libelleMoyens, moyensPaiement } from '@/lib/moyens-paiement';
 import { etatEssaiClient, MOTIF_ESSAI, reglagesEssai, type EtatEssai } from '@/lib/garde-essai';
 import { portfolioPublic, type ItemPortfolio } from '@/lib/portfolio';
@@ -1439,7 +1440,7 @@ function ProDetailContent() {
               prix: (e.prix ?? 0) > 0 ? `${e.prix} €` : '—',
             })),
           ...forfaitsGarde.map(f => ({
-            label: `Forfait ${f.nom} (${f.nb_visites} ${f.type_prestation === 'promenade' ? 'promenades' : 'visites'})`,
+            label: `Forfait ${f.nom} (${f.nb_visites} ${uniteForfaitGarde(f.type_prestation)})`,
             prix: `${Number(f.prix).toFixed(0)} €`,
           })),
         ]
