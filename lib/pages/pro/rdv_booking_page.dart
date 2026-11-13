@@ -3199,7 +3199,13 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   Widget _buildPhotographeLieuSection() {
     Widget choix(String v, String label) => Expanded(child: OutlinedButton(
-      onPressed: () => setState(() => _lieuPhoto = v),
+      onPressed: () => setState(() {
+        _lieuPhoto = v;
+        // À domicile : l'adresse du profil du client, modifiable.
+        if (v == 'domicile' && _adresseDepartCtrl.text.trim().isEmpty && (_clientAdresseConnue ?? '').isNotEmpty) {
+          _adresseDepartCtrl.text = _clientAdresseConnue!;
+        }
+      }),
       style: OutlinedButton.styleFrom(
         foregroundColor: _lieuPhoto == v ? Colors.white : widget.categoryColor,
         backgroundColor: _lieuPhoto == v ? widget.categoryColor : Colors.white,

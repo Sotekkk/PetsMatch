@@ -810,7 +810,7 @@ function ProDetailContent() {
       animauxQ,
       ownQ,
       fetchRdvsDuJour(),
-      (domicilePossible(pro?.cat_pro) || pro?.cat_pro === 'garde') && user ? getClientKnownAddress(user.uid, activeProfileId) : Promise.resolve(null),
+      (domicilePossible(pro?.cat_pro) || pro?.cat_pro === 'garde' || pro?.cat_pro === 'photographe') && user ? getClientKnownAddress(user.uid, activeProfileId) : Promise.resolve(null),
     ]);
     setRdvsDuJourByDate(rdvsDuJour);
     if (clientAdresse) {
@@ -2332,7 +2332,11 @@ function ProDetailContent() {
                       <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5" style={{ fontFamily: 'Galey, sans-serif' }}>Lieu du shooting *</p>
                       <div className="grid grid-cols-2 gap-2">
                         {([['domicile', 'À domicile'], ['photographe', 'Lieu proposé par le photographe']] as const).map(([k, l]) => (
-                          <button key={k} type="button" onClick={() => setLieuPhoto(k)}
+                          <button key={k} type="button" onClick={() => {
+                            setLieuPhoto(k);
+                            // À domicile : l'adresse du profil du client, modifiable.
+                            if (k === 'domicile' && !adressePhoto.trim() && clientAdresseConnue) setAdressePhoto(clientAdresseConnue);
+                          }}
                             className="px-3 py-2.5 rounded-xl border text-sm font-semibold"
                             style={{ fontFamily: 'Galey, sans-serif', borderColor: lieuPhoto === k ? catColor : '#E5E7EB', backgroundColor: lieuPhoto === k ? `${catColor}15` : 'white', color: lieuPhoto === k ? catColor : '#6B7280' }}>
                             {l}
