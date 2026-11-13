@@ -23,6 +23,7 @@ import 'package:PetsMatch/utils/devis_rdv.dart' show devisDuRdv, titreDevisRdv, 
 import 'package:PetsMatch/utils/document_pro.dart' show octetsUrlDocument;
 import 'package:PetsMatch/utils/forfait_garde.dart' show acomptesGarde, rattacherForfaitGarde;
 import 'package:PetsMatch/utils/rdv_animaux.dart' show idsAnimauxRdv;
+import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart' show contratGardePdfBytes;
 
 const _teal = Color(0xFF0C5C6C);
 const _pTeal = PdfColor.fromInt(0xFF0C5C6C);
@@ -128,6 +129,48 @@ Future<Uint8List> compteRenduGardePdf({
   return doc.save();
 }
 
+/// Contrat de garde signé par les deux parties, en PDF (même modèle que
+/// l'écran du contrat). Null si introuvable.
+Future<Uint8List?> pdfContratGardeSigne(String docId) async {
+  final supa = Supabase.instance.client;
+  try {
+    final doc = await supa.from('documents_animaux').select('metadata, animal_id, pro_profile_id, signe_le').eq('id', docId).maybeSingle();
+    if (doc == null) return null;
+    final meta = Map<String, dynamic>.from((doc['metadata'] as Map?) ?? {});
+    String m(String k) => _v(meta[k]);
+    final up = _v(doc['pro_profile_id']).isEmpty ? null : await supa.from('user_profiles_complet')
+        .select('nom, firstname, lastname, siret, phone_number, numero_elevage, email_contact, adresse, rue, ville, code_postal, rue_pro, ville_pro, code_postal_pro')
+        .eq('id', doc['pro_profile_id']).maybeSingle();
+    final u = up ?? const <String, dynamic>{};
+    final adressePro = [_v(u['rue_pro']), [_v(u['code_postal_pro']), _v(u['ville_pro'])].where((e) => e.isNotEmpty).join(' ')]
+        .where((e) => e.isNotEmpty).join(', ');
+    final adresse = adressePro.isNotEmpty ? adressePro
+        : [_v(u['rue']), _v(u['code_postal']), _v(u['ville'])].where((e) => e.isNotEmpty).join(', ');
+    final prestataire = <String, dynamic>{
+      'name_elevage': u['nom'], 'firstname': u['firstname'], 'lastname': u['lastname'],
+      'adress_elevage': adresse, 'adress': adresse, 'ville': u['ville'], 'ville_pro': u['ville_pro'],
+      'siret': u['siret'], 'email': u['email_contact'], 'code_iso_elevage': '+33',
+      'numero_elevage': u['numero_elevage'], 'phone_number': u['phone_number'],
+    };
+    Map<String, dynamic>? animal;
+    if (_v(doc['animal_id']).isNotEmpty) {
+      final a = await supa.from('animaux').select('*').eq('id', doc['animal_id']).maybeSingle();
+      if (a != null) animal = {...Map<String, dynamic>.from(a), if (m('animal_nom').isNotEmpty) 'nom': m('animal_nom')};
+    }
+    return contratGardePdfBytes(
+      animal: animal, prestataire: prestataire,
+      clientNom: m('client_nom'), clientAdresse: m('client_adresse'), clientEmail: m('client_email'), clientTel: m('client_tel'),
+      prestation: m('prestation'),
+      datePrestation: DateTime.tryParse(m('date_visite').isNotEmpty ? m('date_visite') : m('date_prestation')),
+      tarif: m('tarif'), notes: m('notes'),
+      sigPrestataire: meta['signature_eleveur']?.toString(), sigClient: meta['signature_acquereur']?.toString(),
+      villeSignature: m('ville_signature').isNotEmpty ? m('ville_signature') : (_v(u['ville']).isNotEmpty ? _v(u['ville']) : _v(u['ville_pro'])),
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
 Future<void> finDeGarde(BuildContext context, Map<String, dynamic> rdv, {VoidCallback? onChanged}) async {
   final supa = Supabase.instance.client;
   final rdvs = await _passages(rdv);
@@ -186,7 +229,7 @@ Future<void> finDeGarde(BuildContext context, Map<String, dynamic> rdv, {VoidCal
     if (facture != null) 'fac': true,
     for (final a in acomptesComplets) 'acp:${a['id']}': false,
     if (factureForfait != null) 'ff': false,
-    if (contrat != null) 'ctr': !contratSigne,
+    if (contrat != null) 'ctr': true,
     for (final d in devis) 'dev:${d['id']}': d['statut'] == 'brouillon',
   };
   final dejaPayee = facture?['statut'] == 'payee';
@@ -236,7 +279,7 @@ Future<void> finDeGarde(BuildContext context, Map<String, dynamic> rdv, {VoidCal
             ligne('ff', 'Facture du forfait ${factureForfait['numero_affichage'] ?? ''}',
                 '${eur(factureForfait['total_ttc'])} TTC · déjà envoyée à son émission'),
           if (contrat != null)
-            ligne('ctr', 'Contrat de garde', contratSigne ? 'Signé — lien pour le consulter' : 'Lien pour le signer'),
+            ligne('ctr', 'Contrat de garde', contratSigne ? 'Signé par les deux parties — version signée en PDF' : 'Pas encore signé — lien pour le signer'),
           for (final d in devis) ligne('dev:${d['id']}', titreDevisRdv(d), sousTitreDevisRdv(d)),
           if (facture != null && !dejaPayee) ...[
             SwitchListTile(
@@ -307,6 +350,12 @@ Future<void> finDeGarde(BuildContext context, Map<String, dynamic> rdv, {VoidCal
       pieces.add((type: 'facture', nomFichier: 'Facture-forfait-${factureForfait['numero_affichage'] ?? ''}${factureForfait['statut'] == 'payee' ? '-acquittee' : ''}.pdf',
           bytes: await facturePdfDepuisLigne(factureForfait)));
     }
+    // Contrat signé par les deux parties : la version signée en PDF (pas de lien).
+    Uint8List? pdfContrat;
+    if (contrat != null && contratSigne && coches['ctr'] == true) {
+      pdfContrat = await pdfContratGardeSigne(_v(contrat['id']));
+      if (pdfContrat != null) pieces.add((type: 'contrat', nomFichier: 'Contrat-de-garde-signe.pdf', bytes: pdfContrat));
+    }
     var ok = true;
     if (pieces.isNotEmpty && context.mounted) {
       ok = await envoyerDocumentsParEmail(context, pieces: pieces, animalNom: animalNom, destinataireNom: clientNom,
@@ -314,7 +363,7 @@ Future<void> finDeGarde(BuildContext context, Map<String, dynamic> rdv, {VoidCal
           animalId: idsAnimauxRdv(first).firstOrNull, contexte: 'garde');
     }
     // Contrat : lien (signature ou consultation) par e-mail ; devis : lien de signature.
-    if (contrat != null && coches['ctr'] == true && _v(contrat['token']).isNotEmpty) {
+    if (contrat != null && coches['ctr'] == true && pdfContrat == null && _v(contrat['token']).isNotEmpty) {
       final envoye = await envoyerContratParEmail(first, _v(contrat['token']), titre: _v(contrat['titre']), nomClient: clientNom);
       if (!envoye) {
         messenger.showSnackBar(const SnackBar(behavior: SnackBarBehavior.floating,

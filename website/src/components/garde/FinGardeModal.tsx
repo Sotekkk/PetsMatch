@@ -14,6 +14,7 @@ import { envoyerContratParEmail } from '@/lib/contrat-email';
 import { devisDuRdv, envoyerDevisRdv, type DevisRdv } from '@/lib/devis-rdv';
 import { acomptesGarde, rattacherForfaitGarde } from '@/lib/forfait-garde';
 import { coordonneesClientRdv } from '@/lib/coordonnees-client-rdv';
+import { pdfContratGardeSigne } from '@/lib/contrat-garde-pdf';
 
 const TEAL = '#0C5C6C';
 const MAX_PHOTOS = 24;
@@ -93,7 +94,7 @@ export default function FinGardeModal({ rdvs, proProfileId, proNom, clientNom, a
   const [acomptes, setAcomptes] = useState<Facture[]>([]);
   const [factureForfait, setFactureForfait] = useState<Facture | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [contrat, setContrat] = useState<{ token: string | null; statut: string; titre: string | null } | null>(null);
+  const [contrat, setContrat] = useState<{ id: string; token: string | null; statut: string; titre: string | null } | null>(null);
   const [devis, setDevis] = useState<DevisRdv[]>([]);
   const [coches, setCoches] = useState<Record<string, boolean>>({});
   const [acquittee, setAcquittee] = useState(false);
@@ -106,7 +107,7 @@ export default function FinGardeModal({ rdvs, proProfileId, proNom, clientNom, a
       const [fa, pu, ct] = await Promise.all([
         supabase.from('factures').select('*').in('source_rdv_id', ids).neq('statut', 'annulee').order('created_at', { ascending: false }),
         supabase.from('pension_updates').select('note, photo_url, created_at, incident').in('rdv_id', ids).order('created_at'),
-        supabase.from('documents_animaux').select('token, statut, titre').eq('uid_eleveur', first.pro_uid).eq('type', 'contrat_garde')
+        supabase.from('documents_animaux').select('id, token, statut, titre').eq('uid_eleveur', first.pro_uid).eq('type', 'contrat_garde')
           .eq('metadata->>client_uid', first.client_uid)
           .or(proProfileId ? `pro_profile_id.eq.${proProfileId},pro_profile_id.is.null` : 'pro_profile_id.is.null')
           .order('created_at', { ascending: false }).limit(1).maybeSingle(),
@@ -124,13 +125,13 @@ export default function FinGardeModal({ rdvs, proProfileId, proNom, clientNom, a
       const ff = fg?.factureId ? ((await supabase.from('factures').select('*').eq('id', fg.factureId).neq('statut', 'annulee').maybeSingle()).data as Facture | null) : null;
       const dv = (await Promise.all(ids.map(id => devisDuRdv(id)))).flat();
       if (!alive) return;
-      const c = ct.data as { token: string | null; statut: string; titre: string | null } | null;
+      const c = ct.data as { id: string; token: string | null; statut: string; titre: string | null } | null;
       setFacture(fac); setMessages(msgs); setAcomptes(acs); setFactureForfait(ff); setContrat(c); setDevis(dv);
       setCoches({
         cr: true, ...(fac ? { fac: true } : {}),
         ...Object.fromEntries(acs.map(a => [`acp:${a.id}`, false])),
         ...(ff ? { ff: false } : {}),
-        ...(c ? { ctr: c.statut !== 'signe' } : {}),
+        ...(c ? { ctr: true } : {}),
         ...Object.fromEntries(dv.map(d => [`dev:${d.id}`, d.statut === 'brouillon'])),
       });
       setCharge(true);
@@ -155,13 +156,16 @@ export default function FinGardeModal({ rdvs, proProfileId, proNom, clientNom, a
       }
       const coord = await coordonneesClientRdv(first.id, first.client_profile_id).catch(() => null);
       const email = coord?.email || (fac?.email_client as string | null) || '';
-      const pieces: { type: 'compte_rendu' | 'facture'; blob: Blob; nomFichier: string }[] = [];
+      const pieces: { type: 'compte_rendu' | 'facture' | 'contrat'; blob: Blob; nomFichier: string }[] = [];
       if (coches.cr) pieces.push({ type: 'compte_rendu', nomFichier: `Compte-rendu-garde${animalNom ? `-${animalNom}` : ''}.pdf`,
         blob: await pdfCompteRenduGarde({ proNom, clientNom, animaux: animalNom, rdvs, messages }) });
       const nomFac = (f: Facture, forfait = false) => `Facture-${forfait ? 'forfait-' : ''}${f.numero_affichage ?? ''}${f.statut === 'payee' ? '-acquittee' : ''}.pdf`;
       if (fac && coches.fac) pieces.push({ type: 'facture', nomFichier: nomFac(fac), blob: await pdfFacture(fac) });
       for (const a of acomptes) if (coches[`acp:${a.id}`]) pieces.push({ type: 'facture', nomFichier: nomFac(a), blob: await pdfFacture(a) });
       if (factureForfait && coches.ff) pieces.push({ type: 'facture', nomFichier: nomFac(factureForfait, true), blob: await pdfFacture(factureForfait) });
+      // Contrat signé par les deux parties : la version signée en PDF (pas de lien).
+      const contratSigne = contrat?.statut === 'signe' && coches.ctr ? await pdfContratGardeSigne(contrat.id).catch(() => null) : null;
+      if (contratSigne) pieces.push({ type: 'contrat', nomFichier: 'Contrat-de-garde-signe.pdf', blob: contratSigne });
       setEnvoi('Envoi…');
       const ids0 = (first.animaux_ids ?? []).map(x => String(x ?? '')).filter(Boolean);
       const ok = pieces.length === 0 ? true : await envoyerPiecesParEmail(pieces, {
@@ -169,7 +173,7 @@ export default function FinGardeModal({ rdvs, proProfileId, proNom, clientNom, a
         animalId: ids0[0] ?? first.animal_id ?? null, contexte: 'garde',
       });
       if (!ok) { setEnvoi(''); return; }
-      if (contrat?.token && coches.ctr) {
+      if (contrat?.token && coches.ctr && !contratSigne) {
         if (!(email && await envoyerContratParEmail({ email, clientNom, proProfileId, token: contrat.token, titre: contrat.titre ?? undefined }))) {
           alert("Contrat : pas d'adresse e-mail pour ce client.");
         }
@@ -211,7 +215,7 @@ export default function FinGardeModal({ rdvs, proProfileId, proNom, clientNom, a
             )}
             {acomptes.map(a => ligne(`acp:${a.id}`, `Facture d'acompte ${a.numero_affichage ?? ''}`, `${eur(a.total_ttc)} TTC${a.statut === 'payee' ? ' — payée' : ''} · déjà envoyée à son émission`))}
             {factureForfait && ligne('ff', `Facture du forfait ${factureForfait.numero_affichage ?? ''}`, `${eur(factureForfait.total_ttc)} TTC · déjà envoyée à son émission`)}
-            {contrat && ligne('ctr', 'Contrat de garde', contrat.statut === 'signe' ? 'Signé — lien pour le consulter' : 'Lien pour le signer')}
+            {contrat && ligne('ctr', 'Contrat de garde', contrat.statut === 'signe' ? 'Signé par les deux parties — version signée en PDF' : 'Pas encore signé — lien pour le signer')}
             {devis.map(d => ligne(`dev:${d.id}`, `Devis — ${eur(d.total_ttc)} TTC`, d.statut === 'brouillon' ? 'Lien pour le signer' : 'Déjà envoyé — renvoyer le lien'))}
             {facture && !dejaPayee && (
               <div className="mt-2">

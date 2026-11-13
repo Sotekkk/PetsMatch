@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
     ? pieces.slice(0, 8)
     : [{ document_type, fichier_nom, pdf_base64 }];
   const libelle = (t?: string) => t === 'ordonnance' ? ['une ordonnance', 'Ordonnance'] : t === 'facture' ? ['une facture', 'Facture']
+    : t === 'contrat' ? ['le contrat signé', 'Contrat signé']
     : t === 'consignes' ? ['les consignes après l’intervention', 'Consignes après l’intervention'] : ['un compte rendu', 'Compte rendu'];
   const jointes: { filename: string; content: Buffer; contentType: string }[] = [];
   for (const d of docs) {

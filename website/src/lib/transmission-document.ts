@@ -69,7 +69,7 @@ export async function envoyerPdfParEmail(blob: Blob, opts: {
 /** Fin de consultation : plusieurs PDF (compte rendu, ordonnance, facture)
  *  dans un seul e-mail. Sans adresse connue et avec [animalId] : adresse du
  *  compte PetsMatch du propriétaire (résolue par le serveur), sinon saisie. */
-export async function envoyerPiecesParEmail(pieces: { type: 'ordonnance' | 'compte_rendu' | 'facture' | 'consignes'; blob: Blob; nomFichier: string }[], opts: {
+export async function envoyerPiecesParEmail(pieces: { type: 'ordonnance' | 'compte_rendu' | 'facture' | 'consignes' | 'contrat'; blob: Blob; nomFichier: string }[], opts: {
   emailParDefaut?: string | null; destinataireNom?: string; expediteur?: string; animalNom?: string; animalId?: string | null;
   /** 'garde' : libellés de l'e-mail pour la fin de garde du pet-sitter. */
   contexte?: string;
