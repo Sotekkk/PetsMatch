@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:PetsMatch/utils/document_prive.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/photo_journal.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -291,10 +292,9 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
                           ),
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             if (u['photo_url'] != null)
-                              ClipRRect(
-                                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                                child: ImagePrivee(u['photo_url'] as String, width: double.infinity, height: 220, fit: BoxFit.cover),
-                              )
+                              // Photo entière (jamais rognée), plein écran et téléchargement au toucher.
+                              PhotoJournal(u['photo_url'] as String, height: 240,
+                                  radius: const BorderRadius.vertical(top: Radius.circular(16)))
                             else if (u['video_url'] != null)
                               ClipRRect(
                                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),

@@ -34,3 +34,44 @@ export function VideoPrivee({ src, lienSecret, ...rest }: VideoProps) {
   if (!lien) return <span className={`block bg-black ${rest.className ?? ''}`} style={rest.style} />;
   return <video src={lien} {...rest} />;
 }
+
+/** Photo d'un journal (pension, garde) : entière sur fond flouté (jamais
+ *  rognée), plein écran au clic avec « Télécharger ». Miroir appli :
+ *  lib/widgets/photo_journal.dart. */
+export function PhotoJournal({ src, hauteur = 'h-60' }: { src?: string | null; hauteur?: string }) {
+  const lien = useLienDocument(src);
+  const [plein, setPlein] = useState(false);
+  if (!lien) return <span className={`block bg-gray-100 w-full ${hauteur}`} />;
+  const telecharger = async () => {
+    try {
+      const blob = await (await fetch(lien)).blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `photo-${Date.now()}.${blob.type.includes('png') ? 'png' : 'jpg'}`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    } catch { window.open(lien, '_blank', 'noopener'); }
+  };
+  return (
+    <>
+      <button type="button" onClick={() => setPlein(true)} className={`relative block w-full overflow-hidden ${hauteur}`} aria-label="Agrandir la photo">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={lien} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover blur-xl scale-110 opacity-70" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={lien} alt="" className="relative w-full h-full object-contain" />
+      </button>
+      {plein && (
+        <div className="fixed inset-0 z-[80] bg-black/95 flex flex-col" onClick={() => setPlein(false)}>
+          <div className="flex justify-end gap-2 p-3" onClick={e => e.stopPropagation()}>
+            <button type="button" onClick={telecharger} className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white border border-white/40">Télécharger</button>
+            <button type="button" onClick={() => setPlein(false)} className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white border border-white/40">Fermer</button>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-3 min-h-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={lien} alt="" className="max-w-full max-h-full object-contain" onClick={e => e.stopPropagation()} />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

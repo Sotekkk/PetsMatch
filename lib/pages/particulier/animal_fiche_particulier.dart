@@ -13,6 +13,7 @@ import 'package:PetsMatch/utils/controle_dates.dart';
 import 'package:PetsMatch/widgets/carnet/prises_traitement.dart';
 import 'package:PetsMatch/utils/resume_traitement.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/photo_journal.dart';
 import 'package:PetsMatch/utils/exercice_tache.dart';
 import 'package:PetsMatch/utils/forfait_education.dart' show libelleCompteurs;
 import 'package:PetsMatch/pages/particulier/balades/choix_animaux_balade.dart';
@@ -6272,11 +6273,8 @@ class _PensionTabPState extends State<_PensionTabP> {
       clipBehavior: Clip.antiAlias,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if (photo != null)
-          ImagePrivee(
-            photo, width: double.infinity, height: 200, fit: BoxFit.cover,
-            enErreur: (_) => Container(height: 200, color: const Color(0xFFEFEFEF),
-                child: const Icon(Icons.broken_image_outlined, color: Colors.grey)),
-          )
+          // Photo entière (jamais rognée), plein écran et téléchargement au toucher.
+          PhotoJournal(photo, height: 220, radius: BorderRadius.zero)
         else if (video != null)
           Container(
             height: 120, width: double.infinity, color: const Color(0xFF1F2A2E),

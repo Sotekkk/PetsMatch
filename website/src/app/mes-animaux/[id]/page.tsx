@@ -51,7 +51,7 @@ import LienDocument from '@/components/LienDocument';
 import { pdfCompteRendu } from '@/lib/fin-consultation';
 import ReproducteurSelect from '@/components/animaux/ReproducteurSelect';
 import { chargerReproducteurs, chargerReproducteursExterieurs, raisonNonEligible, type Reproducteur } from '@/lib/reproducteurs';
-import ImagePrivee, { VideoPrivee } from '@/components/ImagePrivee';
+import ImagePrivee, { VideoPrivee, PhotoJournal } from '@/components/ImagePrivee';
 import { COLS_FORFAIT_SOUSCRIT, libelleCompteurs } from '@/lib/forfait-education';
 import { cocherTacheExercice } from '@/lib/exercice-tache';
 import { cibleRegistre, moiIntervenant } from '@/lib/registre-source';
@@ -2044,7 +2044,7 @@ function PensionJournalTab({ animalId, animalNom }: { animalId: string; animalNo
       {updates.map(u => (
         <div key={u.id} className="rounded-2xl border border-gray-100 bg-white overflow-hidden shadow-sm">
           {u.photo_url
-            ? <ImagePrivee src={u.photo_url} alt="" className="w-full max-h-72 object-cover" />
+            ? <PhotoJournal src={u.photo_url} hauteur="h-72" />
             : u.video_url
             ? <VideoPrivee src={u.video_url} controls className="w-full max-h-72 bg-black" />
             : null}

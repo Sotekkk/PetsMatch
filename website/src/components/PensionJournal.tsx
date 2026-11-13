@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
-import ImagePrivee, { VideoPrivee } from '@/components/ImagePrivee';
+import { VideoPrivee, PhotoJournal } from '@/components/ImagePrivee';
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // 50 Mo
 
 interface Update {
@@ -185,8 +185,7 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
               {updates.map(u => (
                 <div key={u.id} className="rounded-xl border border-gray-100 overflow-hidden shadow-sm">
                   {u.photo_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <ImagePrivee src={u.photo_url} alt="" className="w-full h-48 object-cover" />
+                    <PhotoJournal src={u.photo_url} />
                   ) : u.video_url && (
                     <VideoPrivee src={u.video_url} controls className="w-full h-48 object-cover bg-black" />
                   )}
