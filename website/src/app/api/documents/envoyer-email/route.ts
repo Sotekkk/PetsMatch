@@ -19,7 +19,9 @@ export async function POST(req: NextRequest) {
   if (corps === null) return NextResponse.json({ error: TROP_LOURD, code: 'trop_lourd' }, { status: 413 });
   const clean = sanitizeEmailBody(corps, [], req);
   if (clean instanceof NextResponse) return clean;
-  const { animal_id, expediteur_nom, document_type, animal_nom, fichier_nom, pdf_base64, pieces } = clean as {
+  const { animal_id, expediteur_nom, document_type, animal_nom, fichier_nom, pdf_base64, pieces, contexte } = clean as {
+    /** 'garde' : fin de garde du pet-sitter (libellés de l'e-mail). */
+    contexte?: string;
     email?: string; destinataire_nom?: string; expediteur_nom?: string; document_type?: string;
     animal_nom?: string; fichier_nom?: string; pdf_base64?: string; animal_id?: string;
     /** Fin de consultation : plusieurs documents dans un seul e-mail. */
@@ -40,7 +42,7 @@ export async function POST(req: NextRequest) {
   }
   // Un document, ou plusieurs (fin de consultation : CR, ordonnance, facture).
   const docs = Array.isArray(pieces) && pieces.length > 0
-    ? pieces.slice(0, 5)
+    ? pieces.slice(0, 8)
     : [{ document_type, fichier_nom, pdf_base64 }];
   const libelle = (t?: string) => t === 'ordonnance' ? ['une ordonnance', 'Ordonnance'] : t === 'facture' ? ['une facture', 'Facture']
     : t === 'consignes' ? ['les consignes après l’intervention', 'Consignes après l’intervention'] : ['un compte rendu', 'Compte rendu'];
@@ -67,10 +69,11 @@ export async function POST(req: NextRequest) {
   };
   const noms = docs.map(nomDoc);
   const quoi = plusieurs ? `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}` : noms[0];
-  const titre = plusieurs ? 'Documents de consultation'
+  const garde = contexte === 'garde';
+  const titre = plusieurs ? (garde ? 'Documents de votre garde' : 'Documents de consultation')
     : docs[0].document_type === 'facture' && nomDoc(docs[0]).startsWith('la facture n° ') ? `Facture n° ${nomDoc(docs[0]).slice(14)}`
     : libelle(docs[0].document_type)[1];
-  const pro = expediteur_nom || 'Votre vétérinaire';
+  const pro = expediteur_nom || (garde ? 'Votre pet-sitter' : 'Votre vétérinaire');
   const html = `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:0;background:#f5f7fa;font-family:'Segoe UI',Arial,sans-serif;">
@@ -85,7 +88,9 @@ export async function POST(req: NextRequest) {
         <strong>${pro}</strong> vous transmet ${quoi}${animal_nom ? ` pour <strong>${animal_nom}</strong>` : ''}. ${plusieurs ? 'Vous les trouverez en pièces jointes (PDF).' : 'Vous le trouverez en pièce jointe (PDF).'}
       </p>
       <p style="font-size:13px;color:#4B5563;line-height:1.6;margin:0 0 18px;">
-        Avec l'application PetsMatch, retrouvez le carnet de santé de votre animal, ses ordonnances et des rappels automatiques (vaccins, traitements).
+        ${garde
+          ? "Avec l'application PetsMatch, retrouvez les nouvelles et les photos de vos gardes, vos contrats et vos factures au même endroit."
+          : "Avec l'application PetsMatch, retrouvez le carnet de santé de votre animal, ses ordonnances et des rappels automatiques (vaccins, traitements)."}
       </p>
       <div style="text-align:center;margin-bottom:18px;">
         <a href="https://petsmatchapp.com" style="display:inline-block;background:#0C5C6C;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;padding:11px 28px;border-radius:12px;">Découvrir PetsMatch</a>

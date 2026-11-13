@@ -13,6 +13,7 @@ import { usePlanGarde } from '@/lib/use-plan';
 import { gardeTarif } from '@/lib/garde-facturation';
 import { accesLogementLabel } from '@/lib/garde-labels';
 import CompteRenduExpressModal from '@/components/garde/CompteRenduExpressModal';
+import FinGardeModal from '@/components/garde/FinGardeModal';
 import { useAuth } from '@/lib/auth-context';
 import { rattacherForfaitGarde, acomptesGarde, deductionsAcompteGarde, uniteForfaitGarde, type ForfaitGardeClient } from '@/lib/forfait-garde';
 
@@ -52,6 +53,7 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
     facture?: EtatDoc; factureFaite?: boolean; rapports?: EtatDoc; cles?: EtatDoc; nbCles?: number;
   }>({});
   const [compteRendu, setCompteRendu] = useState(false);
+  const [finGarde, setFinGarde] = useState(false);
   // Forfait acheté par le client (facturé à l'achat, passages décomptés).
   const [forfait, setForfait] = useState<ForfaitGardeClient | null>(null);
   const [aFacturer, setAFacturer] = useState<string[]>(rdvs.map(r => r.id));
@@ -379,8 +381,19 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
             forfait && aFacturer.length === 0 && !etats.factureFaite ? { texte: 'Tous les passages sont dans le forfait', couleur: VERT } : etats.facture,
             etats.factureFaite ? 'Voir' : 'Facturer')}
           {msg && <p className="text-xs text-gray-600 pt-1">{msg}</p>}
+          {/* Tout envoyer au client en un seul e-mail (comme la fin de séance des autres pros). */}
+          <button type="button" onClick={() => setFinGarde(true)}
+            className="w-full mt-3 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: TEAL }}>
+            Fin de garde — tout envoyer au client
+          </button>
           <button type="button" onClick={onClose} className="w-full mt-2 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
         </div>
+        {finGarde && (
+          <FinGardeModal rdvs={rdvs as (RdvAccepte & { statut?: string })[]} proProfileId={proProfileId} proNom={nomPro}
+            clientNom={first.clientName ?? ''} animalNom={first.animalNom ?? ''}
+            onClose={() => setFinGarde(false)} onPreparerFacture={() => facturer(false)}
+            onChanged={() => { onChanged?.(); onClose(); }} />
+        )}
         {compteRendu && user && first.animal_id && (
           <CompteRenduExpressModal
             rdv={{ id: first.id, animal_id: first.animal_id ?? null, client_uid: first.client_uid, client_profile_id: first.client_profile_id, motif: first.motif, animaux_ids: first.animaux_ids }}

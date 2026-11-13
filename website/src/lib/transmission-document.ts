@@ -71,9 +71,12 @@ export async function envoyerPdfParEmail(blob: Blob, opts: {
  *  compte PetsMatch du propriétaire (résolue par le serveur), sinon saisie. */
 export async function envoyerPiecesParEmail(pieces: { type: 'ordonnance' | 'compte_rendu' | 'facture' | 'consignes'; blob: Blob; nomFichier: string }[], opts: {
   emailParDefaut?: string | null; destinataireNom?: string; expediteur?: string; animalNom?: string; animalId?: string | null;
+  /** 'garde' : libellés de l'e-mail pour la fin de garde du pet-sitter. */
+  contexte?: string;
 }): Promise<boolean> {
   const corps = {
     destinataire_nom: opts.destinataireNom, expediteur_nom: opts.expediteur, animal_nom: opts.animalNom,
+    ...(opts.contexte ? { contexte: opts.contexte } : {}),
     pieces: await Promise.all(pieces.map(async p => ({ document_type: p.type, fichier_nom: p.nomFichier, pdf_base64: await enBase64(p.blob) }))),
   };
   if (!opts.emailParDefaut && opts.animalId) {

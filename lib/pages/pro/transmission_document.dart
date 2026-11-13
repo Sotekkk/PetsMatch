@@ -30,10 +30,13 @@ Future<bool> envoyerDocumentsParEmail(
   String? emailParDefaut,
   String? destinataireNom,
   String? animalId,
+  /// 'garde' : libellés de l'e-mail pour la fin de garde du pet-sitter.
+  String? contexte,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
   final corps = {
     'destinataire_nom': destinataireNom, 'expediteur_nom': expediteur, 'animal_nom': animalNom,
+    if (contexte != null) 'contexte': contexte,
     'pieces': [for (final p in pieces) {'document_type': p.type, 'fichier_nom': p.nomFichier, 'pdf_base64': base64Encode(p.bytes)}],
   };
   Future<http.Response> poster(Map<String, dynamic> extra) async => http.post(

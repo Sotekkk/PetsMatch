@@ -12,6 +12,7 @@ import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, D
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage;
 import 'package:PetsMatch/pages/pro/cles_clients_page.dart' show ClesClientsPage;
 import 'package:PetsMatch/utils/forfait_garde.dart';
+import 'package:PetsMatch/pages/pro/garde_fin.dart' show finDeGarde;
 
 const _teal = Color(0xFF0C5C6C);
 const _vert = Color(0xFF6E9E57);
@@ -202,6 +203,18 @@ Future<void> showDossierGarde(BuildContext context, Map<String, dynamic> rdv, {V
               () async => facture == null
                   ? facturerGardeAcceptee(context, rdvs, acompte: false)
                   : Navigator.push(context, MaterialPageRoute(builder: (_) => const FacturationPage()))),
+          const SizedBox(height: 12),
+          // Tout envoyer au client en un seul e-mail (comme la fin de séance des autres pros).
+          SizedBox(width: double.infinity, child: ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await finDeGarde(context, rdv, onChanged: onChanged);
+            },
+            icon: const Icon(Icons.outgoing_mail, size: 18),
+            label: const Text('Fin de garde — tout envoyer au client', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          )),
         ]),
       ));
     },
