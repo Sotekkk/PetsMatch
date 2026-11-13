@@ -197,12 +197,23 @@ Future<void> ouvrirContratGardeDepuisRdv(BuildContext context, List<Map<String, 
     if ((first['notes_client']?.toString() ?? '').trim().isNotEmpty) 'Consignes : ${first['notes_client'].toString().trim()}',
   ].join('\n');
   final total = totalHT ?? (await chiffrerGarde(rdvs)).totalHT;
+  // Identité et coordonnées du client (profil, compte, saisie manuelle).
+  final coord = await coordonneesClientRdv(first);
+  String co(String k) => (coord[k] ?? '').trim();
+  final nomComplet = [co('prenom'), co('nom')].where((x) => x.isNotEmpty).join(' ');
+  final adresseClient = [co('rue'), [co('cp'), co('ville')].where((x) => x.isNotEmpty).join(' ')]
+      .where((x) => x.isNotEmpty).join(', ');
   final details = <String, dynamic>{
+    if (nomComplet.isNotEmpty) 'client_nom': nomComplet,
+    if (co('email').isNotEmpty) 'client_email': co('email'),
+    if (co('tel').isNotEmpty) 'client_tel': co('tel'),
     'prestation': prestation,
     if (dates.isNotEmpty) 'date_prestation': dates.first.toIso8601String().substring(0, 10),
     if (total > 0) 'tarif': total.toStringAsFixed(2),
     if (notes.isNotEmpty) 'notes': notes,
-    if ((first['lieu']?.toString() ?? '').isNotEmpty) 'client_adresse': first['lieu'].toString(),
+    if (adresseClient.isNotEmpty) 'client_adresse': adresseClient
+    else if ((first['lieu']?.toString() ?? '').isNotEmpty) 'client_adresse': first['lieu'].toString(),
+    if ((first['lieu']?.toString() ?? '').isNotEmpty) 'lieu_prestation': first['lieu'].toString(),
   };
   try {
     final existing = await supa.from('documents_animaux')

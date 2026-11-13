@@ -413,12 +413,25 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
           sterilisationClause: sterilClause, villeSignature: ville,
         );
       } else if (type == 'contrat_garde') {
+        // Contrat créé avant la reprise des coordonnées : profil du client.
+        var cp = <String, dynamic>{};
+        final cpid = m('client_profile_id');
+        if (cpid.isNotEmpty && (m('client_tel').isEmpty || m('client_email').isEmpty || m('client_adresse').isEmpty)) {
+          try {
+            cp = Map<String, dynamic>.from(await _supa.from('user_profiles_complet')
+                .select('firstname, lastname, email_contact, phone_number, phone, rue, code_postal, ville')
+                .eq('id', cpid).maybeSingle() ?? {});
+          } catch (_) {}
+        }
+        String p(String k) => (cp[k] ?? '').toString().trim();
+        final adresseProfil = [p('rue'), [p('code_postal'), p('ville')].where((x) => x.isNotEmpty).join(' ')]
+            .where((x) => x.isNotEmpty).join(', ');
         _pdfBytes = await contratGardePdfBytes(
           animal: _animal == null ? null : animalPdf, prestataire: _eleveur!,
           clientNom: m('client_nom'),
-          clientAdresse: m('client_adresse'),
-          clientEmail: m('client_email'),
-          clientTel: m('client_tel'),
+          clientAdresse: m('client_adresse').isNotEmpty ? m('client_adresse') : adresseProfil,
+          clientEmail: m('client_email').isNotEmpty ? m('client_email') : p('email_contact'),
+          clientTel: m('client_tel').isNotEmpty ? m('client_tel') : (p('phone_number').isNotEmpty ? p('phone_number') : p('phone')),
           prestation: m('prestation'),
           datePrestation: m('date_visite').isNotEmpty
               ? DateTime.tryParse(m('date_visite'))

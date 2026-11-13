@@ -188,7 +188,14 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
     setBusy('contrat'); setMsg('');
     try {
       const acces = accesLogementLabel(first.acces_logement);
+      // Identité et coordonnées du client (profil, compte, saisie manuelle).
+      const co = await coordonneesClientRdv(first.id, first.client_profile_id).catch(() => null);
+      const nomComplet = [co?.prenom, co?.nom].filter(Boolean).join(' ');
+      const adresseClient = [co?.rue, [co?.cp, co?.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ');
       const details: Record<string, unknown> = {
+        ...(nomComplet ? { client_nom: nomComplet } : {}),
+        ...(co?.email ? { client_email: co.email } : {}),
+        ...(co?.tel ? { client_tel: co.tel } : {}),
         prestation: [first.motif ?? 'Prestation', rdvs.length > 1 ? `${rdvs.length} passages ${periode(rdvs)}` : ''].filter(Boolean).join(' — '),
         date_prestation: first.date_heure.slice(0, 10),
         ...(total > 0 ? { tarif: total.toFixed(2) } : {}),
@@ -197,7 +204,8 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
           acces ? `Accès au logement : ${acces}` : '',
           first.notes_client?.trim() ? `Consignes : ${first.notes_client.trim()}` : '',
         ].filter(Boolean).join('\n'),
-        ...(first.lieu ? { client_adresse: first.lieu } : {}),
+        ...(adresseClient ? { client_adresse: adresseClient } : first.lieu ? { client_adresse: first.lieu } : {}),
+        ...(first.lieu ? { lieu_prestation: first.lieu } : {}),
       };
       const noms = first.animalNom ? first.animalNom.split(' + ') : [];
       const { data: ex } = await supabase.from('documents_animaux').select('id, token, statut, metadata')

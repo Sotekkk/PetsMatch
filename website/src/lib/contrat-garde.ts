@@ -8,6 +8,9 @@ export interface RdvContrat {
   race?: string;
   client_nom?: string;
   client_contact?: string;
+  client_adresse?: string;
+  client_tel?: string;
+  client_email?: string;
   date_visite?: string;
   type_prestation?: string;
 }
@@ -104,7 +107,8 @@ export function generateContratGardeHTML(
 
 <div class="parties">
   <b>${rdv.client_nom || 'Le Client'}</b>, ci-après désigné « le Client »<br>
-  ${rdv.client_contact ? 'Contact : ' + rdv.client_contact : ''}
+  ${rdv.client_adresse ? rdv.client_adresse + '<br>' : ''}
+  ${rdv.client_tel ? 'Tél : ' + rdv.client_tel + (rdv.client_email || rdv.client_contact ? ' — ' : '') : ''}${rdv.client_email || rdv.client_contact || ''}
 </div>
 
 <h2>Objet du contrat</h2>

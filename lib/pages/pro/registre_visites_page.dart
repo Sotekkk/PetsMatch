@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show coordonneesClientRdv;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -246,6 +247,17 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
       return;
     }
     final pid = User_Info.activeProfileId;
+    // Coordonnées du client (profil, compte, saisie manuelle) pour le contrat.
+    final coord = rdv != null ? await coordonneesClientRdv(rdv) : const <String, String>{};
+    String co(String k) => (coord[k] ?? '').trim();
+    final coordContrat = <String, dynamic>{
+      if ([co('prenom'), co('nom')].any((x) => x.isNotEmpty))
+        'client_nom': [co('prenom'), co('nom')].where((x) => x.isNotEmpty).join(' '),
+      if (co('email').isNotEmpty) 'client_email': co('email'),
+      if (co('tel').isNotEmpty) 'client_tel': co('tel'),
+      if ([co('rue'), co('cp'), co('ville')].any((x) => x.isNotEmpty))
+        'client_adresse': [co('rue'), [co('cp'), co('ville')].where((x) => x.isNotEmpty).join(' ')].where((x) => x.isNotEmpty).join(', '),
+    };
     final animalId  = rdv?['animal_id']?.toString();
     final animalNom = (rdv?['_animal_nom'] ?? rdv?['animal_nom'] ?? '').toString();
     try {
@@ -271,6 +283,8 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
             'client_uid': clientUid,
             if (client['profile_id'] != null) 'client_profile_id': client['profile_id'],
             if ((client['email'] as String?)?.isNotEmpty == true) 'client_email': client['email'],
+            if ((client['tel'] as String?)?.isNotEmpty == true) 'client_tel': client['tel'],
+            ...coordContrat,
             if (animalNom.isNotEmpty) 'animal_nom': animalNom,
             if (animalNom.isNotEmpty) 'animal_noms': [animalNom],
           },
@@ -278,10 +292,10 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
         token = row['token'] as String?;
       } else if (animalNom.isNotEmpty) {
         // Contrat déjà là : on rattache l'animal courant s'il manque.
-        final meta = Map<String, dynamic>.from((existing!['metadata'] as Map?) ?? {});
+        final meta = Map<String, dynamic>.from((existing!['metadata'] as Map?) ?? {})..addAll(coordContrat);
         final noms = List<String>.from((meta['animal_noms'] as List?) ?? const []);
         final needAnimalId = (existing['animal_id'] == null) && animalId != null && animalId.isNotEmpty;
-        if (!noms.contains(animalNom) || needAnimalId) {
+        if (!noms.contains(animalNom) || needAnimalId || coordContrat.isNotEmpty) {
           if (!noms.contains(animalNom)) noms.add(animalNom);
           meta['animal_noms'] = noms;
           meta['animal_nom'] ??= animalNom;

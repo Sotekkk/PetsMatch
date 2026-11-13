@@ -264,7 +264,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         // Contrat « cadre » par client : rattaché à metadata.client_uid, pas à
         // un RDV / un animal précis. (Anciens contrats : repli sur rdv_id.)
         let animalInfo: { nom?: string; espece?: string; race?: string } = {};
-        let clientInfo: { nom?: string; contact?: string } = {};
+        let clientInfo: { nom?: string; contact?: string; tel?: string; adresse?: string } = {};
         const clientUid = (meta.client_uid as string | undefined)
           ?? (data.rdv_id
             ? (await supabase.from('rdv').select('client_uid').eq('id', data.rdv_id).maybeSingle()).data?.client_uid
@@ -280,10 +280,12 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         const clientPid = meta.client_profile_id as string | undefined;
         if (clientPid) {
           const { data: cp2 } = await supabase.from('user_profiles_complet')
-            .select('firstname, lastname, nom, email_contact').eq('id', clientPid).maybeSingle();
+            .select('firstname, lastname, nom, email_contact, phone_number, phone, rue, code_postal, ville').eq('id', clientPid).maybeSingle();
           if (cp2) clientInfo = {
-            nom: (cp2.nom?.trim() || `${cp2.firstname ?? ''} ${cp2.lastname ?? ''}`.trim()),
+            nom: (`${cp2.firstname ?? ''} ${cp2.lastname ?? ''}`.trim() || cp2.nom?.trim() || ''),
             contact: cp2.email_contact ?? '',
+            tel: (cp2.phone_number || cp2.phone || '') as string,
+            adresse: [cp2.rue, [cp2.code_postal, cp2.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '),
           };
         }
         if (!clientInfo.nom && clientUid) {
@@ -301,6 +303,9 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             race: animalInfo.race,
             client_nom: (meta.client_nom as string) || clientInfo.nom,
             client_contact: (meta.client_contact as string) || (meta.client_email as string) || clientInfo.contact,
+            client_email: (meta.client_email as string) || clientInfo.contact,
+            client_tel: (meta.client_tel as string) || clientInfo.tel,
+            client_adresse: (meta.client_adresse as string) || clientInfo.adresse,
             date_visite: meta.date_visite,
             type_prestation: meta.type_prestation,
           },
