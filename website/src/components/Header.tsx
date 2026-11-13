@@ -2202,7 +2202,9 @@ export default function Header() {
                       const isDifferentProfile = notifProfileType && notifProfileType !== effectiveType;
                       const dest = getNotifUrl(n, effectiveType);
                       const isExternal = dest?.startsWith('http') ?? false;
-                      const estGroupe = n.type === 'protocoles_jour' || n.type === 'chaleurs_groupe';
+                      // Rappel santé de plusieurs animaux : la liste, chacun → son carnet.
+                      const estGroupe = n.type === 'protocoles_jour' || n.type === 'chaleurs_groupe'
+                        || (n.type === 'sante' && ((n.data?.animalIds as unknown[] | undefined)?.length ?? 0) > 1);
                       const isActionable = isDifferentProfile || n.type === 'pension_acces' || n.type === 'annonce_expiration' || estGroupe || !!dest;
 
                       const handleClick = async () => {
@@ -2553,10 +2555,29 @@ function NotifGroupeDialog({ notif, onClose }: { notif: Notif; onClose: () => vo
   const data = (notif.data ?? {}) as unknown as {
     sections?: { titre?: string; items?: { animalId?: string; nom?: string; detail?: string }[] }[];
     profil_source?: string;
+    // Rappel santé regroupé (functions/sante.js)
+    table?: string; produit?: string; animalIds?: string[];
+    animaux?: { id: string; nom?: string; detail?: string }[];
   };
   const chaleurs = notif.type === 'chaleurs_groupe';
+  const soin = notif.type === 'sante';
+  // Anciennes notifs santé sans noms : lus sur les fiches.
+  const [nomsLus, setNomsLus] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!soin || (data.animaux?.length ?? 0) > 0 || !data.animalIds?.length) return;
+    supabase.from('animaux').select('id, nom').in('id', data.animalIds).then(({ data: rows }) => {
+      setNomsLus(Object.fromEntries(((rows ?? []) as { id: string; nom?: string }[]).map(r => [String(r.id), r.nom ?? 'Animal'])));
+    });
+  }, [soin, data.animaux, data.animalIds]);
+  const sections = soin ? [{
+    titre: data.produit,
+    items: (data.animaux?.length ? data.animaux : (data.animalIds ?? []).map(id => ({ id, nom: nomsLus[id] ?? '…', detail: undefined })))
+      .map(a => ({ animalId: a.id, nom: a.nom, detail: a.detail })),
+  }] : (data.sections ?? []);
+  const libSoin = data.table === 'vaccinations' ? 'vaccins' : data.table === 'vermifuges' ? 'vermifuges' : 'antiparasitaires';
+  const lien = (id: string) => `/mes-animaux/${id}${chaleurs ? '?tab=repro' : soin ? `?tab=sante${data.table ? `&cat=${data.table}` : ''}` : ''}`;
   const source = data.profil_source ?? 'eleveur';
-  const planning = chaleurs ? null
+  const planning = chaleurs || soin ? null
     : source === 'pension' ? '/elevage/planning?profilSource=pension'
     : source === 'eleveur' || source === 'association' ? '/elevage/planning' : null;
   const aller = (href: string) => { onClose(); router.push(href); };
@@ -2565,13 +2586,15 @@ function NotifGroupeDialog({ notif, onClose }: { notif: Notif; onClose: () => vo
       <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}
         style={{ fontFamily: 'Galey, sans-serif' }}>
         <p className="font-extrabold text-base text-[#0C5C6C]">{notif.title}</p>
-        <p className="text-xs text-gray-500 mt-0.5">{chaleurs ? 'Cliquez sur une femelle pour ouvrir son suivi des chaleurs.' : 'Cliquez sur un animal pour ouvrir sa fiche.'}</p>
-        {(data.sections ?? []).map((s, i) => (
+        <p className="text-xs text-gray-500 mt-0.5">{chaleurs ? 'Cliquez sur une femelle pour ouvrir son suivi des chaleurs.'
+          : soin ? `Cliquez sur un animal pour ouvrir ses ${libSoin} dans son carnet.`
+          : 'Cliquez sur un animal pour ouvrir sa fiche.'}</p>
+        {sections.map((s, i) => (
           <div key={i} className="mt-3">
             {s.titre && <p className="text-sm font-extrabold text-[#1F2A2E]">{s.titre}</p>}
             <div className="mt-1 divide-y divide-gray-100">
               {(s.items ?? []).map((it, j) => it.animalId ? (
-                <button key={j} onClick={() => aller(`/mes-animaux/${it.animalId}${chaleurs ? '?tab=repro' : ''}`)}
+                <button key={j} onClick={() => aller(lien(it.animalId!))}
                   className="w-full flex items-center justify-between py-2 text-left hover:bg-gray-50 rounded">
                   <span className="text-sm font-semibold text-gray-800">{it.nom}{it.detail ? <span className="font-normal text-gray-500"> — {it.detail}</span> : null}</span>
                   <span className="text-[#0C5C6C] text-sm">›</span>

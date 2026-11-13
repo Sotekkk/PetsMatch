@@ -398,7 +398,10 @@ exports.sendSanteReminders = functions
                         `${label} — ${items.length} animaux` :
                         `${label} — ${noms[0]}`;
                     const body = `Rappel ${phrase} : ${produit} pour ${listeNoms}.`;
-                    const data = {animalId: premier, animalIds, table, palier: palierKey};
+                    const data = {
+                        animalId: premier, animalIds, table, palier: palierKey, produit,
+                        animaux: items.map((i) => ({id: String(i.row.animal_id), nom: i.nomAnimal})),
+                    };
 
                     digest.add(uid, title, body, {type: "sante", animalId: premier, table}, {profileId});
 
@@ -541,6 +544,19 @@ async function sendOverdueSanteReminders(digest) {
             if (!prev || d > dp || (d === dp && row.date_rappel > prev.date_rappel)) latestByGroup.set(key, row);
         }
 
+        // Notifications regroupées : une par (propriétaire, profil, produit),
+        // la liste des animaux s'ouvre au clic (carnet de chacun).
+        const groupes = new Map();
+        const ajouter = (dest, destProfileId, produit, item, employes) => {
+            const cle = `${dest}|${destProfileId || ""}|${String(produit).trim().toLowerCase()}`;
+            if (!groupes.has(cle)) {
+                groupes.set(cle, {uid: dest, profileId: destProfileId, produit, items: [], employes: null});
+            }
+            const g = groupes.get(cle);
+            if (!g.items.some((i) => i.animalId === item.animalId)) g.items.push(item);
+            if (employes) g.employes = employes;
+        };
+
         for (const row of latestByGroup.values()) {
             // Le dernier enregistrement du groupe n'est plus en retard —
             // rien à signaler pour ce (animal, catégorie).
@@ -563,18 +579,6 @@ async function sendOverdueSanteReminders(digest) {
             // date_rappel, écartée par la requête ci-dessus) : plus de relance.
             if (await dejaRemplace(table, row)) continue;
 
-            // Une seule ligne « en retard » par soin (propriétaire, employés) :
-            // celle du jour remplace la précédente, sinon elles s'empilent
-            // (47 lignes pour l'Effitix de Luna).
-            try {
-                await supabaseDelete(
-                    `notifications?type=eq.sante&data->>recordId=eq.${encodeURIComponent(row.id)}` +
-                    `&data->>table=eq.${table}&data->>overdue=eq.true`,
-                );
-            } catch (e) {
-                console.error(`notifications delete error overdue (${table} ${row.id}):`, e.message);
-            }
-
             const nomAnimal = animal.nom || "Votre animal";
             const produit = row[nomField] || label;
             const joursRetard = Math.round((new Date(todayStr) - new Date(row.date_rappel)) / 86400000);
@@ -591,7 +595,7 @@ async function sendOverdueSanteReminders(digest) {
             // (sinon la notification, sans profil, s'affiche dans TOUS les profils).
             if (!profileId && animal.uid_eleveur === uid && animal.profile_id) profileId = animal.profile_id;
 
-            const title = `⚠️ ${label} en retard — ${nomAnimal}`;
+            const title = `${label} en retard — ${nomAnimal}`;
             const body = `${produit} pour ${nomAnimal} devait être fait il y a ${joursRetard} ` +
                 `jour${joursRetard > 1 ? "s" : ""}.`;
 
@@ -611,57 +615,18 @@ async function sendOverdueSanteReminders(digest) {
                 }
             } catch (_) {/* pas bloquant */}
 
-            digest.add(uid, title, body, {
-                type: "sante", animalId: String(row.animal_id), table, overdue: true,
-            }, {profileId});
+            // Notification : regroupée plus bas (une par produit et destinataire).
+            const item = {
+                animalId: String(row.animal_id), nom: nomAnimal, recordId: row.id,
+                detail: `${joursRetard} jour${joursRetard > 1 ? "s" : ""} de retard`, joursRetard,
+            };
+            const employes = animal.uid_eleveur === uid && profileId ? await employesAbonnes({
+                eleveurUid: uid, eleveurProfileId: profileId,
+                permission: NOTIF_PERM_BY_TABLE[table], cache: empCache,
+            }) : null;
+            ajouter(uid, profileId, produit, item, employes);
+            if (assigneA && assigneA !== uid) ajouter(assigneA, assigneProfileId, produit, item, null);
             sent++;
-            if (assigneA) {
-                digest.add(assigneA, title, body,
-                    {type: "sante", animalId: String(row.animal_id), table, overdue: true},
-                    {profileId: assigneProfileId});
-            }
-
-            try {
-                await supabaseInsert("notifications", [{
-                    uid,
-                    type: "sante",
-                    title,
-                    body,
-                    data: {animalId: String(row.animal_id), table, overdue: true, recordId: row.id},
-                    read: false,
-                    ...(profileId ? {profile_id: profileId} : {}),
-                }]);
-            } catch (e) {
-                console.error(`notifications insert error overdue (${table} ${row.id}):`, e.message);
-            }
-            if (assigneA) {
-                try {
-                    await supabaseInsert("notifications", [{
-                        uid: assigneA,
-                        type: "sante",
-                        title,
-                        body,
-                        data: {animalId: String(row.animal_id), table, overdue: true, recordId: row.id},
-                        read: false,
-                        ...(assigneProfileId ? {profile_id: assigneProfileId} : {}),
-                    }]);
-                } catch (e) {
-                    console.error(`notifications insert error overdue assignee (${table} ${row.id}):`, e.message);
-                }
-            }
-
-            if (animal.uid_eleveur === uid && profileId) {
-                await notifyEmployes(await employesAbonnes({
-                    eleveurUid: uid, eleveurProfileId: profileId,
-                    permission: NOTIF_PERM_BY_TABLE[table], cache: empCache,
-                }), {
-                    type: "sante", title, body,
-                    pushData: {animalId: String(row.animal_id), table, overdue: "true"},
-                    notifData: {animalId: String(row.animal_id), table, overdue: true, recordId: row.id},
-                    exclude: assigneA ? [assigneA] : [],
-                    digest,
-                });
-            }
 
             // Agenda : UNE tâche du jour par soin en retard. Celles des jours
             // précédents (non validées) pour ce soin et cet animal sont retirées
@@ -704,6 +669,60 @@ async function sendOverdueSanteReminders(digest) {
                 await supabaseInsert("notifs_sent", [{key: dedupKey, sent_at: new Date().toISOString()}]);
             } catch (e) {
                 console.error(`notifs_sent insert error (${dedupKey}):`, e.message);
+            }
+        }
+
+        // Destinataires déjà servis (un employé abonné ET assigné) : une seule notif.
+        const servis = new Set();
+        const purges = new Set();
+        for (const g of groupes.values()) {
+            const {produit, items} = g;
+            const n = items.length;
+            const noms = items.map((i) => i.nom);
+            const listeNoms = n > 3 ? `${noms.slice(0, 3).join(", ")} et ${n - 3} autre${n - 3 > 1 ? "s" : ""}` :
+                noms.join(", ");
+            const maxRetard = Math.max(...items.map((i) => i.joursRetard));
+            const title = n > 1 ? `${label} en retard — ${n} animaux` : `${label} en retard — ${noms[0]}`;
+            const body = n > 1 ?
+                `${produit} : ${listeNoms} (jusqu'à ${maxRetard} jour${maxRetard > 1 ? "s" : ""} de retard).` :
+                `${produit} pour ${noms[0]} devait être fait il y a ${maxRetard} jour${maxRetard > 1 ? "s" : ""}.`;
+            const data = {
+                animalId: items[0].animalId, animalIds: items.map((i) => i.animalId), table, overdue: true,
+                recordId: n === 1 ? items[0].recordId : null, produit,
+                animaux: items.map((i) => ({id: i.animalId, nom: i.nom, detail: i.detail})),
+            };
+            const pushData = {type: "sante", animalId: items[0].animalId, table, overdue: true};
+
+            const destinataires = [{uid: g.uid, profileId: g.profileId}];
+            for (const e of g.employes || []) destinataires.push({uid: e.uid, profileId: e.profileId});
+            for (const d of destinataires) {
+                const k = `${d.uid}|${d.profileId || ""}|${String(produit).trim().toLowerCase()}`;
+                if (servis.has(k)) continue;
+                servis.add(k);
+                // Les notifications de la veille (et les anciennes, une par animal)
+                // sont remplacées : jamais d'empilement jour après jour.
+                const kp = `${d.uid}|${d.profileId || ""}`;
+                if (!purges.has(kp)) {
+                    purges.add(kp);
+                    try {
+                        await supabaseDelete(
+                            `notifications?uid=eq.${encodeURIComponent(d.uid)}&type=eq.sante` +
+                            `&data->>table=eq.${table}&data->>overdue=eq.true` +
+                            (d.profileId ? `&profile_id=eq.${encodeURIComponent(d.profileId)}` : "&profile_id=is.null"),
+                        );
+                    } catch (e) {
+                        console.error(`notifications delete error overdue (${table} ${d.uid}):`, e.message);
+                    }
+                }
+                digest.add(d.uid, title, body, pushData, {profileId: d.profileId});
+                try {
+                    await supabaseInsert("notifications", [{
+                        uid: d.uid, type: "sante", title, body, data, read: false,
+                        ...(d.profileId ? {profile_id: d.profileId} : {}),
+                    }]);
+                } catch (e) {
+                    console.error(`notifications insert error overdue (${table} ${d.uid}):`, e.message);
+                }
             }
         }
     }

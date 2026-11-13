@@ -344,6 +344,63 @@ class _NotificationsPageState extends State<NotificationsPage> {
     );
   }
 
+  /// Rappel santé regroupé : liste des animaux, chacun → son carnet (vaccins,
+  /// vermifuges ou antiparasitaires).
+  Future<void> _ouvrirSoinGroupe(Map<String, dynamic> notif, Map<String, dynamic> data, List<String> ids, String table,
+      ({String label, IconData icon, Color color}) cat) async {
+    const teal = Color(0xFF0C5C6C);
+    // Noms dans la notif ; anciennes notifs (sans noms) : lus sur les fiches.
+    final animaux = <Map<String, dynamic>>[
+      for (final a in (data['animaux'] as List?) ?? const []) if (a is Map) Map<String, dynamic>.from(a),
+    ];
+    if (animaux.isEmpty) {
+      try {
+        final rows = await _supa.from('animaux').select('id, nom').inFilter('id', ids);
+        final noms = {for (final r in rows) r['id'].toString(): r['nom']?.toString() ?? ''};
+        animaux.addAll([for (final id in ids) {'id': id, 'nom': noms[id] ?? 'Animal'}]);
+      } catch (_) {
+        animaux.addAll([for (final id in ids) {'id': id, 'nom': 'Animal'}]);
+      }
+    }
+    if (!mounted) return;
+    final produit = data['produit']?.toString() ?? '';
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.8),
+        child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(16, 16, 16, 12), children: [
+          Text(notif['title']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 16, color: teal)),
+          if (produit.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(produit, style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600)),
+          ],
+          const SizedBox(height: 4),
+          Text('Touchez un animal pour ouvrir ses ${cat.label.toLowerCase()} dans son carnet.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
+          const SizedBox(height: 6),
+          for (final a in animaux)
+            ListTile(
+              dense: true, contentPadding: EdgeInsets.zero,
+              leading: Icon(cat.icon, color: cat.color),
+              title: Text(a['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+              subtitle: (a['detail']?.toString() ?? '').isEmpty ? null
+                  : Text(a['detail'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              trailing: const Icon(Icons.chevron_right, color: teal),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => SanteDetailPage(
+                  animalId: a['id'].toString(), collection: table,
+                  label: cat.label, icon: cat.icon, color: cat.color,
+                )));
+              },
+            ),
+        ]),
+      )),
+    );
+  }
+
   Future<void> _handleTap(Map<String, dynamic> notif) async {
     await _markRead(notif);
 
@@ -530,6 +587,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
       };
       if (animalId == null) return;
       final cat = table != null ? cats[table] : null;
+      // Rappel regroupé (même soin pour plusieurs animaux) : la liste, chaque
+      // nom ouvre le carnet de l'animal sur ce soin.
+      final ids = data is Map ? [for (final i in (data['animalIds'] as List?) ?? const []) i.toString()] : <String>[];
+      if (cat != null && ids.length > 1) {
+        await _ouvrirSoinGroupe(notif, Map<String, dynamic>.from(data as Map), ids, table!, cat);
+        return;
+      }
       if (cat != null) {
         await Navigator.push(context, MaterialPageRoute(
           builder: (_) => SanteDetailPage(
