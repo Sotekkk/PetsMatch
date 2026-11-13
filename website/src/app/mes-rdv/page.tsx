@@ -2950,11 +2950,12 @@ export default function MesRdvPage() {
       )}
       {apresAcceptation && (
         <ApresAcceptationGardeModal rdvs={apresAcceptation} proProfileId={activeProfileId || null}
-          onClose={() => setApresAcceptation(null)} />
+          onClose={() => setApresAcceptation(null)} onOuvrirPage={(url, titre) => setPanneau({ url, titre })} />
       )}
       {dossierGarde && dossierGarde.length > 0 && (
         <ApresAcceptationGardeModal dossier rdvs={dossierGarde} proProfileId={activeProfileId || null}
-          onClose={() => setDossierGarde(null)} onChanged={() => fetchRdvs(true)} />
+          onClose={() => setDossierGarde(null)} onChanged={() => fetchRdvs(true)}
+          onOuvrirPage={(url, titre) => setPanneau({ url, titre })} />
       )}
       {modalSerie && (
         <SerieModal serie={modalSerie.serie} mode={modalSerie.mode} proName={proName}

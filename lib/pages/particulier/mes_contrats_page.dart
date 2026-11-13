@@ -54,6 +54,15 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
     return null;
   }
 
+  /// Dernière activité du contrat : signature la plus récente, sinon création
+  /// (un contrat de garde créé le 12 et signé le 13 remonte en tête).
+  static String _derniereActivite(Map<String, dynamic> d) {
+    final m = (d['metadata'] as Map?) ?? {};
+    final l = [d['signe_le'], m['signe_eleveur_le'], m['signe_acquereur_le'], d['created_at']]
+        .map((x) => (x ?? '').toString()).where((x) => x.isNotEmpty).toList()..sort();
+    return l.isEmpty ? '' : l.last;
+  }
+
   Future<void> _load() async {
     final user = FirebaseAuth.instance.currentUser;
     final email = user?.email;
@@ -92,7 +101,8 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
         final target = (meta['client_profile_id'] ?? meta['acquereur_profile_id']) as String?;
         if (target == null || target.isEmpty || activePid == null || activePid.isEmpty) return true;
         return target == activePid;
-      }).toList();
+      }).toList()
+        ..sort((a, b) => _derniereActivite(b).compareTo(_derniereActivite(a)));
       // Nom du prestataire (profil émetteur exact) pour un titre parlant.
       final pids = {for (final d in filtered) if ((d['pro_profile_id']?.toString() ?? '').isNotEmpty) d['pro_profile_id'].toString()}.toList();
       if (pids.isNotEmpty) {
@@ -152,7 +162,7 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
     final did = widget.highlightDocId;
     if (tk == null && did == null) return;
     final match = _docs.where((d) =>
-        (tk != null && d['token'] == tk) || (did != null && d['id'] == did)).toList();
+        (tk != null && (d['token'] == tk || d['id'] == tk)) || (did != null && d['id'] == did)).toList();
     if (match.isEmpty) return;
     _openedHighlight = true;
     final d = match.first;
@@ -296,6 +306,12 @@ class _DocCard extends StatelessWidget {
     final signeLe = doc['signe_le'] != null
         ? _fmt(DateTime.parse(doc['signe_le']).toLocal())
         : null;
+    // Signé par le professionnel, pas encore par moi : la date de sa signature.
+    final metaDoc = (doc['metadata'] as Map?) ?? {};
+    final proLe = signeLe == null && (metaDoc['signature_eleveur']?.toString() ?? '').isNotEmpty
+            && (metaDoc['signature_acquereur']?.toString() ?? '').isEmpty
+        ? DateTime.tryParse(metaDoc['signe_eleveur_le']?.toString() ?? '')?.toLocal()
+        : null;
     final signingUrl = token != null ? '$kSiteBaseUrl/signer-contrat/$token' : null;
 
     final meta       = (doc['metadata'] as Map?) ?? {};
@@ -370,6 +386,11 @@ class _DocCard extends StatelessWidget {
               const SizedBox(width: 6),
               Text('· signé le $signeLe',
                   style: const TextStyle(fontSize: 11, color: _green, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            ],
+            if (proLe != null) ...[
+              const SizedBox(width: 6),
+              Flexible(child: Text('· signé par le professionnel le ${_fmt(proLe)} — à vous de signer',
+                  style: const TextStyle(fontSize: 11, color: Colors.orange, fontFamily: 'Galey', fontWeight: FontWeight.w600))),
             ],
           ]),
           if (rejectionReason != null) ...[

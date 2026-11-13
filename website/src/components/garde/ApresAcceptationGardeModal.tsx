@@ -40,9 +40,11 @@ const GRIS = '#6B7280', VERT = '#5B8648', ORANGE = '#C0661B';
 
 /** dossier : « Dossier de la garde » depuis le RDV (état de chaque document,
  *  compte rendu de visite, facture) — miroir appli garde_dossier.dart. */
-export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose, dossier = false, onChanged }: {
+export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose, dossier = false, onChanged, onOuvrirPage }: {
   rdvs: RdvAccepte[]; proProfileId: string | null; onClose: () => void;
   dossier?: boolean; onChanged?: () => void;
+  /** Ouvre une page dans le panneau de « Mes RDV » (comme le vétérinaire). */
+  onOuvrirPage?: (url: string, titre: string) => void;
 }) {
   const { user, userData } = useAuth();
   const [etats, setEtats] = useState<{
@@ -223,7 +225,10 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
         if (l.size) meta.animal_noms = [...l];
         await supabase.from('documents_animaux').update({ metadata: meta }).eq('id', ex!.id);
       }
-      if (token) window.open(`/signer-contrat/${token}`, '_blank');
+      if (token) {
+        if (onOuvrirPage) { onClose(); onOuvrirPage(`/signer-contrat/${token}`, 'Contrat de garde'); }
+        else router.push(`/signer-contrat/${token}`);
+      }
     } catch (e) {
       setMsg(`Contrat : ${e instanceof Error ? e.message : String(e)}`);
     } finally { setBusy(''); }

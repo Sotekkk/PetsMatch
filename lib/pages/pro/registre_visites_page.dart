@@ -183,6 +183,8 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
               'profile_id': r['client_profile_id'],
               'doc_token': doc?['token'],
               'doc_statut': doc?['statut'],
+              // Partiellement signé : par qui (le client → à signer par le pet-sitter).
+              'doc_signe_client': ((doc?['metadata'] as Map?)?['signature_acquereur']?.toString() ?? '').isNotEmpty,
             };
           }
         }
@@ -524,6 +526,7 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
                   nom: e.value['nom'] as String,
                   animaux: e.value['animaux'] as String? ?? '',
                   statut: e.value['doc_statut'] as String?,
+                  signeParClient: e.value['doc_signe_client'] == true,
                   onTap: () => _openClientContrat(e.key),
                 );
               },
@@ -627,15 +630,18 @@ class _ClientContratCard extends StatelessWidget {
   final String nom;
   final String animaux;
   final String? statut;
+  final bool signeParClient;
   final VoidCallback onTap;
   static const _teal = Color(0xFF0C5C6C);
-  const _ClientContratCard({required this.nom, required this.animaux, required this.statut, required this.onTap});
+  const _ClientContratCard({required this.nom, required this.animaux, required this.statut, this.signeParClient = false, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final (label, color) = switch (statut) {
       'signe' => ('Signé', const Color(0xFF6E9E57)),
-      'partiellement_signe' => ('Partiellement signé', const Color(0xFF3E7CB1)),
+      'partiellement_signe' => signeParClient
+          ? ('Signé par le client — à signer par vous', const Color(0xFFCA8A04))
+          : ('Signé par vous — en attente du client', const Color(0xFF3E7CB1)),
       'en_attente' => ('En attente de signature', const Color(0xFFCA8A04)),
       null => ('À générer', Colors.grey),
       _ => (statut!, Colors.grey),

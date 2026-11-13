@@ -89,6 +89,11 @@ export default function MesContratsPage() {
           if (!target || !activePid) return true;
           return target === activePid;
         });
+        // Tri : dernière activité (signature la plus récente), pas la création —
+        // un contrat de garde créé le 12 et signé le 13 remonte en tête.
+        const activite = (d: DocRow) => [d.signe_le, d.metadata?.signe_eleveur_le, d.metadata?.signe_acquereur_le, d.created_at]
+          .map(x => String(x ?? '')).filter(Boolean).sort().pop() ?? '';
+        rows.sort((x, y) => activite(y).localeCompare(activite(x)));
         setDocs(rows);
         setFetching(false);
         // Nom du prestataire (profil émetteur exact) pour le titre.
@@ -165,6 +170,11 @@ export default function MesContratsPage() {
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${sm.cls}`}>{sm.label}</span>
                       <span className="text-xs text-gray-400">{date}</span>
+                      {!doc.signe_le && doc.metadata?.signature_eleveur && !doc.metadata?.signature_acquereur && doc.metadata?.signe_eleveur_le && (
+                        <span className="text-xs font-semibold text-amber-600">
+                          · signé par le professionnel le {new Date(String(doc.metadata.signe_eleveur_le)).toLocaleDateString('fr-FR')} — à vous de signer
+                        </span>
+                      )}
                       {doc.signe_le && (
                         <span className="text-xs text-green-600">
                           le {new Date(doc.signe_le).toLocaleDateString('fr-FR')}

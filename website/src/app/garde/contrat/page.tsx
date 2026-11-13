@@ -22,6 +22,8 @@ interface Doc {
   id: string;
   token: string | null;
   statut: string;
+  /** Partiellement signé : signé par le client (à signer par le pet-sitter). */
+  signeParClient?: boolean;
 }
 
 const STATUT_META: Record<string, { label: string; cls: string }> = {
@@ -87,7 +89,7 @@ export default function GardeContratPage() {
     const docByClient = new Map<string, Doc>();
     for (const d of (docsData ?? []) as (Doc & { metadata: Record<string, unknown> })[]) {
       const cu = (d.metadata?.client_uid as string | undefined) ?? '';
-      if (cu) docByClient.set(cu, { id: d.id, token: d.token, statut: d.statut });
+      if (cu) docByClient.set(cu, { id: d.id, token: d.token, statut: d.statut, signeParClient: !!d.metadata?.signature_acquereur });
     }
 
     setClients(clientUids.map(uid => {
@@ -126,7 +128,7 @@ export default function GardeContratPage() {
         }).select('token').single();
         token = (data?.token as string | null) ?? null;
       }
-      if (token) window.open(`/signer-contrat/${token}`, '_blank');
+      if (token) router.push(`/signer-contrat/${token}`);
       await load();
     } finally {
       setBusy(null);
@@ -211,7 +213,13 @@ export default function GardeContratPage() {
       ) : (
         <div className="space-y-3">
           {clients.map(c => {
-            const meta = c.doc ? STATUT_META[c.doc.statut] ?? STATUT_META.brouillon : null;
+            const meta = c.doc
+              ? c.doc.statut === 'partiellement_signe'
+                ? (c.doc.signeParClient
+                  ? { label: 'Signé par le client — à signer par vous', cls: 'bg-amber-100 text-amber-700' }
+                  : { label: 'Signé par vous — en attente du client', cls: 'bg-blue-100 text-blue-700' })
+                : STATUT_META[c.doc.statut] ?? STATUT_META.brouillon
+              : null;
             const isDraft = !c.doc || c.doc.statut === 'brouillon';
             return (
               <div key={c.uid} className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100 flex items-center justify-between gap-4">
