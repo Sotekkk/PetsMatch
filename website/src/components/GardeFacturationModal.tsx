@@ -46,11 +46,11 @@ export function GardeFacturationModal({ rdv, proUid, proProfileId, animalNom, cl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rdv.id, proUid, proProfileId]);
 
+  // Tarif par jour et par animal en € TTC (prix annoncé) ; chaque animal compte.
   const tarifNum = parseFloat(tarif.replace(',', '.')) || 0;
   const n = jours.length;
-  const totalHT = tarifNum * n;
-  const totalTVA = totalHT * 0.2;
-  const totalTTC = totalHT + totalTVA;
+  const nbAnimaux = Math.max(1, ((rdv as GardeRdvFacture & { animaux_ids?: unknown[] | null }).animaux_ids ?? []).length);
+  const totalTTC = tarifNum * n * nbAnimaux;
   const periode = gardePeriodeLabel(jours);
 
   async function continuer() {
@@ -71,7 +71,8 @@ export function GardeFacturationModal({ rdv, proUid, proProfileId, animalNom, cl
       emailClient: ('emailClient' in pc && pc.emailClient) || clientEmail || '',
       telClient: ('telClient' in pc && pc.telClient) || clientTel || '',
       lignes: [
-        { description: designation, quantite: nf, prixUnitaire: tarifNum, tva: 20 },
+        { description: designation, quantite: nf, prixUnitaire: tarifNum, prixTTC: tarifNum, tva: 20 },
+        ...(nbAnimaux > 1 ? [{ description: `Garde — ${nbAnimaux - 1} animal${nbAnimaux - 1 > 1 ? 'aux' : ''} de plus`, quantite: nf * (nbAnimaux - 1), prixUnitaire: tarifNum, prixTTC: tarifNum, tva: 20 }] : []),
         ...(fg && couverts.size ? [{ description: `${fg.nom} — ${couverts.size} jour${couverts.size > 1 ? 's' : ''} inclus dans le forfait (facturé à l'achat)`, quantite: 1, prixUnitaire: 0, tva: 20 }] : []),
         ...deductions,
       ],
@@ -114,17 +115,15 @@ export function GardeFacturationModal({ rdv, proUid, proProfileId, animalNom, cl
             </p>
 
             <div style={{ marginBottom: 16 }}>
-              <label style={lbl}>Tarif par jour (€)</label>
+              <label style={lbl}>Tarif par jour et par animal (€ TTC)</label>
               <input style={inp} type="number" step="0.01" placeholder="25" value={tarif} onChange={e => setTarif(e.target.value)} />
             </div>
 
             <div style={{ background: TEAL + '0a', border: `1px solid ${TEAL}26`, borderRadius: 12, padding: 14, marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#6b7280', marginBottom: 4 }}>
-                <span>Garde ({n} jour{n > 1 ? 's' : ''} × {fmt(tarifNum)})</span><span>{fmt(totalHT)}</span>
+                <span>Garde ({n} jour{n > 1 ? 's' : ''}{nbAnimaux > 1 ? ` × ${nbAnimaux} animaux` : ''} × {fmt(tarifNum)})</span><span>{fmt(totalTTC)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#6b7280', marginBottom: 8 }}>
-                <span>TVA 20%</span><span>{fmt(totalTVA)}</span>
-              </div>
+              <p style={{ fontFamily: 'Galey, sans-serif', fontSize: 11.5, color: '#9ca3af', margin: '0 0 8px' }}>Remise possible sur la facture.</p>
               <div style={{ borderTop: '1px solid #e5e7eb', margin: '8px 0' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'Galey, sans-serif', fontSize: 15, fontWeight: 700, color: TEAL }}>
                 <span>TOTAL TTC</span><span>{fmt(totalTTC)}</span>

@@ -143,7 +143,7 @@ Future<void> showDossierGarde(BuildContext context, Map<String, dynamic> rdv, {V
           const Text('Dossier de la garde', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 17, color: _teal)),
           const SizedBox(height: 2),
           Text('${rdv['_animal_nom'] ?? ''} · ${rdv['_client_name'] ?? ''}${rdvs.length > 1 ? ' · ${rdvs.length} passages' : ''}'
-              '${c.totalHT > 0 ? ' · ${eur(c.totalHT)} HT' : ''}',
+              '${c.totalHT > 0 ? ' · ${eur(c.totalHT)} TTC' : ''}',
               style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
           section('Avant la garde'),
           ligne(Icons.draw_outlined, 'Contrat de garde', etatContrat(), contrat == null ? 'Envoyer' : 'Ouvrir',

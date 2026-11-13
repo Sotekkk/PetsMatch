@@ -76,6 +76,25 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
     (async () => {
       const n = rdvs.length;
       const noms = first.animalNom ? ` — ${first.animalNom}` : '';
+      // Plusieurs animaux : chacun compte (tarif « animal supplémentaire » s'il
+      // est réglé, sinon le prix de la prestation) ; remise possible sur la facture.
+      const animauxEnPlus = async (nbPassages: number, prixBase: number) => {
+        const animaux = Array.isArray(first.animaux_ids) && first.animaux_ids.length > 0 ? first.animaux_ids.length : 1;
+        if (animaux < 2) return { lignes: [] as Ligne[], total: 0 };
+        let supp = 0;
+        if (proProfileId) {
+          const { data: p } = await supabase.from('user_profiles_complet').select('tarifs_garde').eq('id', proProfileId).maybeSingle();
+          supp = Number((p?.tarifs_garde as Record<string, number> | null)?.animal_supplementaire) || 0;
+        }
+        const p2 = supp > 0 ? supp : prixBase;
+        if (p2 <= 0) return { lignes: [] as Ligne[], total: 0 };
+        const q = (animaux - 1) * nbPassages;
+        return {
+          lignes: [{ description: supp > 0 ? 'Animal supplémentaire' : `${first.motif ?? 'Prestation'} — ${animaux - 1} animal${animaux - 1 > 1 ? 'aux' : ''} de plus`,
+            quantite: q, prixUnitaire: p2, prixTTC: p2, tva: 20, commune: true }] as Ligne[],
+          total: p2 * q,
+        };
+      };
       // Plusieurs animaux : visites et forfait communs au foyer (section « Prestations communes »).
       const commune = Array.isArray(first.animaux_ids) && first.animaux_ids.length > 1;
       // Forfait acheté : ses passages ne sont plus facturés (facture à l'achat).
@@ -93,8 +112,10 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
         if (!m) { setLignes(info); setTotal(0); return; }
         const prixF = await gardeTarif(first.pro_uid, proProfileId, { ...first, animal_id: first.animal_id ?? null });
         if (!alive) return;
-        setLignes([{ description: `${first.motif ?? 'Prestation'}${noms} (${periode(horsForfait)})`, quantite: m, prixUnitaire: prixF, tva: 20, ...(commune ? { commune } : {}) }, ...info]);
-        setTotal(prixF * m);
+        const lf: Ligne[] = [{ description: `${first.motif ?? 'Prestation'}${noms} (${periode(horsForfait)})`, quantite: m, prixUnitaire: prixF, prixTTC: prixF, tva: 20, ...(commune ? { commune } : {}) }];
+        const sup = await animauxEnPlus(m, prixF);
+        setLignes([...lf, ...sup.lignes, ...info]);
+        setTotal(prixF * m + sup.total);
         return;
       }
       if (first.forfait_id) {
@@ -102,25 +123,17 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
         const prix = Number(f?.prix) || 0;
         if (f && prix > 0) {
           if (!alive) return;
-          setLignes([{ description: `Forfait ${f.nom}${noms} (${periode(rdvs)})`, quantite: 1, prixUnitaire: prix, tva: 20, ...(commune ? { commune } : {}) }]);
+          setLignes([{ description: `Forfait ${f.nom}${noms} (${periode(rdvs)})`, quantite: 1, prixUnitaire: prix, prixTTC: prix, tva: 20, ...(commune ? { commune } : {}) }]);
           setTotal(prix);
           return;
         }
       }
       const prix = await gardeTarif(first.pro_uid, proProfileId, { ...first, animal_id: first.animal_id ?? null });
-      const l: Ligne[] = [{ description: `${first.motif ?? 'Prestation'}${noms} (${periode(rdvs)})`, quantite: n, prixUnitaire: prix, tva: 20, ...(commune ? { commune } : {}) }];
-      let t = prix * n;
-      const animaux = Array.isArray(first.animaux_ids) && first.animaux_ids.length > 0 ? first.animaux_ids.length : 1;
-      if (animaux > 1 && proProfileId) {
-        const { data: p } = await supabase.from('user_profiles_complet').select('tarifs_garde').eq('id', proProfileId).maybeSingle();
-        const supp = Number((p?.tarifs_garde as Record<string, number> | null)?.animal_supplementaire) || 0;
-        if (supp > 0) {
-          l.push({ description: 'Animal supplémentaire', quantite: (animaux - 1) * n, prixUnitaire: supp, tva: 20, commune: true });
-          t += supp * (animaux - 1) * n;
-        }
-      }
+      // Grille du pet-sitter en € TTC (prix annoncé) : HT déduit sur la facture.
+      const l: Ligne[] = [{ description: `${first.motif ?? 'Prestation'}${noms} (${periode(rdvs)})`, quantite: n, prixUnitaire: prix, prixTTC: prix, tva: 20, ...(commune ? { commune } : {}) }];
+      const sup = await animauxEnPlus(n, prix);
       if (!alive) return;
-      setLignes(l); setTotal(t);
+      setLignes([...l, ...sup.lignes]); setTotal(prix * n + sup.total);
     })();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -254,7 +267,7 @@ export default function ApresAcceptationGardeModal({ rdvs, proProfileId, onClose
     // Facture finale : acomptes de la garde déduits.
     const deductions = acompte ? [] : await deductionsAcompteGarde(rdvs.map(r => r.id));
     const l: Ligne[] = acompte
-      ? [{ description: `Acompte — ${first.motif ?? 'Prestation'} (${periode(rdvs)})`, quantite: 1, prixUnitaire: Math.round(total * 30) / 100, tva: 20 }]
+      ? [{ description: `Acompte — ${first.motif ?? 'Prestation'} (${periode(rdvs)})`, quantite: 1, prixUnitaire: Math.round(total * 30) / 100, prixTTC: Math.round(total * 30) / 100, tva: 20 }]
       : [...lignes, ...deductions];
     // Nom, prénom, e-mail, téléphone, adresse du client (profil, compte, saisie manuelle).
     const coord = await coordonneesClientRdv(first.id, first.client_profile_id).catch(() => null);

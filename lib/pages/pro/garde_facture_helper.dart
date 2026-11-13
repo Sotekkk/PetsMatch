@@ -8,7 +8,8 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show coordonneesClientRdv;
 import 'package:PetsMatch/utils/forfait_garde.dart';
-import 'package:PetsMatch/pages/pro/garde_acceptation.dart' show deductionsAcompteGarde;
+import 'package:PetsMatch/pages/pro/garde_acceptation.dart' show deductionsAcompteGarde, tarifAnimalSuppGarde;
+import 'package:PetsMatch/utils/rdv_animaux.dart' show idsAnimauxRdv;
 
 /// Helpers partagés pour facturer une prestation de garde depuis un `rdv`
 /// (registre des visites ET agenda pro). La facture elle-même passe par le
@@ -265,6 +266,8 @@ Future<void> facturerGardeDepuisRdv(BuildContext context, Map<String, dynamic> r
   final deductions = await deductionsAcompteGarde(rdvsAFacturer);
   final n = horsForfait.length;
   final prixJour = await gardeTarif(rdv);
+  final nbAnimaux = idsAnimauxRdv(rdv).length;
+  final suppAnimal = nbAnimaux > 1 ? await tarifAnimalSuppGarde() : 0.0;
   if (!context.mounted) return;
 
   final designation = n > 1
@@ -285,7 +288,13 @@ Future<void> facturerGardeDepuisRdv(BuildContext context, Map<String, dynamic> r
       clientCp: v('cp'),
       clientVille: v('ville'),
       lignesPrefill: [
-        FacturePrefillLigne(designation: designation, prixHT: prixJour, quantite: n.toDouble(), tauxTVA: 20),
+        // Grille en € TTC ; chaque animal gardé compte (remise possible).
+        FacturePrefillLigne(designation: designation, prixTTC: prixJour, quantite: n.toDouble(), tauxTVA: 20),
+        if (nbAnimaux > 1 && (suppAnimal > 0 ? suppAnimal : prixJour) > 0)
+          FacturePrefillLigne(
+              designation: suppAnimal > 0 ? 'Animal supplémentaire' : 'Garde — ${nbAnimaux - 1} animal${nbAnimaux - 1 > 1 ? 'aux' : ''} de plus',
+              description: 'Par animal et par jour', prixTTC: suppAnimal > 0 ? suppAnimal : prixJour,
+              quantite: ((nbAnimaux - 1) * n).toDouble(), tauxTVA: 20),
         if (fg != null && couverts.isNotEmpty)
           FacturePrefillLigne(designation: '${fg.nom} — ${couverts.length} jour${couverts.length > 1 ? 's' : ''} inclus dans le forfait',
               description: 'Forfait facturé à l\'achat', prixHT: 0, quantite: 1, tauxTVA: 20),
