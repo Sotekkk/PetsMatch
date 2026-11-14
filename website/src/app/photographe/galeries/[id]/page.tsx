@@ -179,7 +179,12 @@ export default function GalerieStudioPage() {
   return (
     <div className="min-h-screen bg-[#F6F7F5]" style={{ fontFamily: 'Galey, sans-serif' }}>
       <div className="max-w-7xl mx-auto px-4 py-5">
-        <Link href="/photographe/galeries" className="text-sm font-semibold" style={{ color: TEAL }}>← Mes galeries</Link>
+        {album.rdv_id ? (
+          <span className="flex flex-wrap gap-x-4 gap-y-1">
+            <Link href={`/mes-rdv?rdv=${encodeURIComponent(album.rdv_id)}&dossier=1`} className="text-sm font-semibold" style={{ color: TEAL }}>← Retour à la séance</Link>
+            <Link href="/photographe/galeries" className="text-sm font-semibold text-gray-500">Mes galeries</Link>
+          </span>
+        ) : <Link href="/photographe/galeries" className="text-sm font-semibold" style={{ color: TEAL }}>← Mes galeries</Link>}
         <div className="grid lg:grid-cols-[1fr_320px] gap-5 mt-3 items-start">
           {/* Colonne principale : import + grille */}
           <div className="space-y-4">

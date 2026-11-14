@@ -14,6 +14,7 @@ import { styleGalerie } from '@/lib/photographe';
 import { envoyerContratParEmail } from '@/lib/contrat-email';
 import { signerContratAvecSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
 import SignatureProModal from '@/components/signature/SignatureProModal';
+import FinSeancePhotoModal from '@/components/photographe/FinSeancePhotoModal';
 import ContactCanaux from '@/components/ContactCanaux';
 import DocumentProModal from '@/components/pro/DocumentProModal';
 import { TYPE_CONTRAT_PRO } from '@/lib/document-pro';
@@ -51,6 +52,8 @@ const NOM_PRO = (u: { displayName?: string | null } | null) => u?.displayName ??
 interface Galerie { id: string; statut: string | null; nb_photos_incluses?: number | null; prix_photo_supp?: number | null; selection_confirmee_le?: string | null }
 interface Facture { id: string; statut: string; total_ttc: number | null; pdf_url: string | null; numero_affichage?: string | null; numero_facture?: string | null; date_paiement?: string | null; mode_paiement?: string | null }
 const MODES_PAIEMENT = ['Virement bancaire', 'Carte bancaire', 'Espèces', 'Chèque'];
+/** Lien de retour vers ce dossier (après la galerie, le devis, la facture…). */
+export const retourDossierPhoto = (rdvId: string) => `/mes-rdv?rdv=${encodeURIComponent(rdvId)}&dossier=1`;
 
 export default function DossierSeanceModal({ rdv, nomClient, prestation, animal, depuisAgenda, onClose, onChanged }: {
   rdv: RdvDossier; nomClient: string; prestation: string; animal?: string | null; depuisAgenda?: boolean;
@@ -86,6 +89,8 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
   const [diffusion, setDiffusion] = useState<string | null>(null);
   // Contrat : celui de PetsMatch (généré) ou le mien (PDF / photo chargé).
   const [monContrat, setMonContrat] = useState(false);
+  // Fin de séance : tout envoyer au client en un seul e-mail.
+  const [finSeance, setFinSeance] = useState(false);
   const [r, setR] = useState(rdv);
   const [now, setNow] = useState(0);
   const pid = r.pro_profile_id || pidActif;
@@ -163,7 +168,7 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
       ...(coord.prenom ? { prenom: coord.prenom } : {}), ...(coord.email ? { email: coord.email } : {}), ...(coord.tel ? { tel: coord.tel } : {}),
       ...(r.client_uid ? { clientUid: r.client_uid } : {}), ...(r.client_profile_id ? { clientProfileId: r.client_profile_id } : {}),
       ...(r.animal_id ? { animal: r.animal_id } : {}),
-      ...(prix != null ? { ligneDesc: designation, lignePrix: String(prix) } : {}) });
+      ...(prix != null ? { ligneDesc: designation, lignePrix: String(prix) } : {}), retour: retourDossierPhoto(r.id) });
     router.push(`/photographe/devis?${q.toString()}`);
   };
   async function transmettreDevis() {
@@ -243,7 +248,7 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
         nomClient: coord.nom || nomClient, prenomClient: coord.prenom || undefined,
         emailClient: coord.email || undefined, telClient: coord.tel || undefined,
         rueClient: coord.rue || undefined, cpClient: coord.cp || undefined, villeClient: coord.ville || undefined,
-        sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined,
+        sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined, retour: retourDossierPhoto(r.id),
         clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
         lignes: [
           { description: `${designation} — séance du ${jour(debut)}`, quantite: 1, prixUnitaire: 0, prixTTC: prix ?? 0, tva: 20 },
@@ -379,6 +384,11 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
           )}
         </div>
         <p className="text-[11px] text-gray-400 mt-1">Chaque élément garde son statut : une galerie livrée n&apos;est pas une facture payée.</p>
+        {!loading && passee && (
+          <button onClick={() => setFinSeance(true)} className="w-full mt-3 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: TEAL }}>
+            Fin de séance — tout envoyer au client
+          </button>
+        )}
 
         {galerie && galerie.statut !== 'brouillon' && (() => {
           const selOk = !!galerie.selection_confirmee_le;
@@ -477,6 +487,16 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
           }
           setSignerContrat(null);
         }} />
+      )}
+      {finSeance && (
+        <FinSeancePhotoModal
+          infos={{
+            rdvId: r.id, statutRdv: r.statut, dateRdv: r.date_heure, clientNom: nomClient, emailClient: coord.email,
+            galerie: galerie ? { nbPhotos } : null, facture, contrat, devis,
+          }}
+          onClose={() => setFinSeance(false)}
+          onPreparerFacture={() => { setFinSeance(false); facturer(); }}
+          onDone={msg => { setFinSeance(false); setMessage(msg); charger(); onChanged?.(); }} />
       )}
       {monContrat && (
         <DocumentProModal mode="contrat" catPro="photographe" rdv={{ ...r, pro_profile_id: pid || null }} clientNom={nomClient} animalNom={animaux || undefined}

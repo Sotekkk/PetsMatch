@@ -2264,7 +2264,12 @@ export default function MesRdvPage() {
   // Dossier à rouvrir (?rdv=…&dossier=1, hospitalisés du jour, retour d'une action).
   useEffect(() => {
     if (!dossierARouvrir) return;
-    const ouvrir = (r: Rdv) => { if (catPro === 'toilettage') setDossierToilettage(r); else setDossierSoins(r); setDossierARouvrir(null); };
+    const ouvrir = (r: Rdv) => {
+      if (catPro === 'toilettage') setDossierToilettage(r);
+      else if (catPro === 'photographe') setDossierRdv(r);
+      else setDossierSoins(r);
+      setDossierARouvrir(null);
+    };
     const r = rdvs.find(x => x.id === dossierARouvrir);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (r) { ouvrir(r); return; }
@@ -2356,7 +2361,7 @@ export default function MesRdvPage() {
     else if (catPro === 'veterinaire') setActiveTab('a_venir');
     setRdvFocus(q.get('rdv'));
     if (q.get('dossier') === '1' && q.get('rdv') && catPro === 'education') setDossierEducation({ id: q.get('rdv')!, nomClient: '' });
-    if (q.get('dossier') === '1' && q.get('rdv') && (catPro === 'veterinaire' || catPro === 'sante' || catPro === 'toilettage')) setDossierARouvrir(q.get('rdv'));
+    if (q.get('dossier') === '1' && q.get('rdv') && (catPro === 'veterinaire' || catPro === 'sante' || catPro === 'toilettage' || catPro === 'photographe')) setDossierARouvrir(q.get('rdv'));
     setDossierApresNouveau(q.get('retourDossier'));
     setModifierFocus(q.get('modifier') === '1');
     setRetourFiche(q.get('animal'));

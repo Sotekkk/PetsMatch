@@ -4,7 +4,10 @@
 // Chaque module garde son statut et peut être transmis au client :
 // devis, contrat, galerie, sélection du client (photos choisies), facture.
 // Miroir site : website/src/components/photographe/DossierSeanceModal.tsx.
+import 'dart:convert';
 import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:PetsMatch/utils/site_api.dart' show siteApiHeaders;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -19,7 +22,7 @@ import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, D
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
-import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage, CreerFacturePage, FacturePrefillLigne;
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage, CreerFacturePage, FacturePrefillLigne, facturePdfDepuisLigne;
 import 'package:PetsMatch/utils/galeries_api.dart';
 import 'package:PetsMatch/widgets/adresse_recherche_field.dart';
 import 'package:PetsMatch/widgets/contact_canaux.dart';
@@ -257,6 +260,161 @@ class _DossierSeanceState extends State<_DossierSeance> {
 
   void _snack(String t) {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t, style: const TextStyle(fontFamily: 'Galey'))));
+  }
+
+  /// Fin de séance : tout envoyer au client en un seul e-mail (lien de la
+  /// galerie pour choisir ses photos, facture PDF acquittée au besoin, contrat
+  /// et devis en liens), comme la fin de consultation du vétérinaire / la fin
+  /// de garde. La livraison des photos retouchées reste à part. Serveur :
+  /// /api/photographe/fin-seance. Miroir site : FinSeancePhotoModal.
+  Future<void> _finSeance() async {
+    final g = _galerie, f = _facture, ct = _contrat, d = _devis;
+    final coches = <String, bool>{
+      if (g != null && _nbPhotos > 0) 'gal': true,
+      if (f != null) 'fac': true,
+      if (ct != null) 'ctr': ct['statut'] != 'signe',
+      if (d != null) 'dev': d['statut'] == 'brouillon' || d['statut'] == 'envoye',
+    };
+    final emailCtrl = TextEditingController(text: _email);
+    final messageCtrl = TextEditingController();
+    final dejaPayee = f?['statut'] == 'payee';
+    var acquittee = false;
+    var mode = 'Carte bancaire';
+    String eur(dynamic v) => '${((v as num?) ?? 0).toStringAsFixed(2).replaceAll('.', ',')} €';
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
+        Widget ligne(String cle, String titre, String sous) => CheckboxListTile(
+              value: coches[cle] ?? false, dense: true, activeColor: _teal, contentPadding: EdgeInsets.zero,
+              onChanged: (v) => setM(() => coches[cle] = v ?? false),
+              title: Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+              subtitle: Text(sous, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            );
+        Widget info(String t) => Padding(padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Text(t, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)));
+        final nb = coches.values.where((v) => v).length;
+        return SafeArea(child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Fin de séance', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700, color: _teal)),
+            const SizedBox(height: 4),
+            Text('Tout envoyer au client en un seul e-mail${widget.nomClient.isNotEmpty ? ' (${widget.nomClient})' : ''}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+            const SizedBox(height: 6),
+            if (g == null) info('Pas encore de galerie pour cette séance.')
+            else if (_nbPhotos == 0) info('Galerie sans photo : ajoutez les photos pour pouvoir l\'envoyer.')
+            else ligne('gal', 'Galerie', '$_nbPhotos photo${_nbPhotos > 1 ? 's' : ''} — lien pour choisir ses photos'),
+            if (f != null)
+              ligne('fac', 'Facture ${f['numero_affichage'] ?? f['numero_facture'] ?? ''}', '${eur(f['total_ttc'])} TTC${dejaPayee ? ' — acquittée' : ''} · PDF joint')
+            else ...[
+              const SizedBox(height: 4),
+              SizedBox(width: double.infinity, child: OutlinedButton.icon(
+                onPressed: () => Navigator.pop(ctx, 'facture'),
+                icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                label: const Text('Préparer la facture', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(foregroundColor: _teal),
+              )),
+            ],
+            if (ct != null)
+              ligne('ctr', 'Contrat de prestation', ct['statut'] == 'signe' ? 'Signé — lien pour le consulter' : 'Pas encore signé par le client — lien pour le signer'),
+            if (d != null)
+              ligne('dev', 'Devis — ${eur(d['total_ttc'])} TTC', d['statut'] == 'accepte' ? 'Accepté — lien pour le consulter' : 'Lien pour le consulter et l\'accepter'),
+            if (f != null && coches['fac'] == true && !dejaPayee) ...[
+              SwitchListTile(
+                value: acquittee, activeThumbColor: _teal, contentPadding: EdgeInsets.zero, dense: true,
+                onChanged: (v) => setM(() => acquittee = v),
+                title: const Text('Facture acquittée (réglée aujourd\'hui)', style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+              ),
+              if (acquittee) Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final m in const ['Carte bancaire', 'Espèces', 'Chèque', 'Virement'])
+                  ChoiceChip(label: Text(m, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)), selected: mode == m,
+                      selectedColor: _teal.withValues(alpha: 0.2), onSelected: (_) => setM(() => mode = m)),
+              ]),
+            ],
+            const SizedBox(height: 10),
+            TextField(controller: emailCtrl, keyboardType: TextInputType.emailAddress,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: const InputDecoration(labelText: 'E-mail du client', isDense: true)),
+            const SizedBox(height: 6),
+            TextField(controller: messageCtrl, minLines: 1, maxLines: 3,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: const InputDecoration(labelText: 'Message (facultatif)', isDense: true)),
+            info('La livraison des photos retouchées se fera plus tard, à part.'),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer', style: TextStyle(fontFamily: 'Galey')))),
+              const SizedBox(width: 8),
+              Expanded(flex: 2, child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white),
+                onPressed: nb == 0 ? null : () => Navigator.pop(ctx, 'envoyer'),
+                child: Text('Envoyer ($nb)', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              )),
+            ]),
+          ]),
+        ));
+      }),
+    );
+    final email = emailCtrl.text.trim();
+    final message = messageCtrl.text.trim();
+    emailCtrl.dispose();
+    messageCtrl.dispose();
+    if (choix == null || !mounted) return;
+    if (choix == 'facture') { await _facturer(); return; }
+    try {
+      Map<String, String>? pieceFacture;
+      if (f != null && coches['fac'] == true) {
+        if (acquittee && !dejaPayee) {
+          await _supa.from('factures').update({
+            'statut': 'payee', 'mode_paiement': mode, 'date_paiement': DateTime.now().toUtc().toIso8601String(),
+          }).eq('id', f['id']);
+        }
+        final row = await _supa.from('factures').select().eq('id', f['id']).maybeSingle();
+        if (row != null) {
+          final fac = Map<String, dynamic>.from(row);
+          final n = fac['numero_affichage'] ?? fac['numero_facture'] ?? '';
+          pieceFacture = {
+            'fichier_nom': 'Facture-$n${fac['statut'] == 'payee' ? '-acquittee' : ''}.pdf',
+            'pdf_base64': base64Encode(await facturePdfDepuisLigne(fac)),
+          };
+        }
+      }
+      _snack('Envoi…');
+      final res = await http.post(Uri.parse('$kSiteBaseUrl/api/photographe/fin-seance'),
+          headers: await siteApiHeaders(),
+          body: jsonEncode({
+            'rdvId': r['id'].toString(), 'email': email, 'message': message,
+            'galerie': coches['gal'] == true, 'contrat': coches['ctr'] == true, 'devis': coches['dev'] == true,
+            'facture': pieceFacture,
+          }));
+      if (res.statusCode != 200) {
+        String err = 'Envoi impossible';
+        try { err = (jsonDecode(res.body) as Map)['error']?.toString() ?? err; } catch (_) {}
+        _snack(err);
+        if (mounted) { setState(() => _loading = true); _charger(); }
+        return;
+      }
+      if (!mounted) return;
+      if (r['statut'] == 'confirme' && _debut.isBefore(DateTime.now())) {
+        final clore = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+          title: const Text('Tout est envoyé', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          content: const Text('Marquer la séance comme terminée ?', style: TextStyle(fontFamily: 'Galey')),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Plus tard')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Terminer', style: TextStyle(color: _teal, fontWeight: FontWeight.w700))),
+          ],
+        ));
+        if (clore == true) {
+          await _supa.from('rdv').update({'statut': 'termine', 'termine_at': DateTime.now().toUtc().toIso8601String()}).eq('id', r['id']);
+          r['statut'] = 'termine';
+        }
+      }
+      _snack('Envoyé au client en un seul e-mail');
+      if (mounted) { setState(() => _loading = true); _charger(); }
+    } catch (e) {
+      _snack('Impossible : $e');
+    }
   }
 
   Future<void> _go(Widget page) async {
@@ -663,6 +821,15 @@ class _DossierSeanceState extends State<_DossierSeance> {
         const SizedBox(height: 4),
         Text('Chaque élément garde son statut : une galerie livrée n\'est pas une facture payée.',
             style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+        if (!_loading && passee) ...[
+          const SizedBox(height: 10),
+          SizedBox(width: double.infinity, child: ElevatedButton(
+            onPressed: _finSeance,
+            style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
+                minimumSize: const Size(0, 46), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            child: const Text('Fin de séance — tout envoyer au client', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          )),
+        ],
         if (!_loading && _galerie != null && _galerie!['statut'] != 'brouillon') _suiteSeance(),
         const SizedBox(height: 4),
         ListTile(contentPadding: EdgeInsets.zero, dense: true, leading: const Icon(Icons.place_outlined, color: _teal),
