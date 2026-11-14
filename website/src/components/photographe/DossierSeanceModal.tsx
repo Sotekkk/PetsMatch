@@ -386,7 +386,7 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
         <p className="text-[11px] text-gray-400 mt-1">Chaque élément garde son statut : une galerie livrée n&apos;est pas une facture payée.</p>
         {!loading && passee && (
           <button onClick={() => setFinSeance(true)} className="w-full mt-3 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: TEAL }}>
-            Fin de séance — tout envoyer au client
+            Fin de séance — envoyer la galerie au client
           </button>
         )}
 
@@ -492,10 +492,10 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
         <FinSeancePhotoModal
           infos={{
             rdvId: r.id, statutRdv: r.statut, dateRdv: r.date_heure, clientNom: nomClient, emailClient: coord.email,
-            galerie: galerie ? { nbPhotos } : null, facture, contrat, devis,
+            galerie: galerie ? { nbPhotos } : null, contrat,
+            tarifs: { forfait: prix, incluses: galerie?.nb_photos_incluses ?? null, prixPhoto: galerie?.prix_photo_supp != null ? Number(galerie.prix_photo_supp) : null },
           }}
           onClose={() => setFinSeance(false)}
-          onPreparerFacture={() => { setFinSeance(false); facturer(); }}
           onDone={msg => { setFinSeance(false); setMessage(msg); charger(); onChanged?.(); }} />
       )}
       {monContrat && (
