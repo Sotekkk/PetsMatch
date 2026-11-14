@@ -1722,8 +1722,11 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
   /// Pet-sitter : contrat de garde signé avec sa signature enregistrée
   /// (signatures_pro, comme les comptes rendus du vétérinaire) ; la première
   /// fois, il la dessine et elle est gardée pour les suivants.
-  bool get _signatureProAuto =>
-      _doc?['type'] == 'contrat_garde' && _myUid.isNotEmpty && _myUid == _doc?['uid_eleveur'];
+  bool get _signatureProAuto {
+    final t = _doc?['type']?.toString() ?? '';
+    return (t == 'contrat_garde' || t.startsWith('contrat_prestation'))
+        && _myUid.isNotEmpty && _myUid == _doc?['uid_eleveur'];
+  }
   String? _maSignature;
   bool _maSignatureLue = false;
 

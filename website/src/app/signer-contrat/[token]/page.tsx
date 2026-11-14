@@ -72,7 +72,9 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   const [saving, setSaving]       = useState<'eleveur' | 'acquereur' | null>(null);
   // Pet-sitter : signature enregistrée (signatures_pro), comme le vétérinaire.
   const [maSig, setMaSig] = useState<string | null>(null);
-  const signatureProAuto = !!user && !!doc && doc.type === 'contrat_garde' && user.uid === doc.uid_eleveur;
+  // Pet-sitter, photographe, toiletteur… (contrats de prestation).
+  const signatureProAuto = !!user && !!doc && (doc.type === 'contrat_garde' || (doc.type ?? '').startsWith('contrat_prestation'))
+    && user.uid === doc.uid_eleveur;
   useEffect(() => {
     if (!signatureProAuto || !user) return;
     maSignaturePro(user.uid).then(setMaSig).catch(() => {});

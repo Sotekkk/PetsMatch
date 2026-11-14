@@ -23,7 +23,7 @@ import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show Facturation
 import 'package:PetsMatch/utils/galeries_api.dart';
 import 'package:PetsMatch/widgets/adresse_recherche_field.dart';
 import 'package:PetsMatch/widgets/contact_canaux.dart';
-import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show envoyerContratParEmail;
+import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show envoyerContratParEmail, signerContratAvecSignaturePro;
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1F2A2E);
@@ -118,8 +118,12 @@ Future<void> genererContratPhoto(BuildContext context, Map<String, dynamic> rdv,
         'acompte_pourcentage': prestation?['acompte_pourcentage']?.toString(),
         'autorisation_images': diffusion,
       },
-    }).select('token').single();
+    }).select('id, token').single();
     token = row['token'] as String?;
+    // Ma signature enregistrée apposée d'office (côté professionnel), comme le
+    // vétérinaire / le toiletteur ; la première fois, je la dessine et elle est
+    // gardée pour les suivants.
+    if (context.mounted) await signerContratAvecSignaturePro(context, row['id'].toString(), sansNotification: true);
     if (token != null) await transmettreContrat(rdv, token);
   }
   if (token == null || !ouvrir || !context.mounted) return;

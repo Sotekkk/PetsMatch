@@ -12,6 +12,8 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { geocodeAddress } from '@/lib/geocoding';
 import { styleGalerie } from '@/lib/photographe';
 import { envoyerContratParEmail } from '@/lib/contrat-email';
+import { signerContratAvecSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
+import SignatureProModal from '@/components/signature/SignatureProModal';
 import ContactCanaux from '@/components/ContactCanaux';
 import DocumentProModal from '@/components/pro/DocumentProModal';
 import { TYPE_CONTRAT_PRO } from '@/lib/document-pro';
@@ -45,6 +47,7 @@ const eur = (n: number | null | undefined) => `${Math.round(Number(n) || 0)} €
 
 interface Devis { id: string; statut: string; total_ttc: number | null; token_acceptation: string | null }
 interface Contrat { id: string; token: string; statut: string }
+const NOM_PRO = (u: { displayName?: string | null } | null) => u?.displayName ?? '';
 interface Galerie { id: string; statut: string | null; nb_photos_incluses?: number | null; prix_photo_supp?: number | null; selection_confirmee_le?: string | null }
 interface Facture { id: string; statut: string; total_ttc: number | null; pdf_url: string | null; numero_affichage?: string | null; numero_facture?: string | null; date_paiement?: string | null; mode_paiement?: string | null }
 const MODES_PAIEMENT = ['Virement bancaire', 'Carte bancaire', 'Espèces', 'Chèque'];
@@ -59,6 +62,8 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
   const [loading, setLoading] = useState(true);
   const [devis, setDevis] = useState<Devis | null>(null);
   const [contrat, setContrat] = useState<Contrat | null>(null);
+  // Contrat à signer de ma main (aucune signature enregistrée) : id du document.
+  const [signerContrat, setSignerContrat] = useState<string | null>(null);
   const [galerie, setGalerie] = useState<Galerie | null>(null);
   const [facture, setFacture] = useState<Facture | null>(null);
   const [nbPhotos, setNbPhotos] = useState(0);
@@ -135,6 +140,12 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
     // eslint-disable-next-line react-hooks/set-state-in-effect
     charger();
   }, [charger]);
+  // Contrat ouvert dans un autre onglet : statut à jour au retour sur le dossier.
+  useEffect(() => {
+    const auRetour = () => { if (document.visibilityState === 'visible') charger(); };
+    document.addEventListener('visibilitychange', auRetour);
+    return () => document.removeEventListener('visibilitychange', auRetour);
+  }, [charger]);
 
   async function notifier(type: string, title: string, body: string, data: Record<string, unknown>) {
     if (!r.client_uid) { setMessage('Client sans compte PetsMatch : transmettez par e-mail ou téléphone.'); return false; }
@@ -183,6 +194,9 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
     if (error) { setMessage(error.message); return; }
     const c = data as Contrat;
     setContrat(c); setDiffusion(null);
+    // Ma signature enregistrée apposée d'office (côté professionnel) ; sinon la dessiner.
+    if (await signerContratAvecSignaturePro(c.id, user.uid, NOM_PRO(user), null, true)) setContrat({ ...c, statut: 'partiellement_signe' });
+    else setSignerContrat(c.id);
     await transmettreContrat(c.token);
     onChanged?.();
   }
@@ -338,7 +352,7 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
                 !contrat ? 'Non généré' : contrat.statut === 'signe' ? 'Signé' : contrat.statut === 'partiellement_signe' ? 'Signé par une partie' : 'En attente de signature',
                 !contrat ? GRIS : contrat.statut === 'signe' ? VERT : AMBRE,
                 !contrat ? [btn('Générer et envoyer', () => setDiffusion('')), btn('Charger mon contrat', () => setMonContrat(true))]
-                  : [btn('Voir', () => router.push(`/signer-contrat/${contrat.token}`)), ...(contrat.statut !== 'signe' ? [btn(r.client_uid ? 'Renvoyer' : 'Envoyer par e-mail', () => { transmettreContrat(contrat.token); })] : [])])}
+                  : [btn('Voir', () => window.open(`/signer-contrat/${contrat.token}`, '_blank', 'noopener')), ...(contrat.statut !== 'signe' ? [btn(r.client_uid ? 'Renvoyer' : 'Envoyer par e-mail', () => { transmettreContrat(contrat.token); })] : [])])}
               {diffusion !== null && !contrat && (
                 <div className="bg-gray-50 rounded-xl p-3 my-1 space-y-1.5">
                   <p className="text-xs font-semibold text-gray-600">Diffusion des photos par vous (écrite dans le contrat) :</p>
@@ -454,6 +468,16 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
         </div>
         <button onClick={onClose} className="w-full mt-3 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
       </div>
+      {signerContrat && user && (
+        <SignatureProModal onClose={() => setSignerContrat(null)} onValider={async dataUrl => {
+          await enregistrerSignaturePro(user.uid, dataUrl);
+          if (await signerContratAvecSignaturePro(signerContrat, user.uid, NOM_PRO(user), dataUrl, true)) {
+            setContrat(c => c ? { ...c, statut: 'partiellement_signe' } : c);
+            setMessage('Votre signature est apposée sur le contrat (et enregistrée pour les prochains).');
+          }
+          setSignerContrat(null);
+        }} />
+      )}
       {monContrat && (
         <DocumentProModal mode="contrat" catPro="photographe" rdv={{ ...r, pro_profile_id: pid || null }} clientNom={nomClient} animalNom={animaux || undefined}
           proNom={user?.displayName ?? ''} onClose={() => setMonContrat(false)}

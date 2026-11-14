@@ -230,7 +230,9 @@ Future<void> genererContratToilettage(BuildContext context, Map<String, dynamic>
 /// Contrat généré par le pro : sa signature enregistrée (signatures_pro) y est
 /// apposée d'office, côté « professionnel » ; à défaut, il la dessine (elle est
 /// enregistrée pour les prochains). Miroir site : signerContratAvecSignaturePro.
-Future<void> signerContratAvecSignaturePro(BuildContext context, String docId) async {
+/// [sansNotification] : le client reçoit déjà l'invitation à signer (évite une
+/// 2e notification « le professionnel a signé »).
+Future<void> signerContratAvecSignaturePro(BuildContext context, String docId, {bool sansNotification = false}) async {
   var sig = await maSignaturePro();
   if (sig == null && context.mounted) sig = await signerEtEnregistrer(context);
   if (sig == null) return;
@@ -238,7 +240,8 @@ Future<void> signerContratAvecSignaturePro(BuildContext context, String docId) a
     await http.post(Uri.parse('$kSiteBaseUrl/api/contracts/$docId/sign'),
         headers: {...await siteApiHeaders(), 'Content-Type': 'application/json'},
         body: jsonEncode({'role': 'eleveur', 'signature': sig, 'actorUid': User_Info.uid,
-            'actorNom': '${User_Info.firstname} ${User_Info.lastname}'.trim()}));
+            'actorNom': '${User_Info.firstname} ${User_Info.lastname}'.trim(),
+            if (sansNotification) 'sansNotification': true}));
   } catch (_) {}
 }
 
