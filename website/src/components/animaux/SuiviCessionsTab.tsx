@@ -20,6 +20,9 @@ interface AnimalLite {
   sterilisation_requise?: boolean | null;
   sterilisation_echeance?: string | null;
   sterilisation_validee?: boolean | null;
+  droits_repro_payes?: boolean | null;
+  droits_repro_montant?: number | null;
+  droits_repro_payes_le?: string | null;
 }
 
 interface Props {
@@ -42,10 +45,15 @@ function parseDate(s?: string | null): Date | null {
 }
 
 function fmt(d: Date) { return d.toLocaleDateString('fr-FR'); }
+function fmtEuros(n: number) { return n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }); }
+function isoJour(d = new Date()) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 function fmtLong(d: Date) { return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }); }
 
-type StatutSuivi = 'a_faire' | 'retard' | 'recu';
-type StatutFiltre = 'a_suivre' | 'tous' | 'a_faire' | 'retard' | 'recu';
+// « recu » = stérilisation confirmée (certificat reçu) ; « droits » = la famille
+// ne stérilise pas et a payé les droits de reproduction. Les deux closent le
+// dossier (sterilisation_validee = true → plus de rappels).
+type StatutSuivi = 'a_faire' | 'retard' | 'recu' | 'droits';
+type StatutFiltre = 'a_suivre' | 'tous' | 'a_faire' | 'retard' | 'recu' | 'droits';
 type EcheanceFiltre = 'toutes' | 'depassees' | '30j';
 interface DossierSuivi { a: AnimalLite; ech: Date | null; days: number | null; statut: StatutSuivi; declaree: boolean }
 
@@ -71,6 +79,12 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
   const [relanceMsg, setRelanceMsg] = useState('');
   const [voeux, setVoeux] = useState<{ a: AnimalLite; contact: Contact } | null>(null);
   const [voeuxMsg, setVoeuxMsg] = useState('');
+  // Validation du dossier : stérilisation confirmée ou droits de reproduction payés
+  const [cloture, setCloture] = useState<AnimalLite | null>(null);
+  const [issue, setIssue] = useState<'sterilisee' | 'droits'>('sterilisee');
+  const [droitsMontant, setDroitsMontant] = useState('');
+  const [droitsLe, setDroitsLe] = useState(isoJour());
+  const [clotureErreur, setClotureErreur] = useState('');
 
   useEffect(() => {
     supabase.from('user_profiles_complet').select('cession_anniv_auto')
@@ -95,17 +109,18 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
   const sterilAll: DossierSuivi[] = cedes.filter(a => a.sterilisation_requise).map(a => {
     const ech = parseDate(a.sterilisation_echeance);
     const days = ech ? Math.round((new Date(ech.toDateString()).getTime() - today.getTime()) / 86400000) : null;
-    const recu = !!a.sterilisation_validee;
-    const statut: StatutSuivi = recu ? 'recu' : days != null && days < 0 ? 'retard' : 'a_faire';
+    const statut: StatutSuivi = a.sterilisation_validee ? (a.droits_repro_payes ? 'droits' : 'recu')
+      : days != null && days < 0 ? 'retard' : 'a_faire';
     return { a, ech, days, statut, declaree: !!a.sterilise };
   });
-  const nbASuivre = sterilAll.filter(d => d.statut !== 'recu').length;
+  const clos = (s: StatutSuivi) => s === 'recu' || s === 'droits';
+  const nbASuivre = sterilAll.filter(d => !clos(d.statut)).length;
   const nbRetard = sterilAll.filter(d => d.statut === 'retard').length;
-  const nbRecus = sterilAll.filter(d => d.statut === 'recu').length;
+  const nbRecus = sterilAll.filter(d => clos(d.statut)).length;
   const qn = q.trim().toLowerCase();
-  const rang: Record<StatutSuivi, number> = { retard: 0, a_faire: 1, recu: 2 };
+  const rang: Record<StatutSuivi, number> = { retard: 0, a_faire: 1, recu: 2, droits: 2 };
   const sterilList = sterilAll.filter(d => {
-    if (statutFiltre === 'a_suivre' && d.statut === 'recu') return false;
+    if (statutFiltre === 'a_suivre' && clos(d.statut)) return false;
     if (statutFiltre !== 'a_suivre' && statutFiltre !== 'tous' && d.statut !== statutFiltre) return false;
     if (echeanceFiltre === 'depassees' && !(d.days != null && d.days < 0)) return false;
     if (echeanceFiltre === '30j' && !(d.days != null && d.days >= 0 && d.days <= 30)) return false;
@@ -129,7 +144,7 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
 
   const Echeance = ({ d, inline = false }: { d: DossierSuivi; inline?: boolean }) => {
     if (!d.ech) return <span className="text-gray-500">Échéance non renseignée</span>;
-    const delai = d.statut === 'recu' || d.days == null ? null
+    const delai = clos(d.statut) || d.days == null ? null
       : d.days < 0 ? `Dépassée de ${-d.days} jour${-d.days > 1 ? 's' : ''}`
       : d.days === 0 ? 'Aujourd’hui' : `Dans ${d.days} jour${d.days > 1 ? 's' : ''}`;
     const rouge = d.statut === 'retard';
@@ -144,11 +159,11 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
   };
 
   const BadgeStatut = ({ s, declaree }: { s: StatutSuivi; declaree: boolean }) => {
-    const m = { a_faire: ['À faire', 'bg-gray-100 text-[#1F2A2E]'], retard: ['En retard', 'bg-red-50 text-[#DC2626]'], recu: ['Certificat reçu', 'bg-[#EAF2E5] text-[#4D7A3C]'] }[s];
+    const m = { a_faire: ['À faire', 'bg-gray-100 text-[#1F2A2E]'], retard: ['En retard', 'bg-red-50 text-[#DC2626]'], recu: ['Stérilisation confirmée', 'bg-[#EAF2E5] text-[#4D7A3C]'], droits: ['Droits de repro payés', 'bg-[#E8F4F6] text-[#0C5C6C]'] }[s];
     return (
       <span className="inline-flex flex-col items-start gap-0.5">
         <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap ${m[1]}`}>{m[0]}</span>
-        {declaree && s !== 'recu' && <span className="text-[11px] text-gray-500">Déclarée par la famille</span>}
+        {declaree && !clos(s) && <span className="text-[11px] text-gray-500">Déclarée par la famille</span>}
       </span>
     );
   };
@@ -159,12 +174,12 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
     const lien = `${mobile ? 'h-8 text-xs' : 'h-9 text-sm'} px-2 font-semibold text-[#0C5C6C] hover:underline disabled:opacity-50 whitespace-nowrap`;
     return (
       <div className={`flex items-center gap-2 ${mobile ? '' : 'justify-start'}`}>
-        {d.statut === 'recu' ? (
-          <button type="button" onClick={() => setCertif(d.a)} className={btn}>Voir le certificat</button>
+        {clos(d.statut) ? (
+          <button type="button" onClick={() => setCertif(d.a)} className={btn}>Voir le détail</button>
         ) : (
           <>
-            <button type="button" onClick={() => valider(d.a)} disabled={enCours} className={btn}>
-              {enCours ? '…' : mobile ? 'Certificat' : 'Recevoir le certificat'}
+            <button type="button" onClick={() => ouvrirCloture(d.a)} disabled={enCours} className={btn}>
+              {enCours ? '…' : 'Valider'}
             </button>
             <button type="button" onClick={() => openRelance(d.a)} disabled={enCours} className={lien}>Relancer</button>
           </>
@@ -187,34 +202,48 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
     .filter((x): x is { a: AnimalLite; days: number; age: number } => x !== null)
     .sort((x, y) => x.days - y.days);
 
-  async function valider(a: AnimalLite) {
-    // L'éleveur peut valider dès réception du certificat vétérinaire, même si le
-    // propriétaire n'a pas déclaré la stérilisation.
-    if (!a.sterilise && !window.confirm(
-      `Confirmez-vous avoir reçu le certificat de stérilisation vétérinaire pour ${a.nom ?? 'cet animal'} ?\n\n`
-      + 'La stérilisation sera marquée comme faite et validée, et le propriétaire en sera informé.')) {
-      return;
-    }
-    setBusy(a.id);
+  function ouvrirCloture(a: AnimalLite) {
+    setIssue('sterilisee'); setDroitsMontant(''); setDroitsLe(isoJour()); setClotureErreur('');
+    setCloture(a);
+  }
+
+  /// Clôture du dossier : stérilisation confirmée (certificat vétérinaire reçu,
+  /// même si la famille ne l'a pas déclarée) ou droits de reproduction payés
+  /// (la famille ne stérilise pas : l'animal reste non stérilisé).
+  async function cloturer() {
+    const a = cloture;
+    if (!a) return;
+    const droits = issue === 'droits';
+    const montant = droitsMontant.trim() ? Number(droitsMontant.replace(',', '.')) : null;
+    if (droits && montant != null && (isNaN(montant) || montant < 0)) { setClotureErreur('Montant invalide'); return; }
+    setBusy(a.id); setClotureErreur('');
     try {
-      await supabase.from('animaux').update({ sterilisation_validee: true, sterilise: true }).eq('id', a.id);
+      const patch: Partial<AnimalLite> = droits
+        ? { sterilisation_validee: true, droits_repro_payes: true, droits_repro_montant: montant, droits_repro_payes_le: droitsLe || isoJour() }
+        : { sterilisation_validee: true, sterilise: true, droits_repro_payes: false, droits_repro_montant: null, droits_repro_payes_le: null };
+      const { error } = await supabase.from('animaux').update(patch).eq('id', a.id);
+      if (error) { setClotureErreur(error.message); return; }
       await supabase.from('cessions')
         .update({ sterilisation_validee: true, sterilisation_validee_at: new Date().toISOString() })
         .eq('animal_id', a.id).eq('sterilisation_requise', true);
       if (a.uid_acquereur) {
         const { data: acqProfile } = await supabase.from('user_profiles_complet')
           .select('id').eq('uid', a.uid_acquereur).eq('is_main', true).maybeSingle();
+        const nom = a.nom ?? 'votre animal';
         await supabase.from('notifications').insert({
           uid: a.uid_acquereur,
           type: 'sterilisation_validee',
-          title: `Stérilisation validée — ${a.nom ?? 'Animal'}`,
-          body: `L'éleveur a validé la stérilisation de ${a.nom ?? 'votre animal'}. Merci !`,
+          title: droits ? `Droits de reproduction enregistrés — ${a.nom ?? 'Animal'}` : `Stérilisation validée — ${a.nom ?? 'Animal'}`,
+          body: droits
+            ? `L'éleveur a enregistré le paiement des droits de reproduction de ${nom} : la condition de stérilisation est levée.`
+            : `L'éleveur a validé la stérilisation de ${nom}. Merci !`,
           ...(acqProfile?.id ? { profile_id: acqProfile.id } : {}),
           data: { animalId: a.id },
           read: false,
         });
       }
-      onLocalUpdate(a.id, { sterilisation_validee: true, sterilise: true });
+      onLocalUpdate(a.id, patch);
+      setCloture(null);
     } finally {
       setBusy(null);
     }
@@ -391,7 +420,7 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
           {([
             ['À suivre', nbASuivre, 'bg-[#E8F4F6] text-[#0C5C6C]', <svg key="i" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="9" /><path strokeLinecap="round" d="M12 7.5V12l3 2" /></svg>],
             ['Échéances dépassées', nbRetard, 'bg-red-50 text-[#DC2626]', <svg key="i" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" d="M12 6v8M12 18h.01" /></svg>],
-            ['Certificats reçus', nbRecus, 'bg-[#EAF2E5] text-[#4D7A3C]', <svg key="i" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.63a3.38 3.38 0 00-3.38-3.37h-1.5a1.13 1.13 0 01-1.12-1.13v-1.5a3.38 3.38 0 00-3.38-3.37H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.63c-.62 0-1.13.5-1.13 1.13v17.25c0 .62.5 1.12 1.13 1.12h12.75c.62 0 1.12-.5 1.12-1.12V11.25a9 9 0 00-9-9z" /></svg>],
+            ['Validés', nbRecus, 'bg-[#EAF2E5] text-[#4D7A3C]', <svg key="i" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.63a3.38 3.38 0 00-3.38-3.37h-1.5a1.13 1.13 0 01-1.12-1.13v-1.5a3.38 3.38 0 00-3.38-3.37H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.63c-.62 0-1.13.5-1.13 1.13v17.25c0 .62.5 1.12 1.13 1.12h12.75c.62 0 1.12-.5 1.12-1.12V11.25a9 9 0 00-9-9z" /></svg>],
           ] as const).map(([label, n, pastille, icone]) => (
             <div key={label} className="flex items-center gap-4 border border-gray-200 rounded-lg px-4 py-3">
               <span className={`w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 ${pastille}`}>{icone}</span>
@@ -420,7 +449,8 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
               <option value="tous">Statut : Tous</option>
               <option value="a_faire">Statut : À faire</option>
               <option value="retard">Statut : En retard</option>
-              <option value="recu">Statut : Certificat reçu</option>
+              <option value="recu">Statut : Stérilisation confirmée</option>
+              <option value="droits">Statut : Droits de repro payés</option>
             </select>
             <select value={echeanceFiltre} onChange={e => setEcheanceFiltre(e.target.value as EcheanceFiltre)} aria-label="Échéance"
               className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:border-[#0C5C6C]">
@@ -492,7 +522,7 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
                       </div>
                       <p className="text-xs text-gray-600 truncate">{d.a.destinataire_nom || 'Famille non renseignée'}</p>
                       <div className="text-xs mt-0.5"><Echeance d={d} inline /></div>
-                      {d.declaree && d.statut !== 'recu' && <p className="text-[11px] text-gray-500">Stérilisation déclarée par la famille</p>}
+                      {d.declaree && !clos(d.statut) && <p className="text-[11px] text-gray-500">Stérilisation déclarée par la famille</p>}
                     </div>
                   </div>
                   <div className="mt-2.5 flex items-center justify-between gap-2"><ActionsSuivi d={d} mobile /><MenuDossier a={d.a} /></div>
@@ -545,12 +575,71 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
       {certif && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 sm:p-4" onClick={() => setCertif(null)}>
           <div className="bg-white rounded-t-xl sm:rounded-xl w-full sm:max-w-md p-5" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>Certificat de stérilisation — {certif.nom ?? 'Animal'}</h3>
-            <p className="text-sm text-[#4D7A3C] font-semibold mt-3">Certificat reçu{valideesLe[certif.id] ? ` le ${fmt(new Date(valideesLe[certif.id]))}` : ''}</p>
-            <p className="text-sm text-gray-600 mt-1">La stérilisation a été validée à réception du certificat vétérinaire. Aucun fichier n’est joint dans PetsMatch : les documents de l’animal se trouvent dans sa fiche, onglet Administratif.</p>
+            {certif.droits_repro_payes ? (
+              <>
+                <h3 className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>Droits de reproduction — {certif.nom ?? 'Animal'}</h3>
+                <p className="text-sm text-[#0C5C6C] font-semibold mt-3">
+                  Droits de reproduction payés{certif.droits_repro_payes_le ? ` le ${fmt(new Date(certif.droits_repro_payes_le))}` : ''}
+                  {certif.droits_repro_montant != null ? ` — ${fmtEuros(Number(certif.droits_repro_montant))}` : ''}
+                </p>
+                <p className="text-sm text-gray-600 mt-1">La famille a choisi de ne pas faire stériliser l’animal et a réglé les droits de reproduction : la condition de stérilisation est levée, plus aucun rappel n’est envoyé.</p>
+              </>
+            ) : (
+              <>
+                <h3 className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>Certificat de stérilisation — {certif.nom ?? 'Animal'}</h3>
+                <p className="text-sm text-[#4D7A3C] font-semibold mt-3">Stérilisation confirmée{valideesLe[certif.id] ? ` le ${fmt(new Date(valideesLe[certif.id]))}` : ''}</p>
+                <p className="text-sm text-gray-600 mt-1">La stérilisation a été validée à réception du certificat vétérinaire. Aucun fichier n’est joint dans PetsMatch : les documents de l’animal se trouvent dans sa fiche, onglet Administratif.</p>
+              </>
+            )}
             <div className="flex gap-2 mt-4">
               <Link href={`/mes-animaux/${certif.id}`} className="flex-1 h-10 inline-flex items-center justify-center rounded-lg bg-[#0C5C6C] text-white text-sm font-semibold hover:bg-[#094F5D]">Ouvrir la fiche</Link>
               <button type="button" onClick={() => setCertif(null)} className="flex-1 h-10 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50">Fermer</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modale « Valider » : stérilisation confirmée ou droits de reproduction payés ── */}
+      {cloture && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 sm:p-4" onClick={() => setCloture(null)}>
+          <div className="bg-white rounded-t-xl sm:rounded-xl w-full sm:max-w-md p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>Valider le suivi — {cloture.nom ?? 'Animal'}</h3>
+            <div className="mt-3 space-y-2">
+              <label className={`flex items-start gap-3 border rounded-lg p-3 cursor-pointer ${issue === 'sterilisee' ? 'border-[#0C5C6C] bg-[#F3F9FA]' : 'border-gray-200'}`}>
+                <input type="radio" name="issue" checked={issue === 'sterilisee'} onChange={() => setIssue('sterilisee')} className="mt-1 accent-[#0C5C6C]" />
+                <span>
+                  <span className="block text-sm font-semibold text-[#1F2A2E]">Stérilisation confirmée</span>
+                  <span className="block text-xs text-gray-500">Certificat vétérinaire reçu. L’animal est marqué stérilisé.</span>
+                </span>
+              </label>
+              <label className={`flex items-start gap-3 border rounded-lg p-3 cursor-pointer ${issue === 'droits' ? 'border-[#0C5C6C] bg-[#F3F9FA]' : 'border-gray-200'}`}>
+                <input type="radio" name="issue" checked={issue === 'droits'} onChange={() => setIssue('droits')} className="mt-1 accent-[#0C5C6C]" />
+                <span>
+                  <span className="block text-sm font-semibold text-[#1F2A2E]">Droits de reproduction payés</span>
+                  <span className="block text-xs text-gray-500">La famille ne fait pas stériliser l’animal et a réglé les droits de reproduction.</span>
+                </span>
+              </label>
+            </div>
+            {issue === 'droits' && (
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                <label className="text-xs text-gray-600">Montant (€, facultatif)
+                  <input type="text" inputMode="decimal" value={droitsMontant} onChange={e => setDroitsMontant(e.target.value)} placeholder="0,00"
+                    className="mt-1 w-full h-10 rounded-lg border border-gray-300 px-3 text-sm text-[#1F2A2E] focus:outline-none focus:border-[#0C5C6C]" />
+                </label>
+                <label className="text-xs text-gray-600">Payés le
+                  <input type="date" value={droitsLe} onChange={e => setDroitsLe(e.target.value)}
+                    className="mt-1 w-full h-10 rounded-lg border border-gray-300 px-3 text-sm text-[#1F2A2E] focus:outline-none focus:border-[#0C5C6C]" />
+                </label>
+              </div>
+            )}
+            <p className="text-xs text-gray-500 mt-3">Le dossier est clos, les rappels s’arrêtent et la famille en est informée.</p>
+            {clotureErreur && <p className="text-sm text-red-600 mt-2">{clotureErreur}</p>}
+            <div className="flex gap-2 mt-4">
+              <button type="button" onClick={() => setCloture(null)} className="flex-1 h-10 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50">Annuler</button>
+              <button type="button" onClick={cloturer} disabled={busy === cloture.id}
+                className="flex-1 h-10 rounded-lg bg-[#0C5C6C] text-white text-sm font-semibold hover:bg-[#094F5D] disabled:opacity-50">
+                {busy === cloture.id ? '…' : 'Valider'}
+              </button>
             </div>
           </div>
         </div>

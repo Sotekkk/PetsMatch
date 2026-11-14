@@ -45,7 +45,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
   // Recherche + filtres (par défaut : dossiers à suivre)
   final _qCtrl = TextEditingController();
   String _q = '';
-  String _statutFiltre = 'a_suivre';   // a_suivre | tous | a_faire | retard | recu
+  String _statutFiltre = 'a_suivre';   // a_suivre | tous | a_faire | retard | recu | droits
   String _echeanceFiltre = 'toutes';   // toutes | depassees | 30j
   String? _validating;
   String? _wishing;
@@ -128,39 +128,135 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     return DateTime.tryParse(raw.toString());
   }
 
+  /// Validation du dossier : stérilisation confirmée (certificat vétérinaire
+  /// reçu, même si la famille ne l'a pas déclarée) ou droits de reproduction
+  /// payés (la famille ne stérilise pas : l'animal reste non stérilisé). Les
+  /// deux closent le dossier (`sterilisation_validee` → plus de rappels).
   Future<void> _valider(Map<String, dynamic> a) async {
     final nom = a['nom'] as String? ?? 'l\'animal';
-    // L'éleveur peut valider dès qu'il a reçu le certificat vétérinaire, même si
-    // le propriétaire n'a pas déclaré la stérilisation dans l'appli.
-    final dejaDeclaree = a['sterilise'] == true;
-    if (!dejaDeclaree) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (_) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Enregistrer le certificat',
-              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-          content: Text(
-              'Confirmez-vous avoir reçu le certificat de stérilisation vétérinaire '
-              'pour $nom ?\n\nLa stérilisation sera marquée comme faite et validée, '
-              'et le propriétaire en sera informé.',
-              style: const TextStyle(fontSize: 13)),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false),
-                child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
-            TextButton(onPressed: () => Navigator.pop(context, true),
-                child: const Text('Enregistrer', style: TextStyle(color: _teal, fontFamily: 'Galey', fontWeight: FontWeight.w700))),
-          ],
-        ),
-      );
-      if (ok != true) return;
-    }
+    var issue = 'sterilisee';
+    var payesLe = DateTime.now();
+    final montantCtrl = TextEditingController();
+    String? erreur;
+    double? montant;
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
+        Widget choix(String valeur, String titre, String sousTitre) {
+          final sel = issue == valeur;
+          return InkWell(
+            onTap: () => setM(() => issue = valeur),
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.fromLTRB(4, 8, 12, 8),
+              decoration: BoxDecoration(
+                color: sel ? const Color(0xFFF3F9FA) : Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: sel ? _teal : Colors.grey.shade300),
+              ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Radio<String>(value: valeur, groupValue: issue, activeColor: _teal,
+                    onChanged: (v) => setM(() => issue = v!)),
+                Expanded(child: Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _dark)),
+                    const SizedBox(height: 2),
+                    Text(sousTitre, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                  ]),
+                )),
+              ]),
+            ),
+          );
+        }
+        return SafeArea(child: Padding(
+          padding: EdgeInsets.fromLTRB(20, 18, 20, 16 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('Valider le suivi — $nom',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _dark)),
+            const SizedBox(height: 12),
+            choix('sterilisee', 'Stérilisation confirmée', 'Certificat vétérinaire reçu. L\'animal est marqué stérilisé.'),
+            choix('droits', 'Droits de reproduction payés', 'La famille ne fait pas stériliser l\'animal et a réglé les droits de reproduction.'),
+            if (issue == 'droits') ...[
+              const SizedBox(height: 4),
+              Row(children: [
+                Expanded(child: TextField(
+                  controller: montantCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                  decoration: _deco('Montant € (facultatif)'),
+                )),
+                const SizedBox(width: 8),
+                Expanded(child: OutlinedButton(
+                  onPressed: () async {
+                    final d = await showDatePicker(context: ctx, initialDate: payesLe,
+                        firstDate: DateTime(2015), lastDate: DateTime.now().add(const Duration(days: 365)));
+                    if (d != null) setM(() => payesLe = d);
+                  },
+                  style: OutlinedButton.styleFrom(foregroundColor: _dark, side: BorderSide(color: Colors.grey.shade300),
+                      minimumSize: const Size(0, 46), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  child: Text('Payés le ${DateFormat('dd/MM/yyyy').format(payesLe)}',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                )),
+              ]),
+            ],
+            const SizedBox(height: 10),
+            Text('Le dossier est clos, les rappels s\'arrêtent et la famille en est informée.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+            if (erreur != null) Padding(padding: const EdgeInsets.only(top: 6),
+                child: Text(erreur!, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.red))),
+            const SizedBox(height: 14),
+            Row(children: [
+              Expanded(child: OutlinedButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                style: OutlinedButton.styleFrom(foregroundColor: _dark, side: BorderSide(color: Colors.grey.shade400),
+                    minimumSize: const Size(0, 44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              )),
+              const SizedBox(width: 10),
+              Expanded(child: ElevatedButton(
+                onPressed: () {
+                  if (issue == 'droits' && montantCtrl.text.trim().isNotEmpty) {
+                    final m = double.tryParse(montantCtrl.text.trim().replaceAll(',', '.').replaceAll(' ', ''));
+                    if (m == null || m < 0) { setM(() => erreur = 'Montant invalide'); return; }
+                    montant = m;
+                  } else {
+                    montant = null;
+                  }
+                  Navigator.pop(ctx, true);
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
+                    minimumSize: const Size(0, 44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                child: const Text('Valider', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              )),
+            ]),
+          ])),
+        ));
+      }),
+    );
+    montantCtrl.dispose();
+    if (ok != true) return;
+    final droits = issue == 'droits';
     setState(() => _validating = a['id'] as String);
     try {
-      await _supa.from('animaux').update({
-        'sterilisation_validee': true,
-        'sterilise': true,
-      }).eq('id', a['id']);
+      await _supa.from('animaux').update(droits
+          ? {
+              'sterilisation_validee': true,
+              'droits_repro_payes': true,
+              'droits_repro_montant': montant,
+              'droits_repro_payes_le': DateFormat('yyyy-MM-dd').format(payesLe),
+            }
+          : {
+              'sterilisation_validee': true,
+              'sterilise': true,
+              'droits_repro_payes': false,
+              'droits_repro_montant': null,
+              'droits_repro_payes_le': null,
+            }).eq('id', a['id']);
       // Ligne cession éventuelle (workflow appli)
       try {
         await _supa.from('cessions')
@@ -176,11 +272,16 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
       if (acqUid != null && acqUid.isNotEmpty) {
         final acqProfile = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
+        final nomA = a['nom'] as String?;
         await _supa.from('notifications').insert({
           'uid':   acqUid,
           'type':  'sterilisation_validee',
-          'title': 'Stérilisation validée — ${a['nom'] ?? 'Animal'}',
-          'body':  'L\'éleveur a validé la stérilisation de ${a['nom'] ?? 'votre animal'}. Merci !',
+          'title': droits
+              ? 'Droits de reproduction enregistrés — ${nomA ?? 'Animal'}'
+              : 'Stérilisation validée — ${nomA ?? 'Animal'}',
+          'body':  droits
+              ? 'L\'éleveur a enregistré le paiement des droits de reproduction de ${nomA ?? 'votre animal'} : la condition de stérilisation est levée.'
+              : 'L\'éleveur a validé la stérilisation de ${nomA ?? 'votre animal'}. Merci !',
           if (acqProfile?['id'] != null) 'profile_id': acqProfile!['id'],
           'data':  {'animalId': a['id']},
           'read':  false,
@@ -188,8 +289,9 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
       }
       await widget.onChanged();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Certificat enregistré : stérilisation validée'), backgroundColor: _green));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(droits ? 'Droits de reproduction enregistrés' : 'Stérilisation confirmée'),
+            backgroundColor: _green));
       }
     } catch (e) {
       if (mounted) {
@@ -613,7 +715,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
   // vaut jamais stérilisation réalisée.
 
   String _statut(Map<String, dynamic> a) {
-    if (a['sterilisation_validee'] == true) return 'recu';
+    if (a['sterilisation_validee'] == true) return a['droits_repro_payes'] == true ? 'droits' : 'recu';
     final j = _jours(a);
     return j != null && j < 0 ? 'retard' : 'a_faire';
   }
@@ -630,10 +732,10 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
 
   List<Map<String, dynamic>> get _dossiersFiltres {
     final q = _q.trim().toLowerCase();
-    const rang = {'retard': 0, 'a_faire': 1, 'recu': 2};
+    const rang = {'retard': 0, 'a_faire': 1, 'recu': 2, 'droits': 2};
     final list = _dossiers.where((a) {
       final s = _statut(a);
-      if (_statutFiltre == 'a_suivre' && s == 'recu') return false;
+      if (_statutFiltre == 'a_suivre' && _clos(s)) return false;
       if (_statutFiltre != 'a_suivre' && _statutFiltre != 'tous' && s != _statutFiltre) return false;
       final j = _jours(a);
       if (_echeanceFiltre == 'depassees' && !(j != null && j < 0)) return false;
@@ -653,6 +755,8 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     });
     return list;
   }
+
+  static bool _clos(String s) => s == 'recu' || s == 'droits';
 
   bool get _filtresActifs => _q.isNotEmpty || _statutFiltre != 'a_suivre' || _echeanceFiltre != 'toutes';
 
@@ -720,13 +824,13 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
               style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
           const SizedBox(height: 12),
           Row(children: [
-            _compteur('À suivre', dossiers.where((a) => _statut(a) != 'recu').length,
+            _compteur('À suivre', dossiers.where((a) => !_clos(_statut(a))).length,
                 Icons.schedule, const Color(0xFFE8F4F6), _teal),
             const SizedBox(width: 8),
             _compteur('Échéances dépassées', nbRetard,
                 Icons.priority_high, const Color(0xFFFDECEC), const Color(0xFFDC2626)),
             const SizedBox(width: 8),
-            _compteur('Certificats reçus', dossiers.where((a) => _statut(a) == 'recu').length,
+            _compteur('Validés', dossiers.where((a) => _clos(_statut(a))).length,
                 Icons.description_outlined, const Color(0xFFEAF2E5), const Color(0xFF4D7A3C)),
           ]),
           const SizedBox(height: 12),
@@ -740,7 +844,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
           const SizedBox(height: 8),
           Row(children: [
             Expanded(child: _menu('Statut', _statutFiltre, const [
-              ('a_suivre', 'À suivre'), ('tous', 'Tous'), ('a_faire', 'À faire'), ('retard', 'En retard'), ('recu', 'Certificat reçu'),
+              ('a_suivre', 'À suivre'), ('tous', 'Tous'), ('a_faire', 'À faire'), ('retard', 'En retard'), ('recu', 'Stérilisation confirmée'), ('droits', 'Droits de repro payés'),
             ], (v) => setState(() => _statutFiltre = v))),
             const SizedBox(width: 8),
             Expanded(child: _menu('Échéance', _echeanceFiltre, const [
@@ -796,7 +900,8 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
 
   Widget _badge(String statut) {
     final (label, fond, texte) = switch (statut) {
-      'recu' => ('Certificat reçu', const Color(0xFFEAF2E5), const Color(0xFF4D7A3C)),
+      'recu' => ('Stérilisation confirmée', const Color(0xFFEAF2E5), const Color(0xFF4D7A3C)),
+      'droits' => ('Droits de repro payés', const Color(0xFFE8F4F6), _teal),
       'retard' => ('En retard', const Color(0xFFFDECEC), const Color(0xFFB91C1C)),
       _ => ('À faire', const Color(0xFFF1F3F4), const Color(0xFF4B5A60)),
     };
@@ -841,6 +946,10 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
   }
 
   Future<void> _voirCertificat(Map<String, dynamic> a) async {
+    final droits = a['droits_repro_payes'] == true;
+    final montant = (a['droits_repro_montant'] as num?)?.toDouble();
+    final dPayes = _parseDate(a['droits_repro_payes_le']);
+    final payesLe = dPayes != null ? DateFormat('dd/MM/yyyy').format(dPayes) : null;
     String? le;
     try {
       final r = await _supa.from('cessions').select('sterilisation_validee_at')
@@ -856,15 +965,27 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
       builder: (ctx) => SafeArea(child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Certificat de stérilisation — ${a['nom'] ?? 'Animal'}',
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _dark)),
-          const SizedBox(height: 10),
-          Text('Certificat reçu${le != null ? ' le $le' : ''}',
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5, color: Color(0xFF4D7A3C))),
-          const SizedBox(height: 4),
-          Text('La stérilisation a été validée à réception du certificat vétérinaire. Aucun fichier n\'est joint dans PetsMatch : '
-              'les documents de l\'animal se trouvent dans sa fiche, onglet Administratif.',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
+          if (droits) ...[
+            Text('Droits de reproduction — ${a['nom'] ?? 'Animal'}',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _dark)),
+            const SizedBox(height: 10),
+            Text('Droits de reproduction payés${payesLe != null ? ' le $payesLe' : ''}${montant != null ? ' — ${NumberFormat.currency(locale: 'fr_FR', symbol: '€').format(montant)}' : ''}',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5, color: _teal)),
+            const SizedBox(height: 4),
+            Text('La famille a choisi de ne pas faire stériliser l\'animal et a réglé les droits de reproduction : '
+                'la condition de stérilisation est levée, plus aucun rappel n\'est envoyé.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
+          ] else ...[
+            Text('Certificat de stérilisation — ${a['nom'] ?? 'Animal'}',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _dark)),
+            const SizedBox(height: 10),
+            Text('Stérilisation confirmée${le != null ? ' le $le' : ''}',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5, color: Color(0xFF4D7A3C))),
+            const SizedBox(height: 4),
+            Text('La stérilisation a été validée à réception du certificat vétérinaire. Aucun fichier n\'est joint dans PetsMatch : '
+                'les documents de l\'animal se trouvent dans sa fiche, onglet Administratif.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
+          ],
           const SizedBox(height: 14),
           Row(children: [
             Expanded(child: ElevatedButton(
@@ -894,7 +1015,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     final enCours = _validating == a['id'] || _relancing == a['id'];
     final race = (a['race'] as String?) ?? '';
     final famille = (a['destinataire_nom'] as String?) ?? '';
-    final delai = statut == 'recu' || j == null ? null
+    final delai = _clos(statut) || j == null ? null
         : j < 0 ? 'Dépassée de ${-j} jour${-j > 1 ? 's' : ''}'
         : j == 0 ? 'Aujourd\'hui' : 'Dans $j jour${j > 1 ? 's' : ''}';
 
@@ -924,7 +1045,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
                   if (delai != null) TextSpan(text: ' · $delai',
                       style: TextStyle(color: statut == 'retard' ? const Color(0xFFB91C1C) : null)),
                 ]), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
-                if (declaree && statut != 'recu')
+                if (declaree && !_clos(statut))
                   Text('Stérilisation déclarée par la famille',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
               ])),
@@ -936,13 +1057,13 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 0, 4, 8),
           child: Row(children: [
-            if (statut == 'recu')
+            if (_clos(statut))
               OutlinedButton(
                 onPressed: () => _voirCertificat(a),
                 style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal),
                     minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                child: const Text('Voir le certificat', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+                child: const Text('Voir le détail', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
               )
             else ...[
               Flexible(child: OutlinedButton(
@@ -952,7 +1073,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                 child: _validating == a['id']
                     ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
-                    : const Text('Certificat', maxLines: 1, overflow: TextOverflow.ellipsis,
+                    : const Text('Valider', maxLines: 1, overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
               )),
               TextButton(

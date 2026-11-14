@@ -347,6 +347,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   bool _sterilRequise = false;
   DateTime? _sterilEcheance;
   bool _sterilValidee = false;
+  bool _droitsReproPayes = false;
+  double? _droitsReproMontant;
+  DateTime? _droitsReproPayesLe;
 
   bool _tabReadOnly(String perm) {
     if (widget.readOnly) return true;
@@ -1248,6 +1251,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _sterilRequise         = d['sterilisation_requise'] == true;
     _sterilEcheance        = _parseDate(d['sterilisation_echeance']);
     _sterilValidee         = d['sterilisation_validee'] == true;
+    _droitsReproPayes      = d['droits_repro_payes'] == true;
+    _droitsReproMontant    = (d['droits_repro_montant'] as num?)?.toDouble();
+    _droitsReproPayesLe    = _parseDate(d['droits_repro_payes_le']);
     // Statut + acquéreur connus → nombre d'onglets définitif, rebuild
     // immédiat (la suite du chargement attend le réseau).
     if (mounted) { setState(_syncTabs); } else { _syncTabs(); }
@@ -1827,7 +1833,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     var echeance = _sterilEcheance ?? (_dateNaissance != null
         ? DateTime(_dateNaissance!.year + 1, _dateNaissance!.month, _dateNaissance!.day)
         : DateTime.now().add(const Duration(days: 180)));
-    var validee = _sterilValidee;
+    // Issue du dossier : en attente, stérilisation confirmée, ou droits de
+    // reproduction payés (la famille ne stérilise pas).
+    var issue = !_sterilValidee ? 'attente' : _droitsReproPayes ? 'droits' : 'sterilisee';
+    final montantCtrl = TextEditingController(
+        text: _droitsReproMontant != null ? _droitsReproMontant!.toString().replaceAll('.', ',') : '');
     final ok = await showModalBottomSheet<bool>(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -1846,24 +1856,50 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               icon: const Icon(Icons.event_outlined, size: 18),
               label: Text('Échéance : ${DateFormat('dd/MM/yyyy').format(echeance)}', style: const TextStyle(fontFamily: 'Galey')),
             ),
-            CheckboxListTile(contentPadding: EdgeInsets.zero, value: validee, onChanged: (v) => setM(() => validee = v == true),
-                title: const Text('Stérilisation confirmée', style: TextStyle(fontFamily: 'Galey'))),
+            for (final o in const [
+              ('attente', 'En attente'),
+              ('sterilisee', 'Stérilisation confirmée'),
+              ('droits', 'Droits de reproduction payés'),
+            ])
+              RadioListTile<String>(contentPadding: EdgeInsets.zero, dense: true, value: o.$1, groupValue: issue,
+                  onChanged: (v) => setM(() => issue = v!),
+                  title: Text(o.$2, style: const TextStyle(fontFamily: 'Galey'))),
+            if (issue == 'droits')
+              TextField(
+                controller: montantCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Montant € (facultatif)', isDense: true),
+              ),
           ],
           const SizedBox(height: 8),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey'))),
         ]),
       ))),
     );
+    final montantTxt = montantCtrl.text.trim();
+    montantCtrl.dispose();
     if (ok != true || widget.animalId == null) return;
+    final droits = requise && issue == 'droits';
+    final montant = droits && montantTxt.isNotEmpty ? double.tryParse(montantTxt.replaceAll(',', '.').replaceAll(' ', '')) : null;
+    final payesLe = droits ? (_droitsReproPayes && _droitsReproPayesLe != null ? _droitsReproPayesLe! : DateTime.now()) : null;
+    final validee = requise && issue != 'attente';
     try {
       await _supa.from('animaux').update({
         'sterilisation_requise': requise,
         'sterilisation_echeance': requise ? DateFormat('yyyy-MM-dd').format(echeance) : null,
-        'sterilisation_validee': requise && validee,
+        'sterilisation_validee': validee,
+        'droits_repro_payes': droits,
+        'droits_repro_montant': montant,
+        'droits_repro_payes_le': payesLe != null ? DateFormat('yyyy-MM-dd').format(payesLe) : null,
+        if (requise && issue == 'sterilisee') 'sterilise': true,
         'sterilisation_eleveur_uid': requise ? (widget.eleveurUidOverride ?? FirebaseAuth.instance.currentUser?.uid) : null,
         if (requise && User_Info.activeProfileId.isNotEmpty) 'sterilisation_eleveur_profile_id': User_Info.activeProfileId,
       }).eq('id', widget.animalId!);
-      setState(() { _sterilRequise = requise; _sterilEcheance = requise ? echeance : null; _sterilValidee = requise && validee; });
+      setState(() {
+        _sterilRequise = requise; _sterilEcheance = requise ? echeance : null; _sterilValidee = validee;
+        _droitsReproPayes = droits; _droitsReproMontant = montant; _droitsReproPayesLe = payesLe;
+        if (requise && issue == 'sterilisee') _sterilise = true;
+      });
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
     }
@@ -2930,7 +2966,11 @@ class _IdentiteTab extends StatelessWidget {
             modifiable: !s._cedeVerrouille && !s._isNewOwner,
             sterilisation: s._isNewOwner ? null
                 : !s._sterilRequise ? 'Aucune condition de stérilisation'
-                : s._sterilValidee ? 'Stérilisation confirmée'
+                : s._sterilValidee
+                    ? (s._droitsReproPayes
+                        ? 'Droits de reproduction payés${s._droitsReproPayesLe != null ? ' le ${DateFormat('dd/MM/yyyy').format(s._droitsReproPayesLe!)}' : ''}'
+                          '${s._droitsReproMontant != null ? ' (${NumberFormat.currency(locale: 'fr_FR', symbol: '€').format(s._droitsReproMontant)})' : ''}'
+                        : 'Stérilisation confirmée')
                 : 'Stérilisation exigée${s._sterilEcheance != null ? ' avant le ${DateFormat('dd/MM/yyyy').format(s._sterilEcheance!)}' : ''}',
             onSterilisation: s._isNewOwner || s.widget.readOnly ? null : s._editerSterilisation,
           ),

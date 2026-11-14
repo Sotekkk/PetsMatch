@@ -87,6 +87,9 @@ interface Animal {
   sterilisation_validee?: boolean | null;
   sterilisation_eleveur_uid?: string | null;
   sterilisation_eleveur_profile_id?: string | null;
+  droits_repro_payes?: boolean | null;
+  droits_repro_montant?: number | null;
+  droits_repro_payes_le?: string | null;
 }
 
 interface HealthRecord { id: string; [key: string]: unknown; }
@@ -4820,7 +4823,7 @@ function AnimalFichePageInner() {
                     <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform ${animal.sterilise ? 'translate-x-6' : 'translate-x-0.5'}`}/>
                   </button>
                 </div>
-                {animal.sterilisation_requise && !animal.sterilise && (
+                {animal.sterilisation_requise && !animal.sterilise && !animal.sterilisation_validee && (
                   <p className="text-xs text-orange-700 -mt-1">
                     Stérilisation demandée par l&apos;éleveur
                     {animal.sterilisation_echeance ? ` avant le ${fmtDate(animal.sterilisation_echeance)}` : ''}. Activez ce réglage une fois faite pour qu&apos;il valide.

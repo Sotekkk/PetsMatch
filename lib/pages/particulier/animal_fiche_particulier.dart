@@ -1282,7 +1282,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         ),
         const SizedBox(height: 16),
 
-        if (_sterilRequise && !_sterilise) _sterilisationBanner(),
+        if (_sterilRequise && !_sterilise && !_sterilValidee) _sterilisationBanner(),
 
         if (_animalId != null) ...[
           const SizedBox(height: 8),

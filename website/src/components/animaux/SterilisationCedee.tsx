@@ -10,7 +10,11 @@ import { useAuth } from '@/lib/auth-context';
 interface AnimalSteril {
   id?: string; date_naissance?: string | null;
   sterilisation_requise?: boolean | null; sterilisation_echeance?: string | null; sterilisation_validee?: boolean | null;
+  sterilise?: boolean | null;
+  droits_repro_payes?: boolean | null; droits_repro_montant?: number | null; droits_repro_payes_le?: string | null;
 }
+
+type Issue = 'attente' | 'sterilisee' | 'droits';
 
 export function SterilisationCedee({ animal, profileId, modifiable, onChange }: {
   animal: AnimalSteril; profileId: string | null; modifiable: boolean;
@@ -27,19 +31,31 @@ export function SterilisationCedee({ animal, profileId, modifiable, onChange }: 
   };
   const [requise, setRequise] = useState(!!animal.sterilisation_requise);
   const [echeance, setEcheance] = useState((animal.sterilisation_echeance ?? '').slice(0, 10) || echeanceDefaut());
-  const [validee, setValidee] = useState(!!animal.sterilisation_validee);
+  const [issue, setIssue] = useState<Issue>(!animal.sterilisation_validee ? 'attente' : animal.droits_repro_payes ? 'droits' : 'sterilisee');
+  const [montant, setMontant] = useState(animal.droits_repro_montant != null ? String(animal.droits_repro_montant).replace('.', ',') : '');
   const [erreur, setErreur] = useState('');
 
   const libelle = !animal.sterilisation_requise ? 'Aucune condition de stérilisation'
-    : animal.sterilisation_validee ? 'Stérilisation confirmée'
+    : animal.sterilisation_validee
+      ? (animal.droits_repro_payes
+        ? `Droits de reproduction payés${animal.droits_repro_payes_le ? ` le ${new Date(animal.droits_repro_payes_le).toLocaleDateString('fr-FR')}` : ''}${animal.droits_repro_montant != null ? ` (${Number(animal.droits_repro_montant).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })})` : ''}`
+        : 'Stérilisation confirmée')
     : `Stérilisation exigée${animal.sterilisation_echeance ? ` avant le ${new Date(animal.sterilisation_echeance).toLocaleDateString('fr-FR')}` : ''}`;
 
   async function enregistrer() {
     if (!animal.id || !user) return;
-    const v = {
+    const m = montant.trim() ? Number(montant.replace(',', '.')) : null;
+    if (issue === 'droits' && m != null && (isNaN(m) || m < 0)) { setErreur('Montant invalide'); return; }
+    const droits = requise && issue === 'droits';
+    const dejaDroits = !!animal.droits_repro_payes;
+    const v: Partial<AnimalSteril> & Record<string, unknown> = {
       sterilisation_requise: requise,
       sterilisation_echeance: requise && echeance ? echeance : null,
-      sterilisation_validee: requise && validee,
+      sterilisation_validee: requise && issue !== 'attente',
+      droits_repro_payes: droits,
+      droits_repro_montant: droits ? m : null,
+      droits_repro_payes_le: droits ? (dejaDroits && animal.droits_repro_payes_le ? animal.droits_repro_payes_le : new Date().toISOString().slice(0, 10)) : null,
+      ...(requise && issue === 'sterilisee' ? { sterilise: true } : {}),
       sterilisation_eleveur_uid: requise ? user.uid : null,
       ...(requise && profileId ? { sterilisation_eleveur_profile_id: profileId } : {}),
     };
@@ -63,7 +79,14 @@ export function SterilisationCedee({ animal, profileId, modifiable, onChange }: 
               <label className="flex items-center gap-2">Échéance
                 <input type="date" value={echeance} onChange={e => setEcheance(e.target.value)} className="border border-blue-200 rounded px-2 py-1 bg-white" />
               </label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={validee} onChange={e => setValidee(e.target.checked)} />Stérilisation confirmée</label>
+              <label className="flex items-center gap-2"><input type="radio" name="issue-steril" checked={issue === 'attente'} onChange={() => setIssue('attente')} />En attente</label>
+              <label className="flex items-center gap-2"><input type="radio" name="issue-steril" checked={issue === 'sterilisee'} onChange={() => setIssue('sterilisee')} />Stérilisation confirmée</label>
+              <label className="flex items-center gap-2"><input type="radio" name="issue-steril" checked={issue === 'droits'} onChange={() => setIssue('droits')} />Droits de reproduction payés</label>
+              {issue === 'droits' && (
+                <label className="flex items-center gap-2">Montant (€, facultatif)
+                  <input type="text" inputMode="decimal" value={montant} onChange={e => setMontant(e.target.value)} placeholder="0,00" className="w-24 border border-blue-200 rounded px-2 py-1 bg-white" />
+                </label>
+              )}
             </>
           )}
           <p className="text-[11px] text-blue-600">Le suivi apparaît dans l&apos;onglet « Suivi » de vos animaux, avec des rappels avant l&apos;échéance.</p>
