@@ -162,11 +162,9 @@ const MOTIFS_BY_CAT: Record<string, { key: string; label: string; icon: string; 
     { key: 'garde_journee',    label: 'Garde journée',     icon: '🌙', duree: 480 },
     { key: 'autre',            label: 'Autre',             icon: '➕', duree: 60 },
   ],
+  // Pension : un seul motif — arrivées / départs = réservation de séjour.
   pension: [
     { key: 'visite',   label: 'Visite de la pension', icon: '🏡', duree: 30 },
-    { key: 'arrivee',  label: 'Arrivée de l\'animal', icon: '📥', duree: 60 },
-    { key: 'depart',   label: 'Départ de l\'animal',  icon: '📤', duree: 30 },
-    { key: 'autre',    label: 'Autre',                icon: '➕', duree: 30 },
   ],
   education: [
     { key: 'cours_individuel', label: 'Cours individuel', icon: '🎓', duree: 60 },
@@ -695,7 +693,8 @@ function ProDetailContent() {
     }
   }
 
-  async function openRdv() {
+  /** `animauxPre` : pension — animaux déjà cochés dans la demande de séjour, gardés. */
+  async function openRdv(animauxPre: string[] = []) {
     // Sans compte : on laisse choisir motif / vétérinaire / créneau ; le
     // compte est proposé à la confirmation (etapeCompte).
     setEtapeCompte(false);
@@ -706,6 +705,11 @@ function ProDetailContent() {
     setSelectedDate('');
     setSelectedSlot(null);
     setSelectedAnimalId(null);
+    if (pro?.cat_pro === 'pension') {
+      setMotifKey('visite');
+      setAnimauxGarde(animauxPre);
+      if (animauxPre[0]) setSelectedAnimalId(animauxPre[0] as unknown as number);
+    }
     setNotes('');
     setRecurrent(false);
     setOccurrences(4);
@@ -1061,7 +1065,7 @@ function ProDetailContent() {
       const skipReserve = pro.cat_pro === 'garde' && pro.garde_chevauchement_ok !== false;
       const serieId = pro.cat_pro === 'garde' && targetSlots.length > 1 ? crypto.randomUUID() : null;
       // Pet-sitting et photographe : plusieurs animaux (même tarif pour la séance photo).
-      const animauxSel = (pro.cat_pro === 'garde' || pro.cat_pro === 'photographe') && animauxGarde.length > 0
+      const animauxSel = (pro.cat_pro === 'garde' || pro.cat_pro === 'photographe' || pro.cat_pro === 'pension') && animauxGarde.length > 0
         ? animauxGarde.map(id => animaux.find(a => a.id === id)).filter(Boolean) as typeof animaux : null;
       const extraGarde: Record<string, unknown> = pro.cat_pro === 'garde' ? {
         ...(serieId ? { serie_id: serieId } : {}),
@@ -2004,7 +2008,7 @@ function ProDetailContent() {
       )}
       {showSejour && pro.profileTableId && (
         <ReservationSejourModal pensionProfileId={pro.profileTableId} pensionNom={pro.name} couleur={catColor}
-          onClose={() => setShowSejour(false)} onVisite={() => { setShowSejour(false); openRdv(); }} />
+          onClose={() => setShowSejour(false)} onVisite={ids => { setShowSejour(false); openRdv(ids); }} />
       )}
       {showEducationReservation && (
         <EducationReservationModal
@@ -2577,6 +2581,30 @@ function ProDetailContent() {
                           Ajouter un animal
                         </Link>
                       </div>
+                    ) : pro.cat_pro === 'pension' ? (
+                      // Comme la demande de séjour (ReservationSejourModal) : animaux à cocher.
+                      <div className="border border-gray-200 rounded-xl divide-y divide-gray-100">
+                        {animaux.map(a => {
+                          const coche = animauxGarde.some(x => String(x) === String(a.id));
+                          return (
+                            <label key={a.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer">
+                              <input type="checkbox" checked={coche} className="w-4 h-4" style={{ accentColor: catColor }}
+                                onChange={() => {
+                                  const ids = coche ? animauxGarde.filter(x => String(x) !== String(a.id)) : [...animauxGarde, a.id];
+                                  setAnimauxGarde(ids); setSelectedAnimalId((ids[0] ?? null) as number | null);
+                                }} />
+                              {a.photo_url
+                                // eslint-disable-next-line @next/next/no-img-element
+                                ? <img src={a.photo_url} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+                                : <span className="w-9 h-9 rounded-lg bg-[#EEF5EA] flex-shrink-0" />}
+                              <span className="flex-1 min-w-0">
+                                <span className="block text-sm font-semibold text-[#1F2A2E] truncate">{a.nom ?? 'Animal'}</span>
+                                <span className="block text-xs text-gray-500 truncate">{[a.espece, a.race].filter(Boolean).join(' · ')}</span>
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
                     ) : pro.cat_pro === 'garde' || pro.cat_pro === 'photographe' ? (
                       <div>
                         <AnimalMultiPickerField animaux={animaux} selectedIds={animauxGarde} accentColor={catColor}
@@ -2822,7 +2850,7 @@ function ProDetailContent() {
                         📋 {motifLabelFor(motifKey, motifs.find(m => m.key === motifKey)?.label ?? '')}
                         {premiereVisite === true ? ' — 1ère visite' : ''}
                       </p>
-                      {selectedAnimalId && !isTaxi && pro.cat_pro !== 'garde' && (
+                      {selectedAnimalId && !isTaxi && pro.cat_pro !== 'garde' && pro.cat_pro !== 'pension' && (
                         <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
                           🐾 {[selectedAnimalId, ...animauxEnPlus].map(id => animaux.find(a => a.id === id)?.nom).filter(Boolean).join(' + ')}
                         </p>
@@ -2838,9 +2866,9 @@ function ProDetailContent() {
                           {forfaitId ? ` · forfait de ${forfaitsGarde.find(f => f.id === forfaitId)?.nb_visites ?? '?'}` : ''}
                         </p>
                       )}
-                      {(pro.cat_pro === 'garde' || pro.cat_pro === 'photographe') && animauxGarde.length > 0 && (
+                      {(pro.cat_pro === 'garde' || pro.cat_pro === 'photographe' || pro.cat_pro === 'pension') && animauxGarde.length > 0 && (
                         <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
-                          🐾 {animauxGarde.map(id => animaux.find(a => a.id === id)?.nom).filter(Boolean).join(' + ')}
+                          🐾 {animauxGarde.map(id => animaux.find(a => String(a.id) === String(id))?.nom).filter(Boolean).join(' + ')}
                         </p>
                       )}
                       {pro.cat_pro === 'toilettage' && domicile && (pro.supplement_domicile ?? 0) > 0 && (

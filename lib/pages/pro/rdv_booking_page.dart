@@ -38,6 +38,9 @@ class RdvBookingPage extends StatefulWidget {
   final String? preselectedAnimalId;
   final String? proProfileId; // user_profiles.id si profil secondaire
   final Map<String, dynamic>? visiteAnimal; // animal de l'association à visiter (id, nom, espece, photo_url)
+  /// Pension : animaux déjà cochés dans la demande de séjour (enchaînement
+  /// « Demander plutôt une visite ») — gardés cochés.
+  final List<String>? animauxPreselectionIds;
 
   const RdvBookingPage({
     super.key,
@@ -54,6 +57,7 @@ class RdvBookingPage extends StatefulWidget {
     this.preselectedAnimalId,
     this.proProfileId,
     this.visiteAnimal,
+    this.animauxPreselectionIds,
   });
 
   @override
@@ -127,11 +131,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   String? _selectedMotif;
   bool? _premiereVisite;
 
+  // Pension : un seul motif — les arrivées / départs passent par la
+  // réservation de séjour (PensionReservationPage).
   static const _pensionMotifs = [
     ('visite',  'Visite de la pension',  Icons.tour_outlined),
-    ('arrivee', 'Arrivée de l\'animal',  Icons.login_outlined),
-    ('depart',  'Départ de l\'animal',   Icons.logout_outlined),
-    ('autre',   'Autre',                 Icons.more_horiz_outlined),
   ];
 
   static const _vetMotifs = [
@@ -381,6 +384,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   void initState() {
     super.initState();
     _places = GoogleMapsPlaces(apiKey: getApiKey());
+    if (widget.isPension) _selectedMotif = 'visite';
     _loadAll();
     _chargerMoyensPaiement();
   }
@@ -792,6 +796,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         if (widget.preselectedAnimalId != null) {
           _selectedAnimal = _animaux.where(
               (a) => a['id']?.toString() == widget.preselectedAnimalId).firstOrNull;
+        }
+        // Pension : animaux cochés dans la demande de séjour, gardés.
+        final pre = widget.animauxPreselectionIds ?? const <String>[];
+        if (widget.isPension && pre.isNotEmpty) {
+          _animauxGarde = [for (final a in _animaux) if (pre.contains(a['id']?.toString())) a];
+          if (_animauxGarde.isNotEmpty) _selectedAnimal = _animauxGarde.first;
         }
       }
     } catch (_) {}
@@ -1439,7 +1449,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
       final heureDebutStr = _selectedSlot!['heure_debut'] as String;
       // Pet-sitting et photographe : plusieurs animaux (même tarif pour la séance photo).
-      final animauxGarde = (widget.isGarde || widget.isPhotographe) && _animauxGarde.isNotEmpty ? _animauxGarde : null;
+      final animauxGarde = (widget.isGarde || widget.isPhotographe || widget.isPension) && _animauxGarde.isNotEmpty ? _animauxGarde : null;
       final rows = occurrenceDates.map((d) {
         final hp = heureDebutStr.split(':');
         final dh = widget.isGarde
@@ -2731,6 +2741,44 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     );
   }
 
+  // Pension : animaux à cocher, comme la demande de séjour
+  // (PensionReservationPage) ; _selectedAnimal = le premier coché.
+  Widget _buildAnimauxPensionSection() {
+    final color = widget.categoryColor;
+    bool coche(Map<String, dynamic> a) => _animauxGarde.any((x) => x['id']?.toString() == a['id']?.toString());
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _sectionTitle('Animaux concernés par la visite'),
+      const SizedBox(height: 8),
+      if (_animaux.isEmpty)
+        Text('Aucune fiche animal sur votre profil.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500))
+      else
+        Container(
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)),
+          child: Column(children: [
+            for (final (i, a) in _animaux.indexed) ...[
+              if (i > 0) Divider(height: 1, color: Colors.grey.shade200),
+              CheckboxListTile(
+                value: coche(a),
+                onChanged: (_) => setState(() {
+                  _animauxGarde = coche(a)
+                      ? [for (final x in _animauxGarde) if (x['id']?.toString() != a['id']?.toString()) x]
+                      : [..._animauxGarde, a];
+                  _selectedAnimal = _animauxGarde.isEmpty ? null : _animauxGarde.first;
+                }),
+                activeColor: color, dense: true, controlAffinity: ListTileControlAffinity.leading,
+                secondary: _vignetteAnimal(a),
+                title: Text(a['nom']?.toString() ?? 'Animal',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1E2025))),
+                subtitle: Text([a['espece'], a['race']].where((v) => (v?.toString() ?? '').isNotEmpty).join(' · '),
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+              ),
+            ],
+          ]),
+        ),
+    ]);
+  }
+
   // Pet-sitting : plusieurs animaux possibles.
   Widget _buildAnimauxGardeSection() {
     final color = widget.categoryColor;
@@ -2913,6 +2961,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   Widget _buildAnimalSection() {
     final color = widget.categoryColor;
+    if (widget.isPension) return _buildAnimauxPensionSection();
     // Taxi : la sélection des animaux transportés se fait dans
     // _buildTaxiTrajetSection (multi-sélection), pas ici.
     if (widget.isTaxi) return const SizedBox.shrink();

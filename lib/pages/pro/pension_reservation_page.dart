@@ -15,6 +15,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionTarifKeyForEspece, pensionTarifPourKey, pensionTarifEquin, pensionPrixNuit, pensionGroupe;
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
+import 'package:PetsMatch/utils/pension_horaires.dart' show messageHeuresPension;
 
 const _ink = Color(0xFF1F2A2E);
 
@@ -217,8 +218,10 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
         return;
       }
     }
-    if (_creneaux != null && (!_heures('arrivee').contains(_heureArrivee) || !_heures('depart').contains(_heureDepart))) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Choisissez votre heure d'arrivée et votre heure de départ.")));
+    final manque = _creneaux == null ? null
+        : messageHeuresPension(arriveeOk: _heures('arrivee').contains(_heureArrivee), departOk: _heures('depart').contains(_heureDepart));
+    if (manque != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(manque)));
       return;
     }
     if (_essaiRequis && _creneauxEssai != null && !_creneauxEssai!.contains(_heureEssai)) {
@@ -455,7 +458,8 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
               const SizedBox(height: 10),
               TextButton(
                 onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => RdvBookingPage(
-                    proUid: widget.proUid, proName: widget.proName, categoryColor: _c, isPension: true, proProfileId: widget.proProfileId))),
+                    proUid: widget.proUid, proName: widget.proName, categoryColor: _c, isPension: true, proProfileId: widget.proProfileId,
+                    animauxPreselectionIds: [for (final a in _choisis) a['id'].toString()]))),
                 child: Text('Demander plutôt une visite de la pension', style: TextStyle(fontFamily: 'Galey', color: _c)),
               ),
             ]),

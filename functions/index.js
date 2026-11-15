@@ -48,6 +48,7 @@ exports.notifyOwnerVetEntry = vetNotifFunctions.notifyOwnerVetEntry;
 // Agenda — rappels RDV + notifications RDV + mise-bas
 exports.sendRdvReminders = rdvRemindersFunctions.sendRdvReminders;
 exports.sendCoursCollectifReminders = rdvRemindersFunctions.sendCoursCollectifReminders;
+exports.sendAgendaRappels = rdvRemindersFunctions.sendAgendaRappels;
 exports.notifyProNewRdv = agendaFunctions.notifyProNewRdv;
 exports.sendMiseBasReminders = agendaFunctions.sendMiseBasReminders;
 exports.sendChirurgieReminders = agendaFunctions.sendChirurgieReminders;

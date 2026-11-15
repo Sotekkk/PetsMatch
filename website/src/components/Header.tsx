@@ -1029,6 +1029,7 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
       return '/';
     case 'pension_sejour_accepte':
     case 'pension_sejour_refuse':
+    case 'pension_rappel_passage':
       return '/mes-sejours';
     case 'rdv_consignes_recues':
       return d.rdv_id ? `/mes-rdv?onglet=a_venir&rdv=${d.rdv_id}` : '/mes-rdv';

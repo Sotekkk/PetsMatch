@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
+import { messageHeuresManquantes } from '@/lib/pension-horaires';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { pensionGroupe, pensionPrixNuit, pensionTarifEquin, pensionTarifKeyForEspece, pensionTarifPourKey, type EspeceTarif } from '@/lib/pension-especes';
@@ -47,7 +48,9 @@ function ChoixHeure({ titre, heures, valeur, onChange, couleur, duree }: { titre
 }
 
 export default function ReservationSejourModal({ pensionProfileId, pensionNom, couleur, onClose, onVisite }: {
-  pensionProfileId: string; pensionNom: string; couleur: string; onClose: () => void; onVisite?: () => void;
+  pensionProfileId: string; pensionNom: string; couleur: string; onClose: () => void;
+  /** « Demander plutôt une visite » : les animaux cochés sont gardés pour la visite. */
+  onVisite?: (animalIds: string[]) => void;
 }) {
   const { user } = useAuth();
   const pid = useActiveProfile();
@@ -157,9 +160,8 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
     if (essaiRequis && creneauxEssai && !creneauxEssai.includes(heureEssai)) {
       setErreur('Choisissez l\'heure de l\'essai.'); return;
     }
-    if (creneaux && (!creneaux.arrivee.includes(heureArrivee) || !creneaux.depart.includes(heureDepart))) {
-      setErreur('Choisissez votre heure d\'arrivée et votre heure de départ.'); return;
-    }
+    const manque = creneaux ? messageHeuresManquantes(creneaux.arrivee.includes(heureArrivee), creneaux.depart.includes(heureDepart)) : null;
+    if (manque) { setErreur(manque); return; }
     const sansReponse = aQuestionner.find(a => typeof dejaVenus[a.id] !== 'boolean');
     if (sansReponse) { setErreur(`Indiquez si ${sansReponse.nom ?? 'votre animal'} est déjà venu dans cette pension.`); return; }
     if (essaiRequis && (!essai || essai >= arrivee)) { setErreur('Choisissez une date d\'essai avant l\'arrivée.'); return; }
@@ -289,7 +291,7 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
             <button onClick={envoyer} disabled={etat === 'envoi' || !choisis.length || !!complet} className="w-full py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: couleur }}>
               {etat === 'envoi' ? 'Envoi…' : 'Envoyer la demande de séjour'}
             </button>
-            {onVisite && <button onClick={onVisite} className="w-full text-sm font-semibold" style={{ color: couleur }}>Demander plutôt une visite de la pension</button>}
+            {onVisite && <button onClick={() => onVisite(animalIds.map(String))} className="w-full text-sm font-semibold" style={{ color: couleur }}>Demander plutôt une visite de la pension</button>}
           </>
         )}
       </div>

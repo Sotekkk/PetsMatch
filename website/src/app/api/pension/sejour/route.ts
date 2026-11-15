@@ -31,6 +31,52 @@ const JOUR = /^\d{4}-\d{2}-\d{2}$/;
 const fr = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
 const liste = (noms: string[]) => noms.length <= 1 ? (noms[0] ?? '') : `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}`;
 
+/** Date (AAAA-MM-JJ) + heure (HH:MM) à Paris → ISO UTC. */
+function isoParis(jour: string, heure: string): string {
+  const brut = new Date(`${jour}T${heure}:00Z`);
+  const vu = (tz: string) => new Date(brut.toLocaleString('en-US', { timeZone: tz })).getTime();
+  return new Date(brut.getTime() - (vu('Europe/Paris') - vu('UTC'))).toISOString();
+}
+
+type PassageClient = { type: 'arrivee' | 'depart' | 'essai'; jour: string; heure: string; duree: number | null; entreeId: string; animalId: string; nom: string };
+
+/** Rendez-vous d'arrivée / de départ / d'essai dans l'agenda du client (un par
+ *  passage, tous les animaux ensemble), rappel la veille et 30 min avant
+ *  (Cloud Function sendAgendaRappels). Écrit en service_role : la RLS refuse à
+ *  la pension d'écrire dans l'agenda du client. Suivi des annulations et des
+ *  changements d'heure : trigger trg_pension_agenda_client_sync
+ *  (migration_pension_agenda_client.sql). Jamais bloquant. */
+async function poserAgendaClient(d0: Demande, passages: PassageClient[]) {
+  if (!d0.client_uid || !passages.length) return;
+  try {
+    const p = await pension(d0.pro_profile_id ?? '');
+    const nomPension = (p?.nom ?? '').trim() || 'la pension';
+    const groupes = new Map<string, PassageClient[]>();
+    for (const x of passages) {
+      const cle = `${x.type}|${x.jour}|${x.heure}`;
+      groupes.set(cle, [...(groupes.get(cle) ?? []), x]);
+    }
+    for (const g of groupes.values()) {
+      const x = g[0];
+      const noms = liste([...new Set(g.map(y => y.nom))]);
+      const titre = x.type === 'arrivee' ? `Déposer ${noms} à la pension — ${nomPension}`
+        : x.type === 'depart' ? `Récupérer ${noms} à la pension — ${nomPension}`
+        : `Essai de ${noms} à la pension — ${nomPension}`;
+      const base = {
+        uid: d0.client_uid, titre, type: 'rdv', date_debut: isoParis(x.jour, x.heure),
+        ...(x.duree ? { duree_minutes: x.duree } : {}),
+        animal_id: x.animalId, animaux_ids: [...new Set(g.map(y => y.animalId))],
+        ...(d0.client_profile_id ? { pro_profile_id: d0.client_profile_id } : {}),
+      };
+      const { error } = await admin.from('agenda_events').insert({
+        ...base, pension_entree_ids: g.map(y => y.entreeId), pension_passage: x.type, rappels_auto: true,
+      });
+      // Colonnes absentes (migration_pension_agenda_client.sql) : sans rappels.
+      if (error) await admin.from('agenda_events').insert(base);
+    }
+  } catch { /* le séjour reste accepté */ }
+}
+
 async function pension(pid: string) {
   const { data } = await admin.from('user_profiles').select('id, uid, nom, profile_type, pension_essai_requis, pension_essai_info, tarifs_pension, especes_acceptees').eq('id', pid).maybeSingle();
   const p = data as { id: string; uid: string; nom: string | null; profile_type: string | null; pension_essai_requis?: boolean; pension_essai_info?: string | null; tarifs_pension?: Record<string, unknown> | null; especes_acceptees?: string[] | null } | null;
@@ -401,6 +447,8 @@ export async function POST(req: NextRequest) {
     const acceptes: Demande[] = [];
     const horairesDecision = await horairesDe(d0.pro_profile_id ?? '');
     let erreur: string | null = null;
+    // Arrivées / départs / essais acceptés → rendez-vous dans l'agenda du client.
+    const passages: PassageClient[] = [];
     for (const d of aTraiter) {
       // Séjour (et essai) dans le registre, avec la fiche et les coordonnées du client.
       const { data: an } = await admin.from('animaux').select('nom, espece, race, identification, photo_url').eq('id', d.animal_id as string).maybeSingle();
@@ -449,8 +497,15 @@ export async function POST(req: NextRequest) {
       }
       await admin.from('pension_demandes').update({ entree_id: (ent as { id: string }).id, essai_entree_id: essaiId }).eq('id', d.id as string);
       acceptes.push(d);
+      const nomA = a?.nom ?? d.animal_nom ?? 'Animal';
+      const animalId = String(d.animal_id);
+      const entreeId = String((ent as { id: string }).id);
+      if (hA) passages.push({ type: 'arrivee', jour: d.date_arrivee as string, heure: hA, duree: Number(planning.duree_arrivee_min) || null, entreeId, animalId, nom: nomA });
+      if (hD && d.date_depart) passages.push({ type: 'depart', jour: d.date_depart as string, heure: hD, duree: Number(planning.duree_depart_min) || null, entreeId, animalId, nom: nomA });
+      if (essaiId && d.essai_date && heureValide(d.heure_essai)) passages.push({ type: 'essai', jour: d.essai_date as string, heure: d.heure_essai as string, duree: null, entreeId: essaiId, animalId, nom: nomA });
     }
     if (!acceptes.length) return NextResponse.json({ error: erreur ?? 'Acceptation impossible' }, { status: 500 });
+    await poserAgendaClient(d0, passages);
     const n = acceptes.map(d => d.animal_nom ?? 'Votre animal');
     const essais = [...new Set(acceptes.map(d => d.essai_date).filter(Boolean) as string[])];
     // Arrhes prévues au règlement : sans essai, le séjour est confirmé à leur

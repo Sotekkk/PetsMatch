@@ -523,7 +523,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       )));
       return;
     }
-    if (type == 'pension_sejour_accepte' || type == 'pension_sejour_refuse') {
+    if (type == 'pension_sejour_accepte' || type == 'pension_sejour_refuse' || type == 'pension_rappel_passage') {
       await Navigator.push(context, MaterialPageRoute(builder: (_) => const MesSejoursPensionPage()));
       return;
     }

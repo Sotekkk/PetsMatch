@@ -464,3 +464,78 @@ exports.sendCoursCollectifReminders = functions
 
         return null;
     });
+
+/**
+ * Pension (15/11/2026) — rappels des rendez-vous posés dans l'agenda du client
+ * à l'acceptation d'un séjour (déposer / récupérer l'animal, essai) :
+ * agenda_events.rappels_auto = true. Rappel la veille (dans les 24 h) puis
+ * 30 min avant ; marqueurs rappel_veille_envoye / rappel_30min_envoye (remis
+ * à false par le trigger quand la pension change l'heure).
+ * Migration : supabase/migration_pension_agenda_client.sql.
+ */
+exports.sendAgendaRappels = functions
+    .region("europe-west1")
+    .pubsub.schedule("every 5 minutes")
+    .timeZone("Europe/Paris")
+    .onRun(async () => {
+        const now = Date.now();
+        const iso = (ms) => new Date(ms).toISOString();
+        const quand = (d) => new Date(d).toLocaleString("fr-FR", {
+            weekday: "long", day: "numeric", month: "long",
+            hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris",
+        });
+        const fenetres = [
+            // Veille : tout passage dans les 24 h (et à plus de 35 min) sans rappel.
+            {
+                champ: "rappel_veille_envoye",
+                de: iso(now + 35 * 60 * 1000), a: iso(now + 24 * 3600 * 1000),
+                titre: () => "Rappel pension",
+                corps: (e) => `${e.titre} — ${quand(e.date_debut)}.`,
+            },
+            {
+                champ: "rappel_30min_envoye",
+                de: iso(now), a: iso(now + 35 * 60 * 1000),
+                titre: () => "Dans 30 minutes",
+                corps: (e) => `${e.titre} — à ${new Date(e.date_debut).toLocaleTimeString("fr-FR",
+                    {hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris"})}.`,
+            },
+        ];
+        let envoyes = 0;
+        for (const f of fenetres) {
+            let evts = [];
+            try {
+                evts = await supabaseGet("agenda_events?rappels_auto=eq.true" +
+                    `&${f.champ}=eq.false` +
+                    `&date_debut=gte.${encodeURIComponent(f.de)}` +
+                    `&date_debut=lte.${encodeURIComponent(f.a)}` +
+                    "&select=id,uid,titre,date_debut,pro_profile_id,animal_id,pension_passage&limit=200");
+            } catch (e) {
+                console.error(`sendAgendaRappels (${f.champ}):`, e.message);
+                continue;
+            }
+            for (const e of evts) {
+                try {
+                    // Marqué d'abord : jamais deux fois le même rappel.
+                    await supabasePatch("agenda_events", e.id, {[f.champ]: true,
+                        ...(f.champ === "rappel_30min_envoye" ? {rappel_veille_envoye: true} : {})});
+                    const titre = f.titre(e);
+                    const corps = f.corps(e);
+                    await supabaseInsert("notifications", [{
+                        uid: e.uid, type: "pension_rappel_passage", title: titre, body: corps,
+                        data: {agenda_event_id: e.id, passage: e.pension_passage || null,
+                            animalId: e.animal_id || null},
+                        read: false,
+                        ...(e.pro_profile_id ? {profile_id: e.pro_profile_id} : {}),
+                    }]);
+                    await sendPush(e.uid, titre, corps,
+                        {type: "pension_rappel_passage", agenda_event_id: e.id},
+                        {profileId: e.pro_profile_id || null});
+                    envoyes++;
+                } catch (err) {
+                    console.error(`sendAgendaRappels ${e.id}:`, err.message);
+                }
+            }
+        }
+        console.log(`sendAgendaRappels: ${envoyes} rappel(s)`);
+        return null;
+    });

@@ -149,3 +149,11 @@ class HorairesPensionForm extends StatelessWidget {
     );
   }
 }
+
+/// Message quand l'heure d'arrivée et/ou de départ n'est pas choisie (null si
+/// les deux le sont). Miroir site : messageHeuresManquantes (pension-horaires.ts).
+String? messageHeuresPension({required bool arriveeOk, required bool departOk}) {
+  if (arriveeOk && departOk) return null;
+  if (!arriveeOk && !departOk) return "Veuillez sélectionner l'heure d'arrivée et l'heure de départ.";
+  return arriveeOk ? "Veuillez sélectionner l'heure de départ." : "Veuillez sélectionner l'heure d'arrivée.";
+}

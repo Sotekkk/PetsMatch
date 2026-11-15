@@ -77,3 +77,10 @@ export function creneauxLibres(h: HorairesPension, type: 'arrivee' | 'depart', d
   }
   return [...new Set(out)].sort();
 }
+
+/** Message quand l'heure d'arrivée et/ou de départ n'est pas choisie (null si les deux le sont). Miroir appli : messageHeuresPension. */
+export function messageHeuresManquantes(arriveeOk: boolean, departOk: boolean): string | null {
+  if (arriveeOk && departOk) return null;
+  if (!arriveeOk && !departOk) return 'Veuillez sélectionner l\'heure d\'arrivée et l\'heure de départ.';
+  return arriveeOk ? 'Veuillez sélectionner l\'heure de départ.' : 'Veuillez sélectionner l\'heure d\'arrivée.';
+}

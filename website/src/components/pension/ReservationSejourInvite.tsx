@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
+import { messageHeuresManquantes } from '@/lib/pension-horaires';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { PENSION_ESPECES, pensionTarifKeyForEspece } from '@/lib/pension-especes';
@@ -169,7 +170,8 @@ export default function ReservationSejourInvite({ mode, pensionProfileId, pensio
     if (depart < arrivee) return 'La date de départ doit suivre l\'arrivée.';
     if (joursEntre(arrivee, depart) > 180) return 'Séjour de plus de 6 mois : vérifiez les dates ou contactez directement la pension.';
     if (essaiRequis && (!essai || essai >= arrivee || essai < auj)) return 'Choisissez une date d\'essai entre aujourd\'hui et la veille de l\'arrivée.';
-    if (creneaux && (!creneaux.arrivee.includes(heureArrivee) || !creneaux.depart.includes(heureDepart))) return 'Choisissez votre heure d\'arrivée et votre heure de départ.';
+    const manque = creneaux ? messageHeuresManquantes(creneaux.arrivee.includes(heureArrivee), creneaux.depart.includes(heureDepart)) : null;
+    if (manque) return manque;
     if (essaiRequis && creneauxEssai && !creneauxEssai.includes(heureEssai)) return 'Choisissez l\'heure de l\'essai.';
     if (!carnetPromis) return 'Cochez l\'engagement à apporter le carnet de santé.';
     if (complet) return complet;
