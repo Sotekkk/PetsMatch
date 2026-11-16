@@ -28,7 +28,7 @@ export interface ContenuGalerie {
   };
   livraison: { id: string; numero: number; nom: string; taille: number | null; nb: number | null; expire_le: string; telechargements?: number; prolongee?: boolean }[];
   /** Photographe : facture de la séance. */
-  facture?: { statut: string; numero: string; total_ttc: number } | null;
+  facture?: { id?: string; statut: string; numero: string; total_ttc: number } | null;
   studio: { nom: string; avatar: string | null };
   photos: PhotoGalerie[];
 }

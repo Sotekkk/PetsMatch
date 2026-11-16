@@ -12,6 +12,7 @@ import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/utils/galeries_api.dart';
 import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
+import 'package:PetsMatch/utils/facture_seance_photo.dart';
 
 /// Galerie client privée (photographe) — une galerie, rattachée ou non à une
 /// séance (rdv). Aperçus compressés (filigrane facultatif) dans le bucket
@@ -128,6 +129,107 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
       _erreur = e.toString().replaceFirst('Exception: ', '');
     }
     if (mounted) setState(() => _loading = false);
+  }
+
+  // ── Suite de la séance (après la sélection du client) ──────────────────────
+  // Sélection confirmée → facturer la sélection (e-mail + PDF au client) →
+  // payée → retouche (client prévenu) → livraison des photos retouchées.
+  // Même parcours que le dossier de la séance. Miroir site : SuiteSeanceGalerie.
+
+  Future<void> _facturerSelection() async {
+    final page = await pageFactureSelectionPhoto(_albumId!);
+    if (!mounted) return;
+    if (page == null) { _snack('Galerie non rattachée à une séance : créez la facture depuis la Facturation.'); return; }
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    if (mounted) await _charger();
+  }
+
+  Future<void> _marquerPayee() async {
+    final f = _facture;
+    if (f == null || (f['id']?.toString() ?? '').isEmpty) return;
+    final mode = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
+            child: Text('Réglée par', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+        for (final m in const ['Virement bancaire', 'Carte bancaire', 'Espèces', 'Chèque'])
+          ListTile(title: Text(m, style: const TextStyle(fontFamily: 'Galey')), onTap: () => Navigator.pop(ctx, m)),
+      ])),
+    );
+    if (mode == null || !mounted) return;
+    try {
+      await _supa.from('factures').update({
+        'statut': 'payee', 'mode_paiement': mode, 'date_paiement': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', f['id']);
+      setState(() => f['statut'] = 'payee');
+    } catch (e) {
+      _snack('Erreur : $e');
+      return;
+    }
+    if (!mounted || _album['statut'] == 'en_retouche' || _album['statut'] == 'livree') return;
+    final go = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Facture payée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: const Text('Passer les photos en retouche maintenant ? Le client sera prévenu.', style: TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Plus tard')),
+        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Passer en retouche', style: TextStyle(color: _teal, fontWeight: FontWeight.w700))),
+      ],
+    ));
+    if (go == true) await _passerEnRetouche();
+  }
+
+  Future<void> _passerEnRetouche() async {
+    try {
+      await _supa.from('albums_photo').update({'statut': 'en_retouche', 'updated_at': DateTime.now().toUtc().toIso8601String()}).eq('id', _albumId!);
+      setState(() => _album['statut'] = 'en_retouche');
+      final clientUid = _album['client_uid']?.toString() ?? '';
+      if (clientUid.isNotEmpty) {
+        await _supa.from('notifications').insert({
+          'uid': clientUid, 'type': 'galerie_disponible', 'title': 'Vos photos sont en retouche',
+          'body': '${_album['titre'] ?? 'Votre séance photo'} : votre photographe retouche les photos que vous avez choisies.',
+          if ((_album['client_profile_id']?.toString() ?? '').isNotEmpty) 'profile_id': _album['client_profile_id'],
+          'data': {'albumId': _albumId}, 'read': false,
+        });
+      }
+      _snack('Photos en retouche${clientUid.isNotEmpty ? ' : client prévenu' : ''}');
+    } catch (e) {
+      _snack('Erreur : $e');
+    }
+  }
+
+  Widget _suiteSeance() {
+    if ((_album['rdv_id']?.toString() ?? '').isEmpty || _album['selection_confirmee_le'] == null || _album['statut'] == 'livree') {
+      return const SizedBox.shrink();
+    }
+    final f = _facture;
+    final payee = f?['statut'] == 'payee';
+    final retouche = _album['statut'] == 'en_retouche';
+    String eur(Object? v) => '${((v as num?) ?? 0).toStringAsFixed(2).replaceAll('.', ',')} €';
+    final (String etape, String detail, String bouton, VoidCallback action) = f == null
+        ? ('2 · Facture', 'Sélection confirmée ($_nbSel photo${_nbSel > 1 ? 's' : ''}) : facturez-la pour lancer la retouche. '
+            'La facture est envoyée au client par e-mail.', 'Facturer la sélection', _facturerSelection)
+        : !payee
+            ? ('2 · Paiement', 'Facture n° ${f['numero']} envoyée, ${eur(f['total_ttc'])} à régler.', 'Marquer payée', _marquerPayee)
+            : !retouche
+                ? ('3 · Retouche', 'Facture payée : vous pouvez lancer la retouche.', 'Passer en retouche', _passerEnRetouche)
+                : ('4 · Livraison', 'Photos en retouche : livrez les fichiers retravaillés une fois prêts.', 'Livrer les photos retouchées', _selectionEtLivraison);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      decoration: BoxDecoration(color: const Color(0xFFE6F2F3), borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('SUITE DE LA SÉANCE · $etape', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: _teal, letterSpacing: 0.4)),
+          const SizedBox(height: 2),
+          Text(detail, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _ink)),
+        ])),
+        const SizedBox(width: 8),
+        FilledButton(onPressed: action, style: FilledButton.styleFrom(backgroundColor: _teal, visualDensity: VisualDensity.compact),
+            child: Text(bouton, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12.5))),
+      ]),
+    );
   }
 
   void _snack(String t) {
@@ -634,6 +736,7 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
                           ],
                         ]),
                       ),
+                      _suiteSeance(),
                       if (_progres != null)
                         LinearProgressIndicator(value: _progres!.$2 == 0 ? null : _progres!.$1 / _progres!.$2, color: _teal, backgroundColor: const Color(0xFFE6F2F3)),
                       Expanded(child: _photos.isEmpty

@@ -148,7 +148,7 @@ export async function contenuGalerie(album: AlbumRow, role: 'pro' | 'client') {
     // Photographe : facture de la séance (paiement avant livraison).
     ...(role === 'pro' ? { facture: await (async () => {
       const f = await factureSeance(album);
-      return f ? { statut: String(f.statut ?? ''), numero: String(f.numero_affichage ?? f.numero_facture ?? ''), total_ttc: Number(f.total_ttc ?? 0) } : null;
+      return f ? { id: String(f.id ?? ''), statut: String(f.statut ?? ''), numero: String(f.numero_affichage ?? f.numero_facture ?? ''), total_ttc: Number(f.total_ttc ?? 0) } : null;
     })() } : {}),
   };
 }

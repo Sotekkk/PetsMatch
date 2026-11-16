@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useProfessionPlanCode } from '@/lib/use-plan';
 import { STATUTS_GALERIE } from '@/lib/photographe';
+import { preparerFactureSelectionPhoto } from '@/lib/facture-seance-photo';
 import { chargerGalerie, importerPhotos, supprimerPhotos, supprimerGalerie, livrerFichiers, actionLivraison, fmtTaille, envoyerGalerie, relancerSelection,
   FactureNonPayeeError, JOURS_LIVRAISON, JOURS_LIVRAISON_DEFAUT, LIVRAISON_MAX, type ContenuGalerie } from '@/lib/galeries-client';
 
@@ -38,6 +39,7 @@ export default function GalerieStudioPage() {
   const [titre, setTitre] = useState('');
   const [description, setDescription] = useState('');
   const [maintenant, setMaintenant] = useState(0);
+  const [modePaie, setModePaie] = useState('Virement bancaire');
   const [filtreSel, setFiltreSel] = useState(false);
   const [finals, setFinals] = useState<File[]>([]);
   const [joursLiv, setJoursLiv] = useState(JOURS_LIVRAISON_DEFAUT);
@@ -74,6 +76,38 @@ export default function GalerieStudioPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     charger();
   }, [user, charger]);
+
+  // ── Suite de la séance (après la sélection du client) ──
+  // Sélection confirmée → facturer la sélection (e-mail + PDF au client) →
+  // payée → retouche (client prévenu) → livraison des photos retouchées.
+  // Même parcours que le dossier de la séance. Miroir appli : _suiteSeance
+  // (photographe_album_page.dart).
+  async function facturerSelection() {
+    const e = await preparerFactureSelectionPhoto(id, `/photographe/galeries/${id}`);
+    if (e) { alert(e); return; }
+    router.push('/elevage/facturation');
+  }
+  async function passerEnRetouche() {
+    if (!g) return;
+    if (!(await majAlbum({ statut: 'en_retouche' }))) return;
+    const a = g.album;
+    if (a.client_uid) {
+      await supabase.from('notifications').insert({
+        uid: a.client_uid, type: 'galerie_disponible', title: 'Vos photos sont en retouche',
+        body: `${a.titre ?? 'Votre séance photo'} : votre photographe retouche les photos que vous avez choisies.`,
+        ...(a.client_profile_id ? { profile_id: a.client_profile_id } : {}), data: { albumId: id }, read: false,
+      });
+    }
+  }
+  async function marquerPayee() {
+    const f = g?.facture;
+    if (!f?.id) return;
+    const { error } = await supabase.from('factures').update({ statut: 'payee', mode_paiement: modePaie, date_paiement: new Date().toISOString() }).eq('id', f.id);
+    if (error) { alert(error.message); return; }
+    if (g?.album.statut !== 'en_retouche' && g?.album.statut !== 'livree'
+      && confirm('Facture payée. Passer les photos en retouche maintenant ? Le client sera prévenu.')) await passerEnRetouche();
+    else await charger();
+  }
 
   async function majAlbum(champs: Record<string, unknown>) {
     const { error } = await supabase.from('albums_photo').update({ ...champs, updated_at: new Date().toISOString() }).eq('id', id);
@@ -196,6 +230,34 @@ export default function GalerieStudioPage() {
                 rows={2} placeholder="Message au client (facultatif)" className="mt-2 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
             </div>
 
+            {album.rdv_id && album.selection_confirmee_le && album.statut !== 'livree' && (() => {
+              const f = g.facture;
+              const eurs = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
+              const [etape, detail, bouton, action]: [string, string, string, () => void] = !f
+                ? ['2 · Facture', `Sélection confirmée (${nbSel} photo${nbSel > 1 ? 's' : ''}) : facturez-la pour lancer la retouche. La facture est envoyée au client par e-mail.`, 'Facturer la sélection', facturerSelection]
+                : f.statut !== 'payee'
+                  ? ['2 · Paiement', `Facture n° ${f.numero} envoyée, ${eurs(f.total_ttc)} à régler.`, 'Marquer payée', marquerPayee]
+                  : album.statut !== 'en_retouche'
+                    ? ['3 · Retouche', 'Facture payée : vous pouvez lancer la retouche.', 'Passer en retouche', passerEnRetouche]
+                    : ['4 · Livraison', 'Photos en retouche : livrez les fichiers retravaillés une fois prêts.', 'Livrer les photos retouchées',
+                      () => document.getElementById('livraison-finale')?.scrollIntoView({ behavior: 'smooth', block: 'center' })];
+              return (
+                <div className="rounded-2xl p-4 flex flex-wrap items-center gap-3" style={{ background: '#E6F2F3' }}>
+                  <div className="flex-1 min-w-[200px]">
+                    <p className="text-[11px] font-bold tracking-wide" style={{ color: TEAL }}>SUITE DE LA SÉANCE · {etape}</p>
+                    <p className="text-sm text-[#1F2A2E] mt-0.5">{detail}</p>
+                  </div>
+                  {f && f.statut !== 'payee' && (
+                    <select value={modePaie} onChange={e => setModePaie(e.target.value)} aria-label="Réglée par"
+                      className="border border-gray-200 rounded-xl px-2 py-2 text-sm bg-white">
+                      {['Virement bancaire', 'Carte bancaire', 'Espèces', 'Chèque'].map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  )}
+                  <button onClick={action} className="px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: TEAL }}>{bouton}</button>
+                </div>
+              );
+            })()}
+
             {premium ? (
               <label onDragOver={e => { e.preventDefault(); setSurvol(true); }} onDragLeave={() => setSurvol(false)}
                 onDrop={e => { e.preventDefault(); setSurvol(false); importer([...e.dataTransfer.files]); }}
@@ -306,7 +368,7 @@ export default function GalerieStudioPage() {
               </label>
             </div>
 
-            <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2">
+            <div id="livraison-finale" className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2">
               <p className="text-sm font-bold text-[#1F2A2E]">Livraison des fichiers finaux</p>
               {livraison.length > 0 ? (
                 <div className="text-sm space-y-1">
