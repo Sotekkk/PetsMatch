@@ -14,7 +14,7 @@ import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFactur
 /// la galerie n'est pas rattachée à un rendez-vous.
 Future<Widget?> pageFactureSelectionPhoto(String albumId) async {
   final supa = Supabase.instance.client;
-  final album = await supa.from('albums_photo').select('id, rdv_id, nb_photos_incluses, prix_photo_supp').eq('id', albumId).maybeSingle();
+  final album = await supa.from('albums_photo').select('id, rdv_id, nb_photos_incluses, prix_photo_supp, client_email').eq('id', albumId).maybeSingle();
   final rdvId = album?['rdv_id']?.toString() ?? '';
   if (album == null || rdvId.isEmpty) return null;
   final r = await supa.from('rdv')
@@ -69,7 +69,8 @@ Future<Widget?> pageFactureSelectionPhoto(String albumId) async {
 
   final nom = premier([prof?['lastname'], r['client_nom_manuel'], prof?['nom']]);
   final prenom = premier([prof?['firstname']]);
-  final email = premier([prof?['email_contact'], r['client_email_manuel']]);
+  // Client sans compte : adresse saisie sur le RDV ou celle de l'envoi de la galerie.
+  final email = premier([prof?['email_contact'], r['client_email_manuel'], album['client_email']]);
   final tel = premier([prof?['phone_number'], prof?['phone'], r['client_telephone_manuel']]);
   final cpPostal = premier([prof?['code_postal'], prof?['code_postal_pro']]);
   final ville = premier([prof?['ville'], prof?['ville_pro']]);

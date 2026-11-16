@@ -10,8 +10,8 @@ import { supabase } from '@/lib/supabase';
 /** Prépare le préremplissage (sessionStorage pm_facture_prefill). Renvoie un
  *  message d'erreur, ou null : l'appelant ouvre alors /elevage/facturation. */
 export async function preparerFactureSelectionPhoto(albumId: string, retour: string): Promise<string | null> {
-  const { data: alb } = await supabase.from('albums_photo').select('id, rdv_id, nb_photos_incluses, prix_photo_supp').eq('id', albumId).maybeSingle();
-  const album = alb as { id: string; rdv_id: string | null; nb_photos_incluses: number | null; prix_photo_supp: number | null } | null;
+  const { data: alb } = await supabase.from('albums_photo').select('id, rdv_id, nb_photos_incluses, prix_photo_supp, client_email').eq('id', albumId).maybeSingle();
+  const album = alb as { id: string; rdv_id: string | null; nb_photos_incluses: number | null; prix_photo_supp: number | null; client_email: string | null } | null;
   if (!album?.rdv_id) return 'Galerie non rattachée à une séance : créez la facture depuis la Facturation.';
   const { data: rr } = await supabase.from('rdv')
     .select('id, date_heure, prestation_id, motif, animal_id, animal_nom_manuel, client_uid, client_profile_id, client_nom_manuel, client_telephone_manuel, client_email_manuel, lieu_type, adresse_depart')
@@ -44,7 +44,7 @@ export async function preparerFactureSelectionPhoto(albumId: string, retour: str
     // Tarifs affichés TTC : le HT est déduit selon le régime de TVA du pro.
     sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
       nomClient: v(p?.lastname, r.client_nom_manuel, p?.nom) || undefined, prenomClient: v(p?.firstname) || undefined,
-      emailClient: v(p?.email_contact, r.client_email_manuel) || undefined, telClient: v(p?.phone_number, p?.phone, r.client_telephone_manuel) || undefined,
+      emailClient: v(p?.email_contact, r.client_email_manuel, album.client_email) || undefined, telClient: v(p?.phone_number, p?.phone, r.client_telephone_manuel) || undefined,
       rueClient: v(p?.rue, p?.rue_pro, r.lieu_type === 'domicile' ? r.adresse_depart : null) || undefined,
       cpClient: v(p?.code_postal, p?.code_postal_pro) || undefined, villeClient: v(p?.ville, p?.ville_pro) || undefined,
       sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined, retour,
