@@ -5,7 +5,7 @@
 // client et / ou lien privé avec expiration), archivage, suppression.
 // Aperçus seulement (compressés, filigrane facultatif), bucket privé.
 // Miroir appli : photographe_album_page.dart.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -42,6 +42,12 @@ export default function GalerieStudioPage() {
   const [modePaie, setModePaie] = useState('Virement bancaire');
   const [filtreSel, setFiltreSel] = useState(false);
   const [finals, setFinals] = useState<File[]>([]);
+  // Bandeau « Livrer les photos retouchées » : ouvre directement le choix des fichiers.
+  const choixFinals = useRef<HTMLInputElement>(null);
+  function choisirFinals(files: File[]) {
+    setFinals(files);
+    if (files.length) setTimeout(() => document.getElementById('livraison-finale')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+  }
   const [joursLiv, setJoursLiv] = useState(JOURS_LIVRAISON_DEFAUT);
   const [livEnCours, setLivEnCours] = useState('');
   const [emailClient, setEmailClient] = useState('');
@@ -241,7 +247,10 @@ export default function GalerieStudioPage() {
                   : album.statut !== 'en_retouche'
                     ? ['3 · Retouche', 'Facture payée : vous pouvez lancer la retouche.', 'Passer en retouche', passerEnRetouche]
                     : ['4 · Livraison', 'Photos en retouche : livrez les fichiers retravaillés une fois prêts.', 'Livrer les photos retouchées',
-                      () => document.getElementById('livraison-finale')?.scrollIntoView({ behavior: 'smooth', block: 'center' })];
+                      () => {
+                        if (!premium) { alert('La livraison des fichiers est réservée à la formule Premium.'); return; }
+                        choixFinals.current?.click();
+                      }];
               return (
                 <div className="rounded-2xl p-4 flex flex-wrap items-center gap-3" style={{ background: '#E6F2F3' }}>
                   <div className="flex-1 min-w-[200px]">
@@ -369,7 +378,7 @@ export default function GalerieStudioPage() {
               </label>
             </div>
 
-            <div id="livraison-finale" className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2">
+            <div id="livraison-finale" className="bg-white rounded-2xl border p-4 space-y-2" style={{ borderColor: finals.length ? TEAL : '#F3F4F6', boxShadow: finals.length ? `0 0 0 2px ${TEAL}33` : undefined }}>
               <p className="text-sm font-bold text-[#1F2A2E]">Livraison des fichiers finaux</p>
               {livraison.length > 0 ? (
                 <div className="text-sm space-y-1">
@@ -391,7 +400,7 @@ export default function GalerieStudioPage() {
                 <div className="border-t border-gray-100 pt-2 space-y-2">
                   <label className="block text-xs font-semibold cursor-pointer" style={{ color: TEAL }}>
                     {finals.length ? `${finals.length} fichier${finals.length > 1 ? 's' : ''} choisi${finals.length > 1 ? 's' : ''} (${fmtTaille(finals.reduce((n, f) => n + f.size, 0))})` : (livraison.length ? 'Remplacer par de nouveaux fichiers…' : 'Choisir les fichiers finaux…')}
-                    <input type="file" multiple className="hidden" onChange={e => { setFinals([...(e.target.files ?? [])]); e.target.value = ''; }} />
+                    <input ref={choixFinals} type="file" multiple className="hidden" onChange={e => { choisirFinals([...(e.target.files ?? [])]); e.target.value = ''; }} />
                   </label>
                   {finals.length > 0 && (
                     <>

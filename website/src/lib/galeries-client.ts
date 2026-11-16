@@ -4,7 +4,7 @@
 // lib/utils/galeries_api.dart.
 import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
-import { zip } from 'fflate';
+import { zipSync } from 'fflate';
 
 /** Taille max (côté le plus long) et qualité des aperçus conservés. */
 export const APERCU_MAX = 1600;
@@ -245,8 +245,13 @@ export async function envoyerGalerie(albumId: string, email: string, message: st
   if (!r.ok) throw new Error((j as { error?: string }).error ?? 'Envoi impossible');
 }
 
-function zipper(fichiers: Record<string, Uint8Array>): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => zip(fichiers, { level: 0 }, (e, d) => (e ? reject(e) : resolve(d))));
+// ZIP sans recompression (photos déjà compressées) : version synchrone. La
+// version asynchrone de fflate passe par un Web Worker qui pouvait ne jamais
+// répondre une fois le site compilé (livraison bloquée sur « Compression… »,
+// sans erreur). Laisse d'abord le navigateur afficher la progression.
+async function zipper(fichiers: Record<string, Uint8Array>): Promise<Uint8Array> {
+  await new Promise(r => setTimeout(r, 30));
+  return zipSync(fichiers, { level: 0 });
 }
 
 /** Photographe : livre les fichiers finaux. ZIP construits dans le
