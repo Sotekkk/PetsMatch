@@ -12,7 +12,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useProfessionPlanCode } from '@/lib/use-plan';
 import { STATUTS_GALERIE } from '@/lib/photographe';
-import { preparerFactureSelectionPhoto } from '@/lib/facture-seance-photo';
+import { envoyerFactureAcquittee, preparerFactureSelectionPhoto } from '@/lib/facture-seance-photo';
 import { chargerGalerie, importerPhotos, supprimerPhotos, supprimerGalerie, livrerFichiers, actionLivraison, fmtTaille, envoyerGalerie, relancerSelection,
   FactureNonPayeeError, JOURS_LIVRAISON, JOURS_LIVRAISON_DEFAUT, LIVRAISON_MAX, type ContenuGalerie } from '@/lib/galeries-client';
 
@@ -104,9 +104,10 @@ export default function GalerieStudioPage() {
     if (!f?.id) return;
     const { error } = await supabase.from('factures').update({ statut: 'payee', mode_paiement: modePaie, date_paiement: new Date().toISOString() }).eq('id', f.id);
     if (error) { alert(error.message); return; }
+    const msg = await envoyerFactureAcquittee(f.id);
     if (g?.album.statut !== 'en_retouche' && g?.album.statut !== 'livree'
-      && confirm('Facture payée. Passer les photos en retouche maintenant ? Le client sera prévenu.')) await passerEnRetouche();
-    else await charger();
+      && confirm(`${msg}\n\nPasser les photos en retouche maintenant ? Le client sera prévenu.`)) await passerEnRetouche();
+    else { alert(msg); await charger(); }
   }
 
   async function majAlbum(champs: Record<string, unknown>) {

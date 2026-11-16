@@ -22,6 +22,7 @@ import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, D
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
+import 'package:PetsMatch/utils/facture_seance_photo.dart' show envoyerFactureAcquitteePhoto;
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage, CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/utils/galeries_api.dart';
 import 'package:PetsMatch/widgets/adresse_recherche_field.dart';
@@ -497,7 +498,9 @@ class _DossierSeanceState extends State<_DossierSeance> {
     try {
       await _supa.from('factures').update(maj).eq('id', f['id']);
       setState(() => f.addAll(maj));
-      _snack('Paiement enregistré : la facture est acquittée');
+      _snack('Paiement enregistré : envoi de la facture acquittée…');
+      final msg = await envoyerFactureAcquitteePhoto(f['id'].toString());
+      _snack(msg);
     } catch (e) {
       _snack('Erreur : $e');
     }

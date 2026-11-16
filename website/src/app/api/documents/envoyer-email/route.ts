@@ -71,10 +71,11 @@ export async function POST(req: NextRequest) {
   const noms = docs.map(nomDoc);
   const quoi = plusieurs ? `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}` : noms[0];
   const garde = contexte === 'garde';
+  const photo = contexte === 'photo';
   const titre = plusieurs ? (garde ? 'Documents de votre garde' : 'Documents de consultation')
     : docs[0].document_type === 'facture' && nomDoc(docs[0]).startsWith('la facture n° ') ? `Facture n° ${nomDoc(docs[0]).slice(14)}`
     : libelle(docs[0].document_type)[1];
-  const pro = expediteur_nom || (garde ? 'Votre pet-sitter' : 'Votre vétérinaire');
+  const pro = expediteur_nom || (garde ? 'Votre pet-sitter' : photo ? 'Votre photographe' : 'Votre vétérinaire');
   const html = `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:0;background:#f5f7fa;font-family:'Segoe UI',Arial,sans-serif;">
@@ -91,6 +92,8 @@ export async function POST(req: NextRequest) {
       <p style="font-size:13px;color:#4B5563;line-height:1.6;margin:0 0 18px;">
         ${garde
           ? "Avec l'application PetsMatch, retrouvez les nouvelles et les photos de vos gardes, vos contrats et vos factures au même endroit."
+          : photo
+          ? "Avec l'application PetsMatch, retrouvez vos galeries photo, vos contrats et vos factures au même endroit."
           : "Avec l'application PetsMatch, retrouvez le carnet de santé de votre animal, ses ordonnances et des rappels automatiques (vaccins, traitements)."}
       </p>
       <div style="text-align:center;margin-bottom:18px;">

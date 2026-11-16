@@ -6,6 +6,8 @@
 // que le dossier de la séance (DossierSeanceModal.facturer).
 // Miroir appli : lib/utils/facture_seance_photo.dart.
 import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api-fetch';
+import { pdfFacture, type FactureConsultation } from '@/lib/fin-consultation';
 
 /** Prépare le préremplissage (sessionStorage pm_facture_prefill). Renvoie un
  *  message d'erreur, ou null : l'appelant ouvre alors /elevage/facturation. */
@@ -57,4 +59,38 @@ export async function preparerFactureSelectionPhoto(albumId: string, retour: str
     }));
   } catch { return 'Préremplissage impossible : créez la facture depuis la Facturation.'; }
   return null;
+}
+
+async function enBase64(blob: Blob): Promise<string> {
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/** Facture marquée payée : PDF acquitté envoyé au client par e-mail (avec ou
+ *  sans compte PetsMatch), à l'adresse de la facture. Renvoie le message à
+ *  afficher. Miroir appli : envoyerFactureAcquitteePhoto. */
+export async function envoyerFactureAcquittee(factureId: string): Promise<string> {
+  try {
+    const { data } = await supabase.from('factures').select('*').eq('id', factureId).maybeSingle();
+    const f = data as FactureConsultation | null;
+    if (!f) return 'Paiement enregistré.';
+    const email = String(f.email_client ?? '').trim();
+    if (!email) return 'Paiement enregistré. Pas d\'adresse e-mail sur la facture : la facture acquittée n\'a pas été envoyée.';
+    const n = f.numero_affichage ?? String((f as { numero_facture?: unknown }).numero_facture ?? '');
+    const res = await apiFetch('/api/documents/envoyer-email', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email, contexte: 'photo', document_type: 'facture', fichier_nom: `Facture-${n}-acquittee.pdf`,
+        destinataire_nom: `${String(f.prenom_client ?? '')} ${String(f.nom_client ?? '')}`.trim() || undefined,
+        expediteur_nom: String(f.nom_emetteur ?? '').trim() || undefined,
+        pdf_base64: await enBase64(await pdfFacture({ ...f, statut: 'payee' })),
+      }),
+    });
+    return res.ok ? `Paiement enregistré : facture acquittée envoyée à ${email}.`
+      : 'Paiement enregistré, mais l\'envoi de la facture acquittée a échoué : renvoyez-la depuis la Facturation.';
+  } catch {
+    return 'Paiement enregistré, mais l\'envoi de la facture acquittée a échoué : renvoyez-la depuis la Facturation.';
+  }
 }

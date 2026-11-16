@@ -14,6 +14,7 @@ import { styleGalerie } from '@/lib/photographe';
 import { envoyerContratParEmail } from '@/lib/contrat-email';
 import { signerContratAvecSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
 import SignatureProModal from '@/components/signature/SignatureProModal';
+import { envoyerFactureAcquittee } from '@/lib/facture-seance-photo';
 import FinSeancePhotoModal from '@/components/photographe/FinSeancePhotoModal';
 import ContactCanaux from '@/components/ContactCanaux';
 import DocumentProModal from '@/components/pro/DocumentProModal';
@@ -270,7 +271,8 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
     const { error } = await supabase.from('factures').update(maj).eq('id', facture.id);
     if (error) { setMessage(error.message); return; }
     setFacture({ ...facture, ...maj });
-    setMessage('Paiement enregistré : la facture est acquittée.');
+    setMessage('Paiement enregistré : envoi de la facture acquittée…');
+    setMessage(await envoyerFactureAcquittee(facture.id));
     onChanged?.();
   }
   async function passerEnRetouche() {

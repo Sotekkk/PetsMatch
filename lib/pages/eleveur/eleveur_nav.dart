@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/particulier/mes_factures_particulier_page.dart' show MesFacturesParticulierPage;
 import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart' show MesGaleriesPhotoPage;
 import 'package:PetsMatch/pages/pro/photographe_clients_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
@@ -1555,6 +1556,18 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const MesContratsParticulierPage(),
+                          ));
+                        },
+                      ),
+                      // Factures reçues des pros (photographe, vétérinaire…),
+                      // scopées au profil élevage actif.
+                      _DrawerSubItem(
+                        label: 'Mes Factures reçues',
+                        icon: Icons.receipt_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const MesFacturesParticulierPage(),
                           ));
                         },
                       ),

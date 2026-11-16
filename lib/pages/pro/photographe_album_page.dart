@@ -167,10 +167,13 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
       _snack('Erreur : $e');
       return;
     }
-    if (!mounted || _album['statut'] == 'en_retouche' || _album['statut'] == 'livree') return;
+    _snack('Paiement enregistré : envoi de la facture acquittée…');
+    final msg = await envoyerFactureAcquitteePhoto(f['id'].toString());
+    if (!mounted) return;
+    if (_album['statut'] == 'en_retouche' || _album['statut'] == 'livree') { _snack(msg); return; }
     final go = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
       title: const Text('Facture payée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-      content: const Text('Passer les photos en retouche maintenant ? Le client sera prévenu.', style: TextStyle(fontFamily: 'Galey')),
+      content: Text('$msg\n\nPasser les photos en retouche maintenant ? Le client sera prévenu.', style: const TextStyle(fontFamily: 'Galey')),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Plus tard')),
         TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Passer en retouche', style: TextStyle(color: _teal, fontWeight: FontWeight.w700))),

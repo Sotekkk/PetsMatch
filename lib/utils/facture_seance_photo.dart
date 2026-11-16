@@ -5,10 +5,14 @@
 // client par e-mail (PDF) à sa création (CreerFacturePage). Même calcul que
 // le dossier de la séance (_facturer, photographe_dossier_seance.dart).
 // Miroir site : website/src/lib/facture-seance-photo.ts.
+import 'dart:convert';
 import 'package:flutter/widgets.dart';
+import 'package:http/http.dart' as http;
+import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
+import 'package:PetsMatch/utils/site_api.dart' show siteApiHeaders;
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne, facturePdfDepuisLigne;
 
 /// Page de création de la facture de la séance liée à la galerie, ou null si
 /// la galerie n'est pas rattachée à un rendez-vous.
@@ -94,4 +98,31 @@ Future<Widget?> pageFactureSelectionPhoto(String albumId) async {
     clientUid: r['client_uid']?.toString(),
     clientProfileId: cp.isNotEmpty ? cp : null,
   );
+}
+
+/// Facture marquée payée : PDF acquitté envoyé au client par e-mail (avec ou
+/// sans compte PetsMatch), à l'adresse de la facture. Renvoie le message à
+/// afficher. Miroir site : envoyerFactureAcquittee (facture-seance-photo.ts).
+Future<String> envoyerFactureAcquitteePhoto(String factureId) async {
+  const echec = "Paiement enregistré, mais l'envoi de la facture acquittée a échoué : renvoyez-la depuis la Facturation.";
+  try {
+    final row = await Supabase.instance.client.from('factures').select().eq('id', factureId).maybeSingle();
+    if (row == null) return 'Paiement enregistré.';
+    final f = Map<String, dynamic>.from(row)..['statut'] = 'payee';
+    final email = (f['email_client']?.toString() ?? '').trim();
+    if (email.isEmpty) return "Paiement enregistré. Pas d'adresse e-mail sur la facture : la facture acquittée n'a pas été envoyée.";
+    final n = f['numero_affichage'] ?? f['numero_facture'] ?? '';
+    final nom = '${f['prenom_client'] ?? ''} ${f['nom_client'] ?? ''}'.trim();
+    final res = await http.post(Uri.parse('$kSiteBaseUrl/api/documents/envoyer-email'),
+        headers: await siteApiHeaders(),
+        body: jsonEncode({
+          'email': email, 'contexte': 'photo', 'document_type': 'facture', 'fichier_nom': 'Facture-$n-acquittee.pdf',
+          if (nom.isNotEmpty) 'destinataire_nom': nom,
+          if ((f['nom_emetteur']?.toString() ?? '').trim().isNotEmpty) 'expediteur_nom': f['nom_emetteur'].toString().trim(),
+          'pdf_base64': base64Encode(await facturePdfDepuisLigne(f)),
+        }));
+    return res.statusCode == 200 ? 'Paiement enregistré : facture acquittée envoyée à $email.' : echec;
+  } catch (_) {
+    return echec;
+  }
 }
