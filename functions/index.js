@@ -49,6 +49,7 @@ exports.notifyOwnerVetEntry = vetNotifFunctions.notifyOwnerVetEntry;
 exports.sendRdvReminders = rdvRemindersFunctions.sendRdvReminders;
 exports.sendCoursCollectifReminders = rdvRemindersFunctions.sendCoursCollectifReminders;
 exports.sendAgendaRappels = rdvRemindersFunctions.sendAgendaRappels;
+exports.sendStockageReleve = require("./stockage").sendStockageReleve;
 exports.notifyProNewRdv = agendaFunctions.notifyProNewRdv;
 exports.sendMiseBasReminders = agendaFunctions.sendMiseBasReminders;
 exports.sendChirurgieReminders = agendaFunctions.sendChirurgieReminders;

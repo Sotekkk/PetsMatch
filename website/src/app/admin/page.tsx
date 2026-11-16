@@ -11,6 +11,7 @@ import AnimauxTab from './_components/AnimauxTab';
 import AlimentsTab from './_components/AlimentsTab';
 import AnnoncesToutesTab from './_components/AnnoncesToutesTab';
 import ConsommationTab from './_components/ConsommationTab';
+import StockageTab from './_components/StockageTab';
 import StoryMusicTab from './_components/StoryMusicTab';
 import InfluenceursTab from './_components/InfluenceursTab';
 import PubsStoriesTab from './_components/PubsStoriesTab';
@@ -105,7 +106,7 @@ interface DossierEntry {
   isSecondary?: boolean; profileTableId?: string;
 }
 
-type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'comptes' | 'utilisateurs' | 'animaux' | 'aliments' | 'annonces' | 'consommation' | 'lieux_naturels' | 'tarification' | 'signalements_conv' | 'story_music' | 'avis_contestes' | 'influenceurs' | 'pubs_stories' | 'lieux_petfriendly';
+type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'comptes' | 'utilisateurs' | 'animaux' | 'aliments' | 'annonces' | 'consommation' | 'stockage' | 'lieux_naturels' | 'tarification' | 'signalements_conv' | 'story_music' | 'avis_contestes' | 'influenceurs' | 'pubs_stories' | 'lieux_petfriendly';
 // 'tous' / 'en_attente' / 'admin' sont des filtres transverses ; toute autre
 // valeur est une catégorie dynamique (eleveur, association, particulier, ou
 // un métier pro), générée depuis les données — cf. entryCategory().
@@ -1626,6 +1627,7 @@ export default function AdminPage() {
           annonces:           { label: 'Annonces',         icon: '📋', badge: annoncesEnAttente.length || undefined },
           lieux_naturels:     { label: 'Lieux naturels',   icon: '🌲', badge: (naturalPlacesEnAttente.length + amenitySuggestions.length + photoSuggestions.length) || undefined },
           consommation:       { label: 'Consommation',     icon: '📈' },
+          stockage:           { label: 'Stockage',         icon: '💾' },
           tarification:       { label: 'Tarification',     icon: '💰' },
           story_music:        { label: 'Musique Stories',  icon: '🎵' },
           influenceurs:       { label: 'Influenceurs',     icon: '⭐' },
@@ -1637,7 +1639,7 @@ export default function AdminPage() {
           { key: 'moderation',   label: 'Modération',     icon: '🚨', tabs: ['signalements', 'signalements_conv', 'avis_contestes'] },
           { key: 'comptes',      label: 'Comptes',        icon: '👥', tabs: ['comptes', 'dossiers', 'utilisateurs'] },
           { key: 'contenu',      label: 'Contenu',        icon: '🐾', tabs: ['animaux', 'aliments', 'annonces', 'lieux_naturels', 'lieux_petfriendly', 'influenceurs'] },
-          { key: 'config',       label: 'Configuration',  icon: '⚙️', tabs: ['consommation', 'tarification', 'story_music', 'pubs_stories'] },
+          { key: 'config',       label: 'Configuration',  icon: '⚙️', tabs: ['consommation', 'stockage', 'tarification', 'story_music', 'pubs_stories'] },
         ];
         const activeGroup = GROUPS.find(g => g.tabs.includes(tab)) ?? GROUPS[0];
         const groupBadge = (g: typeof GROUPS[number]) => g.tabs.reduce((s, k) => s + (TAB_META[k].badge ?? 0), 0);
@@ -2309,6 +2311,7 @@ export default function AdminPage() {
 
         {/* ─── Consommation ─────────────────────────────────────────────── */}
         {tab === 'consommation' && user && <ConsommationTab adminUid={user.uid} />}
+        {tab === 'stockage' && user && <StockageTab />}
 
         {/* ─── Musique Stories ───────────────────────────────────────────── */}
         {tab === 'story_music' && <StoryMusicTab />}
