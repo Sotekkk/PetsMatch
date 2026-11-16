@@ -1446,18 +1446,6 @@ class _EleveurNavState extends State<EleveurNav> {
                           ));
                         },
                       ),
-                      // Galeries des séances photo réservées par l'élevage
-                      // (shooting reproducteurs…) : choisir ses photos, livraisons.
-                      _DrawerSubItem(
-                        label: 'Mes galeries photo',
-                        icon: Icons.photo_library_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const MesGaleriesPhotoPage(),
-                          ));
-                        },
-                      ),
                       _DrawerSubItem(
                         label: 'Protocoles',
                         icon: Icons.event_note_outlined,
@@ -1529,6 +1517,18 @@ class _EleveurNavState extends State<EleveurNav> {
                             builder: (_) => _planCode == 'free'
                                 ? const AbonnementPage()
                                 : const RegistreEntreeSortiePage(),
+                          ));
+                        },
+                      ),
+                      // Galeries des séances photo réservées par l'élevage
+                      // (shooting reproducteurs…) : choisir ses photos, livraisons. En dernier : peu utilisé.
+                      _DrawerSubItem(
+                        label: 'Mes galeries photo',
+                        icon: Icons.photo_library_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const MesGaleriesPhotoPage(),
                           ));
                         },
                       ),

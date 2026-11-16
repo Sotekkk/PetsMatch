@@ -181,7 +181,6 @@ const MENU_ELEVEUR = [
     icon: '🐾',
     items: [
       { href: '/mes-animaux',                    label: 'Mes Animaux',        icon: '🐾' },
-      { href: '/mes-galeries',                   label: 'Mes galeries photo', icon: '🖼️' },
       { href: '/elevage/agenda',                 label: 'Agenda',     icon: '🗓️' },
       { href: '/elevage/planning',               label: 'Protocoles',         icon: '📅' },
       { href: '/mes-taches',                     label: 'Mes tâches',         icon: '✅' },
@@ -192,6 +191,7 @@ const MENU_ELEVEUR = [
       { href: '/elevage/registre-entree-sortie', label: 'Entrée - Sortie',  icon: '📂', pro: true },
       { href: '/elevage/import-icad',            label: 'Import I-CAD',     icon: '📥' },
       { href: '/mes-animaux/recuperations',      label: 'Demandes de récupération', icon: '🔁' },
+      { href: '/mes-galeries',                   label: 'Mes galeries photo', icon: '🖼️' },
     ],
   },
   {
