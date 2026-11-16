@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart' show MesGaleriesPhotoPage;
 import 'package:PetsMatch/pages/pro/photographe_clients_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_galeries_page.dart';
@@ -1442,6 +1443,18 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const MesAnimauxPage(),
+                          ));
+                        },
+                      ),
+                      // Galeries des séances photo réservées par l'élevage
+                      // (shooting reproducteurs…) : choisir ses photos, livraisons.
+                      _DrawerSubItem(
+                        label: 'Mes galeries photo',
+                        icon: Icons.photo_library_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const MesGaleriesPhotoPage(),
                           ));
                         },
                       ),

@@ -12,7 +12,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const album = await chargerAlbum(id);
   if (!album) return NextResponse.json({ error: 'Galerie introuvable' }, { status: 404 });
   const uid = await verifiedUid(req);
-  const role = await roleLecture(album, uid, req.nextUrl.searchParams.get('token'));
+  const role = await roleLecture(album, uid, req.nextUrl.searchParams.get('token'), req.headers.get('x-pm-profil'));
   if (!role) return NextResponse.json({ error: 'Accès non autorisé' }, { status: 403 });
 
   return NextResponse.json(await contenuGalerie(album, role), { headers: ENTETES_PRIVEES });

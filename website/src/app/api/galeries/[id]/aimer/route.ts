@@ -10,7 +10,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const album = await chargerAlbum(id);
   if (!album) return NextResponse.json({ error: 'Galerie introuvable' }, { status: 404 });
   const uid = await verifiedUid(req);
-  const role = await roleLecture(album, uid, req.nextUrl.searchParams.get('token'));
+  const role = await roleLecture(album, uid, req.nextUrl.searchParams.get('token'), req.headers.get('x-pm-profil'));
   if (role !== 'client') return NextResponse.json({ error: 'Réservé au client' }, { status: 403 });
   const body = await req.json().catch(() => ({})) as { photoId?: string; aimee?: boolean };
   if (!body.photoId || !/^[0-9a-f-]{36}$/i.test(body.photoId)) return NextResponse.json({ error: 'Photo inconnue' }, { status: 400 });

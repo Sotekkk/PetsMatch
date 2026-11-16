@@ -314,6 +314,17 @@ class _GalerieClientPageState extends State<GalerieClientPage> {
                     SliverToBoxAdapter(child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        // Photographe qui a réservé sa séance avec un autre de ses
+                        // profils, galerie ouverte depuis son profil photographe.
+                        if (_g?['role'] == 'pro' && album['client_uid'] != null
+                            && album['client_uid'] == FirebaseAuth.instance.currentUser?.uid)
+                          Container(
+                            width: double.infinity, margin: const EdgeInsets.only(bottom: 10), padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(color: const Color(0xFFFFF4E0), borderRadius: BorderRadius.circular(12)),
+                            child: const Text('Vous voyez cette galerie en photographe. Elle a été réservée avec un autre de vos profils : '
+                                'passez sur ce profil pour choisir vos photos.',
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF7A4B00))),
+                          ),
                         Text([if (studio.isNotEmpty) studio, '${_toutes.length} photo${_toutes.length > 1 ? 's' : ''}'].join(' · '),
                             style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
                         if ((album['description']?.toString() ?? '').isNotEmpty) ...[

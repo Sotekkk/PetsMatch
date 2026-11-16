@@ -812,7 +812,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     label: 'Mes galeries photo',
     keywords: ['galerie', 'photos', 'photographe', 'séance photo', 'album'],
     icon: Icons.photo_library_outlined, group: 'Mon profil',
-    visible: () => _particulier, open: (c) => _push(c, const MesGaleriesPhotoPage()),
+    visible: () => _particulier || _eleveur, open: (c) => _push(c, const MesGaleriesPhotoPage()),
   ),
 
   // ── Photographe ────────────────────────────────────────────────────────────

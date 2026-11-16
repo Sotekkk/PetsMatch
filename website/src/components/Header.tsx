@@ -181,6 +181,7 @@ const MENU_ELEVEUR = [
     icon: '🐾',
     items: [
       { href: '/mes-animaux',                    label: 'Mes Animaux',        icon: '🐾' },
+      { href: '/mes-galeries',                   label: 'Mes galeries photo', icon: '🖼️' },
       { href: '/elevage/agenda',                 label: 'Agenda',     icon: '🗓️' },
       { href: '/elevage/planning',               label: 'Protocoles',         icon: '📅' },
       { href: '/mes-taches',                     label: 'Mes tâches',         icon: '✅' },

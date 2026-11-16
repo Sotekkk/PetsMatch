@@ -13,7 +13,7 @@ async function controle(req: NextRequest, id: string) {
   const album = await chargerAlbum(id);
   if (!album) return { err: NextResponse.json({ error: 'Galerie introuvable' }, { status: 404 }) };
   const uid = await verifiedUid(req);
-  const role = await roleLecture(album, uid, req.nextUrl.searchParams.get('token'));
+  const role = await roleLecture(album, uid, req.nextUrl.searchParams.get('token'), req.headers.get('x-pm-profil'));
   if (role !== 'client') return { err: NextResponse.json({ error: 'Réservé au client' }, { status: 403 }) };
   return { album, uid };
 }

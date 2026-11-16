@@ -85,9 +85,16 @@ export async function nomStudio(album: AlbumRow): Promise<{ nom: string; avatar:
 /** Accès en lecture : gestionnaire, client destinataire (galerie partagée),
  *  ou lien privé valide. Une galerie archivée ou en brouillon n'est visible
  *  que du photographe. */
-export async function roleLecture(album: AlbumRow, uid: string | null, token: string | null): Promise<'pro' | 'client' | null> {
-  if (await estGestionnaire(album, uid)) return 'pro';
+export async function roleLecture(album: AlbumRow, uid: string | null, token: string | null, profilActif?: string | null): Promise<'pro' | 'client' | null> {
   const visible = album.statut !== 'brouillon' && album.statut !== 'archivee';
+  // Le photographe a réservé sa propre séance avec un autre de ses profils
+  // (ex. son élevage) : ouverte depuis ce profil, la galerie est vue en client
+  // (sélection, cœurs), sinon en photographe. En-tête x-pm-profil (apiFetch /
+  // siteApiHeaders) ; jamais une élévation de droits : le compte doit être le
+  // destinataire de la galerie.
+  if (visible && uid && profilActif && album.partage_client && album.client_uid === uid
+      && album.client_profile_id && album.client_profile_id === profilActif) return 'client';
+  if (await estGestionnaire(album, uid)) return 'pro';
   if (!visible) return null;
   if (uid && album.partage_client && album.client_uid === uid) return 'client';
   if (await lienValide(album.id, token)) return 'client';

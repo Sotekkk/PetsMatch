@@ -13,7 +13,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const album = await chargerAlbum(id);
   if (!album) return NextResponse.json({ error: 'Galerie introuvable' }, { status: 404 });
   const uid = await verifiedUid(req);
-  const role = await roleLecture(album, uid, req.nextUrl.searchParams.get('token'));
+  const role = await roleLecture(album, uid, req.nextUrl.searchParams.get('token'), req.headers.get('x-pm-profil'));
   if (role !== 'client') return NextResponse.json({ error: 'Sélection réservée au client' }, { status: 403 });
   if (album.selection_confirmee_le) return NextResponse.json({ error: 'Sélection déjà confirmée' }, { status: 409 });
   if (album.statut !== 'partagee') return NextResponse.json({ error: 'La sélection n\'est pas ouverte pour cette galerie' }, { status: 409 });

@@ -14,5 +14,11 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   await auth.authStateReady();
   const user = auth.currentUser;
   if (user) headers.set('Authorization', `Bearer ${await user.getIdToken()}`);
+  // Profil actif (indicatif, jamais une preuve d'identité) : ex. galerie d'un
+  // photographe ouverte depuis son profil client (lib/galeries-server roleLecture).
+  try {
+    const profil = localStorage.getItem('petsMatch_activeProfileId');
+    if (profil && !headers.has('x-pm-profil')) headers.set('x-pm-profil', profil);
+  } catch { /* stockage indisponible */ }
   return fetch(input, { ...init, headers });
 }

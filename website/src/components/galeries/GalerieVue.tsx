@@ -9,6 +9,7 @@
 // Mes favoris > Shootings. Partage aux proches : lien de consultation seule,
 // aperçus filigranés (rôle « proche » : ni sélection, ni livraison).
 import { useCallback, useEffect, useState } from 'react';
+import { useAuth } from '@/lib/auth-context';
 import { choisirPhoto, confirmerSelection, liensLivraison, fmtTaille, aimerPhoto, lienProches, desactiverLienProches, type ContenuGalerie } from '@/lib/galeries-client';
 
 const TEAL = '#0C5C6C';
@@ -22,6 +23,7 @@ export default function GalerieVue({ charger, token }: { charger: () => Promise<
   const [occupe, setOccupe] = useState(false);
   const [partage, setPartage] = useState<{ url: string; expire_at: string } | null>(null);
   const [copie, setCopie] = useState(false);
+  const { user } = useAuth();
 
   const recharger = useCallback(() => {
     charger().then(g => setEtat({ ok: true, g })).catch(e => setEtat({ ok: false, err: (e as Error).message }));
@@ -156,6 +158,11 @@ export default function GalerieVue({ charger, token }: { charger: () => Promise<
           </div>
         )}
 
+        {etat.g.role === 'pro' && !!user && (album as { client_uid?: string | null }).client_uid === user.uid && (
+          <p className="mt-4 text-sm rounded-xl px-4 py-3" style={{ background: '#FFF4E0', color: '#7A4B00' }}>
+            Vous voyez cette galerie en photographe. Elle a été réservée avec un autre de vos profils : passez sur ce profil pour choisir vos photos.
+          </p>
+        )}
         {client && (selectionOuverte || album.selection_confirmee_le) && (
           <div className="mt-4 bg-white rounded-2xl border border-gray-100 p-4 flex flex-wrap items-center gap-3">
             <div className="flex-1 min-w-[200px]">
