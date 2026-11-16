@@ -44,10 +44,22 @@ export default function GalerieStudioPage() {
   const [finals, setFinals] = useState<File[]>([]);
   // Bandeau « Livrer les photos retouchées » : ouvre directement le choix des fichiers.
   const choixFinals = useRef<HTMLInputElement>(null);
+  // Ajout en plusieurs fois (photos dans des dossiers différents), sans doublon.
   function choisirFinals(files: File[]) {
-    setFinals(files);
-    if (files.length) setTimeout(() => document.getElementById('livraison-finale')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+    if (!files.length) return;
+    setFinals(prev => {
+      const deja = new Set(prev.map(f => `${f.name}|${f.size}|${f.lastModified}`));
+      return [...prev, ...files.filter(f => !deja.has(`${f.name}|${f.size}|${f.lastModified}`))];
+    });
+    setTimeout(() => document.getElementById('livraison-finale')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
   }
+  // Aperçus des fichiers à livrer (URL locales, libérées quand la liste change).
+  const [apercusFinals, setApercusFinals] = useState<string[]>([]);
+  useEffect(() => {
+    const urls = finals.map(f => (f.type.startsWith('image/') ? URL.createObjectURL(f) : ''));
+    setApercusFinals(urls);
+    return () => urls.forEach(u => u && URL.revokeObjectURL(u));
+  }, [finals]);
   const [joursLiv, setJoursLiv] = useState(JOURS_LIVRAISON_DEFAUT);
   const [livEnCours, setLivEnCours] = useState('');
   const [emailClient, setEmailClient] = useState('');
@@ -399,11 +411,27 @@ export default function GalerieStudioPage() {
               {premium && (
                 <div className="border-t border-gray-100 pt-2 space-y-2">
                   <label className="block text-xs font-semibold cursor-pointer" style={{ color: TEAL }}>
-                    {finals.length ? `${finals.length} fichier${finals.length > 1 ? 's' : ''} choisi${finals.length > 1 ? 's' : ''} (${fmtTaille(finals.reduce((n, f) => n + f.size, 0))})` : (livraison.length ? 'Remplacer par de nouveaux fichiers…' : 'Choisir les fichiers finaux…')}
+                    {finals.length ? '+ Ajouter des photos d\'un autre dossier' : (livraison.length ? 'Choisir les photos (remplace la livraison)…' : 'Choisir les photos retouchées…')}
                     <input ref={choixFinals} type="file" multiple className="hidden" onChange={e => { choisirFinals([...(e.target.files ?? [])]); e.target.value = ''; }} />
                   </label>
                   {finals.length > 0 && (
                     <>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-[#1F2A2E]">{finals.length} fichier{finals.length > 1 ? 's' : ''} à livrer · {fmtTaille(finals.reduce((n, f) => n + f.size, 0))}</span>
+                        <button type="button" onClick={() => setFinals([])} className="font-semibold" style={{ color: ROUGE }}>Tout retirer</button>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1 max-h-64 overflow-y-auto">
+                        {finals.map((f, i) => (
+                          <div key={`${f.name}|${f.size}|${f.lastModified}`} className="relative aspect-square rounded-md overflow-hidden bg-[#F0F1EF]" title={`${f.name} · ${fmtTaille(f.size)}`}>
+                            {apercusFinals[i]
+                              // eslint-disable-next-line @next/next/no-img-element
+                              ? <img src={apercusFinals[i]} alt={f.name} className="w-full h-full object-cover" />
+                              : <span className="absolute inset-0 flex items-center justify-center p-1 text-[9px] text-center break-all text-gray-600">{f.name}</span>}
+                            <button type="button" aria-label={`Retirer ${f.name}`} onClick={() => setFinals(l => l.filter((_, j) => j !== i))}
+                              className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 text-white text-xs leading-5 text-center">×</button>
+                          </div>
+                        ))}
+                      </div>
                       {finals.reduce((n, f) => n + f.size, 0) > LIVRAISON_MAX && (
                         <p className="text-xs" style={{ color: ROUGE }}>Plus de 500 Mo : compressez les fichiers (JPEG haute qualité) ou faites deux livraisons.</p>
                       )}
@@ -412,7 +440,7 @@ export default function GalerieStudioPage() {
                       </select>
                       <button onClick={() => livrer()} disabled={!!livEnCours || finals.reduce((n, f) => n + f.size, 0) > LIVRAISON_MAX}
                         className="w-full py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: TEAL }}>
-                        {livEnCours || 'Livrer au client'}
+                        {livEnCours || `Livrer ${finals.length} fichier${finals.length > 1 ? 's' : ''} au client`}
                       </button>
                     </>
                   )}

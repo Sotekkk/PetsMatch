@@ -387,6 +387,9 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
   Future<void> _selectionEtLivraison() async {
     final incluses = TextEditingController(text: _album['nb_photos_incluses']?.toString() ?? '');
     var jours = GaleriesApi.joursLivraisonDefaut;
+    // Fichiers à livrer : ajoutés en plusieurs fois (dossiers différents),
+    // visibles en aperçu, retirables un par un avant l'envoi.
+    var aLivrer = <File>[];
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -490,13 +493,67 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
                   ),
               ]),
               const SizedBox(height: 6),
-              SizedBox(width: double.infinity, child: FilledButton.icon(
-                onPressed: _livEnCours != null ? null : () { Navigator.pop(ctx); _livrer(jours); },
-                style: FilledButton.styleFrom(backgroundColor: _teal),
-                icon: const Icon(Icons.upload_file_outlined, size: 18),
-                label: Text(_livraison.isEmpty ? 'Choisir les fichiers finaux et livrer' : 'Remplacer la livraison',
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              SizedBox(width: double.infinity, child: OutlinedButton.icon(
+                onPressed: _livEnCours != null ? null : () async {
+                  final res = await FilePicker.pickFiles(allowMultiple: true);
+                  final nouveaux = (res?.files ?? []).where((f) => f.path != null).map((f) => File(f.path!));
+                  final deja = aLivrer.map((f) => f.path).toSet();
+                  setM(() => aLivrer = [...aLivrer, ...nouveaux.where((f) => !deja.contains(f.path))]);
+                },
+                style: OutlinedButton.styleFrom(foregroundColor: _teal),
+                icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+                label: Text(aLivrer.isEmpty ? (_livraison.isEmpty ? 'Choisir les photos retouchées' : 'Choisir les photos (remplace la livraison)')
+                    : 'Ajouter des photos d\'un autre dossier',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
               )),
+              if (aLivrer.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Builder(builder: (_) {
+                  final total = aLivrer.fold<int>(0, (n, f) { try { return n + f.lengthSync(); } catch (_) { return n; } });
+                  final trop = total > 500 * 1024 * 1024;
+                  return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Expanded(child: Text('${aLivrer.length} fichier${aLivrer.length > 1 ? 's' : ''} à livrer · ${(total / 1024 / 1024).toStringAsFixed(1).replaceAll('.', ',')} Mo',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600, color: trop ? _rouge : _ink))),
+                      TextButton(onPressed: () => setM(() => aLivrer = []),
+                          child: const Text('Tout retirer', style: TextStyle(fontFamily: 'Galey', color: _rouge, fontSize: 12.5))),
+                    ]),
+                    if (trop)
+                      const Text('Plus de 500 Mo : retirez des photos ou faites deux livraisons.',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _rouge)),
+                    const SizedBox(height: 4),
+                    GridView.count(
+                      crossAxisCount: 4, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+                      mainAxisSpacing: 4, crossAxisSpacing: 4,
+                      children: [
+                        for (final f in aLivrer)
+                          Stack(children: [
+                            Positioned.fill(child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.file(f, fit: BoxFit.cover, cacheWidth: 240,
+                                errorBuilder: (_, __, ___) => Container(color: const Color(0xFFF0F1EF), padding: const EdgeInsets.all(4), alignment: Alignment.center,
+                                    child: Text(f.path.split(Platform.pathSeparator).last, maxLines: 3, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                                        style: const TextStyle(fontFamily: 'Galey', fontSize: 9.5)))))),
+                            Positioned(top: 2, right: 2, child: GestureDetector(
+                              onTap: () => setM(() => aLivrer = [for (final x in aLivrer) if (x.path != f.path) x]),
+                              child: Container(
+                                decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                                padding: const EdgeInsets.all(2),
+                                child: const Icon(Icons.close, size: 14, color: Colors.white),
+                              ),
+                            )),
+                          ]),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(width: double.infinity, child: FilledButton.icon(
+                      onPressed: _livEnCours != null || trop ? null : () { final l = aLivrer; Navigator.pop(ctx); _livrer(jours, deja: l); },
+                      style: FilledButton.styleFrom(backgroundColor: _teal),
+                      icon: const Icon(Icons.upload_file_outlined, size: 18),
+                      label: Text('Livrer ${aLivrer.length} fichier${aLivrer.length > 1 ? 's' : ''} au client',
+                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                    )),
+                  ]);
+                }),
+              ],
               const SizedBox(height: 6),
               Text('500 Mo maximum, en ZIP (45 Mo par archive), dans un stockage temporaire privé. Le client reçoit un e-mail avec le lien, '
                   'la date limite de téléchargement et la facture acquittée ; les fichiers sont ensuite supprimés.',
