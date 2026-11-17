@@ -16,19 +16,27 @@ export async function coordonneesClientRdv(rdvId: string, clientProfileId?: stri
       .then(r => r.data as Record<string, unknown> | null, () => null),
     clientProfileId
       ? supabase.from('user_profiles_complet')
-        .select('firstname, lastname, phone_number, phone, email_contact, rue, code_postal, ville, rue_pro, code_postal_pro, ville_pro')
+        .select('firstname, lastname, phone_number, phone, email_contact, adresse, rue, code_postal, ville, rue_pro, code_postal_pro, ville_pro')
         .eq('id', clientProfileId).maybeSingle().then(r => r.data as Record<string, unknown> | null, () => null)
       : Promise.resolve(null),
     supabase.rpc('pm_contact_client_rdv', { p_rdv_id: rdvId }).then(r => r.data as Record<string, unknown> | null, () => null),
   ]);
+  let rue = premier(prof?.rue, prof?.rue_pro, cc?.rue);
+  let cp = premier(prof?.code_postal, prof?.code_postal_pro, cc?.code_postal);
+  let ville = premier(prof?.ville, prof?.ville_pro, cc?.ville);
+  // Adresse saisie d'un bloc sur le profil (sans rue détaillée) : reprise
+  // entière, sans répéter code postal / ville qu'elle contient déjà.
+  const complete = premier(prof?.adresse);
+  if (!rue && complete) {
+    rue = complete;
+    if (ville && complete.toLowerCase().includes(ville.toLowerCase())) { cp = ''; ville = ''; }
+  }
   return {
     tel: premier(prof?.phone_number, prof?.phone, cc?.telephone, man?.client_telephone_manuel),
     email: premier(prof?.email_contact, cc?.email, man?.client_email_manuel),
     prenom: premier(prof?.firstname, cc?.prenom),
     nom: premier(prof?.lastname, cc?.nom),
-    rue: premier(prof?.rue, prof?.rue_pro, cc?.rue),
-    cp: premier(prof?.code_postal, prof?.code_postal_pro, cc?.code_postal),
-    ville: premier(prof?.ville, prof?.ville_pro, cc?.ville),
+    rue, cp, ville,
   };
 }
 

@@ -626,6 +626,8 @@ Future<Uint8List> contratGardePdfBytes({
   required Map<String, dynamic> prestataire,
   String clientNom = '', String clientAdresse = '', String clientEmail = '', String clientTel = '',
   String prestation = '', DateTime? datePrestation, String tarif = '', String notes = '',
+  /// Sans tarif convenu : tarifs renseignés par le pet-sitter (déjà mis en forme).
+  String grilleTarifs = '',
   String? sigPrestataire, String? sigClient, String villeSignature = '',
 }) async {
   final pdf = pw.Document(theme: await _pdfTheme());
@@ -638,7 +640,8 @@ Future<Uint8List> contratGardePdfBytes({
     if (espece.isNotEmpty) espece[0].toUpperCase() + espece.substring(1),
     if (race.isNotEmpty) race,
   ].join(' — ');
-  final tarifLabel = tarif.trim().isEmpty ? 'à convenir' : '${tarif.trim()} €';
+  final tarifLabel = tarif.trim().isNotEmpty ? '${tarif.trim()} €'
+      : grilleTarifs.trim().isNotEmpty ? grilleTarifs.trim() : 'à convenir';
 
   pdf.addPage(pw.MultiPage(
     pageFormat: PdfPageFormat.a4,

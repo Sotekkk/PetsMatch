@@ -52,7 +52,7 @@ Future<Map<String, String>> coordonneesClientRdv(Map<String, dynamic> rdv) async
     final cp = rdv['client_profile_id']?.toString() ?? '';
     final prof = cp.isEmpty ? null
         : await supa.from('user_profiles_complet')
-            .select('firstname, lastname, phone_number, phone, email_contact, rue, code_postal, ville, rue_pro, code_postal_pro, ville_pro')
+            .select('firstname, lastname, phone_number, phone, email_contact, adresse, rue, code_postal, ville, rue_pro, code_postal_pro, ville_pro')
             .eq('id', cp).maybeSingle();
     // Coordonnées du compte du client (e-mail, téléphone) : réservées au pro
     // du RDV (migration_contact_client_rdv.sql).
@@ -66,6 +66,13 @@ Future<Map<String, String>> coordonneesClientRdv(Map<String, dynamic> rdv) async
     out['rue'] = premier([prof?['rue'], prof?['rue_pro'], cc?['rue']]);
     out['cp'] = premier([prof?['code_postal'], prof?['code_postal_pro'], cc?['code_postal']]);
     out['ville'] = premier([prof?['ville'], prof?['ville_pro'], cc?['ville']]);
+    // Adresse saisie d'un bloc sur le profil (sans rue détaillée) : reprise
+    // entière, sans répéter code postal / ville qu'elle contient déjà.
+    final complete = (prof?['adresse']?.toString() ?? '').trim();
+    if (out['rue']!.isEmpty && complete.isNotEmpty) {
+      out['rue'] = complete;
+      if (out['ville']!.isNotEmpty && complete.toLowerCase().contains(out['ville']!.toLowerCase())) { out['cp'] = ''; out['ville'] = ''; }
+    }
   } catch (_) {}
   return out;
 }

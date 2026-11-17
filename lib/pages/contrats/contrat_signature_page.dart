@@ -131,6 +131,47 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     }
   }
 
+  /// Contrat de pet-sitter sans tarif convenu : tarifs renseignés par le pro
+  /// (grille tarifs_garde, sur mesure tarifs_garde_extra, tarifs propres au
+  /// client tarifs_clients_garde). Miroir site : grilleTarifsGarde.
+  Future<String> _grilleTarifsGarde(String? proPid, String clientPid) async {
+    if (proPid == null || proPid.isEmpty) return '';
+    const libelles = [
+      ('promenade_30min', 'Promenade (30 min)'), ('promenade_1h', 'Promenade (1h)'), ('promenade_2h', 'Promenade (2h)'),
+      ('visite', 'Visite à domicile'), ('garde_journee', 'Garde à domicile (journée)'),
+      ('animal_supplementaire', 'Animal supplémentaire (par passage)'), ('autre', 'Autre prestation'),
+    ];
+    String eur(num n) => '${n == n.roundToDouble() ? n.toStringAsFixed(0) : n.toStringAsFixed(2).replaceAll('.', ',')} €';
+    try {
+      final p = await _supa.from('user_profiles_complet').select('tarifs_garde, tarifs_garde_extra').eq('id', proPid).maybeSingle();
+      final grille = (p?['tarifs_garde'] as Map?) ?? const {};
+      final prix = <String, num>{};
+      for (final (k, _) in libelles) {
+        final v = num.tryParse('${grille[k] ?? ''}') ?? 0;
+        if (v > 0) prix[k] = v;
+      }
+      if (clientPid.isNotEmpty) {
+        try {
+          final perso = await _supa.from('tarifs_clients_garde').select('prestation_type, prix')
+              .eq('pro_profile_id', proPid).eq('owner_profile_id', clientPid);
+          for (final t in perso as List) {
+            final v = (t['prix'] as num?) ?? 0;
+            if (v > 0) prix[t['prestation_type'].toString()] = v;
+          }
+        } catch (_) {}
+      }
+      final lignes = [for (final (k, l) in libelles) if ((prix[k] ?? 0) > 0) '$l : ${eur(prix[k]!)}'];
+      for (final e in (p?['tarifs_garde_extra'] as List?) ?? const []) {
+        final l = (e is Map ? e['label']?.toString() : null)?.trim() ?? '';
+        final v = e is Map ? ((e['prix'] as num?) ?? 0) : 0;
+        if (l.isNotEmpty && v > 0) lignes.add('$l : ${eur(v)}');
+      }
+      return lignes.join(' · ');
+    } catch (_) {
+      return '';
+    }
+  }
+
   Map<String, dynamic> _mapEleveur(Map<String, dynamic>? up) {
     up ??= {};
     // Pros : adresse professionnelle si renseignée.
@@ -429,10 +470,10 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         // Contrat créé avant la reprise des coordonnées : profil du client.
         var cp = <String, dynamic>{};
         final cpid = m('client_profile_id');
-        if (cpid.isNotEmpty && (m('client_tel').isEmpty || m('client_email').isEmpty || m('client_adresse').isEmpty)) {
+        if (cpid.isNotEmpty) {
           try {
             cp = Map<String, dynamic>.from(await _supa.from('user_profiles_complet')
-                .select('firstname, lastname, email_contact, phone_number, phone, rue, code_postal, ville')
+                .select('firstname, lastname, email_contact, phone_number, phone, adresse, rue, code_postal, ville')
                 .eq('id', cpid).maybeSingle() ?? {});
           } catch (_) {}
         }
@@ -457,8 +498,11 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
           if ((cp['email_contact'] ?? '').toString().isEmpty && m('client_uid') == _myUid) cp['email_contact'] = _myEmail ?? '';
         }
         String p(String k) => (cp[k] ?? '').toString().trim();
-        final adresseProfil = [p('rue'), [p('code_postal'), p('ville')].where((x) => x.isNotEmpty).join(' ')]
-            .where((x) => x.isNotEmpty).join(', ');
+        final adresseProfil = p('rue').isNotEmpty
+            ? [p('rue'), [p('code_postal'), p('ville')].where((x) => x.isNotEmpty).join(' ')].where((x) => x.isNotEmpty).join(', ')
+            : p('adresse').isNotEmpty ? p('adresse') : [p('code_postal'), p('ville')].where((x) => x.isNotEmpty).join(' ');
+        // Adresse la plus complète connue (un ancien contrat n'a parfois gardé que la ville).
+        final adresseClient = m('client_adresse').length >= adresseProfil.length ? m('client_adresse') : adresseProfil;
         // Animaux confiés : plusieurs (contrat cadre) → leurs noms, sinon la fiche.
         final nomsGarde = ((meta['animal_noms'] as List?) ?? const []).map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
         final animalGarde = nomsGarde.length > 1
@@ -468,7 +512,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         _pdfBytes = await contratGardePdfBytes(
           animal: animalGarde, prestataire: _eleveur!,
           clientNom: m('client_nom'),
-          clientAdresse: m('client_adresse').isNotEmpty ? m('client_adresse') : adresseProfil,
+          clientAdresse: adresseClient,
           clientEmail: m('client_email').isNotEmpty ? m('client_email') : p('email_contact'),
           clientTel: m('client_tel').isNotEmpty ? m('client_tel') : (p('phone_number').isNotEmpty ? p('phone_number') : p('phone')),
           prestation: m('prestation'),
@@ -476,6 +520,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
               ? DateTime.tryParse(m('date_visite'))
               : (m('date_prestation').isNotEmpty ? DateTime.tryParse(m('date_prestation')) : null),
           tarif: m('tarif'),
+          grilleTarifs: m('tarif').isEmpty ? await _grilleTarifsGarde(_doc?['pro_profile_id']?.toString(), m('client_profile_id')) : '',
           notes: m('notes'),
           sigPrestataire: sigElv, sigClient: sigAcq,
           villeSignature: ville,

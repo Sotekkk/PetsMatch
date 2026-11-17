@@ -29,6 +29,8 @@ export interface GardeInfo {
 
 export interface DataContratGarde {
   tarif?: string;
+  /** Sans tarif convenu : tarifs renseignés par le pet-sitter (déjà mis en forme). */
+  grilleTarifs?: string;
   notes?: string;
 }
 
@@ -88,7 +90,7 @@ export function generateContratGardeHTML(
   const sigElv = opts?.signatureEleveur;
   const sigAcq = opts?.signatureAcquereur;
   const today = new Date().toLocaleDateString('fr-FR');
-  const tarif = data.tarif ? `${data.tarif} €` : 'à convenir';
+  const tarif = data.tarif ? `${data.tarif} €` : data.grilleTarifs || 'à convenir';
 
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"><title>Contrat de prestation — ${rdv.animal_nom}</title>

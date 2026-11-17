@@ -13,6 +13,7 @@ import { generateContratGardeHTML } from '@/lib/contrat-garde';
 import { generateContratPrestationPhotoHTML } from '@/lib/contrat-photographe';
 import { generateContratPrestationToilettageHTML } from '@/lib/contrat-toilettage';
 import { generateContratPrestationMarechalHTML } from '@/lib/contrat-marechal';
+import { grilleTarifsGarde } from '@/lib/garde-tarifs-contrat';
 import { generateContratEducationHTML, type LigneEducation } from '@/lib/contrat-education';
 import { generateContratSanteHTML, type LigneSante } from '@/lib/contrat-sante';
 import { useAuth } from '@/lib/auth-context';
@@ -300,12 +301,14 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         const clientPid = meta.client_profile_id as string | undefined;
         if (clientPid) {
           const { data: cp2 } = await supabase.from('user_profiles_complet')
-            .select('firstname, lastname, nom, email_contact, phone_number, phone, rue, code_postal, ville').eq('id', clientPid).maybeSingle();
+            .select('firstname, lastname, nom, email_contact, phone_number, phone, adresse, rue, code_postal, ville').eq('id', clientPid).maybeSingle();
           if (cp2) clientInfo = {
             nom: (`${cp2.firstname ?? ''} ${cp2.lastname ?? ''}`.trim() || cp2.nom?.trim() || ''),
             contact: cp2.email_contact ?? '',
             tel: (cp2.phone_number || cp2.phone || '') as string,
-            adresse: [cp2.rue, [cp2.code_postal, cp2.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '),
+            adresse: cp2.rue
+              ? [cp2.rue, [cp2.code_postal, cp2.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ')
+              : (cp2.adresse as string | null)?.trim() || [cp2.code_postal, cp2.ville].filter(Boolean).join(' '),
           };
         }
         // E-mail / téléphone du compte du client : RPC réservée au pro du RDV,
@@ -342,7 +345,9 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             client_contact: (meta.client_contact as string) || (meta.client_email as string) || clientInfo.contact,
             client_email: (meta.client_email as string) || clientInfo.contact,
             client_tel: (meta.client_tel as string) || clientInfo.tel,
-            client_adresse: (meta.client_adresse as string) || clientInfo.adresse,
+            // Adresse la plus complète connue (un ancien contrat n'a parfois gardé que la ville).
+            client_adresse: [String(meta.client_adresse ?? '').trim(), String(clientInfo.adresse ?? '').trim()]
+              .sort((x, y) => y.length - x.length)[0] || undefined,
             date_visite: meta.date_visite,
             type_prestation: meta.type_prestation,
           },
@@ -355,6 +360,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           },
           {
             tarif: meta.tarif,
+            grilleTarifs: meta.tarif ? undefined : await grilleTarifsGarde(data.pro_profile_id, meta.client_profile_id as string | undefined),
             notes: meta.notes,
           },
           {
