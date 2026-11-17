@@ -446,8 +446,14 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         String p(String k) => (cp[k] ?? '').toString().trim();
         final adresseProfil = [p('rue'), [p('code_postal'), p('ville')].where((x) => x.isNotEmpty).join(' ')]
             .where((x) => x.isNotEmpty).join(', ');
+        // Animaux confiés : plusieurs (contrat cadre) → leurs noms, sinon la fiche.
+        final nomsGarde = ((meta['animal_noms'] as List?) ?? const []).map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+        final animalGarde = nomsGarde.length > 1
+            ? <String, dynamic>{'nom': nomsGarde.join(', ')}
+            : _animal != null ? animalPdf
+            : nomsGarde.length == 1 ? <String, dynamic>{'nom': nomsGarde.first} : null;
         _pdfBytes = await contratGardePdfBytes(
-          animal: _animal == null ? null : animalPdf, prestataire: _eleveur!,
+          animal: animalGarde, prestataire: _eleveur!,
           clientNom: m('client_nom'),
           clientAdresse: m('client_adresse').isNotEmpty ? m('client_adresse') : adresseProfil,
           clientEmail: m('client_email').isNotEmpty ? m('client_email') : p('email_contact'),

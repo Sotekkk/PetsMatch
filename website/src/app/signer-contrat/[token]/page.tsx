@@ -271,13 +271,24 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       } else if (data.type === 'contrat_garde') {
         // Contrat « cadre » par client : rattaché à metadata.client_uid, pas à
         // un RDV / un animal précis. (Anciens contrats : repli sur rdv_id.)
-        let animalInfo: { nom?: string; espece?: string; race?: string } = {};
+        let animalInfo: { nom?: string; espece?: string; race?: string; identification?: string | null; date_naissance?: string | null } = {};
         let clientInfo: { nom?: string; contact?: string; tel?: string; adresse?: string } = {};
+        // Animaux confiés : plusieurs (contrat cadre) → leurs noms ; un seul →
+        // sa fiche, chargée AVEC le contrat (lecture directe refusée par la RLS).
+        const nomsGarde = Array.isArray((meta as unknown as Record<string, unknown>).animal_noms)
+          ? ((meta as unknown as Record<string, unknown>).animal_noms as unknown[]).map(x => String(x ?? '').trim()).filter(Boolean) : [];
+        const ficheGarde = (data as { animaux?: { nom?: string | null; espece?: string | null; race?: string | null; identification?: string | null; date_naissance?: string | null } | null }).animaux;
+        if (nomsGarde.length > 1) animalInfo = { nom: nomsGarde.join(', ') };
+        else if (ficheGarde?.nom) animalInfo = {
+          nom: ficheGarde.nom, espece: ficheGarde.espece ?? undefined, race: ficheGarde.race ?? undefined,
+          identification: ficheGarde.identification, date_naissance: ficheGarde.date_naissance,
+        };
+        else if (nomsGarde.length === 1) animalInfo = { nom: nomsGarde[0] };
         const clientUid = (meta.client_uid as string | undefined)
           ?? (data.rdv_id
             ? (await supabase.from('rdv').select('client_uid').eq('id', data.rdv_id).maybeSingle()).data?.client_uid
             : null);
-        if (data.rdv_id) {
+        if (data.rdv_id && !animalInfo.nom) {
           const { data: rdv } = await supabase.from('rdv')
             .select('animal_id, date_heure').eq('id', data.rdv_id).maybeSingle();
           if (rdv?.animal_id) {
@@ -317,6 +328,8 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             animal_nom: animalInfo.nom ?? '',
             espece: animalInfo.espece,
             race: animalInfo.race,
+            puce: animalInfo.identification ?? undefined,
+            date_naissance: animalInfo.date_naissance ?? undefined,
             client_nom: (meta.client_nom as string) || clientInfo.nom,
             client_contact: (meta.client_contact as string) || (meta.client_email as string) || clientInfo.contact,
             client_email: (meta.client_email as string) || clientInfo.contact,

@@ -2,11 +2,14 @@
 // signature électronique via /signer-contrat/[token] (même mécanisme que
 // les contrats éleveur/association/pension — voir contrat-pension.ts).
 
-import { partiesHtml } from '@/lib/contrat-parties';
+import { lignePartieHtml, partiesHtml } from '@/lib/contrat-parties';
 export interface RdvContrat {
   animal_nom: string;
   espece?: string;
   race?: string;
+  /** Un seul animal : identification (puce) et date de naissance (fiche). */
+  puce?: string;
+  date_naissance?: string;
   client_nom?: string;
   client_contact?: string;
   client_adresse?: string;
@@ -101,14 +104,15 @@ ${partiesHtml(
 )}
 
 <h2>Objet du contrat</h2>
-${rdv.animal_nom
-  ? `<table class="info-table">
-  <tr><td>Animal</td><td>${rdv.animal_nom} ${rdv.espece ? '(' + rdv.espece + (rdv.race ? ' — ' + rdv.race : '') + ')' : ''}</td></tr>
-  <tr><td>Prestation</td><td>${rdv.type_prestation || 'Visite / promenade'}</td></tr>
-  <tr><td>Date de la prestation</td><td>${fmt(rdv.date_visite)}</td></tr>
-  <tr><td>Tarif</td><td>${tarif}</td></tr>
-</table>`
-  : `<div class="block">Le présent contrat encadre l'ensemble des prestations de garde, visite ou promenade confiées ponctuellement par le Client au Prestataire. Chaque intervention fait l'objet d'une réservation dans l'application, précisant l'animal concerné, les dates et le tarif applicable.</div>`}
+<!-- Même présentation que l'appli (contratGardePdfBytes) et que la pension : animal, espèce / race, identification. -->
+${rdv.animal_nom ? '' : `<div class="block">Le présent contrat encadre l'ensemble des prestations de garde, visite ou promenade confiées ponctuellement par le Client au Prestataire. Chaque intervention fait l'objet d'une réservation dans l'application, précisant l'animal concerné, les dates et le tarif applicable.</div>`}
+${lignePartieHtml(rdv.animal_nom?.includes(',') ? 'Animaux confiés' : 'Animal confié', rdv.animal_nom)}
+${lignePartieHtml('Espèce / race', [rdv.espece ? rdv.espece.charAt(0).toUpperCase() + rdv.espece.slice(1) : '', rdv.race ?? ''].filter(Boolean).join(' — '))}
+${lignePartieHtml('Identification', rdv.puce)}
+${lignePartieHtml('Date de naissance', rdv.date_naissance ? fmt(rdv.date_naissance) : '')}
+${lignePartieHtml('Prestation', rdv.type_prestation || 'Garde / visite / promenade')}
+${lignePartieHtml('Date de la prestation', rdv.date_visite ? fmt(rdv.date_visite) : '')}
+${lignePartieHtml('Tarif', tarif)}
 
 <h2>Conditions générales de prestation</h2>
 

@@ -667,9 +667,11 @@ Future<Uint8List> contratGardePdfBytes({
       pw.Text('Article 1 : Objet du contrat', style: _artTitle()),
       pw.SizedBox(height: 3),
       if (animal != null) ...[
-        _line('Animal confié', animal['nom'] as String?),
+        _line((animal['nom']?.toString() ?? '').contains(',') ? 'Animaux confiés' : 'Animal confié', animal['nom'] as String?),
         _line('Espèce / race', animalDesc.isEmpty ? null : animalDesc),
         _line('Identification', animal['identification'] as String?),
+        _line('Date de naissance', DateTime.tryParse(animal['date_naissance']?.toString() ?? '') == null
+            ? null : _fmt(DateTime.parse(animal['date_naissance'].toString()))),
       ] else
         _para('Le présent contrat encadre l\'ensemble des prestations de garde, visite ou '
             'promenade confiées ponctuellement par le Client au Prestataire. Chaque intervention '
