@@ -17,6 +17,7 @@ import { grilleTarifsGarde } from '@/lib/garde-tarifs-contrat';
 import { generateContratEducationHTML, type LigneEducation } from '@/lib/contrat-education';
 import { generateContratSanteHTML, type LigneSante } from '@/lib/contrat-sante';
 import { useAuth } from '@/lib/auth-context';
+import { auth } from '@/lib/firebase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { maSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
 import { apiFetch } from '@/lib/api-fetch';
@@ -125,6 +126,10 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
 
   useEffect(() => {
     async function load() {
+      // Attendre la session Firebase : sans elle, les requêtes partent en
+      // anonyme (coordonnées du client masquées, RPC réservées au pro
+      // refusées) — le contrat s'affichait sans adresse / téléphone / e-mail.
+      try { await auth.authStateReady(); } catch { /* visiteur sans compte */ }
       const { data } = await supabase
         .from('documents_animaux')
         .select('*, animaux(nom,espece,race,sexe,identification,date_naissance,couleur,couleur_yeux,pedigree_numero,pedigree_lof,nom_pere,puce_pere,nom_mere,puce_mere)')
@@ -315,15 +320,17 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         // ou mon propre compte (même compte, profil client).
         // Contrat cadre sans RDV : un RDV de ce client avec ce pet-sitter.
         let rdvContact = (meta.rdv_id as string | undefined) || data.rdv_id || null;
-        if ((!clientInfo.contact || !clientInfo.tel) && !rdvContact && clientUid) {
+        if ((!clientInfo.contact || !clientInfo.tel || !/\d/.test(clientInfo.adresse ?? '')) && !rdvContact && clientUid) {
           const { data: r1 } = await supabase.from('rdv').select('id').eq('pro_uid', data.uid_eleveur).eq('client_uid', clientUid)
             .order('date_heure', { ascending: false }).limit(1).maybeSingle();
           rdvContact = (r1 as { id?: string } | null)?.id ?? null;
         }
-        if ((!clientInfo.contact || !clientInfo.tel) && rdvContact) {
+        if ((!clientInfo.contact || !clientInfo.tel || !/\d/.test(clientInfo.adresse ?? '')) && rdvContact) {
           const { data: cc } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: rdvContact });
-          const c = cc as { email?: string; telephone?: string } | null;
-          clientInfo = { ...clientInfo, contact: clientInfo.contact || c?.email || '', tel: clientInfo.tel || c?.telephone || '' };
+          const c = cc as { email?: string; telephone?: string; rue?: string; code_postal?: string; ville?: string } | null;
+          const adrRpc = [c?.rue, [c?.code_postal, c?.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+          clientInfo = { ...clientInfo, contact: clientInfo.contact || c?.email || '', tel: clientInfo.tel || c?.telephone || '',
+            adresse: adrRpc.length > (clientInfo.adresse ?? '').length ? adrRpc : clientInfo.adresse };
         }
         if (!clientInfo.contact && clientUid && user && user.uid === clientUid && user.email) clientInfo = { ...clientInfo, contact: user.email };
         if (!clientInfo.nom && clientUid) {
