@@ -210,12 +210,16 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     up ??= await _supa.from('user_profiles_complet').select(upFields)
         .eq('uid', elvUid).eq('is_main', true).maybeSingle();
     _eleveur = _mapEleveur(up != null ? Map<String, dynamic>.from(up) : null);
-    // Sans e-mail pro sur le profil : e-mail du compte du prestataire.
-    if ((_eleveur!['email']?.toString() ?? '').trim().isEmpty) {
+    // Sans e-mail / téléphone pro sur le profil : ceux du compte du prestataire.
+    final sansTel = (_eleveur!['phone_number']?.toString() ?? '').trim().isEmpty
+        && (_eleveur!['numero_elevage']?.toString() ?? '').trim().isEmpty;
+    if ((_eleveur!['email']?.toString() ?? '').trim().isEmpty || sansTel) {
       try {
-        final u = await _supa.from('users_complet').select('email').eq('uid', elvUid).maybeSingle();
+        final u = await _supa.from('users_complet').select('email, phone_number').eq('uid', elvUid).maybeSingle();
         final e = u?['email']?.toString().trim() ?? '';
-        if (e.isNotEmpty) _eleveur!['email'] = e;
+        final t = u?['phone_number']?.toString().trim() ?? '';
+        if (e.isNotEmpty && (_eleveur!['email']?.toString() ?? '').trim().isEmpty) _eleveur!['email'] = e;
+        if (t.isNotEmpty && sansTel) { _eleveur!['phone_number'] = t; _eleveur!['numero_elevage'] = t; }
       } catch (_) {}
     }
 
@@ -434,9 +438,18 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         }
         // Compte du client : RPC réservée au pro du RDV, ou mon propre compte.
         if (m('client_email').isEmpty || m('client_tel').isEmpty) {
-          if (m('rdv_id').isNotEmpty) {
+          // Contrat cadre sans RDV : un RDV de ce client avec ce pet-sitter.
+          var rdvContact = m('rdv_id').isNotEmpty ? m('rdv_id') : (_doc?['rdv_id']?.toString() ?? '');
+          if (rdvContact.isEmpty && m('client_uid').isNotEmpty) {
             try {
-              final cc = await _supa.rpc('pm_contact_client_rdv', params: {'p_rdv_id': m('rdv_id')}) as Map?;
+              final r1 = await _supa.from('rdv').select('id').eq('pro_uid', _doc!['uid_eleveur'].toString())
+                  .eq('client_uid', m('client_uid')).order('date_heure', ascending: false).limit(1).maybeSingle();
+              rdvContact = r1?['id']?.toString() ?? '';
+            } catch (_) {}
+          }
+          if (rdvContact.isNotEmpty) {
+            try {
+              final cc = await _supa.rpc('pm_contact_client_rdv', params: {'p_rdv_id': rdvContact}) as Map?;
               if ((cp['email_contact'] ?? '').toString().isEmpty && cc?['email'] != null) cp['email_contact'] = cc!['email'];
               if ((cp['phone_number'] ?? '').toString().isEmpty && cc?['telephone'] != null) cp['phone_number'] = cc!['telephone'];
             } catch (_) {}

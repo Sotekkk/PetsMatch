@@ -141,7 +141,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         data.pro_profile_id
           ? profQuery.eq('id', data.pro_profile_id).maybeSingle()
           : profQuery.eq('uid', data.uid_eleveur).eq('is_main', true).maybeSingle(),
-        supabase.from('users_complet').select('email').eq('uid', data.uid_eleveur).maybeSingle(),
+        supabase.from('users_complet').select('email, phone_number').eq('uid', data.uid_eleveur).maybeSingle(),
       ]);
       // Adresse professionnelle (pros) si renseignée.
       const adressePro = cp ? [cp.rue_pro, [cp.code_postal_pro, cp.ville_pro].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '';
@@ -160,9 +160,10 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       const meta = (data.metadata ?? {}) as Record<string, string>;
       const elvNom  = profil?.name_elevage || `${profil?.firstname ?? ''} ${profil?.lastname ?? ''}`.trim() || 'Éleveur';
       // Numéro d'élevage, sinon téléphone du profil (pet-sitter…) ; jamais « +33 » seul.
+      // Téléphone pro du profil, sinon celui du compte du prestataire.
       const elvTel  = profil?.numero_elevage?.trim()
         ? `${profil.code_iso_elevage ?? '+33'} ${profil.numero_elevage.trim()}`
-        : String(profil?.phone_number ?? '').trim();
+        : String(profil?.phone_number ?? '').trim() || String((userRow as { phone_number?: string | null } | null)?.phone_number ?? '').trim();
       const villeElevage = profil?.ville_elevage ?? profil?.ville ?? '';
 
       const eleveur: EleveurContrat = {
@@ -309,8 +310,15 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         }
         // E-mail / téléphone du compte du client : RPC réservée au pro du RDV,
         // ou mon propre compte (même compte, profil client).
-        if ((!clientInfo.contact || !clientInfo.tel) && meta.rdv_id) {
-          const { data: cc } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: meta.rdv_id });
+        // Contrat cadre sans RDV : un RDV de ce client avec ce pet-sitter.
+        let rdvContact = (meta.rdv_id as string | undefined) || data.rdv_id || null;
+        if ((!clientInfo.contact || !clientInfo.tel) && !rdvContact && clientUid) {
+          const { data: r1 } = await supabase.from('rdv').select('id').eq('pro_uid', data.uid_eleveur).eq('client_uid', clientUid)
+            .order('date_heure', { ascending: false }).limit(1).maybeSingle();
+          rdvContact = (r1 as { id?: string } | null)?.id ?? null;
+        }
+        if ((!clientInfo.contact || !clientInfo.tel) && rdvContact) {
+          const { data: cc } = await supabase.rpc('pm_contact_client_rdv', { p_rdv_id: rdvContact });
           const c = cc as { email?: string; telephone?: string } | null;
           clientInfo = { ...clientInfo, contact: clientInfo.contact || c?.email || '', tel: clientInfo.tel || c?.telephone || '' };
         }
