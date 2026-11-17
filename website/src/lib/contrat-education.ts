@@ -15,6 +15,9 @@ export interface LigneEducation {
 
 export interface PrestationEducation {
   animal_nom?: string;
+  /** Un seul animal : numéro de puce et date de naissance (fiche). */
+  puce?: string;
+  date_naissance?: string;
   espece?: string;
   race?: string;
   client_nom?: string;
@@ -130,6 +133,8 @@ ${partiesHtml(
 <h2>Objet du contrat</h2>
 <table class="info-table">
   ${prestation.animal_nom ? `<tr><td>${prestation.animal_nom.includes(',') ? 'Animaux' : 'Animal'}</td><td>${prestation.animal_nom} ${prestation.espece ? '(' + prestation.espece + (prestation.race ? ' — ' + prestation.race : '') + ')' : ''}</td></tr>` : ''}
+  ${prestation.puce ? `<tr><td>N° de puce</td><td>${prestation.puce}</td></tr>` : ''}
+  ${prestation.date_naissance ? `<tr><td>Date de naissance</td><td>${fmt(prestation.date_naissance)}</td></tr>` : ''}
   ${prestation.date_prestation ? `<tr><td>${prestation.forfait ? 'Première séance' : 'Date de la prestation'}</td><td>${fmt(prestation.date_prestation)}</td></tr>` : ''}
   ${prestation.date_validite ? `<tr><td>Devis valable jusqu'au</td><td>${fmt(prestation.date_validite)}</td></tr>` : ''}
 </table>

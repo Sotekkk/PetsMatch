@@ -484,17 +484,27 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         );
       } else if (data.type === 'contrat_education') {
         const metaLoose = meta as unknown as Record<string, unknown>;
-        let animalInfo: { nom?: string; espece?: string; race?: string } = {};
+        let animalInfo: { nom?: string; espece?: string; race?: string; identification?: string | null; date_naissance?: string | null } = {};
         let clientInfo: { nom?: string; contact?: string } = {};
         let datePrestation: string | undefined;
+        // Fiche de l'animal chargée AVEC le contrat (jeton du lien) : la lecture
+        // directe de « animaux » est refusée au visiteur (RLS).
+        const ficheJointe = (data as { animaux?: { nom?: string | null; espece?: string | null; race?: string | null; identification?: string | null; date_naissance?: string | null } | null }).animaux;
         // Animaux du contrat : ceux de la séance (plusieurs chiens possibles),
         // jamais le nom du client. Miroir appli : contrat_signature_page.dart.
         const idsAnimaux = Array.isArray(metaLoose.animaux_ids) ? (metaLoose.animaux_ids as unknown[]).map(String) : [];
         const rdvIdEdu = data.rdv_id || (typeof metaLoose.rdv_id === 'string' ? metaLoose.rdv_id : null);
         if (idsAnimaux.length > 1) {
           const { data: ans } = await supabase.from('animaux').select('nom').in('id', idsAnimaux);
-          animalInfo = { nom: ((ans ?? []) as { nom: string | null }[]).map(a => (a.nom ?? '').trim()).filter(Boolean).join(', ') };
-        } else if (data.animal_id) {
+          const noms = ((ans ?? []) as { nom: string | null }[]).map(a => (a.nom ?? '').trim()).filter(Boolean);
+          if (noms.length > 1) animalInfo = { nom: noms.join(', ') };
+        }
+        if (!animalInfo.nom && ficheJointe?.nom) {
+          animalInfo = {
+            nom: ficheJointe.nom, espece: ficheJointe.espece ?? undefined, race: ficheJointe.race ?? undefined,
+            identification: ficheJointe.identification, date_naissance: ficheJointe.date_naissance,
+          };
+        } else if (!animalInfo.nom && data.animal_id) {
           const { data: an } = await supabase.from('animaux').select('nom, espece, race').eq('id', data.animal_id).maybeSingle();
           animalInfo = an ?? {};
         }
@@ -527,6 +537,8 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         generatedHtml = generateContratEducationHTML(
           {
             animal_nom: animalInfo.nom ?? '',
+            puce: animalInfo.identification ?? undefined,
+            date_naissance: animalInfo.date_naissance ?? undefined,
             espece: animalInfo.espece,
             race: animalInfo.race,
             client_nom: meta.acquereur_nom || clientInfo.nom,

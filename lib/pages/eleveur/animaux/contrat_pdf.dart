@@ -1158,6 +1158,9 @@ Future<Uint8List> contratEducationPdfBytes({
       if (animal != null) ...[
         _line((animal['nom']?.toString() ?? '').contains(',') ? 'Animaux' : 'Animal', animal['nom'] as String?),
         _line('Espèce / race', animalDesc.isEmpty ? null : animalDesc),
+        _line('N° de puce', (animal['identification']?.toString() ?? '').trim().isEmpty ? null : animal['identification'].toString().trim()),
+        _line('Date de naissance', DateTime.tryParse(animal['date_naissance']?.toString() ?? '') == null
+            ? null : _fmt(DateTime.parse(animal['date_naissance'].toString()))),
       ],
       _line('Date de la prestation', dateP.isEmpty ? null : dateP),
       _line('Devis valable jusqu\'au', dateV.isEmpty ? null : dateV),
