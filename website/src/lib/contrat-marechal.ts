@@ -2,6 +2,7 @@
 // électronique via /signer-contrat/[token] — même mécanisme que
 // garde/photographe/toilettage).
 
+import { partiesHtml } from '@/lib/contrat-parties';
 export interface MarechalRdvContrat {
   client_nom?: string;
   client_contact?: string;
@@ -85,21 +86,10 @@ export function generateContratPrestationMarechalHTML(
 
 <h1>Contrat de prestation de maréchalerie</h1>
 
-<div class="between">Entre les soussignés</div>
-
-<div class="parties">
-  <b>${marechal.nom}</b>, ci-après désigné « le Prestataire »<br>
-  ${marechal.adresse ? marechal.adresse + '<br>' : ''}
-  ${marechal.siret ? 'SIRET : ' + marechal.siret + '<br>' : ''}
-  ${marechal.tel ? 'Tél : ' + marechal.tel + ' — ' : ''}${marechal.email}
-</div>
-
-<div class="between">et</div>
-
-<div class="parties">
-  <b>${rdv.client_nom || 'Le Client'}</b>, ci-après désigné « le Client »<br>
-  ${rdv.client_contact ? 'Contact : ' + rdv.client_contact : ''}
-</div>
+${partiesHtml(
+  { titre: 'Le Prestataire', nom: marechal.nom, adresse: marechal.adresse, tel: marechal.tel, siret: marechal.siret, email: marechal.email },
+  [['Le Client', rdv.client_nom], ['Contact', rdv.client_contact]],
+)}
 
 <h2>Objet du contrat</h2>
 <table class="info-table">

@@ -1,6 +1,7 @@
 // Génération du contrat d'hébergement pension (HTML, signature électronique
 // via /signer-contrat/[token] — même mécanisme que les contrats éleveur/association).
 
+import { partiesHtml } from '@/lib/contrat-parties';
 export interface PensionEntreeContrat {
   animal_nom: string;
   espece?: string;
@@ -104,22 +105,10 @@ export function generateContratHebergementHTML(
 
 <h1>Contrat d'hébergement en pension animalière</h1>
 
-<div class="between">Entre les soussignés</div>
-
-<div class="parties">
-  <b>${pension.nom}</b>, ci-après désigné « la Pension »<br>
-  ${pension.adresse ? pension.adresse + '<br>' : ''}
-  ${pension.siret ? 'SIRET : ' + pension.siret + '<br>' : ''}
-  ${pension.tel ? 'Tél : ' + pension.tel + ' — ' : ''}${pension.email}
-</div>
-
-<div class="between">et</div>
-
-<div class="parties">
-  <b>${entree.proprietaire_nom || 'Le Propriétaire'}</b>, ci-après désigné « le Propriétaire »<br>
-  ${data.clientAdresse ? data.clientAdresse + '<br>' : ''}
-  ${contactClient ? 'Contact : ' + contactClient : ''}
-</div>
+${partiesHtml(
+  { titre: 'La Pension', nom: pension.nom, adresse: pension.adresse, tel: pension.tel, siret: pension.siret, email: pension.email },
+  [['Le Propriétaire', entree.proprietaire_nom], ['Adresse', data.clientAdresse], ['Contact', contactClient]],
+)}
 
 <h2>Objet du contrat</h2>
 <table class="info-table">

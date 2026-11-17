@@ -4,6 +4,7 @@
 // directement d'un devis accepté (lignes de prestation détaillées).
 
 import { supabase } from '@/lib/supabase';
+import { partiesHtml } from '@/lib/contrat-parties';
 
 export interface LigneEducation {
   description: string;
@@ -120,27 +121,15 @@ export function generateContratEducationHTML(
 
 <h1>Contrat de prestation d'éducation canine</h1>
 
-<div class="between">Entre les soussignés</div>
-
-<div class="parties">
-  <b>${educateur.nom}</b>, ci-après désigné « le Prestataire »<br>
-  ${educateur.adresse ? educateur.adresse + '<br>' : ''}
-  ${educateur.siret ? 'SIRET : ' + educateur.siret + '<br>' : ''}
-  ${educateur.tel ? 'Tél : ' + educateur.tel + ' — ' : ''}${educateur.email}
-</div>
-
-<div class="between">et</div>
-
-<div class="parties">
-  <b>${prestation.client_nom || 'Le Client'}</b>, ci-après désigné « le Client »<br>
-  ${prestation.client_adresse ? prestation.client_adresse + '<br>' : ''}
-  ${prestation.client_tel ? 'Tél : ' + prestation.client_tel + (prestation.client_contact ? ' — ' : '') : ''}${prestation.client_contact ?? ''}
-</div>
+${partiesHtml(
+  { titre: 'Le Prestataire', nom: educateur.nom, adresse: educateur.adresse, tel: educateur.tel, siret: educateur.siret, email: educateur.email },
+  [['Le Client', prestation.client_nom], ['Demeurant à', prestation.client_adresse], ['Téléphone', prestation.client_tel],
+   ['Email', prestation.client_contact], ['Formule', prestation.forfait]],
+)}
 
 <h2>Objet du contrat</h2>
 <table class="info-table">
   ${prestation.animal_nom ? `<tr><td>Animal</td><td>${prestation.animal_nom} ${prestation.espece ? '(' + prestation.espece + (prestation.race ? ' — ' + prestation.race : '') + ')' : ''}</td></tr>` : ''}
-  ${prestation.forfait ? `<tr><td>Formule</td><td>${prestation.forfait}</td></tr>` : ''}
   ${prestation.date_prestation ? `<tr><td>${prestation.forfait ? 'Première séance' : 'Date de la prestation'}</td><td>${fmt(prestation.date_prestation)}</td></tr>` : ''}
   ${prestation.date_validite ? `<tr><td>Devis valable jusqu'au</td><td>${fmt(prestation.date_validite)}</td></tr>` : ''}
 </table>

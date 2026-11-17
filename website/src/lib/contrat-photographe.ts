@@ -1,6 +1,7 @@
 // Génération du contrat de prestation photographe (HTML, signature électronique
 // via /signer-contrat/[token] — même mécanisme que les contrats pension/garde).
 
+import { partiesHtml } from '@/lib/contrat-parties';
 export interface PhotographeRdvContrat {
   client_nom?: string;
   client_contact?: string;
@@ -103,21 +104,10 @@ export function generateContratPrestationPhotoHTML(
 
 <h1>Contrat de prestation photographique animalière</h1>
 
-<div class="between">Entre les soussignés</div>
-
-<div class="parties">
-  <b>${photographe.nom}</b>, ci-après désigné « le Photographe »<br>
-  ${photographe.adresse ? photographe.adresse + '<br>' : ''}
-  ${photographe.siret ? 'SIRET : ' + photographe.siret + '<br>' : ''}
-  ${photographe.tel ? 'Tél : ' + photographe.tel + ' — ' : ''}${photographe.email}
-</div>
-
-<div class="between">et</div>
-
-<div class="parties">
-  <b>${rdv.client_nom || 'Le Client'}</b>, ci-après désigné « le Client »<br>
-  ${rdv.client_contact ? 'Contact : ' + rdv.client_contact : ''}
-</div>
+${partiesHtml(
+  { titre: 'Le Photographe', nom: photographe.nom, adresse: photographe.adresse, tel: photographe.tel, siret: photographe.siret, email: photographe.email },
+  [['Le Client', rdv.client_nom], ['Contact', rdv.client_contact]],
+)}
 
 <h2>Objet du contrat</h2>
 <table class="info-table">

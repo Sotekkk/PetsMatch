@@ -1,6 +1,7 @@
 // Génération du contrat de prestation toilettage (HTML, signature électronique
 // via /signer-contrat/[token] — même mécanisme que garde/photographe).
 
+import { partiesHtml } from '@/lib/contrat-parties';
 export interface ToilettageRdvContrat {
   client_nom?: string;
   client_contact?: string;
@@ -84,21 +85,10 @@ export function generateContratPrestationToilettageHTML(
 
 <h1>Contrat de prestation de toilettage animalier</h1>
 
-<div class="between">Entre les soussignés</div>
-
-<div class="parties">
-  <b>${toiletteur.nom}</b>, ci-après désigné « le Prestataire »<br>
-  ${toiletteur.adresse ? toiletteur.adresse + '<br>' : ''}
-  ${toiletteur.siret ? 'SIRET : ' + toiletteur.siret + '<br>' : ''}
-  ${toiletteur.tel ? 'Tél : ' + toiletteur.tel + ' — ' : ''}${toiletteur.email}
-</div>
-
-<div class="between">et</div>
-
-<div class="parties">
-  <b>${rdv.client_nom || 'Le Client'}</b>, ci-après désigné « le Client »<br>
-  ${rdv.client_contact ? 'Contact : ' + rdv.client_contact : ''}
-</div>
+${partiesHtml(
+  { titre: 'Le Prestataire', nom: toiletteur.nom, adresse: toiletteur.adresse, tel: toiletteur.tel, siret: toiletteur.siret, email: toiletteur.email },
+  [['Le Client', rdv.client_nom], ['Contact', rdv.client_contact]],
+)}
 
 <h2>Objet du contrat</h2>
 <table class="info-table">

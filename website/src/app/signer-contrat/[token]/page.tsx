@@ -151,7 +151,8 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         adress_elevage: cp.adresse || [cp.rue, cp.code_postal, cp.ville].filter(Boolean).join(', '),
         adress: cp.adresse, siret: cp.siret,
         numero_elevage: cp.numero_elevage, code_iso_elevage: '+33',
-        email: userRow?.email || cp.email_contact || '',
+        // E-mail pro du profil (email_contact) en priorité, sinon celui du compte.
+        email: cp.email_contact || userRow?.email || '',
         ville_elevage: cp.ville_pro, ville: cp.ville,
         phone_number: cp.phone_number || cp.phone || cp.telephone, code_iso: '+33',
       } : null;
@@ -489,16 +490,19 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         if (data.rdv_id) {
           const { data: rdv } = await supabase
             .from('rdv')
-            .select('animal_id, client_uid, date_heure')
+            .select('animal_id, client_uid, client_profile_id, date_heure')
             .eq('id', data.rdv_id)
             .maybeSingle();
           if (rdv?.animal_id) {
             const { data: an } = await supabase.from('animaux').select('nom, espece, race').eq('id', rdv.animal_id).maybeSingle();
             animalInfo = an ?? {};
           }
-          if (rdv?.client_uid) {
-            const { data: cp2 } = await supabase.from('user_profiles_complet')
-              .select('firstname, lastname, email_contact').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
+          if (rdv?.client_profile_id || rdv?.client_uid) {
+            // Profil client du RDV (multi-profil), sinon profil principal.
+            const q = supabase.from('user_profiles_complet').select('firstname, lastname, email_contact');
+            const { data: cp2 } = rdv.client_profile_id
+              ? await q.eq('id', rdv.client_profile_id).maybeSingle()
+              : await q.eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
             clientInfo = {
               nom: `${cp2?.firstname ?? ''} ${cp2?.lastname ?? ''}`.trim(),
               contact: cp2?.email_contact ?? '',

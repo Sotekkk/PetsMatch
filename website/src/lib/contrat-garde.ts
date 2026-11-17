@@ -2,6 +2,7 @@
 // signature électronique via /signer-contrat/[token] (même mécanisme que
 // les contrats éleveur/association/pension — voir contrat-pension.ts).
 
+import { partiesHtml } from '@/lib/contrat-parties';
 export interface RdvContrat {
   animal_nom: string;
   espece?: string;
@@ -94,22 +95,10 @@ export function generateContratGardeHTML(
 
 <h1>Contrat de prestation pet sitting / promenade</h1>
 
-<div class="between">Entre les soussignés</div>
-
-<div class="parties">
-  <b>${garde.nom}</b>, ci-après désigné « le Prestataire »<br>
-  ${garde.adresse ? garde.adresse + '<br>' : ''}
-  ${garde.siret ? 'SIRET : ' + garde.siret + '<br>' : ''}
-  ${garde.tel ? 'Tél : ' + garde.tel + ' — ' : ''}${garde.email}
-</div>
-
-<div class="between">et</div>
-
-<div class="parties">
-  <b>${rdv.client_nom || 'Le Client'}</b>, ci-après désigné « le Client »<br>
-  ${rdv.client_adresse ? rdv.client_adresse + '<br>' : ''}
-  ${rdv.client_tel ? 'Tél : ' + rdv.client_tel + (rdv.client_email || rdv.client_contact ? ' — ' : '') : ''}${rdv.client_email || rdv.client_contact || ''}
-</div>
+${partiesHtml(
+  { titre: 'Le Prestataire', nom: garde.nom, adresse: garde.adresse, tel: garde.tel, siret: garde.siret, email: garde.email },
+  [['Le Client', rdv.client_nom], ['Demeurant à', rdv.client_adresse], ['Téléphone', rdv.client_tel], ['Email', rdv.client_email || rdv.client_contact]],
+)}
 
 <h2>Objet du contrat</h2>
 ${rdv.animal_nom

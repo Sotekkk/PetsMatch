@@ -4,6 +4,7 @@
 // éducateur — voir contrat-garde.ts / contrat-education.ts). Miroir exact de
 // contratSantePdfBytes côté appli (lib/pages/eleveur/animaux/contrat_pdf.dart).
 
+import { partiesHtml } from '@/lib/contrat-parties';
 export interface LigneSante {
   description: string;
   quantite: number;
@@ -117,21 +118,10 @@ export function generateContratSanteHTML(
 <h1>Contrat de prestation de soins para-médicaux</h1>
 <p class="subtitle">(ostéopathie / kinésithérapie animale)</p>
 
-<div class="between">Entre les soussignés</div>
-
-<div class="parties">
-  <b>${praticien.nom}</b>, ci-après désigné « le Prestataire »<br>
-  ${praticien.adresse ? praticien.adresse + '<br>' : ''}
-  ${praticien.siret ? 'SIRET : ' + praticien.siret + '<br>' : ''}
-  ${praticien.tel ? 'Tél : ' + praticien.tel + ' — ' : ''}${praticien.email}
-</div>
-
-<div class="between">et</div>
-
-<div class="parties">
-  <b>${prestation.client_nom || 'Le Client'}</b>, ci-après désigné « le Client »<br>
-  ${prestation.client_contact ? 'Contact : ' + prestation.client_contact : ''}
-</div>
+${partiesHtml(
+  { titre: 'Le Prestataire', nom: praticien.nom, adresse: praticien.adresse, tel: praticien.tel, siret: praticien.siret, email: praticien.email },
+  [['Le Client', prestation.client_nom], ['Contact', prestation.client_contact]],
+)}
 
 <h2>Objet du contrat</h2>
 <table class="info-table">

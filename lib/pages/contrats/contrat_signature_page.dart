@@ -146,8 +146,9 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       'siret': up['siret'],
       'email': up['email_contact'],
       'code_iso_elevage': '+33',
-      'numero_elevage': up['numero_elevage'] ?? up['phone_number'],
-      'phone_number': up['phone_number'],
+      // Téléphone pro du profil (phone_number ; associations : phone).
+      'numero_elevage': up['numero_elevage'] ?? up['phone_number'] ?? up['phone'],
+      'phone_number': up['phone_number'] ?? up['phone'],
     };
   }
 
@@ -197,7 +198,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     // Profil vendeur : celui indiqué sur le doc (pro_profile_id), sinon le
     // profil éleveur du compte, sinon is_main — pour prendre le bon
     // téléphone / adresse / email.
-    const upFields = 'id, nom, firstname, lastname, adresse, rue, ville, ville_pro, code_postal, siret, numero_elevage, phone_number, email_contact, rue_pro, code_postal_pro';
+    const upFields = 'id, nom, firstname, lastname, adresse, rue, ville, ville_pro, code_postal, siret, numero_elevage, phone_number, phone, email_contact, rue_pro, code_postal_pro';
     final elvUid = _doc!['uid_eleveur'] as String;
     final proPid = _doc!['pro_profile_id'] as String?;
     Map<String, dynamic>? up;
@@ -209,6 +210,14 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     up ??= await _supa.from('user_profiles_complet').select(upFields)
         .eq('uid', elvUid).eq('is_main', true).maybeSingle();
     _eleveur = _mapEleveur(up != null ? Map<String, dynamic>.from(up) : null);
+    // Sans e-mail pro sur le profil : e-mail du compte du prestataire.
+    if ((_eleveur!['email']?.toString() ?? '').trim().isEmpty) {
+      try {
+        final u = await _supa.from('users_complet').select('email').eq('uid', elvUid).maybeSingle();
+        final e = u?['email']?.toString().trim() ?? '';
+        if (e.isNotEmpty) _eleveur!['email'] = e;
+      } catch (_) {}
+    }
 
     await _buildPdf();
     // Pré-charger les signatures existantes dans les pads (lecture seule via existingSignature)
