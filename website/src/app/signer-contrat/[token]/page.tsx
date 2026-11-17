@@ -320,9 +320,11 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         // ou mon propre compte (même compte, profil client).
         // Contrat cadre sans RDV : un RDV de ce client avec ce pet-sitter.
         let rdvContact = (meta.rdv_id as string | undefined) || data.rdv_id || null;
-        if ((!clientInfo.contact || !clientInfo.tel || !/\d/.test(clientInfo.adresse ?? '')) && !rdvContact && clientUid) {
-          const { data: r1 } = await supabase.from('rdv').select('id').eq('pro_uid', data.uid_eleveur).eq('client_uid', clientUid)
-            .order('date_heure', { ascending: false }).limit(1).maybeSingle();
+        if ((!clientInfo.contact || !clientInfo.tel || !/\d/.test(clientInfo.adresse ?? '')) && !rdvContact && (clientUid || clientPid)) {
+          // RDV de ce client (compte, sinon profil) avec ce pet-sitter, hors annulés.
+          let q = supabase.from('rdv').select('id').eq('pro_uid', data.uid_eleveur).not('statut', 'in', '(annule,refuse)');
+          q = clientUid ? q.eq('client_uid', clientUid) : q.eq('client_profile_id', clientPid as string);
+          const { data: r1 } = await q.order('date_heure', { ascending: false }).limit(1).maybeSingle();
           rdvContact = (r1 as { id?: string } | null)?.id ?? null;
         }
         if ((!clientInfo.contact || !clientInfo.tel || !/\d/.test(clientInfo.adresse ?? '')) && rdvContact) {
@@ -336,9 +338,11 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         if (!clientInfo.nom && clientUid) {
           const { data: cp2 } = await supabase.from('user_profiles_complet')
             .select('firstname, lastname, nom, email_contact').eq('uid', clientUid).eq('is_main', true).maybeSingle();
+          // Complète sans écraser le téléphone / l'adresse déjà retrouvés.
           clientInfo = {
+            ...clientInfo,
             nom: (cp2?.nom?.trim() || `${cp2?.firstname ?? ''} ${cp2?.lastname ?? ''}`.trim()),
-            contact: cp2?.email_contact ?? '',
+            contact: clientInfo.contact || cp2?.email_contact || '',
           };
         }
         generatedHtml = generateContratGardeHTML(
