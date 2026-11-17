@@ -1156,7 +1156,7 @@ Future<Uint8List> contratEducationPdfBytes({
       pw.Text('Article 1 : Objet du contrat', style: _artTitle()),
       pw.SizedBox(height: 3),
       if (animal != null) ...[
-        _line('Animal', animal['nom'] as String?),
+        _line((animal['nom']?.toString() ?? '').contains(',') ? 'Animaux' : 'Animal', animal['nom'] as String?),
         _line('Espèce / race', animalDesc.isEmpty ? null : animalDesc),
       ],
       _line('Date de la prestation', dateP.isEmpty ? null : dateP),

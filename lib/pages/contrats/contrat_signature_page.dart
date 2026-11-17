@@ -463,8 +463,22 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         );
       } else if (type == 'contrat_education') {
         final lignesRaw = (meta['lignes'] as List?) ?? const [];
+        // Animaux du contrat : ceux de la séance (plusieurs chiens possibles).
+        Map<String, dynamic>? animalEdu = _animal == null ? null : animalPdf;
+        var noms = '';
+        final ids = ((meta['animaux_ids'] as List?) ?? const []).map((e) => e.toString()).toList();
+        try {
+          if (ids.length > 1) {
+            final rows = await _supa.from('animaux').select('nom').inFilter('id', ids);
+            noms = (rows as List).map((r) => (r['nom'] ?? '').toString().trim()).where((n) => n.isNotEmpty).join(', ');
+          } else if (_animal == null && m('rdv_id').isNotEmpty) {
+            final rdv = await _supa.from('rdv').select('animal_nom_manuel').eq('id', m('rdv_id')).maybeSingle();
+            noms = (rdv?['animal_nom_manuel']?.toString() ?? '').split('+').map((x) => x.trim()).where((x) => x.isNotEmpty).join(', ');
+          }
+        } catch (_) {}
+        if (noms.isNotEmpty && (noms.contains(',') || animalEdu == null)) animalEdu = {'nom': noms};
         _pdfBytes = await contratEducationPdfBytes(
-          animal: _animal == null ? null : animalPdf,
+          animal: animalEdu,
           // Éducateur : son téléphone (pas le numéro d'élevage).
           prestataire: {..._eleveur!, if ((_eleveur!['phone_number']?.toString() ?? '').isNotEmpty) 'numero_elevage': _eleveur!['phone_number']},
           clientNom: m('acquereur_nom'),

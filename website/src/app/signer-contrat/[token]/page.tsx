@@ -487,15 +487,29 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         let animalInfo: { nom?: string; espece?: string; race?: string } = {};
         let clientInfo: { nom?: string; contact?: string } = {};
         let datePrestation: string | undefined;
-        if (data.rdv_id) {
+        // Animaux du contrat : ceux de la séance (plusieurs chiens possibles),
+        // jamais le nom du client. Miroir appli : contrat_signature_page.dart.
+        const idsAnimaux = Array.isArray(metaLoose.animaux_ids) ? (metaLoose.animaux_ids as unknown[]).map(String) : [];
+        const rdvIdEdu = data.rdv_id || (typeof metaLoose.rdv_id === 'string' ? metaLoose.rdv_id : null);
+        if (idsAnimaux.length > 1) {
+          const { data: ans } = await supabase.from('animaux').select('nom').in('id', idsAnimaux);
+          animalInfo = { nom: ((ans ?? []) as { nom: string | null }[]).map(a => (a.nom ?? '').trim()).filter(Boolean).join(', ') };
+        } else if (data.animal_id) {
+          const { data: an } = await supabase.from('animaux').select('nom, espece, race').eq('id', data.animal_id).maybeSingle();
+          animalInfo = an ?? {};
+        }
+        if (rdvIdEdu) {
           const { data: rdv } = await supabase
             .from('rdv')
-            .select('animal_id, client_uid, client_profile_id, date_heure')
-            .eq('id', data.rdv_id)
+            .select('animal_id, animal_nom_manuel, client_uid, client_profile_id, date_heure')
+            .eq('id', rdvIdEdu)
             .maybeSingle();
-          if (rdv?.animal_id) {
+          if (!animalInfo.nom && rdv?.animal_id) {
             const { data: an } = await supabase.from('animaux').select('nom, espece, race').eq('id', rdv.animal_id).maybeSingle();
             animalInfo = an ?? {};
+          }
+          if (!animalInfo.nom && rdv?.animal_nom_manuel) {
+            animalInfo = { nom: String(rdv.animal_nom_manuel).split('+').map(x => x.trim()).filter(Boolean).join(', ') };
           }
           if (rdv?.client_profile_id || rdv?.client_uid) {
             // Profil client du RDV (multi-profil), sinon profil principal.
@@ -509,13 +523,10 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             };
           }
           datePrestation = rdv?.date_heure;
-        } else if (data.animal_id) {
-          const { data: an } = await supabase.from('animaux').select('nom, espece, race').eq('id', data.animal_id).maybeSingle();
-          animalInfo = an ?? {};
         }
         generatedHtml = generateContratEducationHTML(
           {
-            animal_nom: animalInfo.nom ?? meta.acquereur_nom ?? '',
+            animal_nom: animalInfo.nom ?? '',
             espece: animalInfo.espece,
             race: animalInfo.race,
             client_nom: meta.acquereur_nom || clientInfo.nom,

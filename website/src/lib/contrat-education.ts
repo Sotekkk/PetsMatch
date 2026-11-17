@@ -129,7 +129,7 @@ ${partiesHtml(
 
 <h2>Objet du contrat</h2>
 <table class="info-table">
-  ${prestation.animal_nom ? `<tr><td>Animal</td><td>${prestation.animal_nom} ${prestation.espece ? '(' + prestation.espece + (prestation.race ? ' — ' + prestation.race : '') + ')' : ''}</td></tr>` : ''}
+  ${prestation.animal_nom ? `<tr><td>${prestation.animal_nom.includes(',') ? 'Animaux' : 'Animal'}</td><td>${prestation.animal_nom} ${prestation.espece ? '(' + prestation.espece + (prestation.race ? ' — ' + prestation.race : '') + ')' : ''}</td></tr>` : ''}
   ${prestation.date_prestation ? `<tr><td>${prestation.forfait ? 'Première séance' : 'Date de la prestation'}</td><td>${fmt(prestation.date_prestation)}</td></tr>` : ''}
   ${prestation.date_validite ? `<tr><td>Devis valable jusqu'au</td><td>${fmt(prestation.date_validite)}</td></tr>` : ''}
 </table>
