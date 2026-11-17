@@ -4,7 +4,7 @@
 // directement d'un devis accepté (lignes de prestation détaillées).
 
 import { supabase } from '@/lib/supabase';
-import { partiesHtml } from '@/lib/contrat-parties';
+import { lignePartieHtml, partiesHtml } from '@/lib/contrat-parties';
 
 export interface LigneEducation {
   description: string;
@@ -131,13 +131,13 @@ ${partiesHtml(
 )}
 
 <h2>Objet du contrat</h2>
-<table class="info-table">
-  ${prestation.animal_nom ? `<tr><td>${prestation.animal_nom.includes(',') ? 'Animaux' : 'Animal'}</td><td>${prestation.animal_nom} ${prestation.espece ? '(' + prestation.espece + (prestation.race ? ' — ' + prestation.race : '') + ')' : ''}</td></tr>` : ''}
-  ${prestation.puce ? `<tr><td>N° de puce</td><td>${prestation.puce}</td></tr>` : ''}
-  ${prestation.date_naissance ? `<tr><td>Date de naissance</td><td>${fmt(prestation.date_naissance)}</td></tr>` : ''}
-  ${prestation.date_prestation ? `<tr><td>${prestation.forfait ? 'Première séance' : 'Date de la prestation'}</td><td>${fmt(prestation.date_prestation)}</td></tr>` : ''}
-  ${prestation.date_validite ? `<tr><td>Devis valable jusqu'au</td><td>${fmt(prestation.date_validite)}</td></tr>` : ''}
-</table>
+<!-- Même présentation que l'appli : « Libellé : valeur », libellé en gras. -->
+${lignePartieHtml(prestation.animal_nom?.includes(',') ? 'Animaux' : 'Animal', prestation.animal_nom)}
+${lignePartieHtml('Espèce / race', [prestation.espece ? prestation.espece.charAt(0).toUpperCase() + prestation.espece.slice(1) : '', prestation.race ?? ''].filter(Boolean).join(' — '))}
+${lignePartieHtml('N° de puce', prestation.puce)}
+${lignePartieHtml('Date de naissance', prestation.date_naissance ? fmt(prestation.date_naissance) : '')}
+${lignePartieHtml(prestation.forfait ? 'Première séance' : 'Date de la prestation', prestation.date_prestation ? fmt(prestation.date_prestation) : '')}
+${lignePartieHtml('Devis valable jusqu\'au', prestation.date_validite ? fmt(prestation.date_validite) : '')}
 
 <h2>Détail de la prestation</h2>
 ${lignesHtml}
