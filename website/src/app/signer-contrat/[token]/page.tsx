@@ -335,6 +335,23 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             adresse: adrRpc.length > (clientInfo.adresse ?? '').length ? adrRpc : clientInfo.adresse };
         }
         if (!clientInfo.contact && clientUid && user && user.uid === clientUid && user.email) clientInfo = { ...clientInfo, contact: user.email };
+        // Encore incomplet : coordonnées lues côté serveur (fiche du client
+        // masquée au navigateur), réservé au prestataire et au client.
+        if ((!clientInfo.contact || !clientInfo.tel || !/[0-9]/.test(clientInfo.adresse ?? '')) && auth.currentUser) {
+          try {
+            const r = await apiFetch(`/api/contracts/${data.id}/coordonnees-client`, { cache: 'no-store' });
+            if (r.ok) {
+              const k = await r.json() as { nom?: string; email?: string; tel?: string; adresse?: string };
+              clientInfo = {
+                ...clientInfo,
+                nom: clientInfo.nom || k.nom || '',
+                contact: clientInfo.contact || k.email || '',
+                tel: clientInfo.tel || k.tel || '',
+                adresse: (k.adresse ?? '').length > (clientInfo.adresse ?? '').length ? k.adresse : clientInfo.adresse,
+              };
+            }
+          } catch { /* coordonnées déjà connues */ }
+        }
         if (!clientInfo.nom && clientUid) {
           const { data: cp2 } = await supabase.from('user_profiles_complet')
             .select('firstname, lastname, nom, email_contact').eq('uid', clientUid).eq('is_main', true).maybeSingle();
