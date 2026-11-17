@@ -71,7 +71,7 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
     try {
       final sel = _supa
           .from('documents_animaux')
-          .select('id, type, titre, statut, token, uid_acquereur, uid_eleveur, pro_profile_id, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)')
+          .select('id, type, titre, statut, token, uid_acquereur, uid_eleveur, pro_profile_id, rdv_id, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)')
           // Brouillon (devis pas encore envoyé…) : jamais montré au destinataire.
           .neq('statut', 'brouillon');
       // Destinataire d'un contrat : acquéreur (vente/cession) OU client
@@ -90,18 +90,42 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
       // un autre de mes profils (ex. contrat de garde reçu en particulier, à ne
       // pas afficher dans « Mes Achats » côté éleveur).
       final activePid = await _resolveActivePid(uid ?? '');
-      final filtered = List<Map<String, dynamic>>.from(rows).where((d) {
+      final liste = List<Map<String, dynamic>>.from(rows);
+      // Sans profil destinataire sur le contrat : celui de son rendez-vous,
+      // sinon le profil principal (jamais affiché dans tous les profils).
+      final sansCible = liste.where((d) {
+        final m = (d['metadata'] as Map?) ?? {};
+        return ((m['client_profile_id'] ?? m['acquereur_profile_id'])?.toString() ?? '').isEmpty;
+      }).toList();
+      String? principal;
+      if (sansCible.isNotEmpty && uid != null && uid.isNotEmpty) {
+        final rdvIds = {for (final d in sansCible) if ((d['rdv_id']?.toString() ?? '').isNotEmpty) d['rdv_id'].toString()}.toList();
+        if (rdvIds.isNotEmpty) {
+          try {
+            final rs = await _supa.from('rdv').select('id, client_profile_id').inFilter('id', rdvIds);
+            final parRdv = {for (final r in rs as List) r['id'].toString(): r['client_profile_id']?.toString()};
+            for (final d in sansCible) { d['_cible'] = parRdv[d['rdv_id']?.toString()]; }
+          } catch (_) {}
+        }
+        try {
+          final p = await _supa.from('user_profiles').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+          principal = p?['id']?.toString();
+        } catch (_) {}
+      }
+      final filtered = liste.where((d) {
         // Un document que J'AI ÉMIS en tant que pro (uid_eleveur = moi) n'est
         // jamais « reçu » par moi-même, même si une correspondance de repli
         // (email/uid de test) l'a fait remonter dans la requête ci-dessus —
         // il doit rester dans la vue pro qui l'a créé (devis, registre…), pas
         // apparaître comme un contrat que je reçois.
         final meta = (d['metadata'] as Map?) ?? {};
-        final target = (meta['client_profile_id'] ?? meta['acquereur_profile_id']) as String?;
+        var target = ((meta['client_profile_id'] ?? meta['acquereur_profile_id'] ?? d['_cible'])?.toString() ?? '');
         // Même compte, autre profil (pet-sitter → mon profil particulier) : reçu.
-        final autreProfil = (target ?? '').isNotEmpty && target != d['pro_profile_id']?.toString();
+        final autreProfil = target.isNotEmpty && target != d['pro_profile_id']?.toString();
         if (uid != null && uid.isNotEmpty && d['uid_eleveur'] == uid && !autreProfil) return false;
-        if (target == null || target.isEmpty || activePid == null || activePid.isEmpty) return true;
+        if (activePid == null || activePid.isEmpty) return true;
+        if (target.isEmpty) target = principal ?? '';
+        if (target.isEmpty) return true;
         return target == activePid;
       }).toList()
         ..sort((a, b) => _derniereActivite(b).compareTo(_derniereActivite(a)));
@@ -477,6 +501,8 @@ class _DocCard extends StatelessWidget {
   /// c'est sans l'ouvrir.
   static String _titre(String type, String? titre, String? prestataire, String? animalNom) {
     final label = _typeLabel[type];
+    // Séance photo : souvent plusieurs animaux (reproducteurs…), pas de nom d'animal.
+    if (type == 'contrat_prestation_photo') animalNom = null;
     if (label == null) return (titre != null && titre.trim().isNotEmpty) ? titre.trim() : 'Contrat';
     return [label, prestataire, animalNom].map((x) => (x ?? '').trim()).where((x) => x.isNotEmpty).toSet().join(' — ');
   }

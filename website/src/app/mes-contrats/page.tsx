@@ -32,6 +32,8 @@ const TYPE_LABEL: Record<string, string> = {
 // « Contrat d'hébergement — Pension de merveilles — Azur » : on sait ce que c'est sans l'ouvrir.
 function titreContrat(type: string, titre: string | null | undefined, prestataire?: string | null, animalNom?: string | null) {
   const label = TYPE_LABEL[type];
+  // Séance photo : souvent plusieurs animaux (reproducteurs…), pas de nom d'animal.
+  if (type === 'contrat_prestation_photo') animalNom = null;
   if (!label) return titre?.trim() || 'Contrat';
   return [...new Set([label, prestataire, animalNom].map(x => (x ?? '').trim()).filter(Boolean))].join(' — ');
 }
@@ -67,15 +69,29 @@ export default function MesContratsPage() {
     const email = user?.email ?? '-';
     supabase
       .from('documents_animaux')
-      .select('id, type, titre, statut, token, uid_acquereur, uid_eleveur, pro_profile_id, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)')
+      .select('id, type, titre, statut, token, uid_acquereur, uid_eleveur, pro_profile_id, rdv_id, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)')
       // Destinataire : acquéreur (vente/cession) OU client d'une prestation
       // (garde, photographe… → metadata.client_uid / client_email), comme l'appli.
       .or(`metadata->>acquereur_email.eq.${email},uid_acquereur.eq.${user?.uid ?? '-'},metadata->>acquereur_uid.eq.${user?.uid ?? '-'},metadata->>client_uid.eq.${user?.uid ?? '-'},metadata->>client_email.eq.${email}`)
       // Brouillon (devis pas encore envoyé…) : jamais montré au destinataire.
       .neq('statut', 'brouillon')
       .order('created_at', { ascending: false })
-      .then(({ data }) => {
+      .then(async ({ data }) => {
         const all = (data ?? []) as unknown as DocRow[];
+        // Sans profil destinataire sur le contrat : celui de son rendez-vous,
+        // sinon le profil principal (jamais affiché dans tous les profils).
+        const cibleRdv: Record<string, string | null> = {};
+        let principal: string | null = null;
+        const sansCible = all.filter(d => !(d.metadata?.client_profile_id ?? d.metadata?.acquereur_profile_id));
+        if (sansCible.length && user?.uid) {
+          const rdvIds = [...new Set(sansCible.map(d => (d as { rdv_id?: string | null }).rdv_id).filter(Boolean) as string[])];
+          if (rdvIds.length) {
+            const { data: rs } = await supabase.from('rdv').select('id, client_profile_id').in('id', rdvIds);
+            for (const r of (rs ?? []) as { id: string; client_profile_id: string | null }[]) cibleRdv[r.id] = r.client_profile_id;
+          }
+          const { data: p } = await supabase.from('user_profiles').select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
+          principal = (p as { id?: string } | null)?.id ?? null;
+        }
         const rows = all.filter(d => {
           // Un document que J'AI ÉMIS en tant que pro (uid_eleveur = moi)
           // n'est jamais « reçu » par moi-même — il reste dans la vue pro qui
@@ -88,8 +104,10 @@ export default function MesContratsPage() {
           // (client_profile_id / acquereur_profile_id) et qu'il diffère du
           // profil actif, il appartient à un autre profil du compte — à ne
           // pas afficher ici (même règle que côté appli).
-          const target = (d.metadata?.client_profile_id ?? d.metadata?.acquereur_profile_id) as string | null | undefined;
-          if (!target || !activePid) return true;
+          if (!activePid) return true;
+          const target = ((d.metadata?.client_profile_id ?? d.metadata?.acquereur_profile_id) as string | null | undefined)
+            || cibleRdv[(d as { rdv_id?: string | null }).rdv_id ?? ''] || principal;
+          if (!target) return true;
           return target === activePid;
         });
         // Tri : dernière activité (signature la plus récente), pas la création —
