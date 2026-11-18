@@ -448,50 +448,47 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           },
         );
       } else if (data.type === 'contrat_prestation_toilettage') {
-        const { data: rdv } = await supabase
-          .from('rdv')
-          .select('animal_id, client_uid, date_heure, adresse_depart, prestation_id')
-          .eq('id', data.rdv_id)
-          .maybeSingle();
-        let animalInfo: { nom?: string; espece?: string } = {};
-        let clientInfo: { nom?: string; contact?: string } = {};
-        let prestationInfo: { nom?: string; prix_base?: number } = {};
-        if (rdv?.animal_id) {
-          const { data: an } = await supabase.from('animaux').select('nom, espece').eq('id', rdv.animal_id).maybeSingle();
-          animalInfo = an ?? {};
+        // Séance, animaux et coordonnées complètes lus côté serveur (fiche du
+        // client et RDV masqués au navigateur) — même contenu que l'appli.
+        type Animal = { nom: string; espece?: string; race?: string; identification?: string; date_naissance?: string | null };
+        let k: {
+          nom?: string; email?: string; tel?: string; adresse?: string; pro?: { email?: string; tel?: string };
+          rdv?: { date_heure?: string | null; lieu?: string; motif?: string; animal_nom?: string; prix?: number | null; prestation_nom?: string } | null;
+          animaux?: Animal[];
+        } = {};
+        if (auth.currentUser) {
+          try {
+            const r = await apiFetch(`/api/contracts/${data.id}/coordonnees-client`, { cache: 'no-store' });
+            if (r.ok) k = await r.json();
+          } catch { /* repli sur le contrat */ }
         }
-        if (rdv?.client_uid) {
-          const { data: cp2 } = await supabase.from('user_profiles_complet')
-            .select('firstname, lastname, email_contact').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
-          clientInfo = {
-            nom: `${cp2?.firstname ?? ''} ${cp2?.lastname ?? ''}`.trim(),
-            contact: cp2?.email_contact ?? '',
-          };
-        }
-        if (rdv?.prestation_id) {
-          const { data: pr } = await supabase.from('prestations_toilettage')
-            .select('nom, prix_base').eq('id', rdv.prestation_id).maybeSingle();
-          prestationInfo = pr ?? {};
-        }
+        const fiche = (data as { animaux?: Animal | null }).animaux;
+        const animaux: Animal[] = k.animaux?.length ? k.animaux : fiche?.nom ? [fiche] : [];
+        const prixMeta = meta.prix_total ? Number(String(meta.prix_total).replace(',', '.')) : undefined;
         generatedHtml = generateContratPrestationToilettageHTML(
           {
-            client_nom: meta.client_nom || clientInfo.nom,
-            client_contact: meta.client_contact || clientInfo.contact,
-            animal_nom: animalInfo.nom ?? meta.acquereur_nom ?? '',
-            espece: animalInfo.espece,
-            date_prestation: rdv?.date_heure ?? meta.date_prestation,
-            lieu: rdv?.adresse_depart ?? meta.lieu,
+            client_nom: (meta.client_nom as string) || k.nom,
+            client_email: (meta.client_email as string) || k.email,
+            client_tel: (meta.client_tel as string) || k.tel,
+            client_adresse: [String(meta.client_adresse ?? '').trim(), String(k.adresse ?? '').trim()]
+              .sort((x, y) => y.length - x.length)[0] || undefined,
+            client_contact: meta.client_contact as string | undefined,
+            animal_nom: (Array.isArray(meta.animaux_noms) ? (meta.animaux_noms as string[]).join(', ') : '') || k.rdv?.animal_nom || '',
+            animaux,
+            date_prestation: k.rdv?.date_heure ?? (meta.date_prestation as string | undefined),
+            lieu: k.rdv?.lieu || (meta.lieu as string | undefined)
+              || ((profil?.adress_elevage ?? '').trim() ? `Au salon — ${String(profil?.adress_elevage).trim()}` : undefined),
           },
           {
             nom: elvNom,
             adresse: profil?.adress_elevage ?? profil?.adress ?? '',
-            email: profil?.email ?? '',
-            tel: elvTel,
+            email: profil?.email || k.pro?.email || '',
+            tel: elvTel || k.pro?.tel || '',
             siret: profil?.siret ?? '',
           },
           {
-            prestationNom: prestationInfo.nom ?? meta.prestation_nom,
-            prixTotal: prestationInfo.prix_base ?? (meta.prix_total ? Number(meta.prix_total) : undefined),
+            prestationNom: (meta.prestation_nom as string) || k.rdv?.prestation_nom || k.rdv?.motif,
+            prixTotal: prixMeta && prixMeta > 0 ? prixMeta : (k.rdv?.prix != null ? Number(k.rdv.prix) : undefined),
             notes: meta.notes,
           },
         );

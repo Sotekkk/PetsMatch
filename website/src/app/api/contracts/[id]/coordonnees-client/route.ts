@@ -13,6 +13,9 @@ const admin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 );
 
+const RDV_COLS = 'id, client_nom_manuel, client_email_manuel, client_telephone_manuel, adresse_depart, date_heure, motif, prestation_id, prix_calcule, animal_id, animal_nom_manuel';
+const ANIMAL_COLS = 'id, nom, espece, race, identification, date_naissance';
+
 const t = (v: unknown) => (typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim());
 const premier = (...v: unknown[]) => v.map(t).find(Boolean) ?? '';
 
@@ -29,7 +32,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const auth = await requireUser(req);
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
-  const { data: doc } = await admin.from('documents_animaux').select('id, uid_eleveur, rdv_id, metadata').eq('id', id).maybeSingle();
+  const { data: doc } = await admin.from('documents_animaux').select('id, uid_eleveur, pro_profile_id, animal_id, rdv_id, metadata').eq('id', id).maybeSingle();
   if (!doc) return NextResponse.json({ error: 'Contrat introuvable' }, { status: 404 });
   const meta = ((doc as { metadata?: Record<string, unknown> | null }).metadata ?? {}) as Record<string, unknown>;
   const uidPro = String((doc as { uid_eleveur: string }).uid_eleveur);
@@ -44,25 +47,46 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
   if (!autorise) return NextResponse.json({ error: 'Non autorisé' }, { status: 403 });
 
-  const [{ data: prof }, { data: compte }] = await Promise.all([
+  const proPid = t((doc as { pro_profile_id?: string | null }).pro_profile_id);
+  const [{ data: prof }, { data: compte }, { data: proProf }, { data: proCompte }] = await Promise.all([
     clientPid
       ? admin.from('user_profiles').select('firstname, lastname, nom, email_contact, phone_number, phone, telephone, adresse, rue, code_postal, ville, rue_pro, code_postal_pro, ville_pro').eq('id', clientPid).maybeSingle()
       : Promise.resolve({ data: null }),
     clientUid
       ? admin.from('users').select('firstname, lastname, email, phone_number, adress, rue, code_postal, ville').eq('uid', clientUid).maybeSingle()
       : Promise.resolve({ data: null }),
+    proPid ? admin.from('user_profiles').select('email_contact, phone_number, phone').eq('id', proPid).maybeSingle() : Promise.resolve({ data: null }),
+    admin.from('users').select('email, phone_number').eq('uid', uidPro).maybeSingle(),
   ]);
   // RDV du contrat, sinon le dernier de ce client avec ce prestataire : coordonnées saisies à la main.
   const rdvId = t(meta.rdv_id) || t((doc as { rdv_id?: string | null }).rdv_id);
   let rdv: Record<string, unknown> | null = null;
   if (rdvId) {
-    rdv = (await admin.from('rdv').select('client_nom_manuel, client_email_manuel, client_telephone_manuel, adresse_depart').eq('id', rdvId).maybeSingle()).data as Record<string, unknown> | null;
+    rdv = (await admin.from('rdv').select(RDV_COLS).eq('id', rdvId).maybeSingle()).data as Record<string, unknown> | null;
   } else if (clientUid || clientPid) {
-    let q = admin.from('rdv').select('client_nom_manuel, client_email_manuel, client_telephone_manuel, adresse_depart').eq('pro_uid', uidPro);
+    let q = admin.from('rdv').select(RDV_COLS).eq('pro_uid', uidPro);
     q = clientUid ? q.eq('client_uid', clientUid) : q.eq('client_profile_id', clientPid);
     rdv = (await q.order('date_heure', { ascending: false }).limit(1).maybeSingle()).data as Record<string, unknown> | null;
   }
+  // Séance du contrat (date, lieu, prestation, prix) et animaux concernés :
+  // lus ici car la RLS peut les masquer au navigateur (le site affichait un
+  // contrat de toilettage sans date ni prix).
+  const r = rdv;
+  let prestation: Record<string, unknown> | null = null;
+  if (r?.prestation_id) {
+    prestation = (await admin.from('prestations_toilettage').select('nom, prix_base').eq('id', String(r.prestation_id)).maybeSingle()).data as Record<string, unknown> | null;
+  }
+  const idsMeta = [meta.animaux_ids, meta.animal_ids].find(Array.isArray) as unknown[] | undefined;
+  const ids = [...new Set((idsMeta ?? []).map(t).filter(Boolean))];
+  if (!ids.length) { const a = t(r?.animal_id) || t((doc as { animal_id?: string | null }).animal_id); if (a) ids.push(a); }
+  const animaux = ids.length
+    ? ((await admin.from('animaux').select(ANIMAL_COLS).in('id', ids)).data ?? []) as Record<string, unknown>[]
+    : [];
+  animaux.sort((a, b) => ids.indexOf(String(a.id)) - ids.indexOf(String(b.id)));
+
   const p = prof as Record<string, unknown> | null;
+  const pp = proProf as Record<string, unknown> | null;
+  const pc = proCompte as Record<string, unknown> | null;
   const u = compte as Record<string, unknown> | null;
   const adresses = [adresseDe(p), adresseDe(u)].filter(Boolean).sort((a, b) => b.length - a.length);
   return NextResponse.json({
@@ -70,5 +94,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     email: premier(p?.email_contact, u?.email, rdv?.client_email_manuel),
     tel: premier(p?.phone_number, p?.phone, p?.telephone, u?.phone_number, rdv?.client_telephone_manuel),
     adresse: adresses[0] ?? '',
+    pro: { email: premier(pp?.email_contact, pc?.email), tel: premier(pp?.phone_number, pp?.phone, pc?.phone_number) },
+    rdv: r ? {
+      date_heure: r.date_heure ?? null, lieu: t(r.adresse_depart), motif: t(r.motif), animal_nom: t(r.animal_nom_manuel),
+      prix: r.prix_calcule ?? prestation?.prix_base ?? null, prestation_nom: t(prestation?.nom),
+    } : null,
+    animaux: animaux.map(a => ({ nom: t(a.nom), espece: t(a.espece), race: t(a.race), identification: t(a.identification), date_naissance: a.date_naissance ?? null })),
   });
 }

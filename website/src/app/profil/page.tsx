@@ -1544,8 +1544,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         </Card>
 
         {/* Durées des prestations */}
-        {/* Pension : durées dans Tarifs (arrivée, départ, visite). */}
-        {Object.keys(motifs).length > 0 && catPro !== 'pension' && (
+        {/* Pension : durées dans Tarifs (arrivée, départ, visite). Toiletteur :
+            durée réglée sur chaque prestation (Mes prestations), seule utilisée. */}
+        {Object.keys(motifs).length > 0 && catPro !== 'pension' && catPro !== 'toilettage' && (
           <Card title="Durées des prestations (minutes)">
             <div className="grid grid-cols-2 gap-3">
               {Object.entries(motifs).map(([key, label]) => (

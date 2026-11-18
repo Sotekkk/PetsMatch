@@ -872,14 +872,30 @@ Future<Uint8List> contratPhotoPdfBytes({
 Future<Uint8List> contratToilettagePdfBytes({
   required Map<String, dynamic> prestataire,
   String clientNom = '', String clientContact = '',
-  String animal = '', DateTime? datePrestation, String lieu = '',
+  String clientAdresse = '', String clientTel = '', String clientEmail = '',
+  String animal = '',
+  /// Animaux concernés (fiches) : nom, espece, race, identification, date_naissance.
+  List<Map<String, dynamic>> animaux = const [],
+  DateTime? datePrestation, String lieu = '',
   String prestationNom = '', double prixTotal = 0, String notes = '',
   String? sigPrestataire, String? sigClient, String villeSignature = '',
 }) async {
   final pdf = pw.Document(theme: await _pdfTheme());
   final p = _parties(prestataire);
   final today = _fmt(DateTime.now());
-  final prix = '${prixTotal.toStringAsFixed(2).replaceAll('.', ',')} €';
+  final prix = prixTotal > 0 ? '${prixTotal.toStringAsFixed(2).replaceAll('.', ',')} €' : 'à convenir';
+  String sv(dynamic v) => (v ?? '').toString().trim();
+  String espRace(Map<String, dynamic> a) {
+    final e = sv(a['espece']);
+    return [if (e.isNotEmpty) '${e[0].toUpperCase()}${e.substring(1)}', if (sv(a['race']).isNotEmpty) sv(a['race'])].join(' — ');
+  }
+  String naiss(Map<String, dynamic> a) {
+    final d = DateTime.tryParse(sv(a['date_naissance']));
+    return d == null ? '' : _fmt(d);
+  }
+  final fiches = animaux.where((a) => sv(a['nom']).isNotEmpty).toList();
+  // Sans contact détaillé : ancien « Contact » (e-mail · téléphone).
+  final sansDetail = clientAdresse.trim().isEmpty && clientTel.trim().isEmpty && clientEmail.trim().isEmpty;
 
   pdf.addPage(pw.MultiPage(
     pageFormat: PdfPageFormat.a4,
@@ -900,13 +916,28 @@ Future<Uint8List> contratToilettagePdfBytes({
       pw.Text('ET :', style: _bold()),
       pw.SizedBox(height: 3),
       _line('Le Client', clientNom.trim().isEmpty ? null : clientNom.trim()),
-      _line('Contact', clientContact.trim().isEmpty ? null : clientContact.trim()),
+      _line('Demeurant à', clientAdresse.trim().isEmpty ? null : clientAdresse.trim()),
+      _line('Téléphone', clientTel.trim().isEmpty ? null : clientTel.trim()),
+      _line('Email', clientEmail.trim().isEmpty ? null : clientEmail.trim()),
+      if (sansDetail) _line('Contact', clientContact.trim().isEmpty ? null : clientContact.trim()),
 
       pw.SizedBox(height: 10),
       pw.Text('Objet du contrat', style: _artTitle()),
       pw.SizedBox(height: 3),
       _line('Prestation', prestationNom.trim().isEmpty ? 'à définir' : prestationNom.trim()),
-      _line('Animal', animal.trim().isEmpty ? null : animal.trim()),
+      if (fiches.length > 1)
+        _line('Animaux', fiches.map((a) {
+          final d = [espRace(a), if (sv(a['identification']).isNotEmpty) 'puce ${sv(a['identification'])}',
+              if (naiss(a).isNotEmpty) 'né(e) le ${naiss(a)}'].where((x) => x.isNotEmpty).join(', ');
+          return d.isEmpty ? sv(a['nom']) : '${sv(a['nom'])} ($d)';
+        }).join(' ; '))
+      else if (fiches.length == 1) ...[
+        _line('Animal', sv(fiches.first['nom'])),
+        _line('Espèce / race', espRace(fiches.first).isEmpty ? null : espRace(fiches.first)),
+        _line('Identification', sv(fiches.first['identification']).isEmpty ? null : sv(fiches.first['identification'])),
+        _line('Date de naissance', naiss(fiches.first).isEmpty ? null : naiss(fiches.first)),
+      ] else
+        _line('Animal', animal.trim().isEmpty ? null : animal.trim()),
       _line('Date de la prestation', datePrestation != null ? _fmt(datePrestation) : null),
       _line('Lieu', lieu.trim().isEmpty ? 'à convenir' : lieu.trim()),
       _line('Prix', prix),

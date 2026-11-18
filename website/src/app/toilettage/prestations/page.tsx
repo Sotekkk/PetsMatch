@@ -153,11 +153,16 @@ export default function ToilettagePrestationsPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <input type="number" value={form.prix_base} onChange={e => setForm({ ...form, prix_base: e.target.value })}
-              placeholder="Prix de base (€)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
-            <input type="number" value={form.duree_minutes} onChange={e => setForm({ ...form, duree_minutes: e.target.value })}
-              placeholder="Durée (min)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+            <label className="text-xs font-medium text-gray-500">Prix de base (€)
+              <input type="number" value={form.prix_base} onChange={e => setForm({ ...form, prix_base: e.target.value })}
+                placeholder="Prix de base (€)" className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900" />
+            </label>
+            <label className="text-xs font-medium text-gray-500">Durée (min)
+              <input type="number" min={5} step={5} value={form.duree_minutes} onChange={e => setForm({ ...form, duree_minutes: e.target.value })}
+                placeholder="Durée (min)" className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900" />
+            </label>
           </div>
+          <p className="text-xs text-gray-400 -mt-1">La durée sert à calculer les créneaux proposés à vos clients.</p>
 
           <div>
             <div className="flex items-center justify-between mb-1.5">

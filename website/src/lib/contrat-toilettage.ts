@@ -1,11 +1,16 @@
 // Génération du contrat de prestation toilettage (HTML, signature électronique
 // via /signer-contrat/[token] — même mécanisme que garde/photographe).
 
-import { partiesHtml } from '@/lib/contrat-parties';
+import { lignePartieHtml, partiesHtml } from '@/lib/contrat-parties';
 export interface ToilettageRdvContrat {
   client_nom?: string;
   client_contact?: string;
+  client_email?: string;
+  client_tel?: string;
+  client_adresse?: string;
   animal_nom?: string;
+  /** Animaux concernés (fiches) : nom, espèce / race, identification, naissance. */
+  animaux?: { nom: string; espece?: string; race?: string; identification?: string; date_naissance?: string | null }[];
   espece?: string;
   date_prestation?: string;
   lieu?: string;
@@ -69,6 +74,28 @@ function signBlock(role: 'vendeur' | 'acheteur', titre: string, nom: string): st
 </div>`;
 }
 
+const espRace = (espece?: string, race?: string) =>
+  [espece ? espece.charAt(0).toUpperCase() + espece.slice(1) : '', race ?? ''].filter(Boolean).join(' — ');
+
+/** Un animal : nom, espèce / race, identification, naissance ; plusieurs : une ligne chacun. */
+function animauxHtml(rdv: ToilettageRdvContrat): string {
+  const l = (rdv.animaux ?? []).filter(a => a.nom);
+  if (l.length > 1) {
+    return lignePartieHtml('Animaux', l.map(a => {
+      const d = [espRace(a.espece, a.race), a.identification ? `puce ${a.identification}` : '', a.date_naissance ? `né(e) le ${fmt(a.date_naissance)}` : '']
+        .filter(Boolean).join(', ');
+      return d ? `${a.nom} (${d})` : a.nom;
+    }).join(' ; '));
+  }
+  const a = l[0];
+  return [
+    lignePartieHtml('Animal', a?.nom || rdv.animal_nom),
+    lignePartieHtml('Espèce / race', a ? espRace(a.espece, a.race) : espRace(rdv.espece)),
+    lignePartieHtml('Identification', a?.identification),
+    lignePartieHtml('Date de naissance', a?.date_naissance ? fmt(a.date_naissance) : ''),
+  ].join('');
+}
+
 export function generateContratPrestationToilettageHTML(
   rdv: ToilettageRdvContrat,
   toiletteur: ToilettageInfo,
@@ -87,17 +114,17 @@ export function generateContratPrestationToilettageHTML(
 
 ${partiesHtml(
   { titre: 'Le Prestataire', nom: toiletteur.nom, adresse: toiletteur.adresse, tel: toiletteur.tel, siret: toiletteur.siret, email: toiletteur.email },
-  [['Le Client', rdv.client_nom], ['Contact', rdv.client_contact]],
+  [['Le Client', rdv.client_nom], ['Demeurant à', rdv.client_adresse], ['Téléphone', rdv.client_tel],
+   ['Email', rdv.client_email || (rdv.client_tel || rdv.client_adresse ? '' : rdv.client_contact)]],
 )}
 
 <h2>Objet du contrat</h2>
-<table class="info-table">
-  <tr><td>Prestation</td><td>${data.prestationNom || 'à définir'}</td></tr>
-  <tr><td>Animal</td><td>${rdv.animal_nom ?? ''} ${rdv.espece ? '(' + rdv.espece + ')' : ''}</td></tr>
-  <tr><td>Date de la prestation</td><td>${fmt(rdv.date_prestation)}</td></tr>
-  <tr><td>Lieu</td><td>${rdv.lieu || 'à convenir'}</td></tr>
-  <tr><td>Prix</td><td>${prixTotal.toFixed(2)} €</td></tr>
-</table>
+<!-- Même présentation que l'appli (contratToilettagePdfBytes) et que les contrats de garde / pension. -->
+${lignePartieHtml('Prestation', data.prestationNom || 'à définir')}
+${animauxHtml(rdv)}
+${lignePartieHtml('Date de la prestation', rdv.date_prestation ? fmt(rdv.date_prestation) : '')}
+${lignePartieHtml('Lieu', rdv.lieu || 'à convenir')}
+${lignePartieHtml('Prix', prixTotal > 0 ? `${prixTotal.toFixed(2).replace('.', ',')} €` : 'à convenir')}
 
 <h2>Conditions générales</h2>
 

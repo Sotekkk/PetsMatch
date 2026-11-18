@@ -675,18 +675,46 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         if (animal.isNotEmpty && esp.isNotEmpty) animal = '$animal ($esp)';
         final contact = [m('client_email'), rdv?['client_email_manuel']?.toString() ?? '', rdv?['client_telephone_manuel']?.toString() ?? '']
             .map((x) => x.trim()).where((x) => x.isNotEmpty).toSet().join(' · ');
-        final adresse = (rdv?['adresse_depart']?.toString() ?? '').trim();
+        // Coordonnées complètes, séance et animaux lus côté serveur (fiche du
+        // client masquée selon le lecteur) — même source que le site.
+        Map<String, dynamic> k = const {};
+        try {
+          final r = await http.get(Uri.parse('$kSiteBaseUrl/api/contracts/${_doc!['id']}/coordonnees-client'),
+              headers: await siteApiHeaders());
+          if (r.statusCode == 200) k = Map<String, dynamic>.from(jsonDecode(r.body) as Map);
+        } catch (_) {}
+        String ks(dynamic v) => (v ?? '').toString().trim();
+        final kr = k['rdv'] is Map ? Map<String, dynamic>.from(k['rdv'] as Map) : const <String, dynamic>{};
+        final kpro = k['pro'] is Map ? Map<String, dynamic>.from(k['pro'] as Map) : const <String, dynamic>{};
+        final animauxK = [for (final a in (k['animaux'] as List?) ?? const []) if (a is Map) Map<String, dynamic>.from(a)];
+        final prestataire = Map<String, dynamic>.from(_eleveur!);
+        if (ks(prestataire['email']).isEmpty && ks(kpro['email']).isNotEmpty) prestataire['email'] = ks(kpro['email']);
+        if (ks(prestataire['phone_number']).isEmpty && ks(prestataire['numero_elevage']).isEmpty && ks(kpro['tel']).isNotEmpty) {
+          prestataire['phone_number'] = ks(kpro['tel']);
+        }
+        final adresseMeta = m('client_adresse');
+        final adresseClient = adresseMeta.length >= ks(k['adresse']).length ? adresseMeta : ks(k['adresse']);
+        var adresse = (rdv?['adresse_depart']?.toString() ?? '').trim();
+        if (adresse.isEmpty) adresse = ks(kr['lieu']);
         final villePro = (_eleveur?['adress_elevage']?.toString() ?? '').trim();
         _pdfBytes = await contratToilettagePdfBytes(
-          prestataire: _eleveur!,
-          clientNom: m('client_nom'),
+          prestataire: prestataire,
+          clientNom: m('client_nom').isNotEmpty ? m('client_nom') : ks(k['nom']),
           clientContact: contact,
+          clientAdresse: adresseClient,
+          clientTel: m('client_tel').isNotEmpty ? m('client_tel')
+              : ks(k['tel']).isNotEmpty ? ks(k['tel']) : (rdv?['client_telephone_manuel']?.toString() ?? '').trim(),
+          clientEmail: m('client_email').isNotEmpty ? m('client_email')
+              : ks(k['email']).isNotEmpty ? ks(k['email']) : (rdv?['client_email_manuel']?.toString() ?? '').trim(),
           animal: animal,
-          datePrestation: DateTime.tryParse(rdv?['date_heure']?.toString() ?? m('date_prestation'))?.toLocal(),
+          animaux: animauxK.isNotEmpty ? animauxK : (_animal != null && ks(_animal!['nom']).isNotEmpty ? [_animal!] : const []),
+          datePrestation: DateTime.tryParse(rdv?['date_heure']?.toString() ?? (ks(kr['date_heure']).isNotEmpty ? ks(kr['date_heure']) : m('date_prestation')))?.toLocal(),
           lieu: adresse.isNotEmpty ? adresse : (m('lieu').isNotEmpty ? m('lieu') : (villePro.isNotEmpty ? 'Au salon — $villePro' : '')),
-          prestationNom: m('prestation_nom').isNotEmpty ? m('prestation_nom') : (prest?['nom']?.toString() ?? ''),
+          prestationNom: m('prestation_nom').isNotEmpty ? m('prestation_nom')
+              : (prest?['nom']?.toString() ?? '').isNotEmpty ? prest!['nom'].toString() : ks(kr['prestation_nom']),
           prixTotal: double.tryParse(m('prix_total').replaceAll(',', '.'))
-              ?? (rdv?['prix_calcule'] as num?)?.toDouble() ?? (prest?['prix_base'] as num?)?.toDouble() ?? 0,
+              ?? (rdv?['prix_calcule'] as num?)?.toDouble() ?? (prest?['prix_base'] as num?)?.toDouble()
+              ?? (kr['prix'] as num?)?.toDouble() ?? 0,
           notes: m('notes'),
           sigPrestataire: sigElv, sigClient: sigAcq,
           villeSignature: ville,

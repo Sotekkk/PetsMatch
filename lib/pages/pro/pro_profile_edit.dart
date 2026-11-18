@@ -1164,7 +1164,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
                   // ── Durées par prestation ─────────────────────────────────
                   // Pension : durées dans Tarifs (arrivée, départ, visite).
-                  if (_catPro.isNotEmpty && _catPro != 'referencement' && _catPro != 'pension') ...[
+                  // Toiletteur / photographe : durée réglée sur chaque prestation
+                  // (Mes prestations), seule utilisée pour les créneaux.
+                  if (_catPro.isNotEmpty && _catPro != 'referencement' && _catPro != 'pension'
+                      && _catPro != 'toilettage' && _catPro != 'photographe') ...[
                     const SizedBox(height: 24),
                     _sectionTitle('Durées par prestation (minutes)'),
                     const SizedBox(height: 4),
