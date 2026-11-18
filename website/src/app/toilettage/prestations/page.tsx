@@ -26,16 +26,24 @@ const LIB_ESPECE: Record<string, string> = { chien: 'Chien', chat: 'Chat', nac: 
 /** Grille lisible : « Chien jusqu'à 10 kg : 35 € », « Chien de 10 à 20 kg : 45 € »,
  *  « Chien plus de 20 kg : 45 € » (au-delà : prix de la dernière tranche).
  *  Miroir appli : lignesGrillePrix (toilettage_prestations_page.dart). */
+// Tranche « et plus » (sans poids maximum) : enregistrée à 999 kg, comme avant.
+const SANS_MAX = 999;
+const sansMax = (kg: number) => !(Number(kg) > 0) || Number(kg) >= SANS_MAX;
+
 function lignesGrille(grille: Tranche[]): string[] {
   const out: string[] = [];
   for (const esp of ESPECES) {
-    const ts = grille.filter(t => t.espece === esp && Number(t.poids_max_kg) > 0).sort((a, b) => a.poids_max_kg - b.poids_max_kg);
+    const ts = grille.filter(t => t.espece === esp).map(t => ({ ...t, max: sansMax(t.poids_max_kg) ? SANS_MAX : Number(t.poids_max_kg) }))
+      .sort((a, b) => a.max - b.max);
     let min = 0;
     for (const t of ts) {
-      out.push(`${LIB_ESPECE[esp]} ${min ? `de ${min} à ${t.poids_max_kg} kg` : `jusqu'à ${t.poids_max_kg} kg`} : ${Number(t.prix) || 0} €`);
-      min = t.poids_max_kg;
+      const prix = `${Number(t.prix) || 0} €`;
+      if (t.max >= SANS_MAX) { out.push(`${LIB_ESPECE[esp]} ${min ? `plus de ${min} kg` : '(tous poids)'} : ${prix}`); break; }
+      out.push(`${LIB_ESPECE[esp]} ${min ? `de ${min} à ${t.max} kg` : `jusqu'à ${t.max} kg`} : ${prix}`);
+      min = t.max;
     }
-    if (ts.length) out.push(`${LIB_ESPECE[esp]} plus de ${min} kg : ${Number(ts[ts.length - 1].prix) || 0} €`);
+    // Pas de tranche « et plus » : au-delà, prix de la dernière tranche.
+    if (ts.length && ts[ts.length - 1].max < SANS_MAX) out.push(`${LIB_ESPECE[esp]} plus de ${min} kg : ${Number(ts[ts.length - 1].prix) || 0} €`);
   }
   return out;
 }
@@ -190,6 +198,7 @@ export default function ToilettagePrestationsPage() {
             </div>
             <p className="text-xs text-gray-500 mb-2">
               Pour un prix selon la taille de l&apos;animal : une ligne par tranche, avec le poids maximum et le prix jusqu&apos;à ce poids.
+              Laissez le poids vide sur la dernière tranche pour « plus de … kg ».
               Le prix est calculé à la réservation d&apos;après le poids de la fiche de l&apos;animal ; sans poids connu, c&apos;est le prix de base.
             </p>
             {form.grille_prix.length > 0 && (
@@ -206,8 +215,9 @@ export default function ToilettagePrestationsPage() {
                   className="flex-[1.2] border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
                   {ESPECES.map(e => <option key={e} value={e}>{LIB_ESPECE[e]}</option>)}
                 </select>
-                <input type="number" min={0} value={t.poids_max_kg} onChange={e => updateTranche(i, { poids_max_kg: Number(e.target.value) })}
-                  placeholder="kg" aria-label="Poids maximum (kg)" className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+                <input type="number" min={0} value={sansMax(t.poids_max_kg) ? '' : t.poids_max_kg}
+                  onChange={e => updateTranche(i, { poids_max_kg: e.target.value === '' ? SANS_MAX : Number(e.target.value) })}
+                  placeholder="et plus" aria-label="Poids maximum (kg), vide = et plus" className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
                 <input type="number" min={0} value={t.prix} onChange={e => updateTranche(i, { prix: Number(e.target.value) })}
                   placeholder="€" aria-label="Prix (€ TTC)" className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
                 <button type="button" onClick={() => removeTranche(i)} aria-label="Retirer la tranche" className="w-6 text-gray-300 hover:text-red-400">✕</button>

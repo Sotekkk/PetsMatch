@@ -26,19 +26,26 @@ const _libEspece = {'chien': 'Chien', 'chat': 'Chat', 'nac': 'NAC'};
 /// Grille lisible : « Chien jusqu'à 10 kg : 35 € », « Chien de 10 à 20 kg :
 /// 45 € », « Chien plus de 20 kg : 45 € » (au-delà : prix de la dernière
 /// tranche, comme prixPourAnimal). Miroir site : lignesGrille.
+/// Tranche « et plus » (sans poids maximum) : enregistrée à 999 kg, comme avant.
+const kSansMaxKg = 999;
+bool _sansMax(dynamic kg) => !(((kg as num?) ?? 0) > 0) || (kg as num) >= kSansMaxKg;
+
 List<String> lignesGrillePrix(List grille) {
   String n(num v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString().replaceAll('.', ',');
   final out = <String>[];
   for (final esp in kEspecesToilettage) {
-    final ts = [for (final t in grille) if (t is Map && t['espece'] == esp && ((t['poids_max_kg'] as num?) ?? 0) > 0) t]
-      ..sort((a, b) => ((a['poids_max_kg'] as num?) ?? 0).compareTo((b['poids_max_kg'] as num?) ?? 0));
+    num maxDe(Map t) => _sansMax(t['poids_max_kg']) ? kSansMaxKg : (t['poids_max_kg'] as num);
+    final ts = [for (final t in grille) if (t is Map && t['espece'] == esp) t]..sort((a, b) => maxDe(a).compareTo(maxDe(b)));
     num min = 0;
     for (final t in ts) {
-      final max = (t['poids_max_kg'] as num?) ?? 0;
-      out.add('${_libEspece[esp]} ${min > 0 ? 'de ${n(min)} à ${n(max)} kg' : "jusqu'à ${n(max)} kg"} : ${n((t['prix'] as num?) ?? 0)} €');
+      final max = maxDe(t);
+      final prix = '${n((t['prix'] as num?) ?? 0)} €';
+      if (max >= kSansMaxKg) { out.add('${_libEspece[esp]} ${min > 0 ? 'plus de ${n(min)} kg' : '(tous poids)'} : $prix'); break; }
+      out.add('${_libEspece[esp]} ${min > 0 ? 'de ${n(min)} à ${n(max)} kg' : "jusqu'à ${n(max)} kg"} : $prix');
       min = max;
     }
-    if (ts.isNotEmpty) out.add('${_libEspece[esp]} plus de ${n(min)} kg : ${n((ts.last['prix'] as num?) ?? 0)} €');
+    // Pas de tranche « et plus » : au-delà, prix de la dernière tranche.
+    if (ts.isNotEmpty && maxDe(ts.last) < kSansMaxKg) out.add('${_libEspece[esp]} plus de ${n(min)} kg : ${n((ts.last['prix'] as num?) ?? 0)} €');
   }
   return out;
 }
@@ -475,6 +482,7 @@ class _PrestationToilettageFormState extends State<_PrestationToilettageForm> {
             TextButton.icon(onPressed: _addTranche, icon: const Icon(Icons.add, size: 16), label: const Text('Ajouter une tranche', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
           ]),
           Text("Pour un prix selon la taille de l'animal : une ligne par tranche, avec le poids maximum et le prix jusqu'à ce poids. "
+              "Laissez le poids vide sur la dernière tranche pour « plus de … kg ». "
               "Le prix est calculé à la réservation d'après le poids de la fiche de l'animal ; sans poids connu, c'est le prix de base.",
               style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
           const SizedBox(height: 8),
@@ -495,10 +503,10 @@ class _PrestationToilettageFormState extends State<_PrestationToilettageForm> {
                 )),
                 const SizedBox(width: 6),
                 Expanded(child: TextFormField(
-                  initialValue: t['poids_max_kg']?.toString() ?? '',
+                  initialValue: _sansMax(t['poids_max_kg']) ? '' : t['poids_max_kg'].toString(),
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: "Jusqu'à (kg)", isDense: true, border: OutlineInputBorder()),
-                  onChanged: (v) => setState(() => _grille[i]['poids_max_kg'] = num.tryParse(v.replaceAll(',', '.')) ?? 0),
+                  decoration: const InputDecoration(labelText: "Jusqu'à (kg)", hintText: 'et plus', isDense: true, border: OutlineInputBorder()),
+                  onChanged: (v) => setState(() => _grille[i]['poids_max_kg'] = v.trim().isEmpty ? kSansMaxKg : (num.tryParse(v.replaceAll(',', '.')) ?? kSansMaxKg)),
                 )),
                 const SizedBox(width: 6),
                 Expanded(child: TextFormField(
