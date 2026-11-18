@@ -21,6 +21,24 @@ const TYPES_PRESTATION: Record<string, string> = {
 };
 
 const ESPECES = ['chien', 'chat', 'nac'];
+const LIB_ESPECE: Record<string, string> = { chien: 'Chien', chat: 'Chat', nac: 'NAC' };
+
+/** Grille lisible : « Chien jusqu'à 10 kg : 35 € », « Chien de 10 à 20 kg : 45 € »,
+ *  « Chien plus de 20 kg : 45 € » (au-delà : prix de la dernière tranche).
+ *  Miroir appli : lignesGrillePrix (toilettage_prestations_page.dart). */
+function lignesGrille(grille: Tranche[]): string[] {
+  const out: string[] = [];
+  for (const esp of ESPECES) {
+    const ts = grille.filter(t => t.espece === esp && Number(t.poids_max_kg) > 0).sort((a, b) => a.poids_max_kg - b.poids_max_kg);
+    let min = 0;
+    for (const t of ts) {
+      out.push(`${LIB_ESPECE[esp]} ${min ? `de ${min} à ${t.poids_max_kg} kg` : `jusqu'à ${t.poids_max_kg} kg`} : ${Number(t.prix) || 0} €`);
+      min = t.poids_max_kg;
+    }
+    if (ts.length) out.push(`${LIB_ESPECE[esp]} plus de ${min} kg : ${Number(ts[ts.length - 1].prix) || 0} €`);
+  }
+  return out;
+}
 
 interface Tranche { espece: string; poids_max_kg: number; prix: number }
 
@@ -168,21 +186,39 @@ export default function ToilettagePrestationsPage() {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <p className="text-xs font-semibold text-gray-700">Grille de prix par poids (optionnel)</p>
-              <button type="button" onClick={addTranche} className="text-xs font-semibold" style={{ color: ORANGE }}>+ Ajouter</button>
+              <button type="button" onClick={addTranche} className="text-xs font-semibold" style={{ color: ORANGE }}>+ Ajouter une tranche</button>
             </div>
+            <p className="text-xs text-gray-500 mb-2">
+              Pour un prix selon la taille de l&apos;animal : une ligne par tranche, avec le poids maximum et le prix jusqu&apos;à ce poids.
+              Le prix est calculé à la réservation d&apos;après le poids de la fiche de l&apos;animal ; sans poids connu, c&apos;est le prix de base.
+            </p>
+            {form.grille_prix.length > 0 && (
+              <div className="flex gap-1.5 mb-1 text-[11px] font-semibold text-gray-500">
+                <span className="flex-[1.2]">Espèce</span>
+                <span className="flex-1">Jusqu&apos;à (kg)</span>
+                <span className="flex-1">Prix (€ TTC)</span>
+                <span className="w-6" />
+              </div>
+            )}
             {form.grille_prix.map((t, i) => (
               <div key={i} className="flex gap-1.5 mb-1.5 items-center">
                 <select value={t.espece} onChange={e => updateTranche(i, { espece: e.target.value })}
                   className="flex-[1.2] border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
-                  {ESPECES.map(e => <option key={e} value={e}>{e}</option>)}
+                  {ESPECES.map(e => <option key={e} value={e}>{LIB_ESPECE[e]}</option>)}
                 </select>
-                <input type="number" value={t.poids_max_kg} onChange={e => updateTranche(i, { poids_max_kg: Number(e.target.value) })}
-                  placeholder="Poids max (kg)" className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
-                <input type="number" value={t.prix} onChange={e => updateTranche(i, { prix: Number(e.target.value) })}
-                  placeholder="Prix (€)" className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
-                <button type="button" onClick={() => removeTranche(i)} className="text-gray-300 hover:text-red-400 px-1">✕</button>
+                <input type="number" min={0} value={t.poids_max_kg} onChange={e => updateTranche(i, { poids_max_kg: Number(e.target.value) })}
+                  placeholder="kg" aria-label="Poids maximum (kg)" className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+                <input type="number" min={0} value={t.prix} onChange={e => updateTranche(i, { prix: Number(e.target.value) })}
+                  placeholder="€" aria-label="Prix (€ TTC)" className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+                <button type="button" onClick={() => removeTranche(i)} aria-label="Retirer la tranche" className="w-6 text-gray-300 hover:text-red-400">✕</button>
               </div>
             ))}
+            {lignesGrille(form.grille_prix).length > 0 && (
+              <div className="mt-2 rounded-xl bg-[#FFF6EA] px-3 py-2">
+                <p className="text-[11px] font-semibold text-gray-500 mb-0.5">Récapitulatif de la grille</p>
+                {lignesGrille(form.grille_prix).map(l => <p key={l} className="text-xs text-gray-800">{l}</p>)}
+              </div>
+            )}
           </div>
 
           <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
@@ -215,8 +251,9 @@ export default function ToilettagePrestationsPage() {
                 className="flex-1 min-w-0 text-left">
                 <p className="text-sm font-semibold text-[#1F2A2E]">✂️ {p.nom}</p>
                 <p className="text-xs text-gray-500">
-                  {TYPES_PRESTATION[p.type] ?? p.type} · {p.grille_prix?.length ? `${p.grille_prix.length} tranche${p.grille_prix.length > 1 ? 's' : ''} de prix` : `à partir de ${p.prix_base.toFixed(0)} €`} · {p.duree_minutes} min
+                  {TYPES_PRESTATION[p.type] ?? p.type} · {p.grille_prix?.length ? 'prix selon le poids' : `à partir de ${p.prix_base.toFixed(0)} €`} · {p.duree_minutes} min
                 </p>
+                {lignesGrille(p.grille_prix ?? []).map(l => <p key={l} className="text-xs text-gray-600">{l}</p>)}
                 {p.description && <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">{p.description}</p>}
               </button>
               <button onClick={() => remove(p.id)} className="text-gray-300 hover:text-red-400 shrink-0">🗑</button>

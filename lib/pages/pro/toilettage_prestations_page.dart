@@ -21,6 +21,27 @@ const kTypesPrestationToilettage = <String, String>{
 };
 
 const kEspecesToilettage = ['chien', 'chat', 'nac'];
+const _libEspece = {'chien': 'Chien', 'chat': 'Chat', 'nac': 'NAC'};
+
+/// Grille lisible : « Chien jusqu'à 10 kg : 35 € », « Chien de 10 à 20 kg :
+/// 45 € », « Chien plus de 20 kg : 45 € » (au-delà : prix de la dernière
+/// tranche, comme prixPourAnimal). Miroir site : lignesGrille.
+List<String> lignesGrillePrix(List grille) {
+  String n(num v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString().replaceAll('.', ',');
+  final out = <String>[];
+  for (final esp in kEspecesToilettage) {
+    final ts = [for (final t in grille) if (t is Map && t['espece'] == esp && ((t['poids_max_kg'] as num?) ?? 0) > 0) t]
+      ..sort((a, b) => ((a['poids_max_kg'] as num?) ?? 0).compareTo((b['poids_max_kg'] as num?) ?? 0));
+    num min = 0;
+    for (final t in ts) {
+      final max = (t['poids_max_kg'] as num?) ?? 0;
+      out.add('${_libEspece[esp]} ${min > 0 ? 'de ${n(min)} à ${n(max)} kg' : "jusqu'à ${n(max)} kg"} : ${n((t['prix'] as num?) ?? 0)} €');
+      min = max;
+    }
+    if (ts.isNotEmpty) out.add('${_libEspece[esp]} plus de ${n(min)} kg : ${n((ts.last['prix'] as num?) ?? 0)} €');
+  }
+  return out;
+}
 
 /// Résout le prix d'une prestation pour un animal donné : cherche la
 /// première tranche de `grille_prix` dont l'espèce correspond et dont
@@ -196,8 +217,9 @@ class _ToilettagePrestationsPageState extends State<ToilettagePrestationsPage> {
                             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                         subtitle: Text(
                             '${kTypesPrestationToilettage[p['type']] ?? p['type']} · '
-                            '${grille.isNotEmpty ? "${grille.length} tranche${grille.length > 1 ? 's' : ''} de prix" : "à partir de ${((p['prix_base'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)} €"}'
-                            ' · ${p['duree_minutes']} min',
+                            '${grille.isNotEmpty ? 'prix selon le poids' : "à partir de ${((p['prix_base'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)} €"}'
+                            ' · ${p['duree_minutes']} min'
+                            '${grille.isNotEmpty ? '\n${lignesGrillePrix(grille).join('\n')}' : ''}',
                             style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
                         trailing: IconButton(
                           icon: const Icon(Icons.delete_outline, color: Colors.red),
@@ -450,42 +472,59 @@ class _PrestationToilettageFormState extends State<_PrestationToilettageForm> {
           Row(children: [
             Text('Grille de prix par poids (optionnel)', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade700)),
             const Spacer(),
-            TextButton.icon(onPressed: _addTranche, icon: const Icon(Icons.add, size: 16), label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
+            TextButton.icon(onPressed: _addTranche, icon: const Icon(Icons.add, size: 16), label: const Text('Ajouter une tranche', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
           ]),
+          Text("Pour un prix selon la taille de l'animal : une ligne par tranche, avec le poids maximum et le prix jusqu'à ce poids. "
+              "Le prix est calculé à la réservation d'après le poids de la fiche de l'animal ; sans poids connu, c'est le prix de base.",
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+          const SizedBox(height: 8),
           ..._grille.asMap().entries.map((entry) {
             final i = entry.key;
             final t = entry.value;
             return Padding(
+              // Clé par tranche : retirer une ligne ne décale pas les valeurs saisies.
+              key: ObjectKey(t),
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(children: [
                 Expanded(flex: 2, child: DropdownButtonFormField<String>(
                   initialValue: t['espece'] as String? ?? 'chien',
                   isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Espèce', isDense: true, border: OutlineInputBorder()),
-                  items: kEspecesToilettage.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                  items: kEspecesToilettage.map((e) => DropdownMenuItem(value: e, child: Text(_libEspece[e] ?? e))).toList(),
                   onChanged: (v) => setState(() => _grille[i]['espece'] = v),
                 )),
                 const SizedBox(width: 6),
                 Expanded(child: TextFormField(
                   initialValue: t['poids_max_kg']?.toString() ?? '',
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Poids max (kg)', isDense: true, border: OutlineInputBorder()),
-                  onChanged: (v) => _grille[i]['poids_max_kg'] = int.tryParse(v) ?? 0,
+                  decoration: const InputDecoration(labelText: "Jusqu'à (kg)", isDense: true, border: OutlineInputBorder()),
+                  onChanged: (v) => setState(() => _grille[i]['poids_max_kg'] = num.tryParse(v.replaceAll(',', '.')) ?? 0),
                 )),
                 const SizedBox(width: 6),
                 Expanded(child: TextFormField(
                   initialValue: t['prix']?.toString() ?? '',
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(labelText: 'Prix (€ TTC)', isDense: true, border: OutlineInputBorder()),
-                  onChanged: (v) => _grille[i]['prix'] = double.tryParse(v) ?? 0,
+                  onChanged: (v) => setState(() => _grille[i]['prix'] = double.tryParse(v.replaceAll(',', '.')) ?? 0),
                 )),
                 IconButton(
                   icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'Retirer la tranche',
                   onPressed: () => setState(() => _grille.removeAt(i)),
                 ),
               ]),
             );
           }),
+          if (lignesGrillePrix(_grille).isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: const Color(0xFFFFF6EA), borderRadius: BorderRadius.circular(10)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Récapitulatif de la grille', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
+                for (final l in lignesGrillePrix(_grille)) Text(l, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+              ]),
+            ),
           const SizedBox(height: 12),
           TextField(controller: _descCtrl, maxLines: 2, style: const TextStyle(fontFamily: 'Galey'),
               decoration: const InputDecoration(labelText: 'Description (optionnel)', border: OutlineInputBorder())),
