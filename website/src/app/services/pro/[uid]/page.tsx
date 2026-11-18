@@ -1,4 +1,5 @@
 'use client';
+import { forfaitsToilettageCatalogue, type ForfaitToilettage } from '@/lib/forfait-toilettage';
 import { uniteForfaitGarde } from '@/lib/forfait-garde';
 import { libelleMoyens, moyensPaiement } from '@/lib/moyens-paiement';
 import { etatEssaiClient, MOTIF_ESSAI, reglagesEssai, type EtatEssai } from '@/lib/garde-essai';
@@ -375,6 +376,9 @@ function ProDetailContent() {
   const [accesLogement, setAccesLogement] = useState<string | null>(null);
   const [forfaitsGarde, setForfaitsGarde] = useState<{ id: string; nom: string; nb_visites: number; prix: number; type_prestation?: string }[]>([]);
   const [forfaitId, setForfaitId] = useState<string | null>(null);
+  // Toiletteur : cartes de séances proposées et carte en cours du client.
+  const [forfaitsToil, setForfaitsToil] = useState<ForfaitToilettage[]>([]);
+  const [mesCartesToil, setMesCartesToil] = useState<{ id: string; nom_snapshot: string | null; nb_seances_total: number; nb_seances_utilisees: number; prestation_toilettage_id: string | null; valide_jusqu_au: string | null }[]>([]);
 
   // Cours collectifs (éducateur/comportementaliste)
   const [coursCollectifs, setCoursCollectifs] = useState<CoursCollectif[]>([]);
@@ -561,6 +565,15 @@ function ProDetailContent() {
     if (profileTableId) q = q.eq('pro_profile_id', profileTableId);
     const { data } = await q.order('created_at');
     setPrestations((data ?? []) as Prestation[]);
+    if (catPro === 'toilettage' && profileTableId) {
+      setForfaitsToil(await forfaitsToilettageCatalogue(profileTableId));
+      if (user) {
+        const { data: mes } = await supabase.from('forfaits_souscrits')
+          .select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, prestation_toilettage_id, valide_jusqu_au')
+          .eq('pro_profile_id', profileTableId).eq('client_uid', user.uid).eq('statut', 'actif').not('forfait_toilettage_id', 'is', null);
+        setMesCartesToil((mes ?? []) as typeof mesCartesToil);
+      }
+    }
   }
 
   function prestationPrixLabel(p: Prestation, catPro: string) {
@@ -1006,7 +1019,7 @@ function ProDetailContent() {
     const notesGarde = [gardeAvecAdresse ? gardeLieuNote : '', notes.trim()].filter(Boolean).join('\n');
     setSaving(true);
     try {
-      const motifInfo = (MOTIFS_BY_CAT[pro.cat_pro] ?? DEFAULT_MOTIFS).find(m => m.key === motifKey);
+      const motifInfo = motifsCat.find(m => m.key === motifKey);
       const motifLabel = pro.cat_pro === 'photographe' && prestationPhotoId
         ? (prestations.find(x => x.id === prestationPhotoId)?.nom ?? 'Séance photo')
         : motifKey === 'essai' ? MOTIF_ESSAI : (motifInfo?.label ?? motifKey);
@@ -1014,10 +1027,12 @@ function ProDetailContent() {
       // Plusieurs animaux : détail par animal (motif + durée), motif combiné.
       const nomAnimal = (id: number | string) => animaux.find(a => a.id === id)?.nom ?? '';
       const detailAnimaux = animauxEnPlus.length > 0 && selectedAnimalId ? [
-        { id: String(selectedAnimalId), nom: nomAnimal(selectedAnimalId), motif: motifLabel, motif_cle: motifKey, duree_minutes: dureeMotifCle(motifKey) },
+        { id: String(selectedAnimalId), nom: nomAnimal(selectedAnimalId), motif: motifLabel, motif_cle: motifKey, duree_minutes: dureeMotifCle(motifKey),
+          ...(motifsToilettage.length ? { prestation_id: motifKey } : {}) },
         ...animauxEnPlus.map(id => {
           const o = optionAutre(id);
-          return { id: String(id), nom: nomAnimal(id), motif: o?.label ?? motifLabel, motif_cle: o?.key ?? motifKey, duree_minutes: o?.duree ?? 30 };
+          return { id: String(id), nom: nomAnimal(id), motif: o?.label ?? motifLabel, motif_cle: o?.key ?? motifKey, duree_minutes: o?.duree ?? 30,
+            ...(motifsToilettage.length ? { prestation_id: o?.key ?? motifKey } : {}) };
         }),
       ] : null;
       const motifRdv = (() => {
@@ -1118,6 +1133,9 @@ function ProDetailContent() {
           } : {}),
           // Toiletteur à domicile : supplément figé à la réservation (repris sur la facture).
           ...(pro.cat_pro === 'toilettage' && domicile && (pro.supplement_domicile ?? 0) > 0 ? { supplement_deplacement: pro.supplement_domicile } : {}),
+          // Toiletteur : prestation du catalogue (prix et contrat) et carte de séances choisie.
+          ...(pro.cat_pro === 'toilettage' && motifsToilettage.some(m => m.key === motifKey) ? { prestation_id: motifKey } : {}),
+          ...(pro.cat_pro === 'toilettage' && forfaitId && !carteEnCoursToil && offresCartesToil.some(f => f.id === forfaitId) ? { forfait_id: forfaitId } : {}),
           ...(domicilePossible(pro.cat_pro) && domicile ? {
             lieu: adresseDomicile.trim(),
             ...(domicileLatLng ? { lieu_lat: domicileLatLng.lat, lieu_lng: domicileLatLng.lng } : {}),
@@ -1277,13 +1295,29 @@ function ProDetailContent() {
   // Plusieurs animaux sur le même RDV : durée de chaque animal selon son
   // motif, créneau de la somme des durées (miroir appli _selectedDuration).
   const multiAnimaux = !!pro && !!user && !isTaxi && ['veterinaire', 'sante', 'toilettage', 'education'].includes(pro.cat_pro);
-  const motifsCat = MOTIFS_BY_CAT[pro?.cat_pro ?? ''] ?? DEFAULT_MOTIFS;
-  const dureeMotifCle = (k: string) => Number(dureesMotifsPro[k]) || (motifsCat.find(m => m.key === k)?.duree ?? 30);
+  // Toiletteur : les prestations de son catalogue (durée réglée dans « Mes
+  // prestations »), comme l'appli ; motifs génériques s'il n'en a pas.
+  const motifsToilettage = pro?.cat_pro === 'toilettage'
+    ? prestations.map(p => ({ key: p.id, label: p.nom, icon: '', duree: Number(p.duree_minutes) || 60 })) : [];
+  const motifsCat = motifsToilettage.length ? motifsToilettage : (MOTIFS_BY_CAT[pro?.cat_pro ?? ''] ?? DEFAULT_MOTIFS);
+  const dureeMotifCle = (k: string) => motifsToilettage.length
+    ? (motifsToilettage.find(m => m.key === k)?.duree ?? 60)
+    : Number(dureesMotifsPro[k]) || (motifsCat.find(m => m.key === k)?.duree ?? 30);
   const optionsAutres = motifsCat.filter(m => m.key !== 'autre').map(m => ({ key: m.key, label: m.label, duree: dureeMotifCle(m.key) }));
   const animauxEnPlus = multiAnimaux && selectedAnimalId ? autresAnimaux.filter(id => id !== selectedAnimalId) : [];
   const optionAutre = (id: number | string) =>
     optionsAutres.find(o => o.key === (motifsAutres[String(id)] ?? motifKey)) ?? optionsAutres[0];
   const dureeEnPlus = animauxEnPlus.reduce<number>((s, id) => s + (optionAutre(id)?.duree ?? 30), 0);
+  // Toiletteur : carte en cours qui couvre la prestation choisie (séance
+  // décomptée), sinon cartes de séances proposées.
+  const aujourdhuiIso = new Date().toISOString().slice(0, 10);
+  const carteEnCoursToil = pro?.cat_pro === 'toilettage' && motifKey
+    ? mesCartesToil.find(c => (Number(c.nb_seances_total) - Number(c.nb_seances_utilisees)) > 0
+      && (!c.prestation_toilettage_id || c.prestation_toilettage_id === motifKey)
+      && (!c.valide_jusqu_au || c.valide_jusqu_au >= aujourdhuiIso)) ?? null
+    : null;
+  const offresCartesToil = pro?.cat_pro === 'toilettage' && motifKey && !carteEnCoursToil
+    ? forfaitsToil.filter(f => !f.prestation_id || f.prestation_id === motifKey) : [];
 
   // Autres métiers, plusieurs animaux : créneaux de la durée totale dans les
   // plages du pro (fusionnées), sans chevaucher un RDV existant.
@@ -1370,7 +1404,7 @@ function ProDetailContent() {
   }
 
   const slotsByDate = pro?.cat_pro === 'veterinaire' ? slotsVeto()
-    : dureeEnPlus > 0 ? slotsDureeTotale(dureeMotifCle(motifKey) + dureeEnPlus)
+    : dureeEnPlus > 0 || (motifsToilettage.length > 0 && !!motifKey) ? slotsDureeTotale(dureeMotifCle(motifKey) + dureeEnPlus)
     : slots.reduce<Record<string, Slot[]>>((acc, s) => {
     if (pro?.cat_pro === 'garde' && !slotForPrestation(s)) return acc;
     if (!chevauchementOk && estOccupe(s)) return acc;
@@ -1500,7 +1534,7 @@ function ProDetailContent() {
     : essaiBloque ? []
     : essaiGarde && essaiClient.etat === 'nouveau'
       ? (essaiReg.obligatoire ? [motifEssai] : [motifEssai, ...(MOTIFS_BY_CAT.garde ?? [])])
-    : MOTIFS_BY_CAT[pro?.cat_pro ?? ''] ?? DEFAULT_MOTIFS;
+    : motifsCat;
   const catColor = CAT_COLORS[pro?.cat_pro ?? ''] ?? '#0C5C6C';
   const selectedEspece = animaux.find(a => a.id === selectedAnimalId)?.espece;
   const motifLabelFor = (key: string, fallback: string) =>
@@ -2403,6 +2437,34 @@ function ProDetailContent() {
                       ))}
                     </div>
                   </div>
+                  )}
+
+                  {/* Toiletteur : carte de séances (miroir appli _buildCartesToilettage) */}
+                  {carteEnCoursToil && (
+                    <p className="text-xs font-semibold rounded-xl px-3 py-2.5" style={{ fontFamily: 'Galey, sans-serif', background: '#E8F5EE', color: '#2E7D5E' }}>
+                      {(() => {
+                        const reste = Number(carteEnCoursToil.nb_seances_total) - Number(carteEnCoursToil.nb_seances_utilisees);
+                        return `Votre carte « ${carteEnCoursToil.nom_snapshot ?? 'Carte'} » : ${reste} séance${reste > 1 ? 's' : ''} restante${reste > 1 ? 's' : ''}. Ce rendez-vous sera décompté de votre carte.`;
+                      })()}
+                    </p>
+                  )}
+                  {offresCartesToil.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>Carte de séances</p>
+                      <p className="text-xs text-gray-500 mb-2.5">Payée d&apos;avance : vos prochains rendez-vous sont décomptés de la carte.</p>
+                      <div className="flex flex-wrap gap-2">
+                        {[{ id: '', label: 'Séance seule' }, ...offresCartesToil.map(f => ({ id: f.id, label: `${f.nom} — ${f.nb_seances} séances — ${Math.round(Number(f.prix) || 0)} €` }))].map(o => {
+                          const actif = (forfaitId ?? '') === o.id;
+                          return (
+                            <button key={o.id || 'seule'} type="button" onClick={() => setForfaitId(o.id || null)}
+                              className="px-3 py-2 rounded-xl border text-sm font-semibold"
+                              style={{ fontFamily: 'Galey, sans-serif', borderColor: actif ? catColor : '#E5E7EB', backgroundColor: actif ? `${catColor}15` : 'white', color: actif ? catColor : '#6B7280' }}>
+                              {o.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
 
                   {/* Clinique : choix du vétérinaire (miroir appli) */}

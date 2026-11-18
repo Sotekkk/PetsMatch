@@ -22,6 +22,10 @@ import SignatureProModal from '@/components/signature/SignatureProModal';
 import FinConsultationModal from '@/components/rdv/FinConsultationModal';
 import DocumentProModal from '@/components/pro/DocumentProModal';
 import { TYPE_CONTRAT_PRO } from '@/lib/document-pro';
+import {
+  rattacherForfaitToilettage, forfaitsToilettageCatalogue, vendreForfaitToilettage, detacherForfaitToilettage,
+  libelleForfaitClient, resumeForfaitToilettage, type ForfaitToilettage, type ForfaitToilettageClient,
+} from '@/lib/forfait-toilettage';
 
 const TEAL = '#0C5C6C';
 const AMBRE = '#D97706';
@@ -85,6 +89,10 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
   // Contrat : celui de PetsMatch (généré) ou le mien (PDF / photo chargé).
   const [monContrat, setMonContrat] = useState(false);
   const [now, setNow] = useState(0);
+  // Carte de séances du client (décompte de cette séance) et catalogue du salon.
+  const [forfait, setForfait] = useState<ForfaitToilettageClient | null>(null);
+  const [catalogue, setCatalogue] = useState<ForfaitToilettage[]>([]);
+  const [choixCarte, setChoixCarte] = useState(false);
 
   const charger = useCallback(async () => {
     const { data: rdv } = await supabase.from('rdv').select('*').eq('id', rdvId).maybeSingle();
@@ -139,8 +147,10 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
       prenom: v(pf?.firstname, cc?.prenom), nom: v(pf?.lastname, cc?.nom), rue: v(pf?.rue, pf?.rue_pro, cc?.rue),
       cp: v(pf?.code_postal, pf?.code_postal_pro, cc?.code_postal), ville: v(pf?.ville, pf?.ville_pro, cc?.ville),
     });
+    setForfait(await rattacherForfaitToilettage(x.id));
+    setCatalogue(await forfaitsToilettageCatalogue(x.pro_profile_id || pidActif));
     setNow(Date.now());
-  }, [rdvId, animalChoisi]);
+  }, [rdvId, animalChoisi, pidActif]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     charger();
@@ -285,6 +295,42 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
     router.push('/elevage/facturation');
   }
 
+  /** Facture de la carte (une fois, à l'achat) : rattachée à la souscription. */
+  function facturerCarte(fc: ForfaitToilettageClient) {
+    if (!r) return;
+    try {
+      sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
+        nomClient: coord.nom || nomClient, prenomClient: coord.prenom || undefined, emailClient: coord.email || undefined, telClient: coord.tel || undefined,
+        rueClient: coord.rue || undefined, cpClient: coord.cp || undefined, villeClient: coord.ville || undefined,
+        sourceAnimalId: r.animal_id ?? undefined, clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
+        forfaitSouscritId: fc.id,
+        retour: `/mes-rdv?onglet=a_venir&rdv=${encodeURIComponent(r.id)}`,
+        lignes: [{ description: `Carte de séances — ${fc.nom}${animalNom ? ` — ${animalNom}` : ''} (${fc.total} séance${fc.total > 1 ? 's' : ''} de toilettage, décomptées à chaque rendez-vous)`,
+          quantite: 1, prixUnitaire: 0, prixTTC: fc.prix, tva: 20, commune: true }],
+      }));
+    } catch { /* facture vierge */ }
+    router.push('/elevage/facturation');
+  }
+
+  async function vendreCarte(f: ForfaitToilettage) {
+    if (!r) return;
+    try {
+      const fc = await vendreForfaitToilettage(r.id, f);
+      setChoixCarte(false);
+      onChanged?.();
+      facturerCarte(fc);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Vente de la carte impossible');
+    }
+  }
+
+  async function retirerDeLaCarte(fc: ForfaitToilettageClient) {
+    if (!r || !confirm(`Ne pas décompter cette séance de la carte « ${fc.nom} » ? Elle sera facturée à part.`)) return;
+    await detacherForfaitToilettage(r.id, fc);
+    await charger();
+    onChanged?.();
+  }
+
   async function marquerPayee() {
     if (!facture) return;
     const maj = { statut: 'payee', mode_paiement: modePaiement, date_paiement: new Date().toISOString() };
@@ -398,12 +444,37 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
                   const ok = await envoyerContratParEmail({ email: coord.email, clientNom: nomClient, proProfileId: pid, token: contrat.token, titre: 'Contrat de prestation toilettage' });
                   setMessage(ok ? 'Contrat envoyé par e-mail.' : 'Adresse e-mail du client inconnue.');
                 })] : [])])}
+          {(forfait || catalogue.length > 0) && ligne('Carte',
+            !forfait ? 'Aucune carte de séances'
+              : `${libelleForfaitClient(forfait)}${forfait.valideJusquAu ? ` · valable jusqu'au ${new Date(forfait.valideJusquAu).toLocaleDateString('fr-FR')}` : ''}${forfait.facture ? '' : ' · à facturer'}`,
+            !forfait ? GRIS : forfait.facture ? VERT : AMBRE,
+            !forfait ? [btn('Vendre une carte', () => setChoixCarte(c => !c))]
+              : [...(!forfait.facture ? [btn('Facturer la carte', () => facturerCarte(forfait))] : []),
+                ...(!facture ? [btn('Ne pas décompter', () => retirerDeLaCarte(forfait))] : [])])}
+          {choixCarte && !forfait && (() => {
+            const offres = catalogue.filter(f => !f.prestation_id || f.prestation_id === r.prestation_id);
+            return (
+              <div className="rounded-xl bg-[#F1F7F8] px-3 py-2 mb-1.5 space-y-1.5">
+                <p className="text-xs text-gray-500">Cette séance sera la première décomptée.</p>
+                {!offres.length && <p className="text-xs text-gray-600">Aucune carte ne couvre la prestation de ce rendez-vous.</p>}
+                {offres.map(f => (
+                  <button key={f.id} type="button" onClick={() => vendreCarte(f)}
+                    className="w-full text-left rounded-lg bg-white border border-gray-200 px-3 py-2 hover:border-[#0C5C6C]">
+                    <span className="block text-sm font-semibold text-[#1E2025]">{f.nom}</span>
+                    <span className="block text-xs text-gray-500">{resumeForfaitToilettage(f, f.prestation_id ? prestation.nom : undefined)}</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
           {ligne('Facture',
-            !facture ? (passee ? 'À émettre' : 'Non facturée')
+            !facture && forfait ? 'Séance décomptée de la carte'
+            : !facture ? (passee ? 'À émettre' : 'Non facturée')
               : facture.statut === 'payee' ? `Payée${facture.date_paiement ? ` le ${new Date(facture.date_paiement).toLocaleDateString('fr-FR')}` : ''} · ${eur(facture.total_ttc)}`
               : `Émise, non payée · ${eur(facture.total_ttc)}`,
-            !facture ? (passee ? AMBRE : GRIS) : facture.statut === 'payee' ? VERT : AMBRE,
-            !facture ? [btn('Facturer', facturer)]
+            !facture && forfait ? VERT : !facture ? (passee ? AMBRE : GRIS) : facture.statut === 'payee' ? VERT : AMBRE,
+            !facture && forfait ? []
+            : !facture ? [btn('Facturer', facturer)]
               : [btn('Voir', () => router.push('/elevage/facturation')),
                 ...(r.client_uid ? [btn('Transmettre', () => notifier('facture_recue', 'Nouvelle facture — votre toiletteur',
                   `Facture n° ${facture.numero_affichage ?? facture.numero_facture ?? ''} · ${(Number(facture.total_ttc) || 0).toFixed(2)} €`,
@@ -446,7 +517,8 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
       </div>
       {finSeance && (
         <FinConsultationModal metier="toilettage" rdvId={r.id} proProfileId={pid || null} clientNom={nomClient}
-          onPreparerFacture={() => { setFinSeance(false); facturer(); }}
+          // Séance décomptée d'une carte de séances : pas de facture à la séance.
+          onPreparerFacture={forfait ? undefined : () => { setFinSeance(false); facturer(); }}
           onClose={() => setFinSeance(false)} onDone={() => { setFinSeance(false); charger(); onChanged?.(); }} />
       )}
       {monContrat && (

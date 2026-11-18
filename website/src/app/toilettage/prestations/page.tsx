@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import CartesSeances from '@/components/toilettage/CartesSeances';
 
 const ORANGE = '#FFB74D';
 
@@ -223,6 +224,8 @@ export default function ToilettagePrestationsPage() {
           ))}
         </div>
       )}
+
+      {user?.uid && activeProfileId && <CartesSeances proUid={user.uid} profileId={activeProfileId} prestations={prestations} />}
     </div>
   );
 }

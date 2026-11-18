@@ -127,6 +127,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   // Forfait choisi (rdv.forfait_id).
   List<Map<String, dynamic>> _forfaitsGarde = [];
   String? _forfaitId;
+  // Toiletteur : cartes de séances proposées, et carte en cours du client.
+  List<Map<String, dynamic>> _forfaitsToilettage = [];
+  List<Map<String, dynamic>> _mesCartesToilettage = [];
   // Pension-specific
   String? _selectedMotif;
   bool? _premiereVisite;
@@ -623,6 +626,83 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           .eq('pro_uid', widget.proUid).eq('actif', true).order('created_at');
       if (mounted) setState(() => _prestations = List<Map<String, dynamic>>.from(rows as List));
     } catch (_) {}
+    if (widget.isToilettage && (widget.proProfileId ?? '').isNotEmpty) {
+      try {
+        final f = await Supabase.instance.client.from('forfaits_toilettage').select()
+            .eq('pro_profile_id', widget.proProfileId!).eq('actif', true).order('nb_seances');
+        final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final mes = uid.isEmpty ? const [] : await Supabase.instance.client.from('forfaits_souscrits')
+            .select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, prestation_toilettage_id, valide_jusqu_au')
+            .eq('pro_profile_id', widget.proProfileId!).eq('client_uid', uid).eq('statut', 'actif')
+            .not('forfait_toilettage_id', 'is', null);
+        if (mounted) {
+          setState(() {
+            _forfaitsToilettage = List<Map<String, dynamic>>.from(f as List);
+            _mesCartesToilettage = List<Map<String, dynamic>>.from(mes);
+          });
+        }
+      } catch (_) {
+        // Migration des cartes pas encore passée.
+      }
+    }
+  }
+
+  /// Carte proposée / en cours applicable à la prestation choisie.
+  bool _carteCouvre(Map<String, dynamic> c, String cle) {
+    final p = c[cle]?.toString() ?? '';
+    return p.isEmpty || p == _selectedPrestation?['id']?.toString();
+  }
+
+  List<Widget> _buildCartesToilettage() {
+    if (_selectedPrestation == null) return const [];
+    final enCours = _mesCartesToilettage.where((c) {
+      final fin = DateTime.tryParse(c['valide_jusqu_au']?.toString() ?? '');
+      final reste = ((c['nb_seances_total'] as num?)?.toInt() ?? 0) - ((c['nb_seances_utilisees'] as num?)?.toInt() ?? 0);
+      return reste > 0 && _carteCouvre(c, 'prestation_toilettage_id') && (fin == null || !fin.isBefore(DateTime.now()));
+    }).firstOrNull;
+    if (enCours != null) {
+      final reste = ((enCours['nb_seances_total'] as num?)?.toInt() ?? 0) - ((enCours['nb_seances_utilisees'] as num?)?.toInt() ?? 0);
+      if (_forfaitId != null) WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _forfaitId = null); });
+      return [
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: const Color(0xFFE8F5EE), borderRadius: BorderRadius.circular(12)),
+          child: Text('Votre carte « ${enCours['nom_snapshot'] ?? 'Carte'} » : $reste séance${reste > 1 ? 's' : ''} restante${reste > 1 ? 's' : ''}. '
+              'Ce rendez-vous sera décompté de votre carte.',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF2E7D5E), fontWeight: FontWeight.w600)),
+        ),
+      ];
+    }
+    final offres = _forfaitsToilettage.where((f) => _carteCouvre(f, 'prestation_id')).toList();
+    if (offres.isEmpty) return const [];
+    if (_forfaitId != null && !offres.any((f) => f['id']?.toString() == _forfaitId)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _forfaitId = null); });
+    }
+    return [
+      const SizedBox(height: 12),
+      _sectionTitle('Carte de séances'),
+      const SizedBox(height: 4),
+      Text('Payée d\'avance : vos prochains rendez-vous sont décomptés de la carte.',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+      const SizedBox(height: 6),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        ChoiceChip(
+          label: const Text('Séance seule', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+          selected: _forfaitId == null,
+          selectedColor: widget.categoryColor.withValues(alpha: 0.15),
+          onSelected: (_) => setState(() => _forfaitId = null),
+        ),
+        for (final f in offres)
+          ChoiceChip(
+            label: Text('${f['nom']} — ${f['nb_seances']} séances — ${((f['prix'] as num?) ?? 0).toStringAsFixed(0)} €',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            selected: _forfaitId == f['id']?.toString(),
+            selectedColor: widget.categoryColor.withValues(alpha: 0.15),
+            onSelected: (_) => setState(() => _forfaitId = f['id']?.toString()),
+          ),
+      ]),
+    ];
   }
 
   // Employés actifs du toiletteur — scopé eleveur_profile_id (jamais le
@@ -1508,6 +1588,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                 ? detailAnimaux.fold<double>(0, (s, d) => s + ((d['prix'] as num?)?.toDouble() ?? 0))
                 : _prixAffiche(_selectedPrestation!),
             if (_selectedEmploye != null) 'employe_id': _selectedEmploye!['id'],
+            if (_forfaitId != null) 'forfait_id': _forfaitId,
           },
           if ((_hasDomicileOption && _domicile) || _gardeAvecAdresse) ...{
             'lieu': _adresseDomicileCtrl.text.trim(),
@@ -2181,6 +2262,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           ),
         );
       }),
+      if (widget.isToilettage) ..._buildCartesToilettage(),
       if (widget.isToilettage && _employesToilettage.length > 1) ...[
         const SizedBox(height: 16),
         _sectionTitle('Intervenant'),

@@ -32,6 +32,7 @@ import 'package:PetsMatch/utils/devis_rdv.dart' show devisDuRdv, titreDevisRdv, 
 import 'package:PetsMatch/pages/rdv_consignes_page.dart';
 import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro, signerEtEnregistrer;
 import 'package:PetsMatch/utils/document_pro.dart' show comptesRendusProDuRdv, lignesCrsPro, ajouterPiecesCrsPro;
+import 'package:PetsMatch/utils/forfait_toilettage.dart';
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1F2A2E);
@@ -280,6 +281,12 @@ Future<void> finSeanceToilettage(BuildContext context, Map<String, dynamic> rdv,
         .order('created_at', ascending: false).limit(1);
     if ((f as List).isNotEmpty) facture = Map<String, dynamic>.from(f.first as Map);
   } catch (_) {}
+  // Séance décomptée d'une carte de séances : pas de facture à la séance.
+  var couverte = false;
+  try {
+    final x = await supa.from('rdv').select('forfait_souscrit_id').eq('id', rdvId).maybeSingle();
+    couverte = (x?['forfait_souscrit_id']?.toString() ?? '').isNotEmpty;
+  } catch (_) {}
   // Mes comptes rendus chargés (photo / PDF) : envoyés à la place de la fiche technique.
   final crsPro = await comptesRendusProDuRdv(rdvId);
   // Devis du RDV pas encore signé : lien de signature envoyé avec le reste (miroir site).
@@ -320,7 +327,11 @@ Future<void> finSeanceToilettage(BuildContext context, Map<String, dynamic> rdv,
           if (facture != null)
             ligne('fac', 'Facture ${facture['numero_affichage'] ?? ''}',
                 '${((facture['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}'),
-          if (facture == null) ...[
+          if (facture == null && couverte)
+            const Padding(padding: EdgeInsets.only(top: 6),
+                child: Text('Séance décomptée de la carte de séances du client : pas de facture.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _vert))),
+          if (facture == null && !couverte) ...[
             const SizedBox(height: 6),
             SizedBox(width: double.infinity, child: OutlinedButton.icon(
               onPressed: () => Navigator.pop(ctx, 'facture'),
@@ -563,6 +574,9 @@ class _DossierToilettageState extends State<_DossierToilettage> {
   List<Map<String, dynamic>> get _detail => animauxDetailRdv(r);
   bool get _plusieurs => _detail.length > 1;
   Map<String, String> _coord = {};
+  // Carte de séances du client (décompte de cette séance) et catalogue du salon.
+  ForfaitToilettageClient? _forfait;
+  List<Map<String, dynamic>> _catalogue = const [];
 
   Map<String, dynamic> get r => widget.rdv;
   // Prochain RDV (facultatif) : programmé tout de suite ou par le client plus tard.
@@ -586,6 +600,8 @@ class _DossierToilettageState extends State<_DossierToilettage> {
     final id = r['id'];
     _coord = await coordonneesClientRdv(r);
     _prochain = await prochainRdvDate(r);
+    _forfait = await rattacherForfaitToilettage(r);
+    _catalogue = await forfaitsToilettageCatalogue(_pid);
     try { _consignes = await _supa.from('rdv').select('consignes, consignes_le, consignes_demandees_le, animal_id, animaux_detail, documents_envoyes_le').eq('id', id).maybeSingle(); } catch (_) {}
     // Détail des animaux (absent de certaines listes de l'agenda) : repris du RDV.
     if (r['animaux_detail'] == null && _consignes?['animaux_detail'] != null) r['animaux_detail'] = _consignes!['animaux_detail'];
@@ -728,6 +744,69 @@ class _DossierToilettageState extends State<_DossierToilettage> {
         ]),
       )),
     );
+  }
+
+  // ── Carte de séances ──
+  Future<void> _vendreForfait() async {
+    final pid = r['prestation_id']?.toString() ?? '';
+    final offres = [for (final f in _catalogue)
+      if ((f['prestation_id']?.toString() ?? '').isEmpty || f['prestation_id'].toString() == pid) f];
+    if (offres.isEmpty) { _snack('Aucune carte ne couvre la prestation de ce rendez-vous.'); return; }
+    final choisi = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, 2),
+            child: Text('Vendre une carte de séances', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+        Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+            child: Text('Cette séance sera la première décomptée.', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600))),
+        for (final f in offres)
+          ListTile(
+            title: Text(f['nom']?.toString() ?? 'Carte', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            subtitle: Text(resumeForfaitToilettage(f), style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            onTap: () => Navigator.pop(ctx, f),
+          ),
+      ])),
+    );
+    if (choisi == null) return;
+    try {
+      final fc = await vendreForfaitToilettage(r, choisi);
+      if (fc != null && mounted) await _facturerForfait(fc);
+      if (mounted) { setState(() => _loading = true); _charger(); }
+    } catch (e) {
+      _snack('Erreur : $e');
+    }
+  }
+
+  /// Facture de la carte (une fois, à l'achat) : rattachée à la souscription.
+  Future<void> _facturerForfait(ForfaitToilettageClient fc) async {
+    String? v(String k) => (_coord[k] ?? '').isEmpty ? null : _coord[k];
+    await _go(CreerFacturePage(
+      clientNom: v('nom') ?? widget.nomClient, clientPrenom: v('prenom'), clientEmail: v('email'), clientTel: v('tel'),
+      clientRue: v('rue'), clientCp: v('cp'), clientVille: v('ville'),
+      lignesPrefill: [FacturePrefillLigne(
+        designation: 'Carte de séances — ${fc.nom}${_animalNom.isNotEmpty ? ' — $_animalNom' : ''}',
+        description: '${fc.total} séance${fc.total > 1 ? 's' : ''} de toilettage, décomptées à chaque rendez-vous',
+        prixTTC: fc.prix, quantite: 1, tauxTVA: 20, commune: true)],
+      forfaitSouscritId: fc.id,
+      sourceAnimalId: r['animal_id']?.toString(),
+      clientUid: r['client_uid']?.toString(),
+      clientProfileId: r['client_profile_id']?.toString(),
+    ));
+  }
+
+  Future<void> _retirerDeLaCarte(ForfaitToilettageClient fc) async {
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Ne pas décompter cette séance ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: Text('La séance est rendue à la carte « ${fc.nom} » et sera facturée à part.', style: const TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Ne pas décompter')),
+      ],
+    ));
+    if (ok != true) return;
+    await detacherForfaitToilettage(r, fc);
+    if (mounted) { setState(() => _loading = true); _charger(); }
   }
 
   // ── Facture ──
@@ -898,19 +977,38 @@ class _DossierToilettageState extends State<_DossierToilettage> {
                             }),
                         ],
                       ]),
+                  if (_forfait != null || _catalogue.isNotEmpty)
+                    Builder(builder: (_) {
+                      final fc = _forfait;
+                      final fin = fc?.valideJusquAu;
+                      return _ligne('Carte',
+                          fc == null ? 'Aucune carte de séances'
+                              : '${fc.libelle}${fin != null ? ' · valable jusqu\'au ${DateFormat('dd/MM/yyyy').format(fin)}' : ''}'
+                                '${fc.facture ? '' : ' · à facturer'}',
+                          fc == null ? _muted : fc.facture ? _vert : _ambre,
+                          [
+                            if (fc == null) ('Vendre une carte', _vendreForfait)
+                            else ...[
+                              if (!fc.facture) ('Facturer la carte', () => _facturerForfait(fc)),
+                              if (f == null) ('Ne pas décompter', () => _retirerDeLaCarte(fc)),
+                            ],
+                          ]);
+                    }),
                   _ligne('Facture',
-                      f == null ? (passee ? 'À émettre' : 'Non facturée')
+                      f == null && _forfait != null ? 'Séance décomptée de la carte'
+                      : f == null ? (passee ? 'À émettre' : 'Non facturée')
                           : f['statut'] == 'payee'
                               ? 'Payée${datePaie != null ? ' le ${DateFormat('dd/MM').format(datePaie)}' : ''} · ${eur(f['total_ttc'])}'
                               : 'Émise, non payée · ${eur(f['total_ttc'])}',
-                      f == null ? (passee ? _ambre : _muted) : f['statut'] == 'payee' ? _vert : _ambre,
+                      f == null && _forfait != null ? _vert
+                      : f == null ? (passee ? _ambre : _muted) : f['statut'] == 'payee' ? _vert : _ambre,
                       [
-                        if (f == null)
+                        if (f == null && _forfait == null)
                           ('Facturer', () async {
                             await facturerToilettage(context, r, nomClient: widget.nomClient, animal: _animalNom);
                             if (mounted) { setState(() => _loading = true); _charger(); }
                           })
-                        else ...[
+                        else if (f != null) ...[
                           if (f['statut'] != 'payee') ('Marquer payée', _marquerPayee),
                           ('Voir', () => _go(const FacturationPage())),
                           if (aCompte)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/forfait_toilettage.dart' show resumeForfaitToilettage;
 
 // ── Prestations & tarifs (toiletteur) — catalogue configuré par le pro,
 // choisi par le client lors de la réservation (rdv_booking_page.dart,
@@ -64,6 +65,8 @@ class _ToilettagePrestationsPageState extends State<ToilettagePrestationsPage> {
 
   bool _loading = true;
   List<Map<String, dynamic>> _prestations = [];
+  // Cartes de séances (forfaits_toilettage, profil actif).
+  List<Map<String, dynamic>> _forfaits = [];
 
   @override
   void initState() {
@@ -82,7 +85,64 @@ class _ToilettagePrestationsPageState extends State<ToilettagePrestationsPage> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+    final pid = User_Info.activeProfileId;
+    if (pid.isEmpty) return;
+    try {
+      final f = await _supa.from('forfaits_toilettage').select().eq('pro_profile_id', pid).eq('actif', true).order('created_at');
+      if (mounted) setState(() => _forfaits = List<Map<String, dynamic>>.from(f as List));
+    } catch (_) {
+      // Migration des forfaits pas encore passée.
+    }
   }
+
+  Future<void> _openForfait({Map<String, dynamic>? existing}) async {
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _ForfaitToilettageForm(existing: existing, prestations: _prestations),
+    );
+    if (result == true) await _load();
+  }
+
+  Future<void> _retirerForfait(String id) async {
+    // Désactivée : les cartes déjà vendues restent décomptées normalement.
+    await _supa.from('forfaits_toilettage').update({'actif': false}).eq('id', id);
+    await _load();
+  }
+
+  String _nomPrestation(Object? id) =>
+      _prestations.firstWhere((p) => p['id'].toString() == id?.toString(), orElse: () => const {})['nom']?.toString() ?? '';
+
+  Widget _sectionForfaits() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const SizedBox(height: 14),
+        const Text('Cartes de séances', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15)),
+        const SizedBox(height: 2),
+        Text('Ex. « 5 toilettages complets » payés d\'avance : chaque rendez-vous du client est décompté de sa carte, sans facture à la séance.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        const SizedBox(height: 8),
+        for (final f in _forfaits)
+          Card(
+            margin: const EdgeInsets.only(bottom: 10),
+            elevation: 1,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            child: ListTile(
+              onTap: () => _openForfait(existing: f),
+              title: Text(f['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+              subtitle: Text(resumeForfaitToilettage(f, prestationNom: _nomPrestation(f['prestation_id'])),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+              trailing: IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red), onPressed: () => _retirerForfait(f['id'].toString())),
+            ),
+          ),
+        OutlinedButton.icon(
+          onPressed: () => _openForfait(),
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Nouvelle carte de séances', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFE08E1B), side: const BorderSide(color: _orange),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
+        ),
+        const SizedBox(height: 70),
+      ]);
 
   Future<void> _supprimer(String id) async {
     await _supa.from('prestations_toilettage').update({'actif': false}).eq('id', id);
@@ -121,8 +181,9 @@ class _ToilettagePrestationsPageState extends State<ToilettagePrestationsPage> {
                   textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', color: Colors.grey)))
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: _prestations.length,
+                  itemCount: _prestations.length + 1,
                   itemBuilder: (_, i) {
+                    if (i == _prestations.length) return _sectionForfaits();
                     final p = _prestations[i];
                     final grille = (p['grille_prix'] as List?) ?? [];
                     return Card(
@@ -146,6 +207,124 @@ class _ToilettagePrestationsPageState extends State<ToilettagePrestationsPage> {
                     );
                   },
                 ),
+    );
+  }
+}
+
+/// Carte de séances : nom, prestation couverte (toutes par défaut), nombre de
+/// séances, prix, validité éventuelle.
+class _ForfaitToilettageForm extends StatefulWidget {
+  final Map<String, dynamic>? existing;
+  final List<Map<String, dynamic>> prestations;
+  const _ForfaitToilettageForm({this.existing, required this.prestations});
+
+  @override
+  State<_ForfaitToilettageForm> createState() => _ForfaitToilettageFormState();
+}
+
+class _ForfaitToilettageFormState extends State<_ForfaitToilettageForm> {
+  final _supa = Supabase.instance.client;
+  late final TextEditingController _nom, _nb, _prix, _validite, _desc;
+  String? _prestationId;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _nom = TextEditingController(text: e?['nom']?.toString() ?? '');
+    _nb = TextEditingController(text: (e?['nb_seances'] as num?)?.toString() ?? '5');
+    _prix = TextEditingController(text: (e?['prix'] as num?)?.toString() ?? '');
+    _validite = TextEditingController(text: (e?['validite_mois'] as num?)?.toString() ?? '');
+    _desc = TextEditingController(text: e?['description']?.toString() ?? '');
+    _prestationId = e?['prestation_id']?.toString();
+    if (_prestationId != null && !widget.prestations.any((p) => p['id'].toString() == _prestationId)) _prestationId = null;
+  }
+
+  @override
+  void dispose() {
+    for (final c in [_nom, _nb, _prix, _validite, _desc]) { c.dispose(); }
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final nb = int.tryParse(_nb.text.trim()) ?? 0;
+    final prix = double.tryParse(_prix.text.trim().replaceAll(',', '.')) ?? 0;
+    if (_nom.text.trim().isEmpty || nb < 1 || prix <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nom, nombre de séances et prix sont obligatoires')));
+      return;
+    }
+    setState(() => _saving = true);
+    final v = int.tryParse(_validite.text.trim());
+    final data = {
+      'pro_uid': FirebaseAuth.instance.currentUser?.uid,
+      'pro_profile_id': User_Info.activeProfileId,
+      'nom': _nom.text.trim(),
+      'prestation_id': _prestationId,
+      'nb_seances': nb,
+      'prix': prix,
+      'validite_mois': v != null && v > 0 ? v : null,
+      'description': _desc.text.trim().isEmpty ? null : _desc.text.trim(),
+    };
+    try {
+      if (widget.existing != null) {
+        await _supa.from('forfaits_toilettage').update(data).eq('id', widget.existing!['id']);
+      } else {
+        await _supa.from('forfaits_toilettage').insert(data);
+      }
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      }
+    }
+  }
+
+  InputDecoration _deco(String l, {String? suffix}) => InputDecoration(labelText: l, suffixText: suffix,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), isDense: true);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(widget.existing == null ? 'Nouvelle carte de séances' : 'Modifier la carte',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+        const SizedBox(height: 14),
+        TextField(controller: _nom, decoration: _deco('Nom (ex. Carte 5 toilettages)')),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<String?>(
+          initialValue: _prestationId,
+          isExpanded: true,
+          decoration: _deco('Prestation couverte'),
+          items: [
+            const DropdownMenuItem<String?>(value: null, child: Text('Toutes les prestations')),
+            for (final p in widget.prestations)
+              DropdownMenuItem<String?>(value: p['id'].toString(), child: Text(p['nom']?.toString() ?? '', overflow: TextOverflow.ellipsis)),
+          ],
+          onChanged: (v) => setState(() => _prestationId = v),
+        ),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: TextField(controller: _nb, keyboardType: TextInputType.number, decoration: _deco('Nombre de séances'))),
+          const SizedBox(width: 10),
+          Expanded(child: TextField(controller: _prix, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: _deco('Prix de la carte', suffix: '€ TTC'))),
+        ]),
+        const SizedBox(height: 10),
+        TextField(controller: _validite, keyboardType: TextInputType.number,
+            decoration: _deco('Validité (facultatif)', suffix: 'mois')),
+        const SizedBox(height: 10),
+        TextField(controller: _desc, maxLines: 2, decoration: _deco('Description (facultatif)')),
+        const SizedBox(height: 16),
+        SizedBox(width: double.infinity, child: ElevatedButton(
+          onPressed: _saving ? null : _save,
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFB74D), foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          child: Text(_saving ? 'Enregistrement…' : 'Enregistrer', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        )),
+      ])),
     );
   }
 }
