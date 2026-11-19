@@ -165,7 +165,13 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
 
   async function envoyer() {
     setErreur('');
-    if (!choisis.length || !arrivee || !depart) { setErreur('Cochez les animaux et choisissez les dates du séjour.'); return; }
+    // Message précis : ce qui manque vraiment (animaux, arrivée, départ).
+    const manquants = [
+      !choisis.length ? 'cochez au moins un animal' : '',
+      !arrivee && !depart ? "choisissez les dates d'arrivée et de départ"
+        : !arrivee ? "choisissez la date d'arrivée" : !depart ? 'choisissez la date de départ' : '',
+    ].filter(Boolean);
+    if (manquants.length) { setErreur(`Pour envoyer la demande, ${manquants.join(' et ')}.`); return; }
     if (depart < arrivee) { setErreur('La date de départ doit suivre l\'arrivée.'); return; }
     if (arrivee < aujourdhui) { setErreur('La date d\'arrivée est passée.'); return; }
     const jours = (a: string, b: string) => Math.round((new Date(`${b}T12:00:00`).getTime() - new Date(`${a}T12:00:00`).getTime()) / 86400000);

@@ -455,6 +455,18 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
                 style: FilledButton.styleFrom(backgroundColor: _c, padding: const EdgeInsets.symmetric(vertical: 14)),
                 child: Text(_envoi ? 'Envoi…' : 'Envoyer la demande de séjour', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
               ),
+              // Bouton grisé : ce qui manque, précisément.
+              if (!_envoi && (_choisis.isEmpty || _dates == null))
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Pour envoyer la demande, ${[
+                      if (_choisis.isEmpty) 'cochez au moins un animal',
+                      if (_dates == null) "choisissez les dates d'arrivée et de départ",
+                    ].join(' et ')}.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+                ),
               const SizedBox(height: 10),
               TextButton(
                 onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => RdvBookingPage(
