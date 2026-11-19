@@ -178,6 +178,15 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
     if (jours(aujourdhui, arrivee) > 365) { setErreur('La date d\'arrivée est à plus d\'un an : vérifiez l\'année.'); return; }
     if (jours(arrivee, depart) > 180) { setErreur('Séjour de plus de 6 mois : vérifiez les dates ou contactez directement la pension.'); return; }
     if (complet) { setErreur(complet); return; }
+    // Essai : date d'abord (avant le séjour), puis son heure — message précis.
+    if (essaiRequis) {
+      const fr = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+      const veille = new Date(`${arrivee}T12:00:00`); veille.setDate(veille.getDate() - 1);
+      const veilleIso = `${veille.getFullYear()}-${String(veille.getMonth() + 1).padStart(2, '0')}-${String(veille.getDate()).padStart(2, '0')}`;
+      if (!essai) { setErreur(`Cette pension demande un essai avant le premier séjour : choisissez sa date. L'essai doit avoir lieu avant le séjour, au plus tard le ${fr(veilleIso)} (arrivée le ${fr(arrivee)}).`); return; }
+      if (essai < aujourdhui) { setErreur(`La date d'essai (${fr(essai)}) est passée : choisissez une date entre aujourd'hui et le ${fr(veilleIso)}.`); return; }
+      if (essai >= arrivee) { setErreur(`La date d'essai doit avoir lieu avant le séjour : vous avez choisi le ${fr(essai)} alors que l'arrivée est le ${fr(arrivee)}. Choisissez un essai au plus tard le ${fr(veilleIso)}.`); return; }
+    }
     if (essaiRequis && creneauxEssai && !creneauxEssai.includes(heureEssai)) {
       setErreur('Choisissez l\'heure de l\'essai.'); return;
     }
@@ -185,7 +194,6 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
     if (manque) { setErreur(manque); return; }
     const sansReponse = aQuestionner.find(a => typeof dejaVenus[a.id] !== 'boolean');
     if (sansReponse) { setErreur(`Indiquez si ${sansReponse.nom ?? 'votre animal'} est déjà venu dans cette pension.`); return; }
-    if (essaiRequis && (!essai || essai >= arrivee)) { setErreur('Choisissez une date d\'essai avant l\'arrivée.'); return; }
     setEtat('envoi');
     const r = await apiFetch('/api/pension/sejour', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

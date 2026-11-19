@@ -191,7 +191,8 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
     final now = DateTime.now();
     final fin = (_dates?.start ?? now.add(const Duration(days: 60))).subtract(const Duration(days: 1));
     if (fin.isBefore(DateTime(now.year, now.month, now.day))) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Choisissez un séjour plus tard : l'essai doit avoir lieu avant l'arrivée.")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(
+          "L'essai doit avoir lieu avant le séjour, au plus tard la veille de l'arrivée : il n'y a plus de jour possible avant cette arrivée. Choisissez un séjour qui commence plus tard.")));
       return;
     }
     final d = await showDatePicker(context: context, firstDate: DateTime(now.year, now.month, now.day), lastDate: fin,
@@ -224,12 +225,29 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(manque)));
       return;
     }
+    // Essai : date d'abord (avant le séjour), puis son heure — message précis. Miroir site.
+    if (_essaiRequis && _dates != null) {
+      final fr = DateFormat('EEEE d MMMM', 'fr_FR');
+      final arrivee = DateUtils.dateOnly(_dates!.start);
+      final veille = arrivee.subtract(const Duration(days: 1));
+      final auj = DateUtils.dateOnly(DateTime.now());
+      String? msg;
+      if (_essai == null) {
+        msg = "Cette pension demande un essai avant le premier séjour : choisissez sa date. L'essai doit avoir lieu avant le séjour, "
+            "au plus tard le ${fr.format(veille)} (arrivée le ${fr.format(arrivee)}).";
+      } else if (DateUtils.dateOnly(_essai!).isBefore(auj)) {
+        msg = "La date d'essai (${fr.format(_essai!)}) est passée : choisissez une date entre aujourd'hui et le ${fr.format(veille)}.";
+      } else if (!DateUtils.dateOnly(_essai!).isBefore(arrivee)) {
+        msg = "La date d'essai doit avoir lieu avant le séjour : vous avez choisi le ${fr.format(_essai!)} alors que l'arrivée est le "
+            "${fr.format(arrivee)}. Choisissez un essai au plus tard le ${fr.format(veille)}.";
+      }
+      if (msg != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 6)));
+        return;
+      }
+    }
     if (_essaiRequis && _creneauxEssai != null && !_creneauxEssai!.contains(_heureEssai)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Choisissez l'heure de l'essai.")));
-      return;
-    }
-    if (_essaiRequis && _essai == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cette pension demande un essai avant le premier séjour : choisissez sa date.")));
       return;
     }
     setState(() => _envoi = true);
