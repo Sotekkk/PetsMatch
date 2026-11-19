@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
 import { messageHeuresManquantes } from '@/lib/pension-horaires';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { pensionGroupe, pensionPrixNuit, pensionTarifEquin, pensionTarifKeyForEspece, pensionTarifPourKey, type EspeceTarif } from '@/lib/pension-especes';
 
 interface Animal { id: string; nom: string | null; espece: string | null; race?: string | null; photo_url?: string | null }
@@ -53,7 +53,11 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
   onVisite?: (animalIds: string[]) => void;
 }) {
   const { user } = useAuth();
-  const pid = useActiveProfile();
+  // Profil actif lu (localStorage) avant de charger : sinon la première
+  // requête partait sans filtre et listait les animaux de tous les profils.
+  const { loaded: profilLu, id: pidActif } = useActiveProfileState();
+  const [pidPrincipal, setPidPrincipal] = useState('');
+  const pid = pidActif || pidPrincipal;
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [animalIds, setAnimalIds] = useState<string[]>([]);
   const [arrivee, setArrivee] = useState('');
@@ -90,19 +94,30 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !profilLu) return;
     (async () => {
+      // Aucun profil choisi : le profil principal du compte.
+      let profil = pid;
+      if (!profil) {
+        const { data: main } = await supabase.from('user_profiles').select('id').eq('uid', user.uid).eq('is_main', true).limit(1).maybeSingle();
+        profil = (main as { id?: string } | null)?.id ?? '';
+        if (profil) { setPidPrincipal(profil); return; }
+      }
+      // Animaux dont le profil actif est propriétaire (propriété en cours), jamais ceux des autres profils du compte.
       let q = supabase.from('animaux_proprietes').select('animal_id').eq('uid_proprio', user.uid).is('date_fin', null);
-      if (pid) q = q.eq('profile_id_proprio', pid);
+      if (profil) q = q.eq('profile_id_proprio', profil);
       const { data } = await q;
       const ids = ((data ?? []) as { animal_id: string }[]).map(r => r.animal_id);
+      let liste: Animal[] = [];
       if (ids.length) {
         const { data: an } = await supabase.from('animaux').select('id, nom, espece, race, photo_url, statut').in('id', ids).not('statut', 'in', '(sorti,decede)').order('nom');
-        setAnimaux((an ?? []) as Animal[]);
+        liste = (an ?? []) as Animal[];
       }
+      setAnimaux(liste);
+      setAnimalIds(sel => sel.filter(id => liste.some(a => String(a.id) === id)));
       setAujourdhui(new Date().toISOString().slice(0, 10));
     })();
-  }, [user, pid, rechargement]);
+  }, [user, pid, profilLu, rechargement]);
 
   const datesOk = !!arrivee && !!depart && depart >= arrivee;
   // Premier séjour d'au moins un animal : arrivée plus longue (horaires de la pension).
