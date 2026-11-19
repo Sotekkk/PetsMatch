@@ -5,7 +5,7 @@ import { SOUS_TYPES_INTERVENTION, CONSIGNES_PREOP_DEFAUT, libelleIntervention, c
 import { historiqueTrie, historiqueFiltre, ligneHospitalisation } from '@/lib/historique-rdv';
 import { estDansPanneau, MSG_PANNEAU_FERMER, signalerPanneau } from '@/lib/panneau';
 import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/DossierSeanceModal';
-import { animauxDetailRdv, dureeRdvLabel, ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
+import { animauxDetailRdv, animauxFichesRdv, dureeRdvLabel, ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
 import { rouvrirRdv, MESSAGE_CONFIRMER_TERMINE } from '@/lib/rdv-reouvrir';
 import ComptesRendusAnimauxRdv from '@/components/rdv/ComptesRendusAnimauxRdv';
 import { useEspaceClinique } from '@/lib/espace-clinique';
@@ -1628,7 +1628,8 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
   const [confirmDel, setConfirmDel] = useState(false);
   // Plusieurs animaux : choix de la fiche à ouvrir.
   const [choixFiche, setChoixFiche] = useState(false);
-  const animauxRdv = animauxDetailRdv(rdv);
+  // Fiches : détail du RDV, sinon ses animaux_ids (visite de pension, garde).
+  const animauxRdv = animauxFichesRdv(rdv as unknown as Parameters<typeof animauxFichesRdv>[0]);
   const st      = STATUT_STYLE[rdv.statut] ?? { bg: '#F5F5F5', color: '#757575', label: rdv.statut };
   const isFirst = rdv.visitCount === 0;
 

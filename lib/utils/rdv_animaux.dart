@@ -13,6 +13,19 @@ List<Map<String, dynamic>> animauxDetailRdv(Map<String, dynamic> rdv) {
   return [for (final x in d) if (x is Map) Map<String, dynamic>.from(x)];
 }
 
+/// Animaux dont on peut ouvrir la fiche : détail du RDV, sinon animaux_ids
+/// (visite de pension, garde : noms repris de « Azur + Loup Gris »). Vide pour
+/// un seul animal. Miroir site : animauxFichesRdv (lib/rdv-animaux.ts).
+List<Map<String, dynamic>> animauxFichesRdv(Map<String, dynamic> rdv) {
+  final d = animauxDetailRdv(rdv);
+  if (d.isNotEmpty) return d;
+  final l = rdv['animaux_ids'];
+  final ids = l is List ? {for (final x in l) if ((x?.toString() ?? '').isNotEmpty) x.toString()}.toList() : <String>[];
+  if (ids.length < 2) return const [];
+  final noms = (rdv['animal_nom_manuel']?.toString() ?? '').split(' + ').map((n) => n.trim()).where((n) => n.isNotEmpty).toList();
+  return [for (var i = 0; i < ids.length; i++) {'id': ids[i], 'nom': noms.length == ids.length ? noms[i] : 'Animal ${i + 1}'}];
+}
+
 /// Tous les animaux du RDV (garde de plusieurs animaux : rdv.animaux_ids),
 /// sinon l'animal du RDV.
 List<String> idsAnimauxRdv(Map<String, dynamic> rdv) {

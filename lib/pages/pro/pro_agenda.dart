@@ -5811,6 +5811,23 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     if (a == null) return;
                     animalFiche = a['id'].toString();
                     nomFiche = a['nom']?.toString() ?? 'Animal';
+                  } else if (animauxFichesRdv(rdv).length > 1) {
+                    // Visite de pension / garde : animaux_ids sans détail.
+                    final a = await showModalBottomSheet<Map<String, dynamic>>(
+                      context: context,
+                      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        const Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, 6),
+                            child: Text('Fiche de quel animal ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+                        for (final x in animauxFichesRdv(rdv))
+                          ListTile(leading: const Icon(Icons.pets, color: _teal),
+                              title: Text(x['nom'].toString(), style: const TextStyle(fontFamily: 'Galey')),
+                              onTap: () => Navigator.pop(ctx, x)),
+                      ])),
+                    );
+                    if (a == null) return;
+                    animalFiche = a['id'].toString();
+                    nomFiche = a['nom']?.toString() ?? 'Animal';
                   }
                   if (!context.mounted) return;
                   await Navigator.push(context, MaterialPageRoute(

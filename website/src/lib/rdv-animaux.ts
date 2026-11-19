@@ -15,6 +15,18 @@ export function animauxDetailRdv(rdv: { animaux_detail?: unknown }): AnimalRdv[]
   return d.filter((x): x is AnimalRdv => !!x && typeof x === 'object').map(x => ({ ...x, id: String(x.id) }));
 }
 
+/** Animaux dont on peut ouvrir la fiche : détail du RDV, sinon animaux_ids
+ *  (visite de pension, garde : noms repris de « Azur + Loup Gris »). Vide pour un seul animal.
+ *  Miroir appli : animauxFichesRdv (rdv_animaux.dart). */
+export function animauxFichesRdv(rdv: { animaux_detail?: unknown; animaux_ids?: unknown; animal_nom_manuel?: string | null }): { id: string; nom: string; motif?: string | null }[] {
+  const d = animauxDetailRdv(rdv);
+  if (d.length) return d.map(a => ({ id: a.id, nom: a.nom ?? 'Animal', motif: a.motif ?? null }));
+  const ids = Array.isArray(rdv.animaux_ids) ? [...new Set(rdv.animaux_ids.filter(Boolean).map(String))] : [];
+  if (ids.length < 2) return [];
+  const noms = (rdv.animal_nom_manuel ?? '').split(' + ').map(n => n.trim()).filter(Boolean);
+  return ids.map((id, i) => ({ id, nom: noms.length === ids.length ? noms[i] : `Animal ${i + 1}` }));
+}
+
 export function dureeRdvLabel(min: number) {
   return min < 60 ? `${min} min` : `${Math.floor(min / 60)}h${min % 60 ? String(min % 60).padStart(2, '0') : ''}`;
 }
