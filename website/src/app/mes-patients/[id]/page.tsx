@@ -1,5 +1,6 @@
 'use client';
 
+import { apiFetch } from '@/lib/api-fetch';
 import { prixActeExtra, extrasDepuis, type TarifExtra } from '@/lib/tarif-acte';
 import { soinsDuJour } from '@/lib/soins-du-jour';
 import { AideEtapes } from '@/components/animaux/EtapesTraitement';
@@ -1020,6 +1021,8 @@ function PatientDetailPageInner() {
   const [animal, setAnimal] = useState<Animal | null>(null);
   const [owner, setOwner] = useState<Owner | null>(null);
   const [grant, setGrant] = useState<Grant | null>(null);
+  // Fiche non lisible : raison renvoyée par /api/rdv/acces-fiche (demande, aucun_rdv, retire…).
+  const [raisonAcces, setRaisonAcces] = useState('');
   const [loading, setLoading] = useState(true);
   const [alimentation, setAlimentation] = useState<AlimentationEntry | null>(null);
 
@@ -1546,11 +1549,23 @@ function PatientDetailPageInner() {
   useEffect(() => {
     if (!user || !animalId || !activeProfileId) return;
     async function load() {
-      const [animalRes, grantRes] = await Promise.all([
-        supabase.from('animaux').select('*').eq('id', animalId).single(),
+      const lire = () => Promise.all([
+        supabase.from('animaux').select('*').eq('id', animalId).maybeSingle(),
         supabase.from('animal_access').select('id, statut, pro_profile_id, granted_by_profile_id')
           .eq('pro_profile_id', activeProfileId).eq('animal_id', animalId).maybeSingle(),
       ]);
+      let [animalRes, grantRes] = await lire();
+      // Fiche non partagée : accès accordé côté serveur si un RDV confirmé
+      // avec cet animal existe (visite de la pension, visite d'essai…), sinon la raison.
+      if (!animalRes.data) {
+        try {
+          const r = await apiFetch('/api/rdv/acces-fiche', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ animalId, profileId: activeProfileId }) });
+          const j = await r.json().catch(() => ({})) as { ok?: boolean; raison?: string; error?: string };
+          if (j.ok) [animalRes, grantRes] = await lire();
+          else setRaisonAcces(j.raison ?? (r.status === 403 ? 'autorisation' : 'erreur'));
+        } catch { setRaisonAcces('erreur'); }
+      }
       const a = animalRes.data as Animal | null;
       setAnimal(a);
       setGrant(grantRes.data as Grant | null);
@@ -3335,8 +3350,13 @@ function PatientDetailPageInner() {
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="max-w-md text-center text-sm text-gray-600 space-y-2">
         <p className="font-semibold text-[#1F2A2E]">Fiche de l&apos;animal non partagée avec vous</p>
-        <p>Le propriétaire partage la fiche de son animal quand vous confirmez son rendez-vous (visite, visite d&apos;essai…) ou quand il vous envoie une demande de séjour.
-          Si le rendez-vous est encore en demande, confirmez-le d&apos;abord ; sinon, l&apos;animal a pu changer de propriétaire ou le partage a été retiré.</p>
+        <p>
+          {raisonAcces === 'demande' ? "Le rendez-vous de cet animal est encore en demande : la fiche devient accessible dès que vous le confirmez."
+            : raisonAcces === 'retire' ? "Le propriétaire a retiré votre accès à la fiche de cet animal."
+            : raisonAcces === 'aucun_rdv' ? "Aucun rendez-vous confirmé avec cet animal sur ce profil : vérifiez que vous êtes bien sur le profil qui a reçu le rendez-vous."
+            : raisonAcces === 'proprietaire' ? "Le propriétaire actuel de cet animal est introuvable (animal cédé ou fiche sans propriétaire)."
+            : "Le propriétaire partage la fiche de son animal quand vous confirmez son rendez-vous (visite, visite d'essai…) ou quand il vous envoie une demande de séjour."}
+        </p>
       </div>
     </div>
   );
