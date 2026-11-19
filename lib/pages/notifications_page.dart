@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/registre_pension_page.dart' show RegistrePensionPage;
 import 'package:PetsMatch/utils/cloisonnement_profils.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/pages/rdv_consignes_page.dart';
@@ -521,6 +522,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
         appBar: AppBar(title: const Text('Accueil pension', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
         body: const SingleChildScrollView(padding: EdgeInsets.all(16), child: PensionDashboard()),
       )));
+      return;
+    }
+    // Sortie de pension en retard : le registre, pour enregistrer la sortie.
+    if (type == 'pension_sortie') {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const RegistrePensionPage()));
       return;
     }
     if (type == 'pension_sejour_accepte' || type == 'pension_sejour_refuse' || type == 'pension_rappel_passage') {

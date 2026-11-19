@@ -1033,6 +1033,9 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'pension_sejour_refuse':
     case 'pension_rappel_passage':
       return '/mes-sejours';
+    // Sortie de pension en retard : le registre, pour enregistrer la sortie.
+    case 'pension_sortie':
+      return '/pension/registre';
     case 'rdv_consignes_recues':
       return d.rdv_id ? `/mes-rdv?onglet=a_venir&rdv=${d.rdv_id}` : '/mes-rdv';
     case 'rdv_confirme':
