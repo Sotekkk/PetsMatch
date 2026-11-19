@@ -1,4 +1,5 @@
 'use client';
+import { accorderAccesRdv, idsAnimauxDuRdv } from '@/lib/acces-rdv';
 import HospitalisesDuJour from '@/components/rdv/HospitalisesDuJour';
 import { SOUS_TYPES_INTERVENTION, CONSIGNES_PREOP_DEFAUT, libelleIntervention, consignesPreopDefaut, lierChirurgieRdv, envoyerConsignesPreop } from '@/lib/intervention';
 import { historiqueTrie, historiqueFiltre, ligneHospitalisation } from '@/lib/historique-rdv';
@@ -249,6 +250,8 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
       }
 
       if (mode === 'confirme') {
+        // Fiche des animaux accessible au pro dès la confirmation (miroir appli _autoGrantAccess).
+        await accorderAccesRdv(rdv as unknown as Parameters<typeof accorderAccesRdv>[0]);
         await supabase.from('agenda_events').upsert({
           uid: rdv.client_uid,
           titre: `RDV${rdv.animalNom ? ` — ${rdv.animalNom}` : ''}`,
@@ -1480,6 +1483,7 @@ function SerieModal({ serie, mode, proName, onClose, onDone }: {
         for (const r of serie) {
           const duree = dureeImposeeGarde(r.motif) ?? r.duree_minutes ?? 30;
           await supabase.from('rdv').update({ statut: 'confirme', duree_minutes: duree }).eq('id', r.id);
+          await accorderAccesRdv(r as unknown as Parameters<typeof accorderAccesRdv>[0]);
           await supabase.from('agenda_events').upsert({
             uid: r.client_uid, titre: `RDV${r.animalNom ? ` — ${r.animalNom}` : ''}`,
             type: typeFromMotif(r.motif), date_debut: r.date_heure, duree_minutes: duree, rdv_id: r.id,
@@ -2570,7 +2574,16 @@ export default function MesRdvPage() {
     setPanneau({ url: `/mes-patients/${encodeURIComponent(String(rdv.animal_id ?? animauxDetailRdv(rdv)[0].id))}?facturerRdv=${encodeURIComponent(rdv.id)}`, titre: 'Facture' });
   }
 
-  function openAnimalFiche(animalId: string) {
+  async function openAnimalFiche(animalId: string) {
+    // RDV de cet animal : en demande, la fiche n'est pas encore partagée ; confirmé
+    // avant la mise en place du partage automatique, l'accès est accordé maintenant.
+    const duRdv = rdvs.filter(r => idsAnimauxDuRdv(r as unknown as Parameters<typeof idsAnimauxDuRdv>[0]).includes(animalId));
+    if (duRdv.length && duRdv.every(r => r.statut === 'demande' || r.statut === 'contre_proposition')) {
+      alert("La fiche de l'animal n'est pas encore partagée avec vous : elle devient accessible dès que vous confirmez le rendez-vous.");
+      return;
+    }
+    const confirme = duRdv.find(r => r.statut === 'confirme' || r.statut === 'termine');
+    if (confirme) await accorderAccesRdv(confirme as unknown as Parameters<typeof accorderAccesRdv>[0], catPro);
     // Éducateur : fiche en panneau, la liste des RDV reste en place.
     if (catPro === 'education' || catPro === 'veterinaire' || catPro === 'sante') { setPanneau({ url: `/mes-patients/${encodeURIComponent(animalId)}`, titre: 'Fiche animal' }); return; }
     router.push(`/mes-patients/${animalId}`);

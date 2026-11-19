@@ -1,5 +1,6 @@
 'use client';
 
+import { accorderAccesRdv } from '@/lib/acces-rdv';
 import { useActualisationAuto } from '@/hooks/useActualisationAuto';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -244,6 +245,8 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
   async function confirmRdv(rdv: PendingRdv) {
     setSavingRdv(rdv.id);
     await supabase.from('rdv').update({ statut: 'confirme' }).eq('id', rdv.id);
+    // Fiche des animaux accessible au pro dès la confirmation (miroir appli _autoGrantAccess).
+    await accorderAccesRdv(rdv as unknown as Parameters<typeof accorderAccesRdv>[0]);
     await supabase.from('agenda_events').insert({
       uid,
       titre: `RDV ${clientNames[rdv.client_uid] || 'Client'}${rdv.motif ? ` — ${rdv.motif}` : ''}`,

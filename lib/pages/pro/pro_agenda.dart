@@ -4361,11 +4361,23 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   // ── A60 — Auto-accès carnet santé à la confirmation du RDV ───────────────────
 
+  /// Tous les animaux du RDV (visite de pension, garde à plusieurs animaux…).
   Future<void> _autoGrantAccess(Map<String, dynamic> rdv) async {
-    final animalId = rdv['animal_id']?.toString();
+    final ids = <String>{
+      if ((rdv['animal_id']?.toString() ?? '').isNotEmpty) rdv['animal_id'].toString(),
+      if (rdv['animaux_ids'] is List) for (final x in rdv['animaux_ids'] as List) if ((x?.toString() ?? '').isNotEmpty) x.toString(),
+      if (rdv['animaux_detail'] is List)
+        for (final x in rdv['animaux_detail'] as List) if (x is Map && (x['id']?.toString() ?? '').isNotEmpty) x['id'].toString(),
+    };
+    for (final id in ids) {
+      await _autoGrantAccessAnimal(rdv, id);
+    }
+  }
+
+  Future<void> _autoGrantAccessAnimal(Map<String, dynamic> rdv, String animalId) async {
     final clientUid = rdv['client_uid']?.toString();
     final proUid = AgendaContexte.uid;
-    if (animalId == null || animalId.isEmpty || clientUid == null || proUid == null) return;
+    if (animalId.isEmpty || clientUid == null || proUid == null) return;
     try {
       final supa = Supabase.instance.client;
 

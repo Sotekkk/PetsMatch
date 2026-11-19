@@ -3332,7 +3332,13 @@ function PatientDetailPageInner() {
     </div>
   );
   if (!animal) return (
-    <div className="min-h-screen flex items-center justify-center text-gray-400 text-sm">Animal introuvable ou accès refusé.</div>
+    <div className="min-h-screen flex items-center justify-center px-6">
+      <div className="max-w-md text-center text-sm text-gray-600 space-y-2">
+        <p className="font-semibold text-[#1F2A2E]">Fiche de l&apos;animal non partagée avec vous</p>
+        <p>Le propriétaire partage la fiche de son animal quand vous confirmez son rendez-vous (visite, visite d&apos;essai…) ou quand il vous envoie une demande de séjour.
+          Si le rendez-vous est encore en demande, confirmez-le d&apos;abord ; sinon, l&apos;animal a pu changer de propriétaire ou le partage a été retiré.</p>
+      </div>
+    </div>
   );
 
 
