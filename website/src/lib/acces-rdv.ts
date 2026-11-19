@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase';
 
 type RdvAcces = {
   animal_id?: string | number | null; animaux_ids?: unknown; animaux_detail?: unknown;
-  client_profile_id?: string | null; pro_profile_id?: string | null;
+  client_profile_id?: string | null; pro_profile_id?: string | null; created_at?: string | null;
 };
 
 export function idsAnimauxDuRdv(rdv: RdvAcces): string[] {
@@ -39,12 +39,15 @@ export async function accorderAccesRdv(rdv: RdvAcces, catPro?: string | null, pr
         owner = ((data ?? [])[0] as { profile_id_proprio?: string | null } | undefined)?.profile_id_proprio ?? null;
       }
       if (!owner) continue;
-      const { data: existant } = await supabase.from('animal_access').select('statut')
+      const { data: existant } = await supabase.from('animal_access').select('statut, revoked_at')
         .eq('animal_id', animalId).eq('pro_profile_id', proProfileId).maybeSingle();
-      if (existant && (existant as { statut?: string }).statut !== 'pending') continue;
+      const ex = existant as { statut?: string; revoked_at?: string | null } | null;
+      // Retiré AVANT la prise de ce RDV (ex. fin d'un séjour) : nouveau partage ; retiré après : respecté.
+      const retireAvant = ex?.statut === 'revoked' && !!ex.revoked_at && !!rdv.created_at && ex.revoked_at < rdv.created_at;
+      if (ex && ex.statut !== 'pending' && !retireAvant) continue;
       await supabase.from('animal_access').upsert({
         animal_id: animalId, pro_profile_id: proProfileId, granted_by_profile_id: owner,
-        permissions, statut: 'active', granted_at: new Date().toISOString(),
+        permissions, statut: 'active', granted_at: new Date().toISOString(), revoked_at: null,
       }, { onConflict: 'animal_id,pro_profile_id' });
     } catch { /* accès non accordé : la fiche affichera pourquoi */ }
   }

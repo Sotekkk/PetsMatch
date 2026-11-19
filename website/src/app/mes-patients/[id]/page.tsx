@@ -3352,7 +3352,7 @@ function PatientDetailPageInner() {
         <p className="font-semibold text-[#1F2A2E]">Fiche de l&apos;animal non partagée avec vous</p>
         <p>
           {raisonAcces === 'demande' ? "Le rendez-vous de cet animal est encore en demande : la fiche devient accessible dès que vous le confirmez."
-            : raisonAcces === 'retire' ? "Le propriétaire a retiré votre accès à la fiche de cet animal."
+            : raisonAcces === 'retire' ? "L'accès à la fiche de cet animal a été retiré après la prise de son rendez-vous (par le propriétaire ou depuis votre registre). Le propriétaire peut le rouvrir depuis la fiche de son animal."
             : raisonAcces === 'aucun_rdv' ? "Aucun rendez-vous confirmé avec cet animal sur ce profil : vérifiez que vous êtes bien sur le profil qui a reçu le rendez-vous."
             : raisonAcces === 'proprietaire' ? "Le propriétaire actuel de cet animal est introuvable (animal cédé ou fiche sans propriétaire)."
             : "Le propriétaire partage la fiche de son animal quand vous confirmez son rendez-vous (visite, visite d'essai…) ou quand il vous envoie une demande de séjour."}

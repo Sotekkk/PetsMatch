@@ -14,7 +14,7 @@ const admin = createClient(
 
 type Rdv = {
   id: string; statut: string; animal_id: string | null; animaux_ids: unknown; animaux_detail: unknown;
-  client_profile_id: string | null; pro_profile_id: string | null;
+  client_profile_id: string | null; pro_profile_id: string | null; created_at: string | null;
 };
 
 function animauxDuRdv(r: Rdv): string[] {
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { data: rows } = await admin.from('rdv')
-    .select('id, statut, animal_id, animaux_ids, animaux_detail, client_profile_id, pro_profile_id')
+    .select('id, statut, animal_id, animaux_ids, animaux_detail, client_profile_id, pro_profile_id, created_at')
     .eq('pro_profile_id', profileId).order('date_heure', { ascending: false }).limit(500);
   const rdvs = ((rows ?? []) as Rdv[]).filter(r => animauxDuRdv(r).includes(animalId));
   const confirme = rdvs.find(r => r.statut === 'confirme' || r.statut === 'termine');
@@ -51,10 +51,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ raison: enDemande ? 'demande' : 'aucun_rdv' });
   }
 
-  const { data: acc } = await admin.from('animal_access').select('id, statut')
+  const { data: acc } = await admin.from('animal_access').select('id, statut, revoked_at')
     .eq('animal_id', animalId).eq('pro_profile_id', profileId).maybeSingle();
-  const a = acc as { id: string; statut: string } | null;
-  if (a?.statut === 'revoked') return NextResponse.json({ raison: 'retire' });
+  const a = acc as { id: string; statut: string; revoked_at: string | null } | null;
+  // Accès retiré (par le propriétaire, ou par la pension à la fin d'un séjour) :
+  // un RDV pris APRÈS ce retrait vaut nouveau partage ; retiré après, on le respecte.
+  if (a?.statut === 'revoked') {
+    const dernierRdv = rdvs.filter(r => r.statut === 'confirme' || r.statut === 'termine')
+      .map(r => r.created_at ?? '').sort().pop() ?? '';
+    if (!a.revoked_at || !dernierRdv || a.revoked_at > dernierRdv) return NextResponse.json({ raison: 'retire' });
+  }
   if (a && a.statut !== 'pending') return NextResponse.json({ ok: true, deja: true });
 
   // Propriétaire : le client du RDV, sinon le propriétaire actuel de l'animal.
@@ -70,7 +76,7 @@ export async function POST(req: NextRequest) {
     : ['read_basic', 'write_notes'];
   const { error } = await admin.from('animal_access').upsert({
     animal_id: animalId, pro_profile_id: profileId, granted_by_profile_id: owner,
-    permissions, statut: 'active', granted_at: new Date().toISOString(),
+    permissions, statut: 'active', granted_at: new Date().toISOString(), revoked_at: null,
   }, { onConflict: 'animal_id,pro_profile_id' });
   if (error) return NextResponse.json({ raison: 'erreur', detail: error.message });
   return NextResponse.json({ ok: true });

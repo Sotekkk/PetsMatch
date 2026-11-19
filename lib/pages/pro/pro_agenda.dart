@@ -4402,9 +4402,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       if (ownerProfileId == null) return;
 
       // Accès déjà donné par le propriétaire (réservation) : ne pas l'écraser.
-      final existant = await supa.from('animal_access').select('statut')
+      final existant = await supa.from('animal_access').select('statut, revoked_at')
           .eq('animal_id', animalId).eq('pro_profile_id', proProfileId).maybeSingle();
-      if (existant != null && existant['statut'] != 'pending') return;
+      // Retiré AVANT la prise de ce RDV (ex. fin d'un séjour) : nouveau partage ; retiré après : respecté.
+      final retire = DateTime.tryParse(existant?['revoked_at']?.toString() ?? '');
+      final pris = DateTime.tryParse(rdv['created_at']?.toString() ?? '');
+      final retireAvant = existant?['statut'] == 'revoked' && retire != null && pris != null && retire.isBefore(pris);
+      if (existant != null && existant['statut'] != 'pending' && !retireAvant) return;
 
       final permissions = AgendaContexte.catPro == 'veterinaire'
           ? ['read_basic', 'read_health', 'write_health']
@@ -4419,6 +4423,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         'permissions':           permissions,
         'statut':                'active',
         'granted_at':            DateTime.now().toUtc().toIso8601String(),
+        'revoked_at':            null,
       }, onConflict: 'animal_id,pro_profile_id');
     } catch (_) {}
   }
