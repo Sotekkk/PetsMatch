@@ -136,6 +136,8 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
             orElse: () => <String, dynamic>{},
           );
     final a = _displayAvatar(p);
+    // Profil secondaire sans photo : vide, jamais la photo du profil principal.
+    if (User_Info.activeProfileId.isNotEmpty && p['is_main'] != true) return a;
     return a.isNotEmpty ? a : User_Info.primaryAvatar;
   }
 

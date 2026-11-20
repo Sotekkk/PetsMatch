@@ -4,6 +4,7 @@ import GardeDashboard from '@/components/dashboard/GardeDashboard';
 import EducationDashboard from '@/components/dashboard/EducationDashboard';
 import PensionDashboard from '@/components/dashboard/PensionDashboard';
 import ToilettageDashboard from '@/components/dashboard/ToilettageDashboard';
+import MarechalDashboard from '@/components/dashboard/MarechalDashboard';
 import PhotographeDashboard from '@/components/dashboard/PhotographeDashboard';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
@@ -208,6 +209,11 @@ export default function HomeDashboard() {
     return <PensionDashboard nom={activeProfile.nom || userData?.nameElevage || 'Ma pension'}
       avatar={activeProfile.avatar_url || (activeProfile.is_main ? (userData?.profilePictureUrlElevage || userData?.profilePictureUrl) : null) || null} />;
   }
+  // Maréchal-ferrant : tournée, ferrures à renouveler (miroir appli MarechalDashboard).
+  if (activeProfile?.profile_type === 'marechal_ferrant' || activeProfile?.cat_pro === 'marechal_ferrant') {
+    return <MarechalDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon activité'}
+      avatar={activeProfile.avatar_url || (activeProfile.is_main ? (userData?.profilePictureUrlElevage || userData?.profilePictureUrl) : null) || null} />;
+  }
   if (activeProfile) return <ProDashboard profile={activeProfile} profileId={activeProfileId} />;
 
   // Profil principal pro (vétérinaire, éducateur, pension, etc.) → ProDashboard sans profileId secondaire
@@ -239,6 +245,9 @@ export default function HomeDashboard() {
     }
     if (primaryProProfile.profile_type === 'education') {
       return <EducationDashboard nom={primaryProProfile.nom || 'Mon activité'} avatar={primaryProProfile.avatar_url} />;
+    }
+    if (primaryProProfile.profile_type === 'marechal_ferrant') {
+      return <MarechalDashboard nom={primaryProProfile.nom || 'Mon activité'} avatar={primaryProProfile.avatar_url} />;
     }
     return <ProDashboard profile={primaryProProfile} profileId="" />;
   }

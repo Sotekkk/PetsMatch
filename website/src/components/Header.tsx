@@ -1268,7 +1268,10 @@ export default function Header() {
   const effectiveDisplayName = activeProfile
     ? (activeProfile.nom ?? activeProfile.profile_label ?? activeProfile.name_elevage ?? primaryDisplayName)
     : primaryDisplayName;
-  const effectiveAvatar = activeProfile?.avatar_url ?? primaryAvatar;
+  // Profil secondaire sans photo : vide, jamais la photo du profil principal.
+  const effectiveAvatar = activeProfile && !activeProfile.is_main
+    ? (activeProfile.avatar_url || null)
+    : (activeProfile?.avatar_url || primaryAvatar);
 
   const effectiveIsPro = activeProfile
     ? PRO_TYPES.has(activeProfile.profile_type)

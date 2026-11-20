@@ -106,7 +106,10 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
   const rdvToday = upcomingRdvs.filter(r => (r.date_heure ?? '').slice(0, 10) === todayIso).length;
   const abonnementHref = catPro === 'veterinaire' ? '/veterinaire/abonnement' : '/sante/abonnement';
   const name   = profile.nom || userData?.firstname || 'Mon cabinet';
-  const avatar = profile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
+  // Chaque profil a SA photo : un profil secondaire sans photo reste vide
+  // (jamais celle du profil principal).
+  const avatar = profileId ? (profile.avatar_url || null)
+    : (profile.avatar_url || userData?.profilePictureUrlElevage || userData?.profilePictureUrl || null);
 
   // Libellé "clients" selon la profession
   const clientsLabel = isVet ? 'Mes patients'

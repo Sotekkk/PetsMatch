@@ -48,6 +48,7 @@ import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_studio_dashboard.dart';
 import 'package:PetsMatch/pages/pro/marechal_contrats_page.dart';
+import 'package:PetsMatch/pages/pro/marechal_dashboard.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -211,7 +212,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
         });
       } else {
         // Pro : stats spécifiques selon catPro (en parallèle avec les alertes)
-        const avecTableauDeBord = {'pension', 'garde', 'education', 'toilettage', 'photographe'};
+        const avecTableauDeBord = {'pension', 'garde', 'education', 'toilettage', 'photographe', 'marechal_ferrant'};
         final results = await Future.wait([
           alertesFuture,
           if (!avecTableauDeBord.contains(User_Info.catPro)) _loadProStats(uid, supa),
@@ -363,15 +364,14 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                         // Photographe : tableau de bord du studio.
                         else if (User_Info.catPro == 'photographe')
                           PhotographeStudioDashboard(key: ValueKey(_refreshTick))
+                        // Maréchal-ferrant : tournée, ferrures à renouveler.
+                        else if (User_Info.catPro == 'marechal_ferrant')
+                          MarechalDashboard(key: ValueKey(_refreshTick))
                         // Éleveur : tableau de bord plus bas (après les bandeaux d'alerte).
                         else if (!User_Info.isPro)
                           const SizedBox.shrink()
                         else
                           _buildStatsRow(),
-                        if (User_Info.catPro == 'marechal_ferrant') ...[
-                          const SizedBox(height: 12),
-                          _buildMarechalShortcuts(context),
-                        ],
                         if ((User_Info.isPro || User_Info.isElevage) && !User_Info.isValidate) ...[
                           const SizedBox(height: 16),
                           _buildPendingValidationBanner(context),
@@ -721,33 +721,6 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       vetMode: true,
       initialTabIndex: ongletFiche,
     )));
-  }
-
-  Widget _buildMarechalShortcuts(BuildContext context) {
-    void go(Widget page) =>
-        Navigator.push(context, MaterialPageRoute(builder: (_) => page));
-    return GridView.count(
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 1.0,
-      children: [
-        _QuickTile(icon: Icons.event_outlined, label: 'Mon\nagenda RDV', color: const Color(0xFF8D6E63),
-            onTap: () => go(const ProAgendaPage())),
-        _QuickTile(icon: Icons.pets_outlined, label: 'Mes\néquidés suivis', color: const Color(0xFF5F9EAA),
-            onTap: () => go(const ProClientsPage())),
-        _QuickTile(icon: Icons.request_quote_outlined, label: 'Devis', color: const Color(0xFF5B8648),
-            onTap: () => go(const DevisPage())),
-        _QuickTile(icon: Icons.description_outlined, label: 'Mes\ncontrats', color: const Color(0xFFB8860B),
-            onTap: () => go(const MarechalContratsPage())),
-        _QuickTile(icon: Icons.receipt_long_outlined, label: 'Factu-\nration', color: const Color(0xFF6E9E57),
-            onTap: () => go(const FacturationPage())),
-        _QuickTile(icon: Icons.workspace_premium_outlined, label: 'Mon\nabonnement', color: const Color(0xFFD97706),
-            onTap: () => go(const SanteAbonnementPage(profilType: 'marechal_ferrant'))),
-      ],
-    );
   }
 
   Widget _buildSectionTitle(String title) {
