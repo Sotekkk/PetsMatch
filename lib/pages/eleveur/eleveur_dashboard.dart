@@ -301,7 +301,7 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
         crossAxisCount: 3, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
         mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 1.25,
         children: [
-          _Indicateur(valeur: '${widget.animalCount}', label: 'Animaux', icon: Icons.cruelty_free_outlined,
+          _Indicateur(valeur: '${widget.animalCount}', label: 'Animaux', icon: Icons.pets,
               onTap: () => _ouvrir(const MesAnimauxPage())),
           _Indicateur(valeur: aFaireOuvertes?.toString() ?? '–', label: 'Tâches en attente', icon: Icons.task_alt, teinte: _vert,
               onTap: () => _ouvrirAgenda()),
