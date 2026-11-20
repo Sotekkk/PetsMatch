@@ -2375,6 +2375,8 @@ export default function MesRdvPage() {
     // useSearchParams, qui exige un Suspense au build).
     const q = new URLSearchParams(window.location.search);
     const onglet = q.get('onglet') as TabKey | null;
+    // Ancien lien vers l'onglet Créneaux : page « Mes créneaux ».
+    if (onglet === 'creneaux' && !esp.espace) { window.location.replace('/pro/creneaux'); return; }
     if (onglet && ['demandes', 'a_venir', 'historique', 'creneaux', 'planning', 'agenda'].includes(onglet)) setActiveTab(onglet);
     else if (catPro === 'veterinaire') setActiveTab('a_venir');
     setRdvFocus(q.get('rdv'));
@@ -2639,8 +2641,10 @@ export default function MesRdvPage() {
     { key: 'demandes',   label: 'Demandes',   badge: demandes.length   },
     { key: 'a_venir',    label: 'À venir',    badge: aVenir.length     },
     { key: 'historique', label: 'Historique', badge: 0                 },
-    // Espace employé : le vétérinaire gère SES créneaux ; l'ASV n'en a pas.
-    ...(esp.espace && !esp.praticien ? [] : [{ key: 'creneaux' as TabKey, label: catPro === 'education' ? 'Disponibilités' : 'Créneaux', badge: 0 }]),
+    // Créneaux : page « Mes créneaux » (/pro/creneaux), sans doublon ici.
+    // Seule exception : vétérinaire employé (espace de la clinique), qui gère
+    // SES créneaux dans l'agenda de la clinique ; l'ASV n'en a pas.
+    ...(esp.espace && esp.praticien ? [{ key: 'creneaux' as TabKey, label: 'Créneaux', badge: 0 }] : []),
     // Clinique : journée en colonnes par praticien / par salle.
     ...(catPro === 'veterinaire' ? [{ key: 'planning' as TabKey, label: 'Planning', badge: 0 }] : []),
     // Salon (toiletteur) : planning de l'équipe, sans salles (propres aux cliniques).
