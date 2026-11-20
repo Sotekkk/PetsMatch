@@ -380,3 +380,18 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
     recuperations: recupsL.map(r => ({ id: r.id, animal_nom: noms.get(String(r.animal_id)) || 'Animal', date: r.created_at })),
   };
 }
+
+/** Articles d'inventaire du profil sous leur seuil d'alerte ou en rupture
+ *  (même règle que la page Inventaire et la notification « Stock bas »). Miroir appli : stockBas. */
+export async function stockBas({ ownerUid, pid }: { ownerUid: string; pid: string }): Promise<number> {
+  const base = supabase.from('inventaire_items').select('quantite, quantite_alerte, alerte_active');
+  const { data, error } = pid ? await base.eq('eleveur_profile_id', pid) : await base.eq('uid_eleveur', ownerUid);
+  if (error) throw error;
+  let n = 0;
+  for (const i of (data ?? []) as { quantite: number | null; quantite_alerte: number | null; alerte_active: boolean | null }[]) {
+    const q = Number(i.quantite ?? 0);
+    const seuil = i.quantite_alerte == null ? null : Number(i.quantite_alerte);
+    if (q <= 0 || (i.alerte_active === true && seuil != null && q <= seuil)) n++;
+  }
+  return n;
+}

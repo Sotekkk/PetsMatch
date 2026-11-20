@@ -2,7 +2,7 @@
 // seulement). Données : utils/tableau_bord_eleveur.dart (lecture des modules
 // existants) ; coche d'une tâche simple : utils/valider_tache.dart. Les soins
 // et les RDV vétérinaires ouvrent leur module (inscription au carnet,
-// récapitulatif du RDV). Chaque raccourci ouvre l'écran existant.
+// récapitulatif du RDV). Chaque indicateur ouvre l'écran existant.
 // Utilisé UNIQUEMENT pour l'éleveur (EleveurHomePage, !User_Info.isPro) :
 // les autres métiers gardent leur propre tableau de bord.
 // Miroir site : website/src/components/EleveurDashboard.tsx.
@@ -18,18 +18,15 @@ import 'package:PetsMatch/utils/soin_depuis_tache.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
-import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/recuperations_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_soin_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
-import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 
 const _vert = Color(0xFF6E9E57);
@@ -93,6 +90,7 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
   /// Annonces en ligne : vues, contacts, favoris (cumulés) et les 3 plus vues.
   ({int vues, int contacts, int favoris, List<Map<String, dynamic>> top})? _statsAnnonces;
   final _cleSoins = GlobalKey();
+  final _cleAgenda = GlobalKey();
 
   Future<void> _charger() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -294,18 +292,25 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
     final aFaireOuvertes = d?.aFaire.where((l) => !l.fait).length;
     final soinsOuverts = d?.soins.where((l) => !l.fait).length;
     final soinsRetard = d?.soins.where((l) => !l.fait && l.retard).length ?? 0;
+    final rdvVenir = d?.agenda.where((l) => !l.fait).length;
     final gratuit = widget.planCode == 'free';
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      // Indicateurs compacts, défilement horizontal.
-      SizedBox(
-        height: 66,
-        child: ListView(scrollDirection: Axis.horizontal, clipBehavior: Clip.none, children: [
+      // Indicateurs : tous visibles d'un coup (3 × 2), sans défilement. Miroir site.
+      GridView.count(
+        crossAxisCount: 3, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 1.25,
+        children: [
           _Indicateur(valeur: '${widget.animalCount}', label: 'Animaux', icon: Icons.cruelty_free_outlined,
               onTap: () => _ouvrir(const MesAnimauxPage())),
           _Indicateur(valeur: aFaireOuvertes?.toString() ?? '–', label: 'Tâches en attente', icon: Icons.task_alt, teinte: _vert,
               onTap: () => _ouvrirAgenda()),
-          // Agenda : déjà dans la barre du bas ; ici l'état de l'inventaire.
+          _Indicateur(valeur: rdvVenir?.toString() ?? '–', label: 'RDV et événements ($kHorizonJours j)',
+              icon: Icons.event_outlined, teinte: const Color(0xFF2196F3),
+              onTap: () {
+                final c = _cleAgenda.currentContext;
+                if (c != null) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 300), alignment: 0.05);
+              }),
           _Indicateur(valeur: _stockBas?.toString() ?? '–', label: 'Stock bas', icon: Icons.inventory_2_outlined,
               teinte: (_stockBas ?? 0) > 0 ? _rouge : const Color(0xFF2196F3), onTap: () => _ouvrir(const InventairePage())),
           _Indicateur(valeur: '${widget.postCount}', label: 'Annonces actives', icon: Icons.campaign_outlined,
@@ -318,29 +323,6 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
                 final c = _cleSoins.currentContext;
                 if (c != null) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 300), alignment: 0.05);
               }),
-        ]),
-      ),
-      const SizedBox(height: 14),
-
-      // Accès rapides (écrans existants).
-      GridView.count(
-        crossAxisCount: 3, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-        mainAxisSpacing: 8, crossAxisSpacing: 8, childAspectRatio: 1.45,
-        children: [
-          TbRaccourci(label: 'Ajouter un animal', icon: Icons.add_circle_outline,
-              onTap: () => _ouvrir(const MesAnimauxPage(ouvrirAjout: true))),
-          TbRaccourci(label: 'Ajouter une tâche', icon: Icons.add_task_outlined,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (ctx) =>
-                  AgendaPage(onBack: () => Navigator.pop(ctx), autoOpenAddTache: true))).then((_) { if (mounted) _charger(); })),
-          // Agenda : déjà dans la barre du bas. Protocoles : formule Premium.
-          TbRaccourci(label: 'Protocoles', icon: Icons.event_note_outlined, verrou: widget.planCode != 'premium',
-              onTap: () => _ouvrir(widget.planCode == 'premium' ? const PlanTemplateListPage() : const AbonnementPage())),
-          TbRaccourci(label: 'Créer une annonce', icon: Icons.campaign_outlined,
-              onTap: () => _ouvrir(const CreateAnnoncePage())),
-          TbRaccourci(label: 'Entrée / Sortie', icon: Icons.swap_horiz, verrou: gratuit,
-              onTap: () => _ouvrir(gratuit ? const AbonnementPage() : const RegistreEntreeSortiePage())),
-          TbRaccourci(label: 'Créer un contrat', icon: Icons.edit_document,
-              onTap: () => _ouvrir(const ContratReservationPage())),
         ],
       ),
 
@@ -366,7 +348,7 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
           child: TbListe(lignes: d?.soins, vide: 'Aucun soin prévu cette semaine ni en retard.',
               rendu: (l) => TbLigneSimple(l: l, onTap: () => _ouvrirLigne(l)))),
       const SizedBox(height: 14),
-      TbBloc(titre: 'Agenda', icone: Icons.event_outlined, voirTout: () => _ouvrirAgenda(),
+      TbBloc(key: _cleAgenda, titre: 'Agenda', icone: Icons.event_outlined, voirTout: () => _ouvrirAgenda(),
           child: TbListe(lignes: d?.agenda, vide: 'Aucun événement dans les $kHorizonJours prochains jours.',
               rendu: (l) => TbLigneSimple(l: l, onTap: () => _ouvrirLigne(l)))),
       const SizedBox(height: 14),
@@ -460,28 +442,28 @@ class _Indicateur extends StatelessWidget {
   const _Indicateur({required this.valeur, required this.label, required this.icon, required this.onTap, this.teinte = kDashTeal});
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: Material(
-          color: Colors.white, borderRadius: BorderRadius.circular(14),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(14), onTap: onTap,
-            child: Container(
-              constraints: const BoxConstraints(minWidth: 132),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: kDashBorder), boxShadow: kDashOmbre),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Container(width: 32, height: 32,
+  // Case de la grille 3 × 2 : pastille + valeur en haut, libellé sur 2 lignes dessous.
+  Widget build(BuildContext context) => Material(
+        color: Colors.white, borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14), onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: kDashBorder), boxShadow: kDashOmbre),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(width: 28, height: 28,
                     decoration: BoxDecoration(color: teinte.withValues(alpha: 0.09), shape: BoxShape.circle),
-                    child: Icon(icon, size: 17, color: teinte)),
-                const SizedBox(width: 8),
-                Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(valeur, style: const TextStyle(fontFamily: 'Galey', fontSize: 19, fontWeight: FontWeight.w700, color: kDashInk)),
-                  Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF4B5563))),
-                ]),
+                    child: Icon(icon, size: 15, color: teinte)),
+                const SizedBox(width: 6),
+                Flexible(child: Text(valeur, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 19, fontWeight: FontWeight.w700, color: kDashInk))),
               ]),
-            ),
+              const SizedBox(height: 4),
+              Text(label, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF4B5563), height: 1.15)),
+            ]),
           ),
         ),
       );

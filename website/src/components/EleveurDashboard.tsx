@@ -12,7 +12,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan, resolveOwnerUid } from '@/lib/use-plan';
 import { Icone, Puce, BORDURE, OMBRE, TEAL } from '@/components/dashboard/kit';
-import { chargerTableauBord, animauxDuProfil, ymd, type DonneesTB, type LigneTB, HORIZON_JOURS } from '@/lib/tableau-bord-eleveur';
+import { chargerTableauBord, animauxDuProfil, stockBas, ymd, type DonneesTB, type LigneTB, HORIZON_JOURS } from '@/lib/tableau-bord-eleveur';
 import PorteeSoinModal, { type SoinAnimal } from '@/components/animaux/PorteeSoinModal';
 import { useSoinDepuisTache } from '@/components/animaux/SoinDepuisTache';
 import AnnonceStatsModal from '@/components/AnnonceStatsModal';
@@ -71,6 +71,8 @@ export default function EleveurDashboard() {
   const [soinOuvert, setSoinOuvert] = useState<{ ligne: LigneTB; animaux: SoinAnimal[]; ownerUid: string; dateRappel?: string } | null>(null);
   const [donnees, setDonnees] = useState<DonneesTB | null>(null);
   const [erreurTB, setErreurTB] = useState(false);
+  // Articles d'inventaire sous leur seuil (miroir appli).
+  const [nbStockBas, setNbStockBas] = useState<number | null>(null);
   const [enCours, setEnCours] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -169,6 +171,7 @@ export default function EleveurDashboard() {
       const ownerUid = await resolveOwnerUid(user.uid, activeProfileId ?? '');
       setDonnees(await chargerTableauBord({ userUid: user.uid, ownerUid, activeProfileId: activeProfileId ?? '' }));
       setErreurTB(false);
+      setNbStockBas(await stockBas({ ownerUid, pid: activeProfileId ?? '' }).catch(() => null));
     } catch {
       setErreurTB(true);
     }
@@ -276,10 +279,11 @@ export default function EleveurDashboard() {
         </section>
 
         {/* Indicateurs */}
-        <div className="flex sm:grid sm:grid-cols-5 gap-3 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 sm:pb-0 snap-x">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <Indicateur valeur={animalCount} label="Animaux" icone="patte" href="/mes-animaux" />
           <Indicateur valeur={aFaireOuvertes} label="Tâches en attente" icone="valide" href="#a-faire" teinte={VERT} />
           <Indicateur valeur={rdvVenir} label={`RDV et événements (${HORIZON_JOURS} j)`} icone="calendrier" href="#agenda" teinte="#2196F3" />
+          <Indicateur valeur={nbStockBas} label="Stock bas" icone="boite" href="/elevage/inventaire" teinte={nbStockBas ? ROUGE : '#2196F3'} />
           <Indicateur valeur={postCount} label="Annonces actives" icone="document" href="/mes-annonces" />
           <Indicateur valeur={soinsOuverts?.length ?? null} label={soinsRetard ? `Échéances sanitaires, dont ${soinsRetard} en retard` : 'Échéances sanitaires'}
             icone="seringue" href="#soins" teinte={soinsRetard ? ROUGE : '#FF9800'} />
@@ -303,16 +307,6 @@ export default function EleveurDashboard() {
             <Icone nom="fleche" taille={18} className="text-gray-400" />
           </Link>
         )}
-
-        {/* Accès rapides : pages et formulaires existants */}
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
-          <Raccourci label="Ajouter un animal" icone="plus" href="/mes-animaux/ajouter" />
-          <Raccourci label="Ajouter une tâche" icone="valide" href="/mes-taches?add=1" />
-          <Raccourci label="Protocoles" icone="calendrier" href="/elevage/planning" />
-          <Raccourci label="Créer une annonce" icone="document" href="/annonces/creer" />
-          <Raccourci label="Entrée / Sortie" icone="renouveler" href="/elevage/registre-entree-sortie" />
-          <Raccourci label="Créer un contrat" icone="crayon" href="/elevage/contrat" />
-        </div>
 
         {erreurTB && (
           <div className="bg-white rounded-2xl p-4 text-sm text-gray-600 flex items-center justify-between gap-3" style={{ border: `1px solid ${BORDURE}` }}>
@@ -470,7 +464,7 @@ function Indicateur({ valeur, label, icone, href, teinte = TEAL }: { valeur: num
       </span>
     </>
   );
-  const cls = `bg-white rounded-2xl p-3 flex items-center gap-3 min-w-[150px] sm:min-w-0 snap-start hover:shadow-md transition-shadow ${OMBRE}`;
+  const cls = `bg-white rounded-2xl p-3 flex items-center gap-3 min-w-0 hover:shadow-md transition-shadow ${OMBRE}`;
   const style = { border: `1px solid ${BORDURE}` };
   return href.startsWith('#')
     ? <a href={href} className={cls} style={style}>{contenu}</a>
