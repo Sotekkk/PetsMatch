@@ -15,6 +15,16 @@ const _muted = Color(0xFF6F767B);
 const kLieuAuto = 'auto';
 const kLieuDomicile = 'domicile';
 
+/// Postes d'un salon (toiletteur) : mêmes lignes salles_clinique, type
+/// « poste ». Pas d'attribution automatique ni d'« à domicile » (le contrôle
+/// en base est propre aux cliniques) : le pro choisit le poste, ou aucun.
+const kTypePoste = 'poste';
+bool sallesSontPostes(List<SalleDispo>? salles) =>
+    salles != null && salles.isNotEmpty && salles.every((s) => s.type == kTypePoste);
+/// Choix du poste → colonnes du RDV (le lieu n'est pas touché).
+Map<String, dynamic> champsPoste(String? choix) =>
+    {'salle_id': choix == null || choix == kLieuAuto || choix == kLieuDomicile ? null : choix};
+
 class SalleDispo {
   final String id, nom, type;
   final bool libre;
@@ -57,6 +67,7 @@ String libelleTypeSalle(String t) => switch (t) {
   'chirurgie' => 'Chirurgie',
   'imagerie' => 'Imagerie',
   'hospitalisation' => 'Hospitalisation',
+  'poste' => 'Poste',
   _ => t.isEmpty ? '' : '${t[0].toUpperCase()}${t.substring(1)}',
 };
 
@@ -102,19 +113,26 @@ class _LieuSalleFieldState extends State<LieuSalleField> {
     final salles = _salles;
     if (salles == null) return const LinearProgressIndicator(minHeight: 2, color: _teal);
     if (salles.isEmpty) return const SizedBox.shrink();
-    final valeur = widget.value == kLieuAuto || widget.value == kLieuDomicile || salles.any((s) => s.id == widget.value)
+    final postes = sallesSontPostes(salles);
+    final valeur = widget.value == kLieuAuto || (!postes && widget.value == kLieuDomicile) || salles.any((s) => s.id == widget.value)
         ? widget.value : kLieuAuto;
     return DropdownButtonFormField<String>(
       value: valeur,
       isExpanded: true,
-      decoration: const InputDecoration(labelText: 'Lieu', border: OutlineInputBorder()),
+      decoration: InputDecoration(labelText: postes ? 'Poste' : 'Lieu', border: const OutlineInputBorder()),
       items: [
-        const DropdownMenuItem(value: kLieuAuto, child: Text('Automatique (salle du praticien)')),
-        const DropdownMenuItem(value: kLieuDomicile, child: Text('🏠 À domicile')),
+        if (postes)
+          const DropdownMenuItem(value: kLieuAuto, child: Text('Aucun poste'))
+        else ...const [
+          DropdownMenuItem(value: kLieuAuto, child: Text('Automatique (salle du praticien)')),
+          DropdownMenuItem(value: kLieuDomicile, child: Text('À domicile')),
+        ],
         for (final s in salles) DropdownMenuItem(
           value: s.id,
           enabled: s.libre || s.id == widget.value,
-          child: Text('${s.nom} · ${libelleTypeSalle(s.type)}${s.libre ? '' : ' — occupée'}',
+          child: Text(s.type == kTypePoste
+                  ? '${s.nom}${s.libre ? '' : ' — occupé'}'
+                  : '${s.nom} · ${libelleTypeSalle(s.type)}${s.libre ? '' : ' — occupée'}',
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: s.libre ? null : Colors.grey)),
         ),

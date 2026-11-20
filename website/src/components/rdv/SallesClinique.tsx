@@ -19,7 +19,7 @@ export const LIEU_DOMICILE = 'domicile';
 export interface SalleDispo { id: string; nom: string; type: string; libre: boolean }
 
 export const libelleTypeSalle = (t: string) =>
-  ({ consultation: 'Consultation', chirurgie: 'Chirurgie', imagerie: 'Imagerie', hospitalisation: 'Hospitalisation' } as Record<string, string>)[t]
+  ({ consultation: 'Consultation', chirurgie: 'Chirurgie', imagerie: 'Imagerie', hospitalisation: 'Hospitalisation', poste: 'Poste' } as Record<string, string>)[t]
   ?? (t ? t[0].toUpperCase() + t.slice(1) : '');
 
 export async function chargerSallesDispo(profileId: string, debut: Date, dureeMinutes: number, exclureRdv?: string | null): Promise<SalleDispo[]> {
@@ -40,6 +40,16 @@ export async function chargerSallesDispo(profileId: string, debut: Date, dureeMi
   return ((data ?? []) as { id: string; nom: string | null; type_salle: string | null; libre: boolean }[])
     .map(s => ({ id: s.id, nom: s.nom ?? 'Salle', type: s.type_salle ?? 'consultation', libre: !!s.libre }));
 }
+
+/** Postes d'un salon (toiletteur) : mêmes lignes salles_clinique, type « poste ».
+ *  Pas d'attribution automatique ni d'« à domicile » (le contrôle en base est
+ *  propre aux cliniques vétérinaires) : le pro choisit le poste, ou aucun. */
+export const TYPE_POSTE = 'poste';
+export const sallesSontPostes = (salles: SalleDispo[] | null | undefined) =>
+  !!salles?.length && salles.every(s => s.type === TYPE_POSTE);
+/** Choix du poste → colonnes du RDV (le lieu n'est pas touché). */
+export const champsPoste = (choix: string): Record<string, unknown> =>
+  ({ salle_id: choix === LIEU_AUTO || choix === LIEU_DOMICILE ? null : choix });
 
 /** Valeur initiale du champ Lieu pour un RDV. */
 export function lieuInitial(rdv: { lieu?: string | null; lieu_lat?: number | null; salle_id?: string | null }): string {
@@ -77,11 +87,17 @@ export function LieuSalleSelect({ salles, value, onChange }: {
   return (
     <select value={value} onChange={e => onChange(e.target.value)}
       className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]" style={FONT}>
-      <option value={LIEU_AUTO}>Automatique (salle du praticien)</option>
-      <option value={LIEU_DOMICILE}>🏠 À domicile</option>
+      {sallesSontPostes(salles) ? (
+        <option value={LIEU_AUTO}>Aucun poste</option>
+      ) : (
+        <>
+          <option value={LIEU_AUTO}>Automatique (salle du praticien)</option>
+          <option value={LIEU_DOMICILE}>À domicile</option>
+        </>
+      )}
       {salles.map(s => (
         <option key={s.id} value={s.id} disabled={!s.libre && s.id !== value}>
-          {s.nom} · {libelleTypeSalle(s.type)}{s.libre ? '' : ' — occupée'}
+          {s.nom}{s.type === TYPE_POSTE ? '' : ` · ${libelleTypeSalle(s.type)}`}{s.libre ? '' : ' — occupé' + (s.type === TYPE_POSTE ? '' : 'e')}
         </option>
       ))}
     </select>

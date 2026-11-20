@@ -30,7 +30,7 @@ import PlanningEmployes from '@/components/rdv/PlanningEmployes';
 import FormuleVetRequise from '@/components/pro/FormuleVetRequise';
 import HistoriquePatient from '@/components/pro/HistoriquePatient';
 import { retardsEnCascade } from '@/lib/retards-rdv';
-import { LieuSalleSelect, LIEU_AUTO, LIEU_DOMICILE, champsLieu, lieuInitial, useSallesDispo } from '@/components/rdv/SallesClinique';
+import { LieuSalleSelect, LIEU_AUTO, LIEU_DOMICILE, champsLieu, champsPoste, lieuInitial, sallesSontPostes, useSallesDispo } from '@/components/rdv/SallesClinique';
 import { trouverUtilisateurParEmail, type UtilisateurTrouve } from '@/lib/user-lookup';
 import { apiFetch } from '@/lib/api-fetch';
 import { httpsCallable } from 'firebase/functions';
@@ -198,6 +198,8 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
   const sallesDispo = useSallesDispo(rdv.statut === 'demande' ? rdv.pro_profile_id : null,
     isNaN(debutChoisi.getTime()) ? null : debutChoisi, duree, rdv.id);
   const avecSalles = (sallesDispo?.length ?? 0) > 0;
+  // Salon (toiletteur) : postes au lieu de salles.
+  const postes = sallesSontPostes(sallesDispo);
 
   useEffect(() => {
     if (rdv.statut !== 'demande' || !rdv.pro_profile_id) return;
@@ -224,7 +226,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
 
       const maj = {
         statut: newStatut, date_heure: newDt.toISOString(), duree_minutes: duree,
-        ...(mode === 'confirme' && avecSalles ? champsLieu(lieuChoix, rdv.lieu) : {}),
+        ...(mode === 'confirme' && avecSalles ? (postes ? champsPoste(lieuChoix) : champsLieu(lieuChoix, rdv.lieu)) : {}),
         ...(detail.length > 0 ? { animaux_detail: detail } : {}),
       };
       if (mode === 'confirme' && avecSalles) {
@@ -299,7 +301,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
         <h2 className="font-bold text-lg text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>Accepter le RDV</h2>
         {mode === 'confirme' && avecSalles && sallesDispo && (
           <div>
-            <label className="text-xs font-semibold text-gray-500 block" style={{ fontFamily: 'Galey, sans-serif' }}>Lieu</label>
+            <label className="text-xs font-semibold text-gray-500 block" style={{ fontFamily: 'Galey, sans-serif' }}>{postes ? 'Poste' : 'Lieu'}</label>
             <LieuSalleSelect salles={sallesDispo} value={lieuChoix} onChange={setLieuChoix} />
           </div>
         )}
@@ -429,7 +431,9 @@ function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
   const [lieuChoix, setLieuChoix] = useState(lieuInitial(rdv));
   const debutModifie = new Date(`${date}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`);
   const sallesDispo = useSallesDispo(rdv.pro_profile_id, isNaN(debutModifie.getTime()) ? null : debutModifie, duree, rdv.id);
-  const avecSalles = (sallesDispo?.length ?? 0) > 0;
+  // Salon (toiletteur) : postes (champ à part, le lieu reste libre).
+  const postes = sallesSontPostes(sallesDispo);
+  const avecSalles = (sallesDispo?.length ?? 0) > 0 && !postes;
 
   useEffect(() => {
     if (!activeProfileId) return;
@@ -510,6 +514,7 @@ function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
         instructeur_profile_id: instructeurProfileId || null,
         // Clinique : salle choisie / à domicile ; « automatique » → la base choisit.
         ...(avecSalles ? { ...champsLieu(lieuChoix, rdv.lieu, lieuTrimmed), ...(lieuChoix === LIEU_DOMICILE && lieuTrimmed ? { lieu: lieuTrimmed, lieu_lat: lieuLat, lieu_lng: lieuLng } : {}) } : {}),
+        ...(postes ? champsPoste(lieuChoix) : {}),
         reminder_48h_sent: false, reminder_24h_sent: false,
         reminder_1h_sent: false, reminder_15min_sent: false,
       }).eq('id', rdv.id);
@@ -623,6 +628,13 @@ function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
             className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none" />
           )}
         </div>
+
+        {postes && sallesDispo && (
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Poste</label>
+            <LieuSalleSelect salles={sallesDispo} value={lieuChoix === LIEU_DOMICILE ? LIEU_AUTO : lieuChoix} onChange={setLieuChoix} />
+          </div>
+        )}
 
         {employes.length > 0 && (
           <div>

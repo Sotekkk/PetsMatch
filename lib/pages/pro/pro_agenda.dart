@@ -166,6 +166,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   DateTime? _jourHistorique;
   bool _hospitalisationsSeules = false;
   bool get _estClinique => AgendaContexte.catPro == 'veterinaire';
+  /// Salon (toiletteur) : postes du salon (salles_clinique de type « poste »).
+  bool get _estSalon => AgendaContexte.catPro == 'toilettage';
   /// Tous les pros (véto, ostéo, pet-sitter, éducateur…) : un RDV confirmé
   /// reste « À venir » tant qu'il n'est pas marqué terminé (badge « À
   /// clôturer » une fois l'heure passée) — jamais basculé seul en Historique.
@@ -280,13 +282,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   /// Clinique à plusieurs praticiens : avant de valider une demande, choisir
   /// le vétérinaire (l'ASV l'attribue, elle ne le prend pas). false = annulé.
   Future<bool> _choisirVeterinaire(Map<String, dynamic> rdv) async {
-    if (!_estClinique || rdv['statut'] != 'demande') return true;
-    final praticiens = await _chargerPraticiens();
+    if (!(_estClinique || _estSalon) || rdv['statut'] != 'demande') return true;
+    final praticiens = _estClinique ? await _chargerPraticiens() : const <({String id, String nom})>[];
     final debutRdv = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal() ?? DateTime.now();
     final dureeRdv = (rdv['duree_minutes'] as num?)?.toInt() ?? 30;
     final salles = await chargerSallesDispo(_profilClinique(rdv), debutRdv, dureeRdv,
         exclureRdv: rdv['id']?.toString());
     if ((praticiens.length < 2 && salles.isEmpty) || !mounted) return true;
+    final postes = sallesSontPostes(salles);
     // Plusieurs praticiens : « automatique » = salle du praticien choisi.
     var lieu = praticiens.length > 1 && _lieuInitial(rdv) != kLieuDomicile ? kLieuAuto : _lieuInitial(rdv);
     final actuel = rdv['instructeur_profile_id']?.toString() ?? '';
@@ -303,7 +306,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       builder: (ctx) => StatefulBuilder(builder: (ctx, setM) => SafeArea(child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(praticiens.length > 1 ? 'Attribuer à' : 'Lieu du rendez-vous',
+          Text(praticiens.length > 1 ? 'Attribuer à' : postes ? 'Poste du rendez-vous' : 'Lieu du rendez-vous',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
           if (praticiens.length > 1) ...[
           const SizedBox(height: 4),
@@ -354,6 +357,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   /// pour lui (titulaire = sans praticien) ; une ASV le laisse au praticien
   /// posé provisoirement. Champs à ajouter à l'update de confirmation.
   Future<Map<String, dynamic>> _attributionPraticien(Map<String, dynamic> rdv) async {
+    if (_estSalon) {
+      final choix = _lieuChoisi.remove(rdv['id']?.toString());
+      return choix == null ? const {} : champsPoste(choix);
+    }
     if (!_estClinique) return const {};
     final lieu = _champsLieu(_lieuChoisi.remove(rdv['id']?.toString()), rdv);
     // Vétérinaire choisi à la validation (« Attribuer à ») — '' = titulaire.
@@ -2009,10 +2016,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     String? instructeurProfileId = rdv['instructeur_profile_id']?.toString();
     if (instructeurProfileId != null && instructeurProfileId.isEmpty) instructeurProfileId = null;
     // Clinique avec salles : « Lieu » = à domicile ou une salle.
-    final avecSalles = _estClinique &&
-        (await chargerSallesDispo(_profilClinique(rdv), currentDh, duree, exclureRdv: rdv['id']?.toString())).isNotEmpty;
+    // Salon (toiletteur) avec postes : champ « Poste » à part, le lieu reste libre.
+    final sallesModif = (_estClinique || _estSalon)
+        ? await chargerSallesDispo(_profilClinique(rdv), currentDh, duree, exclureRdv: rdv['id']?.toString())
+        : const <SalleDispo>[];
+    final avecPostes = _estSalon && sallesSontPostes(sallesModif);
+    final avecSalles = _estClinique && sallesModif.isNotEmpty;
     var lieuChoix = _lieuInitial(rdv);
-    if (lieuChoix != kLieuDomicile) lieuCtrl.clear();
+    if (avecPostes) lieuChoix = rdv['salle_id']?.toString() ?? kLieuAuto;
+    if (lieuChoix != kLieuDomicile && avecSalles) lieuCtrl.clear();
     if (!mounted) return;
 
     final result = await showModalBottomSheet<bool>(
@@ -2099,6 +2111,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               ] else
                 TextField(controller: lieuCtrl, decoration: const InputDecoration(
                     labelText: 'Lieu', hintText: 'Au cabinet, au domicile du client…', border: OutlineInputBorder())),
+              if (avecPostes) ...[
+                const SizedBox(height: 12),
+                LieuSalleField(
+                  profileId: _profilClinique(rdv),
+                  debut: DateTime(date.year, date.month, date.day, hour, minute),
+                  dureeMinutes: duree, exclureRdv: rdv['id']?.toString(),
+                  value: lieuChoix, onChanged: (v) => setModal(() => lieuChoix = v),
+                ),
+              ],
               const SizedBox(height: 12),
               if (_employes.isNotEmpty) ...[
                 DropdownButtonFormField<String?>(
@@ -2132,11 +2153,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     if (result != true) return;
     final newDh = DateTime(date.year, date.month, date.day, hour, minute);
     await _modifierRdv(rdv, newDh, duree, motifCtrl.text.trim(), lieuCtrl.text.trim(),
-        notesCtrl.text.trim(), instructeurProfileId, lieuChoix: avecSalles ? lieuChoix : null);
+        notesCtrl.text.trim(), instructeurProfileId, lieuChoix: avecSalles ? lieuChoix : null,
+        posteChoix: avecPostes ? lieuChoix : null);
   }
 
   Future<void> _modifierRdv(Map<String, dynamic> rdv, DateTime newDh, int duree, String motif,
-      String lieu, String notes, String? instructeurProfileId, {String? lieuChoix}) async {
+      String lieu, String notes, String? instructeurProfileId, {String? lieuChoix, String? posteChoix}) async {
     try {
       final supa = Supabase.instance.client;
       final rdvId = rdv['id'].toString();
@@ -2205,6 +2227,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           ..._champsLieu(lieuChoix, rdv, adresse: lieu),
           if (lieuChoix == kLieuDomicile && lieu.isEmpty) 'lieu': 'À domicile',
         },
+        // Salon : poste choisi (ou aucun).
+        if (posteChoix != null) ...champsPoste(posteChoix),
         'reminder_48h_sent': false, 'reminder_24h_sent': false,
         'reminder_1h_sent': false, 'reminder_15min_sent': false,
       }).eq('id', rdvId);
