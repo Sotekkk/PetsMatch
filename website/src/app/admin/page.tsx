@@ -94,6 +94,8 @@ interface SignalementAlerte {
 interface DossierEntry {
   uid: string;
   firstname: string; lastname: string; email: string;
+  /** Contact du pro (profil, sinon compte) : e-mail de contact et téléphone. */
+  emailContact: string | null; tel: string | null;
   siret: string | null;
   kbisUrl: string | null; acacedDocUrl: string | null; acaced: string | null;
   statutsUrl?: string | null; arretePrefUrl?: string | null;
@@ -588,11 +590,21 @@ export default function AdminPage() {
       annonces:              Number(r['total_annonces']              ?? 0),
       annoncesActives:       Number(r['annonces_actives']            ?? 0),
       signalementsEnAttente: Number(r['total_signalements_en_attente'] ?? 0),
+      // Recalculé ci-dessous avec la règle de la liste des dossiers.
       profilsEnAttente:      Number(r['profils_en_attente']          ?? 0),
       particuliers:          Number(r['particuliers']                ?? 0),
       eleveurs:              Number(r['eleveurs']                    ?? 0),
       parEspece:             (r['par_espece'] as Record<string, number>) ?? {},
     });
+
+    // Pastille « Dossiers » : même règle que la liste (profils pros non
+    // validés et non refusés) — get_admin_stats compte par compte (users),
+    // d'où un écart (ex. 4 affichés pour 3 dossiers).
+    const { count: nbDossiers } = await supabase.from('user_profiles_complet')
+      .select('id', { count: 'exact', head: true })
+      .not('profile_type', 'is', null).neq('profile_type', 'particulier')
+      .not('is_validate', 'is', true).not('statut_pro', 'eq', 'refuse');
+    if (nbDossiers != null) setStats(prev => prev ? { ...prev, profilsEnAttente: nbDossiers } : prev);
 
     const { data: alertesData } = await supabase.from('signalements_alertes').select('*');
     setAlertes((alertesData ?? []) as SignalementAlerte[]);
@@ -845,6 +857,8 @@ export default function AdminPage() {
         firstname:      (fire as FireUser).firstname ?? (r['firstname'] as string) ?? '',
         lastname:       (fire as FireUser).lastname  ?? (r['lastname']  as string) ?? '',
         email:          (fire as FireUser).email     ?? (r['email']     as string) ?? '',
+        emailContact:   ((r['email_contact'] as string) || '').trim() || null,
+        tel:            ((r['phone_number'] as string) || (r['phone'] as string) || (fire as FireUser).phone_number || '').trim() || null,
         siret:          (r['siret'] as string) ?? null,
         kbisUrl:        (r['kbis_url'] as string) ?? null,
         acacedDocUrl:   (r['acaced_doc_url'] as string) ?? null,
@@ -868,7 +882,7 @@ export default function AdminPage() {
   const loadDossiers = useCallback(async () => {
     setDossiersLoading(true);
     try {
-      const dossierCols = 'id, uid, is_main, profile_type, cat_pro, profession_pro, certifications, nom, siret, rna, firstname, lastname, kbis_url, acaced_doc_url, statuts_url, arrete_prefectoral_url, acaced, rejection_reason, created_at, is_validate, statut_pro';
+      const dossierCols = 'id, uid, is_main, profile_type, cat_pro, profession_pro, certifications, nom, siret, rna, firstname, lastname, email_contact, phone_number, phone, kbis_url, acaced_doc_url, statuts_url, arrete_prefectoral_url, acaced, rejection_reason, created_at, is_validate, statut_pro';
       const [
         { data: pending, error: err1 },
         { data: refused, error: err2 },
@@ -2044,7 +2058,7 @@ export default function AdminPage() {
                             {[d.firstname, d.lastname].filter(Boolean).join(' ') || 'Nom inconnu'}
                           </p>
                           {d.nameElevage && <p className="text-xs text-[#0C5C6C] truncate">{d.nameElevage}</p>}
-                          <p className="text-xs text-gray-400 truncate">{d.email}</p>
+                          <ContactDossier d={d} />
                         </div>
                       </div>
                       <div className="flex gap-1.5 flex-wrap mb-3">
@@ -3350,6 +3364,9 @@ export default function AdminPage() {
               <button onClick={() => setSelectedDossier(null)} className="text-gray-600 hover:text-gray-900 text-xl">✕</button>
             </div>
             <div className="p-6 space-y-4">
+              <Section title="Contacter le professionnel">
+                <ContactDossier d={selectedDossier} complet />
+              </Section>
               <Section title="Informations">
                 <InfoRow label="Rôle" value={selectedDossier.isElevage ? 'Éleveur' : 'Professionnel'} />
                 {selectedDossier.siret && <InfoRow label="SIRET/SIREN" value={selectedDossier.siret} mono />}
@@ -3860,5 +3877,43 @@ function ActionBtn({ label, color, onClick, disabled }: { label: string; color: 
       style={{ borderColor: `${color}66`, color, background: `${color}18`, fontFamily: 'Galey, sans-serif' }}>
       {label}
     </button>
+  );
+}
+
+/** Contact d'un pro dont le dossier est examiné (document manquant ou erroné) :
+ *  e-mail du compte, e-mail de contact du profil s'il diffère, téléphone. */
+function ContactDossier({ d, complet = false }: { d: DossierEntry; complet?: boolean }) {
+  const emails = [...new Set([d.email, d.emailContact].filter((e): e is string => !!e && e.includes('@')))];
+  const nom = [d.firstname, d.lastname].filter(Boolean).join(' ');
+  const sujet = encodeURIComponent('PetsMatch — votre dossier professionnel');
+  const corps = encodeURIComponent(`Bonjour${nom ? ` ${nom}` : ''},\n\nNous examinons votre dossier professionnel sur PetsMatch.\n\n`);
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+  if (!complet) {
+    return (
+      <div className="text-xs text-gray-500 space-y-0.5">
+        {emails.map(e => <a key={e} href={`mailto:${e}`} onClick={stop} className="block truncate hover:underline">{e}</a>)}
+        {d.tel ? <a href={`tel:${d.tel.replace(/\s/g, '')}`} onClick={stop} className="block hover:underline">{d.tel}</a>
+          : <span className="block text-gray-400">Pas de téléphone</span>}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2 text-sm">
+      {emails.length === 0 && <p className="text-gray-400 italic">Aucune adresse e-mail</p>}
+      {emails.map(e => (
+        <div key={e} className="flex items-center gap-2">
+          <span className="flex-1 min-w-0 truncate text-[#1F2A2E]">{e}</span>
+          <button type="button" onClick={() => navigator.clipboard?.writeText(e)} className="text-xs text-gray-500 hover:underline">Copier</button>
+          <a href={`mailto:${e}?subject=${sujet}&body=${corps}`} className="text-xs font-semibold text-white bg-[#0C5C6C] rounded-lg px-3 py-1.5">Écrire</a>
+        </div>
+      ))}
+      {d.tel ? (
+        <div className="flex items-center gap-2">
+          <span className="flex-1 text-[#1F2A2E]">{d.tel}</span>
+          <button type="button" onClick={() => navigator.clipboard?.writeText(d.tel!)} className="text-xs text-gray-500 hover:underline">Copier</button>
+          <a href={`tel:${d.tel.replace(/\s/g, '')}`} className="text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C] rounded-lg px-3 py-1.5">Appeler</a>
+        </div>
+      ) : <p className="text-gray-400 italic">Aucun numéro de téléphone renseigné</p>}
+    </div>
   );
 }
