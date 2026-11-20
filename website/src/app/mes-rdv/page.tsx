@@ -26,6 +26,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import OwnerContactButton from '@/components/pro/OwnerContactButton';
 import { typeFromMotif } from '@/lib/agenda-type';
 import PlanningClinique from '@/components/rdv/PlanningClinique';
+import PlanningEmployes from '@/components/rdv/PlanningEmployes';
 import FormuleVetRequise from '@/components/pro/FormuleVetRequise';
 import HistoriquePatient from '@/components/pro/HistoriquePatient';
 import { retardsEnCascade } from '@/lib/retards-rdv';
@@ -2630,6 +2631,8 @@ export default function MesRdvPage() {
     ...(esp.espace && !esp.praticien ? [] : [{ key: 'creneaux' as TabKey, label: catPro === 'education' ? 'Disponibilités' : 'Créneaux', badge: 0 }]),
     // Clinique : journée en colonnes par praticien / par salle.
     ...(catPro === 'veterinaire' ? [{ key: 'planning' as TabKey, label: 'Planning', badge: 0 }] : []),
+    // Salon (toiletteur) : planning de l'équipe, sans salles (propres aux cliniques).
+    ...(catPro === 'toilettage' && !esp.espace ? [{ key: 'planning' as TabKey, label: 'Planning équipe', badge: 0 }] : []),
   ];
 
   // Pet-sitting : une demande en série = une seule carte (acceptée / refusée en une fois).
@@ -2749,7 +2752,16 @@ export default function MesRdvPage() {
         )}
 
         {/* Planning de la clinique */}
-        {activeTab === 'planning' && activeProfileId && (
+        {activeTab === 'planning' && activeProfileId && catPro !== 'veterinaire' && (
+          <PlanningEmployes profileId={activeProfileId} version={rdvs}
+            onOuvrirRdv={id => {
+              const r = rdvs.find(x => x.id === id);
+              if (!r) return;
+              if (r.statut === 'demande') setModalAccepter(r);
+              else if (r.statut === 'confirme') setModalModifier(r);
+            }} />
+        )}
+        {activeTab === 'planning' && activeProfileId && catPro === 'veterinaire' && (
           <FormuleVetRequise requise="clinique" fonction="Planning de la clinique">
           <PlanningClinique profileId={activeProfileId} version={rdvs} uid={proUid}
             onCreer={(date, praticien, salle) => setModalNouveau({ date, praticien, salle })}
