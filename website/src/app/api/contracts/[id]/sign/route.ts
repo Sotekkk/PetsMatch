@@ -190,8 +190,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const clientUid = (meta.client_uid as string | undefined) ?? null;
     const clientProfileId = ((meta.client_profile_id ?? meta.acquereur_profile_id) as string | undefined) ?? null;
     const notifierClient = async (type: string, title: string, body: string) => {
-      if (clientUid) await notify({ uid: clientUid, profileId: clientProfileId, type, title, body, data: { token: id } });
-      else if (acqEmail) await notify({ email: acqEmail, type, title, body, data: { token: id } });
+      if (clientUid) await notify({ uid: clientUid, profileId: clientProfileId, type, title, body, data: { token: id, emetteur: false } });
+      else if (acqEmail) await notify({ email: acqEmail, type, title, body, data: { token: id, emetteur: false } });
     };
     const acqNom   = (meta.acquereur_nom as string | undefined) || partieAcquereurDefaut;
     const titre    = doc.titre ?? 'le contrat';
@@ -204,7 +204,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const finalized = bothSigned && !isCessionType;
     if (finalized) {
       const complet = `${titre} est désormais signé par les deux parties.`;
-      await notify({ uid: doc.uid_eleveur, profileId: proProfileId, type: 'contrat_signe_complet', title: '✅ Contrat signé !', body: complet, profileType: isAdoption ? 'association' : proProfileType, data: { token: id } });
+      // emetteur : le pro est renvoyé vers SES contrats (/education/contrat…), le client vers « Mes contrats ».
+      await notify({ uid: doc.uid_eleveur, profileId: proProfileId, type: 'contrat_signe_complet', title: '✅ Contrat signé !', body: complet, profileType: isAdoption ? 'association' : proProfileType, data: { token: id, emetteur: true, profileType: isAdoption ? 'association' : proProfileType } });
       await notifierClient('contrat_signe_complet', '✅ Contrat signé !', complet);
     } else if (bothSigned) {
       await notify({

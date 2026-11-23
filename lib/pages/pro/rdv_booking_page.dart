@@ -41,6 +41,8 @@ class RdvBookingPage extends StatefulWidget {
   /// Pension : animaux déjà cochés dans la demande de séjour (enchaînement
   /// « Demander plutôt une visite ») — gardés cochés.
   final List<String>? animauxPreselectionIds;
+  /// Pension : « première fois ? » déduit du « déjà venu ? » de la demande de séjour.
+  final bool? premiereVisiteInitiale;
 
   const RdvBookingPage({
     super.key,
@@ -58,6 +60,7 @@ class RdvBookingPage extends StatefulWidget {
     this.proProfileId,
     this.visiteAnimal,
     this.animauxPreselectionIds,
+    this.premiereVisiteInitiale,
   });
 
   @override
@@ -388,6 +391,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     super.initState();
     _places = GoogleMapsPlaces(apiKey: getApiKey());
     if (widget.isPension) _selectedMotif = 'visite';
+    _premiereVisite = widget.premiereVisiteInitiale;
     _loadAll();
     _chargerMoyensPaiement();
   }

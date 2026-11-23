@@ -49,8 +49,10 @@ function ChoixHeure({ titre, heures, valeur, onChange, couleur, duree }: { titre
 
 export default function ReservationSejourModal({ pensionProfileId, pensionNom, couleur, onClose, onVisite }: {
   pensionProfileId: string; pensionNom: string; couleur: string; onClose: () => void;
-  /** « Demander plutôt une visite » : les animaux cochés sont gardés pour la visite. */
-  onVisite?: (animalIds: string[]) => void;
+  /** « Demander plutôt une visite » : les animaux cochés sont gardés pour la visite,
+   *  ainsi que « première fois dans cette pension ? » déduit de « déjà venu ? »
+   *  (null = pas encore connu). */
+  onVisite?: (animalIds: string[], premiereVisite: boolean | null) => void;
 }) {
   const { user } = useAuth();
   // Profil actif lu (localStorage) avant de charger : sinon la première
@@ -151,6 +153,12 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
   const aQuestionner = choisis.filter(a => premiers[a.id] === true);
   const nouveaux = aQuestionner.filter(a => dejaVenus[a.id] === false);
   const essaiRequis = !!infos?.essai_requis && nouveaux.length > 0;
+  // Pour « Demander plutôt une visite » : première fois si un animal coché est
+  // nouveau ; déjà venu si tous ont un historique ou ont répondu « Oui ».
+  const premiereVisite: boolean | null =
+    !choisis.length || choisis.some(a => typeof premiers[a.id] !== 'boolean') ? null
+    : nouveaux.length > 0 ? true
+    : aQuestionner.every(a => dejaVenus[a.id] === true) ? false : null;
   const nuits = arrivee && depart ? Math.round((new Date(depart).getTime() - new Date(arrivee).getTime()) / 86400000) : 0;
   // Estimation : nuits × prix/nuit de l'espèce, pour chaque animal (tarifs publics).
   const prixAnimaux = choisis.map(a => {
@@ -320,7 +328,7 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
             <button onClick={envoyer} disabled={etat === 'envoi' || !choisis.length || !!complet} className="w-full py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: couleur }}>
               {etat === 'envoi' ? 'Envoi…' : 'Envoyer la demande de séjour'}
             </button>
-            {onVisite && <button onClick={() => onVisite(animalIds.map(String))} className="w-full text-sm font-semibold" style={{ color: couleur }}>Demander plutôt une visite de la pension</button>}
+            {onVisite && <button onClick={() => onVisite(animalIds.map(String), premiereVisite)} className="w-full text-sm font-semibold" style={{ color: couleur }}>Demander plutôt une visite de la pension</button>}
           </>
         )}
       </div>

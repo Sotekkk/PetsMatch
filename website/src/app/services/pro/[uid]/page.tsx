@@ -707,7 +707,7 @@ function ProDetailContent() {
   }
 
   /** `animauxPre` : pension — animaux déjà cochés dans la demande de séjour, gardés. */
-  async function openRdv(animauxPre: string[] = []) {
+  async function openRdv(animauxPre: string[] = [], premierePre: boolean | null = null) {
     // Sans compte : on laisse choisir motif / vétérinaire / créneau ; le
     // compte est proposé à la confirmation (etapeCompte).
     setEtapeCompte(false);
@@ -720,6 +720,8 @@ function ProDetailContent() {
     setSelectedAnimalId(null);
     if (pro?.cat_pro === 'pension') {
       setMotifKey('visite');
+      // « Déjà venu ? » répondu dans la demande de séjour : repris tel quel.
+      setPremiereVisite(premierePre);
       setAnimauxGarde(animauxPre);
       if (animauxPre[0]) setSelectedAnimalId(animauxPre[0] as unknown as number);
     }
@@ -2042,7 +2044,7 @@ function ProDetailContent() {
       )}
       {showSejour && pro.profileTableId && (
         <ReservationSejourModal pensionProfileId={pro.profileTableId} pensionNom={pro.name} couleur={catColor}
-          onClose={() => setShowSejour(false)} onVisite={ids => { setShowSejour(false); openRdv(ids); }} />
+          onClose={() => setShowSejour(false)} onVisite={(ids, premiere) => { setShowSejour(false); openRdv(ids, premiere); }} />
       )}
       {showEducationReservation && (
         <EducationReservationModal

@@ -155,6 +155,13 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
   List<Map<String, dynamic>> get _nouveaux => [for (final a in _aQuestionner) if (_dejaVenus[a['id'].toString()] == false) a];
   List<Map<String, dynamic>> get _equins => [for (final a in _choisis) if (pensionTarifEquin(pensionTarifKeyForEspece(a['espece']?.toString()))) a];
   bool get _essaiRequis => _pension?['essai_requis'] == true && _nouveaux.isNotEmpty;
+  /// Pour « Demander plutôt une visite » : première fois si un animal coché est
+  /// nouveau ; déjà venu si tous ont un historique ou ont répondu « Oui ».
+  bool? get _premiereVisite {
+    if (_choisis.isEmpty || _choisis.any((a) => !_premiers.containsKey(a['id'].toString()))) return null;
+    if (_nouveaux.isNotEmpty) return true;
+    return _aQuestionner.every((a) => _dejaVenus[a['id'].toString()] == true) ? false : null;
+  }
 
   /// Estimation : nuits × prix/nuit de l'espèce, pour chaque animal (tarifs publics).
   String? get _estimation {
@@ -489,7 +496,8 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
               TextButton(
                 onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => RdvBookingPage(
                     proUid: widget.proUid, proName: widget.proName, categoryColor: _c, isPension: true, proProfileId: widget.proProfileId,
-                    animauxPreselectionIds: [for (final a in _choisis) a['id'].toString()]))),
+                    animauxPreselectionIds: [for (final a in _choisis) a['id'].toString()],
+                    premiereVisiteInitiale: _premiereVisite))),
                 child: Text('Demander plutôt une visite de la pension', style: TextStyle(fontFamily: 'Galey', color: _c)),
               ),
             ]),

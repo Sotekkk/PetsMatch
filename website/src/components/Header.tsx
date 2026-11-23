@@ -966,9 +966,23 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'influenceur_refuse':
     case 'influenceur_revoque':
       return '/demande-influenceur';
+    // « Contrat signé » reçu par le pro émetteur → la page contrats de son métier.
+    // Anciennes notifs sans `emetteur` : déduit du profil actif (hors élevage,
+    // qui peut aussi être acquéreur).
+    case 'contrat_signe_complet': {
+      const em = (n.data as Record<string, unknown> | undefined)?.emetteur;
+      const metier = (em === true ? (d.profileType as string | undefined) ?? proType : em === false ? null : proType) ?? '';
+      const pageContrats: Record<string, string> = {
+        education: '/education/contrat', garde: '/garde/contrat', pension: '/pension/contrat',
+        photographe: '/photographe/contrat', toilettage: '/toilettage/contrat', marechal_ferrant: '/marechal-ferrant/contrat',
+        sante: '/sante/contrat', veterinaire: '/sante/contrat', association: '/association/contrat',
+      };
+      if (em === true && metier === 'eleveur') return d.token ? `/elevage/contrat?doc=${d.token}` : '/elevage/contrat';
+      if (pageContrats[metier]) return pageContrats[metier];
+      return d.token ? `/mes-contrats?doc=${d.token}` : '/mes-contrats';
+    }
     // Reçues par l'acquéreur → sa page « Mes contrats » (pas le lien de signature brut)
     case 'contrat_signe_eleveur':
-    case 'contrat_signe_complet':
     case 'contrat_invite':
     case 'contrat_a_signer':
       return d.token ? `/mes-contrats?doc=${d.token}` : '/mes-contrats';
