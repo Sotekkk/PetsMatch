@@ -67,7 +67,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
   File?   _acacedDocFile;
   String? _acacedDocUrl;
   // ACACED expiré (ou bientôt) : attestation de la formation d'actualisation,
-  // jointe directement sous l'alerte. Elle devient le justificatif ACACED en
+  // jointe directement sous l'alerte. Elle s'ajoute au certificat ACACED en
   // cours (acaced_doc_url) et sa date la date de renouvellement (miroir site).
   bool  _aRenouveler = false;
   File? _actuFile;
@@ -502,10 +502,11 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
         acacedDocUrl = await uploadPhotoPrive(_acacedDocFile!, 'profiles/$uid/acaced.jpg');
         setState(() => _acacedDocUrl = acacedDocUrl);
       }
-      // Attestation d'actualisation ACACED : justificatif ACACED en cours.
+      // Attestation d'actualisation ACACED : à côté du certificat (l'admin voit les deux).
+      String? acacedActuUrl;
       if (_actuFile != null) {
-        acacedDocUrl = await uploadPhotoPrive(_actuFile!, 'profiles/$uid/acaced_actualisation.jpg');
-        setState(() { _acacedDocUrl = acacedDocUrl; _actuFile = null; });
+        acacedActuUrl = await uploadPhotoPrive(_actuFile!, 'profiles/$uid/acaced_actualisation.jpg');
+        setState(() => _actuFile = null);
       }
 
       final isDog = _hasEspece('chien');
@@ -646,6 +647,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           'desc_entreprise': _descCtrl.text.trim(),
           if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
           if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
+          if (acacedActuUrl != null && acacedActuUrl.isNotEmpty) 'acaced_actualisation_url': acacedActuUrl,
           // Dates ACACED aussi en base (lues par le site), format AAAA-MM-JJ.
           if (_acacedDateObtention != null) 'acaced_date_obtention': DateFormat('yyyy-MM-dd').format(_acacedDateObtention!),
           if (_acacedDateRenewal != null) 'acaced_date_renewal': DateFormat('yyyy-MM-dd').format(_acacedDateRenewal!),
@@ -1326,7 +1328,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
                   style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
               const SizedBox(height: 4),
               Text("Vous avez suivi la formation d'actualisation des connaissances ? Indiquez sa date et joignez l'attestation : "
-                  'elle remplace le certificat comme justificatif en cours, et la validité repart pour 10 ans.',
+                  "elle s'ajoute à votre certificat, et la validité repart pour 10 ans.",
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
               const SizedBox(height: 10),
               _datePicker(

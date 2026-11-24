@@ -347,7 +347,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
           const ext = acacedActuFile.name.split('.').pop() ?? 'jpg';
           const path = `documents/${uid}/acaced_actualisation${isEleveur ? '' : `_${typeInfo.type}`}.${ext}`;
           const { data: up } = await supabase.storage.from('documents').upload(path, acacedActuFile, { upsert: true });
-          if (up) data.acaced_doc_url = supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
+          if (up) data.acaced_actualisation_url = supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
         }
       }
       if (isProType) {
@@ -835,12 +835,12 @@ function AssociationForm({ uid, onBack, onSaved }: {
           profileData.acaced_doc_url = pub.publicUrl;
         }
       }
-      // ACACED expiré : l'attestation d'actualisation devient le justificatif en cours.
+      // ACACED expiré : attestation d'actualisation, à côté du certificat.
       if (acacedExpire(acacedDate) && acacedRenouv && acacedActuAsso) {
         const ext = acacedActuAsso.name.split('.').pop() ?? 'pdf';
         const path = `documents/${uid}/asso_acaced_actualisation.${ext}`;
         const { data: up } = await supabase.storage.from('documents').upload(path, acacedActuAsso, { upsert: true });
-        if (up) profileData.acaced_doc_url = supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
+        if (up) profileData.acaced_actualisation_url = supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
       }
 
       // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).

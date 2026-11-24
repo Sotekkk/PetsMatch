@@ -366,7 +366,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
   /// ACACED (éleveur, pet-sitter, éducateur) — n°, date d'obtention et
   /// certificat obligatoires à la création, comme sur le site (Code rural,
   /// art. L214-6-1). Plus de 10 ans : formation d'actualisation (date +
-  /// attestation), qui devient le justificatif en cours.
+  /// attestation), à côté du certificat.
   File? _acacedDoc;
   DateTime? _acacedObtention;
   DateTime? _acacedRenouvellement;
@@ -572,7 +572,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
           data['acaced_doc_url'] = await uploadPhotoPrive(_acacedDoc!, 'profiles/$uid/acaced_${type}_$ts.jpg');
         }
         if (actualise && _acacedActuDoc != null) {
-          data['acaced_doc_url'] = await uploadPhotoPrive(_acacedActuDoc!, 'profiles/$uid/acaced_actualisation_${type}_$ts.jpg');
+          data['acaced_actualisation_url'] = await uploadPhotoPrive(_acacedActuDoc!, 'profiles/$uid/acaced_actualisation_${type}_$ts.jpg');
         }
       } catch (e) {
         if (mounted) {

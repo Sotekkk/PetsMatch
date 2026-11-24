@@ -282,7 +282,7 @@ export default function EleveurProfilEditPage() {
   const siretDocRef = useRef<HTMLInputElement>(null);
   const acacedDocRef = useRef<HTMLInputElement>(null);
   // ACACED expiré (ou bientôt) : attestation de la formation d'actualisation,
-  // jointe directement sous l'alerte. Elle devient le justificatif ACACED en
+  // jointe directement sous l'alerte. Elle s'ajoute au certificat ACACED en
   // cours (acaced_doc_url) et sa date la date de renouvellement.
   const [aRenouveler, setARenouveler] = useState(false);
   const [actuFile, setActuFile] = useState<File | null>(null);
@@ -587,15 +587,14 @@ export default function EleveurProfilEditPage() {
         }
       }
 
-      // Attestation d'actualisation ACACED : justificatif ACACED en cours.
+      // Attestation d'actualisation ACACED : à côté du certificat (l'admin voit les deux).
+      let acacedActuUrl: string | null = null;
       if (actuFile) {
         const ext = actuFile.name.split('.').pop() ?? 'jpg';
         const path = `documents/${user!.uid}/acaced_actualisation.${ext}`;
         const { data: up } = await supabase.storage.from('documents').upload(path, actuFile, { upsert: true });
         if (!up) { setFormErrors(["Envoi de l'attestation d'actualisation impossible, réessayez."]); return; }
-        const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
-        payload.acaced_doc_url = pub.publicUrl;
-        setAcacedDocUrl(pub.publicUrl);
+        acacedActuUrl = supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
       }
 
       // Upload bannière
@@ -665,6 +664,7 @@ export default function EleveurProfilEditPage() {
       if (payload.profile_picture_url_elevage) profileUpdate.profile_picture_url_pro = payload.profile_picture_url_elevage;
       if (payload.kbis_url) profileUpdate.kbis_url = payload.kbis_url;
       if (payload.acaced_doc_url) profileUpdate.acaced_doc_url = payload.acaced_doc_url;
+      if (acacedActuUrl) profileUpdate.acaced_actualisation_url = acacedActuUrl;
       if (acacedDateObtention) profileUpdate.acaced_date_obtention = acacedDateObtention;
       if (acacedDateRenewal) profileUpdate.acaced_date_renewal = acacedDateRenewal;
 
@@ -1133,7 +1133,7 @@ export default function EleveurProfilEditPage() {
                 <p className="text-sm font-semibold text-[#1F2A2E]">Actualisation ACACED</p>
                 <p className="text-xs text-gray-600">
                   Vous avez suivi la formation d&apos;actualisation des connaissances ? Indiquez sa date et joignez l&apos;attestation :
-                  elle remplace le certificat comme justificatif en cours, et la validité repart pour 10 ans.
+                  elle s&apos;ajoute à votre certificat, et la validité repart pour 10 ans.
                 </p>
                 <Field label="Date de la formation d'actualisation *">
                   <input type="date" value={acacedDateRenewal} onChange={e => setAcacedDateRenewal(e.target.value)} className={inputCls} />

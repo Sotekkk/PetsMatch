@@ -343,6 +343,7 @@ Future<Object> registerElevage(String email, String password) async {
           if (obt != null) 'acaced_date_obtention': obt,
           if (ren != null) 'acaced_date_renewal': ren,
           if (User_Info.acacedDocUrl.isNotEmpty) 'acaced_doc_url': User_Info.acacedDocUrl,
+          if (User_Info.acacedActualisationUrl.isNotEmpty) 'acaced_actualisation_url': User_Info.acacedActualisationUrl,
           if (User_Info.isAssociation) 'certifications': [{
             'nom': 'ACACED', 'numero': User_Info.acacedNumero,
             if (obt != null) 'date_obtention': obt,

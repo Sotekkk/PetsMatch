@@ -314,10 +314,11 @@ export default function InscriptionPage() {
     if (acacedFile) {
       acacedDocUrl = await uploadToStorage(acacedFile, `documents/${uid}/acaced_${ts}_${acacedFile.name}`);
     }
-    // ACACED expiré : l'attestation d'actualisation devient le justificatif en cours.
+    // ACACED expiré : attestation d'actualisation, à côté du certificat (profil).
     const actualise = acacedExpire(acacedDateObtention) && !!acacedDateRenewal;
+    let acacedActuUrl = '';
     if (actualise && acacedActuFile) {
-      acacedDocUrl = await uploadToStorage(acacedActuFile, `documents/${uid}/acaced_actualisation_${ts}_${acacedActuFile.name}`);
+      acacedActuUrl = await uploadToStorage(acacedActuFile, `documents/${uid}/acaced_actualisation_${ts}_${acacedActuFile.name}`);
     }
     const datesAcaced = {
       ...(acacedDateObtention ? { acaced_date_obtention: acacedDateObtention } : {}),
@@ -398,6 +399,7 @@ export default function InscriptionPage() {
       const acacedProfil = (role === 'eleveur' || isEducation) ? {
         ...datesAcaced, ...(acacedNumero.trim() ? { acaced_numero: acacedNumero.trim() } : {}),
         ...(acacedDocUrl ? { acaced_doc_url: acacedDocUrl } : {}),
+        ...(acacedActuUrl ? { acaced_actualisation_url: acacedActuUrl } : {}),
       } : {};
       await supabase.from('user_profiles').update({
         ...(contact ? { email_contact: contact } : {}), contact_messages: contactMessages, contact_email: contactEmailOk,

@@ -62,12 +62,12 @@ class PhotosInscription {
       _majDocument('Acaced_ou_autre', url);
       acaced = null;
     });
-    // Après le certificat : l'attestation d'actualisation devient le justificatif en cours.
+    // Attestation d'actualisation ACACED : à côté du certificat.
     await essai(() async {
       if (acacedActualisation == null) return;
       final url = await uploadDocument(acacedActualisation!, _cheminDoc('Acaced', uid, acacedActualisation!));
-      User_Info.acacedDocUrl = url;
-      _majDocument('Acaced_ou_autre', url);
+      User_Info.acacedActualisationUrl = url;
+      _majDocument('Acaced_actualisation', url);
       acacedActualisation = null;
     });
   }

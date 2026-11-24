@@ -240,12 +240,13 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
         User_Info.acacedDateObtention = _acacedDate!.toIso8601String();
         User_Info.acacedDocUrl = _acacedDocUrl ?? '';
         User_Info.acacedDateRenewal = aActualiser ? _actuDate!.toIso8601String() : '';
+        // Attestation d'actualisation : à côté du certificat (l'admin voit les deux).
+        User_Info.documentElevage.removeWhere((d) => d['category'] == 'Acaced_actualisation');
         if (aActualiser) {
-          // L'attestation devient le justificatif ACACED en cours.
-          User_Info.acacedDocUrl = _actuDocUrl ?? '';
-          User_Info.documentElevage.removeWhere((d) => d['category'] == 'Acaced_ou_autre');
-          User_Info.documentElevage.add({'name': _actuDocName, 'category': 'Acaced_ou_autre', 'url': _actuDocUrl ?? '', 'uploaded': true});
+          User_Info.acacedActualisationUrl = _actuDocUrl ?? '';
+          User_Info.documentElevage.add({'name': _actuDocName, 'category': 'Acaced_actualisation', 'url': _actuDocUrl ?? '', 'uploaded': true});
         } else {
+          User_Info.acacedActualisationUrl = '';
           PhotosInscription.acacedActualisation = null;
         }
       }

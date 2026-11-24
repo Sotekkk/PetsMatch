@@ -24,6 +24,7 @@ import PlanEditor from './_components/PlanEditor';
 import { apiFetch } from '@/lib/api-fetch';
 
 import LienDocument from '@/components/LienDocument';
+import { acacedFinValidite } from '@/components/AcacedActualisation';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface FireUser {
@@ -91,6 +92,32 @@ interface SignalementAlerte {
   nb_signalements: number; premier_signalement: string; dernier_signalement: string;
 }
 
+// ACACED d'une association : dans certifications.
+function acacedCert(r: Record<string, unknown>): { numero?: string; date_obtention?: string; date_renouvellement?: string } | undefined {
+  const c = r['certifications'];
+  return Array.isArray(c) ? (c as { nom?: string; numero?: string; date_obtention?: string; date_renouvellement?: string }[]).find(x => x?.nom === 'ACACED') : undefined;
+}
+
+// Validité ACACED (10 ans après l'obtention ou la dernière actualisation),
+// pour la validation : à vérifier avant de valider un profil.
+function etatAcaced(d: { acacedDateObtention?: string | null; acacedDateRenewal?: string | null; acacedActuUrl?: string | null }):
+  { court: string; long: string; couleur: string; fond: string } | null {
+  const base = d.acacedDateRenewal || d.acacedDateObtention;
+  const fin = acacedFinValidite(base);
+  if (!fin) return null;
+  const finTxt = fin.toLocaleDateString('fr-FR');
+  if (fin.getTime() < Date.now()) {
+    return { court: 'ACACED expiré', couleur: 'text-red-600', fond: 'bg-red-50 border border-red-200 text-red-700',
+      long: `ACACED expiré depuis le ${finTxt}${d.acacedDateRenewal ? '' : " : aucune formation d'actualisation déclarée"}.` };
+  }
+  if (d.acacedDateRenewal && !d.acacedActuUrl) {
+    return { court: 'Actualisation sans attestation', couleur: 'text-orange-600', fond: 'bg-orange-50 border border-orange-200 text-orange-700',
+      long: `Actualisation déclarée, valable jusqu'au ${finTxt}, mais l'attestation n'est pas jointe.` };
+  }
+  return { court: d.acacedDateRenewal ? 'ACACED actualisé' : 'ACACED valide', couleur: 'text-green-600', fond: 'bg-green-50 border border-green-200 text-green-700',
+    long: `ACACED valable jusqu'au ${finTxt}${d.acacedDateRenewal ? ' (après actualisation)' : ''}.` };
+}
+
 interface DossierEntry {
   uid: string;
   firstname: string; lastname: string; email: string;
@@ -99,8 +126,11 @@ interface DossierEntry {
   siret: string | null;
   kbisUrl: string | null; acacedDocUrl: string | null; acaced: string | null;
   statutsUrl?: string | null; arretePrefUrl?: string | null;
+  /** ACACED : dates (AAAA-MM-JJ) + attestation de la formation d'actualisation + diplôme. */
+  acacedDateObtention?: string | null; acacedDateRenewal?: string | null;
+  acacedActuUrl?: string | null; diplomeUrl?: string | null;
   catPro: string | null; professionPro: string | null;
-  certifications: { nom?: string; organisme?: string; numero?: string }[] | null;
+  certifications: { nom?: string; organisme?: string; numero?: string; date_obtention?: string; date_renouvellement?: string }[] | null;
   isElevage: boolean; isPro: boolean;
   nameElevage: string | null;
   createdAt: string | null;
@@ -865,7 +895,12 @@ export default function AdminPage() {
         // Association : statuts + arrêté préfectoral (dépôt depuis le profil).
         statutsUrl:     (r['statuts_url'] as string) ?? null,
         arretePrefUrl:  (r['arrete_prefectoral_url'] as string) ?? null,
-        acaced:         (r['acaced'] as string) ?? null,
+        // N° ACACED : colonne du profil, sinon certifications (association).
+        acaced:         (r['acaced'] as string) || (r['acaced_numero'] as string) || acacedCert(r)?.numero || null,
+        acacedDateObtention: (r['acaced_date_obtention'] as string) || acacedCert(r)?.date_obtention || null,
+        acacedDateRenewal:   (r['acaced_date_renewal'] as string) || acacedCert(r)?.date_renouvellement || null,
+        acacedActuUrl:  (r['acaced_actualisation_url'] as string) ?? null,
+        diplomeUrl:     (r['diplome_url'] as string) ?? null,
         catPro:         (r['cat_pro'] as string) ?? ptype ?? null,
         professionPro:  (r['profession_pro'] as string) ?? null,
         certifications: (r['certifications'] as DossierEntry['certifications']) ?? null,
@@ -882,7 +917,7 @@ export default function AdminPage() {
   const loadDossiers = useCallback(async () => {
     setDossiersLoading(true);
     try {
-      const dossierCols = 'id, uid, is_main, profile_type, cat_pro, profession_pro, certifications, nom, siret, rna, firstname, lastname, email_contact, phone_number, phone, kbis_url, acaced_doc_url, statuts_url, arrete_prefectoral_url, acaced, rejection_reason, created_at, is_validate, statut_pro';
+      const dossierCols = 'id, uid, is_main, profile_type, cat_pro, profession_pro, certifications, nom, siret, rna, firstname, lastname, email_contact, phone_number, phone, kbis_url, acaced_doc_url, acaced_actualisation_url, diplome_url, statuts_url, arrete_prefectoral_url, acaced, acaced_numero, acaced_date_obtention, acaced_date_renewal, rejection_reason, created_at, is_validate, statut_pro';
       const [
         { data: pending, error: err1 },
         { data: refused, error: err2 },
@@ -2076,6 +2111,10 @@ export default function AdminPage() {
                       </div>
                       {d.siret && <p className="text-xs text-gray-500 font-mono mb-2">SIRET : {d.siret}</p>}
                       {d.acaced && <p className="text-xs text-gray-500 font-mono mb-2">ACACED : {d.acaced}</p>}
+                      {(() => {
+                        const e = etatAcaced(d);
+                        return e ? <p className={`text-xs font-semibold mb-2 ${e.couleur}`}>{e.court}</p> : null;
+                      })()}
                       {d.createdAt && (
                         <p className="text-xs text-gray-400 mb-3">Déposé le {new Date(d.createdAt).toLocaleDateString('fr-FR')}</p>
                       )}
@@ -3371,6 +3410,18 @@ export default function AdminPage() {
                 <InfoRow label="Rôle" value={selectedDossier.isElevage ? 'Éleveur' : 'Professionnel'} />
                 {selectedDossier.siret && <InfoRow label="SIRET/SIREN" value={selectedDossier.siret} mono />}
                 {selectedDossier.acaced && <InfoRow label="ACACED" value={selectedDossier.acaced} mono />}
+                {selectedDossier.acacedDateObtention && (
+                  <InfoRow label="ACACED obtenu le" value={new Date(selectedDossier.acacedDateObtention).toLocaleDateString('fr-FR')} />
+                )}
+                {selectedDossier.acacedDateRenewal && (
+                  <InfoRow label="Formation d'actualisation le" value={new Date(selectedDossier.acacedDateRenewal).toLocaleDateString('fr-FR')} />
+                )}
+                {(() => {
+                  const e = etatAcaced(selectedDossier);
+                  return e ? (
+                    <div className={`rounded-xl px-3 py-2 text-sm font-medium ${e.fond}`}>{e.long}</div>
+                  ) : null;
+                })()}
                 {selectedDossier.catPro && <InfoRow label="Catégorie" value={CAT_LABELS[selectedDossier.catPro] ?? selectedDossier.catPro} />}
                 {selectedDossier.professionPro && <InfoRow label="Profession" value={selectedDossier.professionPro} />}
                 {selectedDossier.createdAt && (
@@ -3393,10 +3444,26 @@ export default function AdminPage() {
                 ) : (
                   <p className="text-sm text-gray-400 italic">Aucun Kbis fourni</p>
                 )}
-                {selectedDossier.acacedDocUrl && (
+                {selectedDossier.acacedDocUrl ? (
                   <LienDocument href={selectedDossier.acacedDocUrl} target="_blank" rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-[#0C5C6C] hover:underline font-semibold mt-2">
-                    📄 Document ACACED ↗
+                    📄 Certificat ACACED ↗
+                  </LienDocument>
+                ) : selectedDossier.acaced ? (
+                  <p className="text-sm text-gray-400 italic mt-2">Aucun certificat ACACED fourni</p>
+                ) : null}
+                {selectedDossier.acacedActuUrl ? (
+                  <LienDocument href={selectedDossier.acacedActuUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-[#0C5C6C] hover:underline font-semibold mt-2">
+                    📄 Attestation d&apos;actualisation ACACED ↗
+                  </LienDocument>
+                ) : selectedDossier.acacedDateRenewal ? (
+                  <p className="text-sm text-gray-400 italic mt-2">Attestation d&apos;actualisation non fournie</p>
+                ) : null}
+                {selectedDossier.diplomeUrl && (
+                  <LienDocument href={selectedDossier.diplomeUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-[#0C5C6C] hover:underline font-semibold mt-2">
+                    📄 Diplôme / certificat professionnel ↗
                   </LienDocument>
                 )}
                 {selectedDossier.statutsUrl && (

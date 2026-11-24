@@ -373,7 +373,7 @@ class _RegisterAssociationInformationPageState
     User_Info.acacedDateObtention = _acacedObtention!.toIso8601String();
     User_Info.acacedDateRenewal   = aActualiser ? _acacedRenouvellement!.toIso8601String() : '';
     // Fichiers déposés après la création du compte ; l'attestation passe après
-    // le certificat et devient le justificatif en cours.
+    // le certificat, enregistrée à côté de lui.
     PhotosInscription.acaced = _acacedDoc;
     PhotosInscription.acacedActualisation = aActualiser ? _acacedActuDoc : null;
 
