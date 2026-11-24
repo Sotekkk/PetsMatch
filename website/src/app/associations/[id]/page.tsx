@@ -9,6 +9,7 @@ import { db } from '@/lib/firebase';
 import ContactModal from '@/components/ContactModal';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useEstAdmin } from '@/lib/use-est-admin';
 
 interface AssoProfile {
   uid: string;
@@ -49,6 +50,8 @@ export default function AssociationProfilePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { user, activeProfileId } = useAuth();
+  // Admin : consulte aussi les profils en cours de validation.
+  const estAdmin = useEstAdmin();
   const [profile, setProfile] = useState<AssoProfile | null>(null);
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
   const [animaux, setAnimaux] = useState<Animal[]>([]);
@@ -131,7 +134,7 @@ export default function AssociationProfilePage() {
   // Association pas encore validée → visible uniquement par son propriétaire
   // (pour qu'il puisse voir son brouillon) — pas via un lien direct.
   const isOwner = user?.uid === profile.uid;
-  if (!['actif', 'validated'].includes(profile.statutPro || '') && !isOwner) {
+  if (!['actif', 'validated'].includes(profile.statutPro || '') && !isOwner && !estAdmin) {
     return (
       <div className="min-h-screen bg-[#F8F8F8] flex flex-col items-center justify-center gap-3 px-4 text-center">
         <span className="text-5xl">⏳</span>

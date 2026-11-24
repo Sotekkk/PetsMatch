@@ -13,6 +13,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
 import AvisPro from '@/components/AvisPro';
+import { useEstAdmin } from '@/lib/use-est-admin';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -127,6 +128,8 @@ function fromSupabase(uid: string, d: Record<string, unknown>): EleveurData {
 export default function EleveurProfilePage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  // Admin : consulte aussi les profils en cours de validation.
+  const estAdmin = useEstAdmin();
 
   const router = useRouter();
   const [eleveur, setEleveur] = useState<EleveurData | null>(null);
@@ -268,7 +271,7 @@ export default function EleveurProfilePage() {
 
   // Un profil éleveur non validé n'est visible que par son propriétaire (pour
   // qu'il puisse voir son brouillon) — pas via un lien direct vers cette page.
-  if (!['actif', 'validated'].includes(eleveur.statutPro || '') && !isOwnProfile) {
+  if (!['actif', 'validated'].includes(eleveur.statutPro || '') && !isOwnProfile && !estAdmin) {
     return (
       <div className="min-h-screen bg-[#F8F8F8] flex flex-col items-center justify-center gap-3 px-4 text-center">
         <span className="text-5xl">⏳</span>

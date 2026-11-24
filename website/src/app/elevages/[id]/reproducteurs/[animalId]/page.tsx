@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { ESPECE_LABEL, UUID_RE, ageLabel, type Repro } from '@/lib/repro';
 import { offspringWord, resultatChipClass, testChipLabel, type TestGenetique } from '@/lib/genetics';
+import { useEstAdmin } from '@/lib/use-est-admin';
 
 function fmtDate(iso?: string | null) {
   if (!iso) return '';
@@ -21,6 +22,8 @@ export default function ReproDetailPage() {
   const id = String(params.id ?? '');
   const animalId = String(params.animalId ?? '');
   const { user } = useAuth();
+  // Admin : consulte aussi les profils en cours de validation.
+  const estAdmin = useEstAdmin();
   const [repro, setRepro] = useState<Repro | null>(null);
   const [tests, setTests] = useState<TestGenetique[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,7 +41,7 @@ export default function ReproDetailPage() {
         .select('id, montre_reproducteurs, statut_pro')
         .eq('uid', euid).eq('profile_type', 'eleveur').maybeSingle();
       if (!prof?.id || prof.montre_reproducteurs !== true) { setLoading(false); return; }
-      if (!['actif', 'validated'].includes(prof.statut_pro ?? '') && user?.uid !== euid) {
+      if (!['actif', 'validated'].includes(prof.statut_pro ?? '') && user?.uid !== euid && !estAdmin) {
         setBlocked(true); setLoading(false); return;
       }
 
@@ -56,7 +59,7 @@ export default function ReproDetailPage() {
       setTests((tg ?? []) as TestGenetique[]);
       setLoading(false);
     })();
-  }, [id, animalId, user?.uid]);
+  }, [id, animalId, user?.uid, estAdmin]);
 
   if (loading) {
     return <p className="text-center text-gray-400 text-sm py-20">Chargement…</p>;

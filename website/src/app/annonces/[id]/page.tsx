@@ -12,6 +12,7 @@ import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge
 import { resultatChipClass, testChipLabel, type TestGenetique } from '@/lib/genetics';
 import { Icone, Puce, BORDURE } from '@/components/dashboard/kit';
 import { TEINTES_STATUT } from '@/components/annonces/GestionAnnonces';
+import { useEstAdmin } from '@/lib/use-est-admin';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -464,6 +465,8 @@ function AnnonceDetailPageInner() {
   const searchParams = useSearchParams();
   const selectedBebe = searchParams.get('bebe');
   const { user, activeProfileId } = useAuth();
+  // Admin : consulte aussi les profils en cours de validation.
+  const estAdmin = useEstAdmin();
   const [annonce, setAnnonce] = useState<Annonce | null>(null);
   const [pro, setPro] = useState<ProData | null>(null);
   const [assoData, setAssoData] = useState<AssoData | null>(null);
@@ -508,14 +511,14 @@ function AnnonceDetailPageInner() {
         .select('id, montre_reproducteurs, statut_pro')
         .eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
       if (!prof?.id || prof.montre_reproducteurs !== true) return;
-      if (!['actif', 'validated'].includes(prof.statut_pro ?? '') && user?.uid !== uid) return;
+      if (!['actif', 'validated'].includes(prof.statut_pro ?? '') && user?.uid !== uid && !estAdmin) return;
       const { data: rows } = await supabase.from('animaux').select('id')
         .in('id', ids).eq('profile_id', prof.id).eq('uid_eleveur', uid).eq('reproducteur_public', true);
       const visibles = new Set((rows ?? []).map(r => String(r.id)));
       const href = (aid?: string) => aid && visibles.has(aid) ? `/elevages/${uid}/reproducteurs/${aid}` : undefined;
       setFichesParents({ pere: href(annonce?.pere_animal_id), mere: href(annonce?.mere_animal_id) });
     })();
-  }, [annonce?.uid_eleveur, annonce?.pere_animal_id, annonce?.mere_animal_id, annonce?.profil_source, user?.uid]);
+  }, [annonce?.uid_eleveur, annonce?.pere_animal_id, annonce?.mere_animal_id, annonce?.profil_source, user?.uid, estAdmin]);
 
   async function partager() {
     const url = window.location.href;
@@ -789,7 +792,7 @@ function AnnonceDetailPageInner() {
   // Vendeur (non association) pas encore validé → invisible aux autres, sauf
   // au propriétaire qui peut prévisualiser son annonce.
   if (annonce.profil_source !== 'association' && pro
-      && !['actif', 'validated'].includes(pro.statut_pro || '') && !isOwner) {
+      && !['actif', 'validated'].includes(pro.statut_pro || '') && !isOwner && !estAdmin) {
     return (
       <div className="min-h-screen bg-[#F8F8F6] flex flex-col items-center justify-center gap-3 px-4 text-center">
         <span className="text-[#0C5C6C]"><Icone nom="horloge" taille={44} /></span>

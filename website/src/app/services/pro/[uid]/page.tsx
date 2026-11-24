@@ -50,6 +50,7 @@ function normGalerie(raw: unknown): { url: string; legende: string }[] {
 }
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { chargerPrestationsEducation, lignesTarifsPublics, type PrestationEducation } from '@/lib/prestations-education';
+import { useEstAdmin } from '@/lib/use-est-admin';
 
 /** Téléphone FR → format international sans « + » pour wa.me. */
 function waPhone(raw: string): string {
@@ -217,6 +218,8 @@ function ProDetailContent() {
   const profileTableId = searchParams.get('profileId') ?? undefined;
   const router = useRouter();
   const { user } = useAuth();
+  // Admin : consulte aussi les profils en cours de validation.
+  const estAdmin = useEstAdmin();
   const activeProfileId = useActiveProfile();
 
   const [pro, setPro] = useState<ProData | null>(null);
@@ -1578,7 +1581,7 @@ function ProDetailContent() {
   // qu'il puisse voir son brouillon) — pas dans les listings (déjà filtré
   // ailleurs) ni via un lien direct vers cette page.
   const isOwner = user?.uid === pro.uid;
-  if (!['actif', 'validated'].includes(pro.statut_pro || '') && !isOwner) {
+  if (!['actif', 'validated'].includes(pro.statut_pro || '') && !isOwner && !estAdmin) {
     return (
       <div className="min-h-screen bg-[#F8F8F8] flex flex-col items-center justify-center gap-3 px-4 text-center">
         <span className="text-5xl">⏳</span>

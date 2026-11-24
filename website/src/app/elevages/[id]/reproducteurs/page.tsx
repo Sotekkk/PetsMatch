@@ -7,11 +7,14 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { ESPECE_LABEL, ESPECE_EMOJI, UUID_RE, ageLabel, sexeSymbol, type Repro } from '@/lib/repro';
+import { useEstAdmin } from '@/lib/use-est-admin';
 
 export default function ReproducteursPage() {
   const params = useParams();
   const id = String(params.id ?? '');
   const { user } = useAuth();
+  // Admin : consulte aussi les profils en cours de validation.
+  const estAdmin = useEstAdmin();
   const [repros, setRepros] = useState<Repro[]>([]);
   const [nomElevage, setNomElevage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -66,7 +69,7 @@ export default function ReproducteursPage() {
 
         {loading ? (
           <p className="text-gray-400 text-sm py-12 text-center">Chargement…</p>
-        ) : !['actif', 'validated'].includes(statutPro) && user?.uid !== euid ? (
+        ) : !['actif', 'validated'].includes(statutPro) && user?.uid !== euid && !estAdmin ? (
           <div className="text-center py-12 bg-white rounded-2xl shadow-sm">
             <span className="text-4xl">⏳</span>
             <p className="text-gray-700 font-semibold mt-2" style={{ fontFamily: 'Galey, sans-serif' }}>
