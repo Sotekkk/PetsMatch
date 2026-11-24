@@ -239,14 +239,16 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
                 {alertes.length > 0 && (
                   <Section titre="À traiter" icone={<Icone nom="cloche" taille={18} />} compteur={alertes.length}>
                     <div className="space-y-1">
+                      {/* RDV : dossier de la séance ouvert dans Gérer mes RDV (comme depuis l'agenda). */}
                       {alertes.slice(0, 6).map(a => 'href' in a && a.href ? (
                         <Link key={a.cle} href={a.href} className="flex items-center gap-2 py-1.5 text-sm text-[#1E2025]">
                           <span style={{ color: a.c }}>●</span><span className="flex-1">{a.t}</span>
                         </Link>
                       ) : (
-                        <button key={a.cle} onClick={() => 'r' in a && a.r && setFiche(a.r)} className="w-full text-left flex items-center gap-2 py-1.5 text-sm text-[#1E2025]">
+                        <Link key={a.cle} href={'r' in a && a.r ? `/mes-rdv?onglet=a_venir&rdv=${a.r.id}&dossier=1` : '/mes-rdv'}
+                          className="flex items-center gap-2 py-1.5 text-sm text-[#1E2025]">
                           <span style={{ color: a.c }}>●</span><span className="flex-1">{a.t}</span>
-                        </button>
+                        </Link>
                       ))}
                     </div>
                   </Section>

@@ -98,8 +98,11 @@ class ProAgendaPage extends StatefulWidget {
   final DateTime? nouveauRdvDate;
   /// Avec [focusRdvId] : ouvre directement « Modifier » puis revient en arrière.
   final bool modifierFocus;
+  /// Avec [focusRdvId] : ouvre directement le dossier de la séance (toilettage,
+  /// « À traiter » de l'accueil).
+  final bool dossierFocus;
   const ProAgendaPage({super.key, this.initialTabIndex, this.ongletAgenda = false, this.employeur, this.focusRdvId, this.nouveauRdv = false,
-      this.nouveauRdvAnimalId, this.nouveauRdvMotif, this.nouveauRdvDate, this.modifierFocus = false, this.nouveauSejourGarde = false,
+      this.nouveauRdvAnimalId, this.nouveauRdvMotif, this.nouveauRdvDate, this.modifierFocus = false, this.dossierFocus = false, this.nouveauSejourGarde = false,
       this.nouveauRdvAnimaux});
 
   @override
@@ -1156,6 +1159,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     if (rdv == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      if (widget.dossierFocus && AgendaContexte.catPro == 'toilettage') {
+        await showDossierToilettage(context, rdv,
+            nomClient: rdv['_client_name']?.toString() ?? 'Client',
+            prestation: (rdv['motif']?.toString() ?? '').trim().isEmpty ? 'Toilettage' : rdv['motif'].toString().trim(),
+            animal: rdv['_animal_nom']?.toString() ?? rdv['animal_nom_manuel']?.toString(),
+            depuisAgenda: true, onChanged: _loadRdvs);
+        return;
+      }
       if (!widget.modifierFocus) { _actionsRdv(rdv); return; }
       await _showModifierDialog(rdv);
       if (mounted) Navigator.pop(context);

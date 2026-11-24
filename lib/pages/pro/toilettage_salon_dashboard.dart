@@ -455,6 +455,9 @@ class _ToilettageSalonDashboardState extends State<ToilettageSalonDashboard> {
     ]);
   }
 
+  void _dossierDansRdv(Map<String, dynamic> r) =>
+      _go(ProAgendaPage(initialTabIndex: 1, focusRdvId: r['id']?.toString(), dossierFocus: true));
+
   Widget _alertesSection(List<Map<String, dynamic>> duJour, List<Map<String, dynamic>> prets) {
     final now = DateTime.now();
     final retards = duJour.where((r) => etapeToilettage(r) == EtapeToilettage.attendu &&
@@ -465,11 +468,12 @@ class _ToilettageSalonDashboardState extends State<ToilettageSalonDashboard> {
       if (_demandes.isNotEmpty)
         (Icons.mark_email_unread_outlined, '${_demandes.length} rendez-vous en attente de confirmation',
             () => _go(const ProAgendaPage(initialTabIndex: 0)), _ambre),
-      for (final r in prets) (Icons.pets_outlined, '${_nomAnimal(r)} est prêt à récupérer', () => _actions(r), _vert),
-      for (final r in retards) (Icons.schedule, '${_nomAnimal(r)} attendu à ${_hm(_debut(r))}, pas encore arrivé', () => _actions(r), _rouge),
+      // RDV : dossier de la séance ouvert dans Gérer mes RDV (comme depuis l'agenda).
+      for (final r in prets) (Icons.pets_outlined, '${_nomAnimal(r)} est prêt à récupérer', () => _dossierDansRdv(r), _vert),
+      for (final r in retards) (Icons.schedule, '${_nomAnimal(r)} attendu à ${_hm(_debut(r))}, pas encore arrivé', () => _dossierDansRdv(r), _rouge),
       if (_conflits.isNotEmpty) (Icons.warning_amber_rounded, 'Conflit de planning : un employé a deux rendez-vous en même temps',
           () => _go(const ToilettagePlanningEmployesPage()), _rouge),
-      for (final r in aFinaliser) (Icons.task_alt, 'Prestation du ${_jm(_debut(r))} à finaliser — ${_nomAnimal(r)}', () => _actions(r), _ambre),
+      for (final r in aFinaliser) (Icons.task_alt, 'Prestation du ${_jm(_debut(r))} à finaliser — ${_nomAnimal(r)}', () => _dossierDansRdv(r), _ambre),
     ];
     if (alertes.isEmpty) return const SizedBox.shrink();
     return Padding(
