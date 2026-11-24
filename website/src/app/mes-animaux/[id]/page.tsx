@@ -4797,7 +4797,7 @@ function AnimalFichePageInner() {
                     ))}
                   </div>
                 </div>
-                <Field label="Date de naissance" value={animal.date_naissance??''} onChange={v=>set('date_naissance',v)} type="date"
+                <Field label="Date de naissance" value={animal.date_naissance??''} onChange={v=>{ set('date_naissance',v); if (animal.provenance_qualite === 'naissance' && v) set('date_entree', v.substring(0, 10)); }} type="date"
                   min={bornesNaissanceAnimal(animal.espece).min} max={bornesNaissanceAnimal(animal.espece).max} />
                 <Field label="Couleur / Robe" value={animal.couleur??''} onChange={v=>set('couleur',v)} />
                 <Field label="Couleur des yeux" value={animal.couleur_yeux??''} onChange={v=>set('couleur_yeux',v)} />
@@ -5249,7 +5249,8 @@ function AnimalFichePageInner() {
                           if (v === 'naissance') {
                             if (!animal.provenance_nom && nomElevage) set('provenance_nom', nomElevage);
                             if (!animal.provenance_adresse && adresseElevage) set('provenance_adresse', adresseElevage);
-                            if (!animal.date_entree && animal.date_naissance) set('date_entree', animal.date_naissance.substring(0, 10));
+                            // Né à l'élevage : l'entrée au registre, c'est la naissance.
+                            if (animal.date_naissance) set('date_entree', animal.date_naissance.substring(0, 10));
                           }
                         }}
                         options={[{value:'',label:'—'}, ...PROV_QUALITES.map(q=>({value:q,label:PROV_FR[q]??q}))]} />

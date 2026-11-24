@@ -11,6 +11,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/choisir_date.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Page Registre Entrées / Sorties
@@ -862,7 +863,7 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
   }
 
   Future<void> _pickDate(DateTime? current, ValueChanged<DateTime> onPicked) async {
-    final d = await showDatePicker(
+    final d = await choisirDate(
       context: context,
       initialDate: current ?? DateTime.now(),
       firstDate: DateTime(2000),
@@ -1056,11 +1057,10 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
                         if (_provenanceAdresseCtrl.text.isEmpty && (_adresseElevage?.isNotEmpty ?? false)) {
                           _provenanceAdresseCtrl.text = _adresseElevage!;
                         }
-                        if (_dateEntree == null) {
-                          final dn = widget.animalData['date_naissance'] as String?;
-                          final parsed = dn != null ? DateTime.tryParse(dn) : null;
-                          if (parsed != null) setState(() => _dateEntree = parsed);
-                        }
+                        // Né à l'élevage : l'entrée au registre, c'est la naissance.
+                        final dn = widget.animalData['date_naissance'] as String?;
+                        final parsed = dn != null ? DateTime.tryParse(dn) : null;
+                        if (parsed != null) setState(() => _dateEntree = parsed);
                       }
                     },
                   ),

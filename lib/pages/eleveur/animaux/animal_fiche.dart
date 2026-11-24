@@ -3,6 +3,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:PetsMatch/utils/cr_pdf_proprietaire.dart' show telechargerCompteRenduProprietaire;
 import 'package:PetsMatch/utils/cloisonnement_profils.dart';
 import 'package:PetsMatch/utils/poids.dart';
+import 'package:PetsMatch/utils/choisir_date.dart';
 import 'package:PetsMatch/utils/recuperation_animal.dart' show verifierPuce, showRecuperationAnimal, inviterAcquereur;
 import 'package:PetsMatch/pages/pro/toilettage_constantes.dart' show labelTravailToilettage;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
@@ -760,7 +761,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             // Date
             GestureDetector(
               onTap: () async {
-                final d = await showDatePicker(
+                final d = await choisirDate(
                   context: ctx,
                   initialDate: date,
                   firstDate: DateTime(1990), lastDate: DateTime(2100),
@@ -1850,7 +1851,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           if (requise) ...[
             OutlinedButton.icon(
               onPressed: () async {
-                final d = await showDatePicker(context: ctx, initialDate: echeance, firstDate: DateTime(2015), lastDate: DateTime.now().add(const Duration(days: 3650)));
+                final d = await choisirDate(context: ctx, initialDate: echeance, firstDate: DateTime(2015), lastDate: DateTime.now().add(const Duration(days: 3650)));
                 if (d != null) setM(() => echeance = d);
               },
               icon: const Icon(Icons.event_outlined, size: 18),
@@ -2034,7 +2035,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             const SizedBox(height: 6),
             GestureDetector(
               onTap: () async {
-                final picked = await showDatePicker(
+                final picked = await choisirDate(
                   context: ctx, initialDate: date, firstDate: DateTime(2000), lastDate: DateTime.now());
                 if (picked != null) setSheet(() => date = picked);
               },
@@ -2292,7 +2293,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await choisirDate(
       context: context,
       initialDate: borner(_dateNaissance ?? now, premiereNaissanceAnimal(_espece), now),
       // Âge maximum plausible selon l'espèce, jamais dans le futur.
@@ -2303,7 +2304,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         child: child!,
       ),
     );
-    if (picked != null) setState(() => _dateNaissance = picked);
+    if (picked != null) {
+      setState(() {
+        _dateNaissance = picked;
+        // Né à l'élevage : la date d'entrée suit la date de naissance.
+        if (_provenanceQualite == 'naissance') _dateEntree = picked;
+      });
+    }
   }
 
   void _toggleAgeEstime(bool value) {
@@ -4585,7 +4592,8 @@ class _IdentiteTab extends StatelessWidget {
               onChanged: (v) {
                 s.setState(() => s._provenanceQualite = v ?? '');
                 if (v == 'naissance') {
-                  if (s._dateEntree == null && s._dateNaissance != null) {
+                  // Né à l'élevage : l'entrée au registre, c'est la naissance.
+                  if (s._dateNaissance != null) {
                     s.setState(() => s._dateEntree = s._dateNaissance);
                   }
                   if (s._provenanceNomCtrl.text.isEmpty && (s._nomElevage?.isNotEmpty ?? false)) {
@@ -4819,7 +4827,7 @@ class _IdentiteTab extends StatelessWidget {
     final fmt = DateFormat('dd/MM/yyyy');
     return GestureDetector(
       onTap: () async {
-        final d = await showDatePicker(
+        final d = await choisirDate(
           context: context,
           initialDate: value ?? DateTime.now(),
           firstDate: DateTime(1990), lastDate: DateTime(2100),
@@ -7050,7 +7058,7 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
   );
 
   Future<void> _pickDate() async {
-    final p = await showDatePicker(
+    final p = await choisirDate(
       context: context, initialDate: _date, firstDate: DateTime(2000), lastDate: DateTime.now(),
       locale: const Locale('fr'),
       builder: (ctx, child) => Theme(data: ThemeData.light().copyWith(
@@ -7063,7 +7071,7 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
     final fmt = DateFormat('dd/MM/yyyy');
     return GestureDetector(
       onTap: () async {
-        final p = await showDatePicker(
+        final p = await choisirDate(
           context: context, initialDate: value ?? DateTime.now(),
           firstDate: DateTime(2000), lastDate: DateTime(2100),
           locale: const Locale('fr'),
@@ -9279,7 +9287,7 @@ class _AddPoidsDialogState extends State<_AddPoidsDialog> {
               var initiale = _date ?? fin;
               if (initiale.isBefore(debut)) initiale = debut;
               if (initiale.isAfter(fin)) initiale = fin;
-              final p = await showDatePicker(
+              final p = await choisirDate(
                 context: context, initialDate: initiale,
                 firstDate: debut, lastDate: fin,
                 builder: (ctx, child) => Theme(
@@ -10212,7 +10220,7 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
   }
 
   Future<void> _pickSaillieDate({DateTime? initial, required ValueChanged<DateTime> onPick}) async {
-    final p = await showDatePicker(context: context,
+    final p = await choisirDate(context: context,
       initialDate: initial ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2060),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))),
@@ -10310,7 +10318,7 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
       padding: const EdgeInsets.only(bottom: 10),
       child: GestureDetector(
         onTap: () async {
-          final p = await showDatePicker(context: context,
+          final p = await choisirDate(context: context,
             initialDate: value ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2060),
             builder: (ctx, child) => Theme(
               data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))),
@@ -10581,7 +10589,7 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
       padding: const EdgeInsets.only(bottom: 10),
       child: GestureDetector(
         onTap: () async {
-          final p = await showDatePicker(context: context,
+          final p = await choisirDate(context: context,
             initialDate: value ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2060),
             builder: (ctx, child) => Theme(
               data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))),
@@ -10834,7 +10842,7 @@ class _BaseDialog extends StatelessWidget {
                     child: Text(f.valeur, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700))));
                 if (f is _DD) return Padding(padding: const EdgeInsets.only(bottom: 10),
                   child: GestureDetector(onTap: () async {
-                      final p = await showDatePicker(context: context,
+                      final p = await choisirDate(context: context,
                         initialDate: f.value ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2060),
                         builder: (ctx, child) => Theme(data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))), child: child!));
                       if (p != null) f.onChanged(p);
@@ -12363,7 +12371,7 @@ class _VetAddVaccinDialogState extends State<_VetAddVaccinDialog> {
   Widget _dp(BuildContext ctx, String label, DateTime? val, ValueChanged<DateTime> onChanged) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
     child: GestureDetector(onTap: () async {
-      final p = await showDatePicker(context: ctx, initialDate: val ?? DateTime.now(),
+      final p = await choisirDate(context: ctx, initialDate: val ?? DateTime.now(),
         firstDate: DateTime(2000), lastDate: DateTime(2060),
         builder: (c, child) => Theme(data: Theme.of(c).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))), child: child!));
       if (p != null) onChanged(p);
@@ -12479,7 +12487,7 @@ class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
   Widget _dp(BuildContext ctx, String label, DateTime? val, ValueChanged<DateTime> onChanged) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
     child: GestureDetector(onTap: () async {
-      final p = await showDatePicker(context: ctx, initialDate: val ?? DateTime.now(),
+      final p = await choisirDate(context: ctx, initialDate: val ?? DateTime.now(),
         firstDate: DateTime(2000), lastDate: DateTime(2060),
         builder: (c, child) => Theme(data: Theme.of(c).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))), child: child!));
       if (p != null) onChanged(p);
@@ -12613,7 +12621,7 @@ class _VetAddVisiteDialogState extends State<_VetAddVisiteDialog> {
   Widget _dp(BuildContext ctx, String label, DateTime? val, ValueChanged<DateTime> onChanged) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
     child: GestureDetector(onTap: () async {
-      final p = await showDatePicker(context: ctx, initialDate: val ?? DateTime.now(),
+      final p = await choisirDate(context: ctx, initialDate: val ?? DateTime.now(),
         firstDate: DateTime(2000), lastDate: DateTime(2060),
         builder: (c, child) => Theme(data: Theme.of(c).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))), child: child!));
       if (p != null) onChanged(p);
@@ -12735,7 +12743,7 @@ class _VetAddOrdoDialogState extends State<_VetAddOrdoDialog> {
       content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
         Padding(padding: const EdgeInsets.only(bottom: 10),
           child: GestureDetector(onTap: () async {
-            final p = await showDatePicker(context: context, initialDate: _date,
+            final p = await choisirDate(context: context, initialDate: _date,
               firstDate: DateTime(2000), lastDate: DateTime(2060),
               builder: (c, child) => Theme(data: Theme.of(c).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6D28D9))), child: child!));
             if (p != null) setState(() => _date = p);
@@ -12861,7 +12869,7 @@ class _VetAddRadioDialogState extends State<_VetAddRadioDialog> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true))),
         Padding(padding: const EdgeInsets.only(bottom: 10),
           child: GestureDetector(onTap: () async {
-            final p = await showDatePicker(context: context, initialDate: _date,
+            final p = await choisirDate(context: context, initialDate: _date,
               firstDate: DateTime(2000), lastDate: DateTime(2060),
               builder: (c, child) => Theme(data: Theme.of(c).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF0284C7))), child: child!));
             if (p != null) setState(() => _date = p);

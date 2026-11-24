@@ -158,6 +158,8 @@ function AjouterAnimalEmploye() {
       if (isEleveur) {
         row.uid_eleveur = proprioUid;
         row.provenance_qualite = 'naissance';
+        // Né à l'élevage : l'entrée au registre, c'est la naissance.
+        if (dateNaissance) row.date_entree = dateNaissance;
         row.provenance_nom = employeur ? employeur.nom : (userData?.nameElevage ?? null);
       } else {
         // uid_eleveur est aussi renseigné pour satisfaire la politique RLS INSERT
