@@ -44,7 +44,7 @@ interface AnimalRow {
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
-const TYPES_POIL = ['Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras'];
+const TYPES_POIL = ['Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras', 'Polaire', 'Fluffy', 'Woolly'];
 
 const ESPECES = [
   { value: 'chien',  label: 'Chiens',  emoji: '🐕' },

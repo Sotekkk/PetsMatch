@@ -1900,7 +1900,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   Widget _buildTypePoilDropdown() {
     final options = [
-      'Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras',
+      'Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras', 'Polaire', 'Fluffy', 'Woolly',
       if (_espece == 'chien') 'Dur',
     ];
     return Padding(

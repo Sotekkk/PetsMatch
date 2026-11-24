@@ -98,7 +98,7 @@ interface HealthRecord { id: string; [key: string]: unknown; }
 
 const ESPECES = ['chien','chat','lapin','oiseau','nac','cheval','ovin','caprin','porcin','autre'];
 const ESPECE_EMOJI: Record<string,string> = { chien:'', chat:'', cheval:'', lapin:'', oiseau:'', nac:'', ovin:'', caprin:'', porcin:'', autre:'' };
-const TYPES_POIL = ['Court','Mi-long','Long','Frisé','Fil de soie','Ras'];
+const TYPES_POIL = ['Court','Mi-long','Long','Frisé','Fil de soie', 'Ras', 'Polaire', 'Fluffy', 'Woolly'];
 const PROV_QUALITES = ['naissance','eleveur','particulier','refuge','importation','autre'];
 const DEST_QUALITES = ['eleveur','particulier','refuge','autre'];
 const CAUSES_MORT = ['maladie','accident','naturelle','inconnue'];

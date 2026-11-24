@@ -37,7 +37,7 @@ class _AnimalRow {
   }
 }
 
-const _kTypesPoil = ['Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras'];
+const _kTypesPoil = ['Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras', 'Polaire', 'Fluffy', 'Woolly'];
 
 // ─── Page formulaire portée ───────────────────────────────────────────────────
 

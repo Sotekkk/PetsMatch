@@ -4057,7 +4057,7 @@ class _IdentiteTab extends StatelessWidget {
 
   Widget _poilField() {
     final options = [
-      'Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras',
+      'Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras', 'Polaire', 'Fluffy', 'Woolly',
       if (s._espece == 'chien') 'Dur',
     ];
     return Padding(
