@@ -111,7 +111,18 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
   }
 
   // ── Load ──────────────────────────────────────────────────────────────────────
+  /// Une erreur de lecture ne doit jamais laisser la page tourner dans le vide
+  /// (bug bêta : profil créé depuis l'inscription de l'appli).
   Future<void> _loadData() async {
+    try {
+      await _loadDataInner();
+    } catch (e) {
+      debugPrint('ProfilEleveurEdit _loadData: $e');
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadDataInner() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) { setState(() => _loading = false); return; }
     final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
@@ -197,12 +208,17 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       _aRenouveler = expAcaced != null && expAcaced.difference(DateTime.now()).inDays < 180;
 
       // Espèces — nouveau format ou migration depuis isDog/isCat
-      if (d['especesElevees'] != null) {
-        _especesElevees = List<Map<String, dynamic>>.from(
-            (d['especesElevees'] as List).map((e) => <String, dynamic>{
-              'espece': e['espece'] ?? '',
-              'races': List<String>.from(e['races'] ?? []),
-            }));
+      // Inscription par l'appli : simple liste d'espèces (['chien', 'chat']),
+      // races dans dogBreeds / catBreeds ; le profil écrit [{espece, races}].
+      if (d['especesElevees'] is List && (d['especesElevees'] as List).isNotEmpty) {
+        _especesElevees = [
+          for (final e in d['especesElevees'] as List)
+            if (e is Map)
+              <String, dynamic>{'espece': (e['espece'] ?? '').toString(), 'races': List<String>.from(e['races'] ?? [])}
+            else if (e is String && e.isNotEmpty)
+              <String, dynamic>{'espece': e, 'races': List<String>.from(
+                  (e == 'chien' ? d['dogBreeds'] : e == 'chat' ? d['catBreeds'] : null) ?? [])},
+        ];
       } else {
         if (d['isDog'] == true) _especesElevees.add({'espece': 'chien', 'races': List<String>.from(d['dogBreeds'] ?? [])});
         if (d['isCat'] == true) _especesElevees.add({'espece': 'chat',  'races': List<String>.from(d['catBreeds'] ?? [])});
