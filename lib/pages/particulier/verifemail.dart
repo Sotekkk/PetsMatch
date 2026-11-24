@@ -331,15 +331,24 @@ Future<Object> registerElevage(String email, String password) async {
     // du profil principal (create_main_profile_on_signup) ne copie pas cette
     // colonne, donc `user_profiles.numero_ordre` (colonne dédiée, déjà en
     // base) resterait vide. On le reporte ici explicitement.
-    // ACACED sur le profil élevage créé par le trigger (qui ne recopie pas les dates).
-    if (User_Info.isElevage && User_Info.acacedNumero.isNotEmpty) {
+    // ACACED sur le profil élevage / association créé par le trigger (qui ne
+    // recopie pas les dates). Association : aussi dans certifications (lu par
+    // sa fiche, comme le site).
+    if ((User_Info.isElevage || User_Info.isAssociation) && User_Info.acacedNumero.isNotEmpty) {
+      final obt = User_Info.acacedDateObtention.length >= 10 ? User_Info.acacedDateObtention.substring(0, 10) : null;
+      final ren = User_Info.acacedDateRenewal.length >= 10 ? User_Info.acacedDateRenewal.substring(0, 10) : null;
       try {
         await Supabase.instance.client.from('user_profiles').update({
           'acaced_numero': User_Info.acacedNumero,
-          if (User_Info.acacedDateObtention.length >= 10) 'acaced_date_obtention': User_Info.acacedDateObtention.substring(0, 10),
-          if (User_Info.acacedDateRenewal.length >= 10) 'acaced_date_renewal': User_Info.acacedDateRenewal.substring(0, 10),
+          if (obt != null) 'acaced_date_obtention': obt,
+          if (ren != null) 'acaced_date_renewal': ren,
           if (User_Info.acacedDocUrl.isNotEmpty) 'acaced_doc_url': User_Info.acacedDocUrl,
-        }).eq('uid', uid).eq('profile_type', 'eleveur');
+          if (User_Info.isAssociation) 'certifications': [{
+            'nom': 'ACACED', 'numero': User_Info.acacedNumero,
+            if (obt != null) 'date_obtention': obt,
+            if (ren != null) 'date_renouvellement': ren,
+          }],
+        }).eq('uid', uid).eq('profile_type', User_Info.isAssociation ? 'association' : 'eleveur');
       } catch (_) {}
     }
     if (User_Info.isPro && User_Info.especesElevees.isNotEmpty) {

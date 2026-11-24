@@ -740,6 +740,9 @@ function AssociationForm({ uid, onBack, onSaved }: {
   const [siret, setSiret]                   = useState('');
   const [acaced, setAcaced]                 = useState('');
   const [acacedDate, setAcacedDate]         = useState('');
+  // ACACED de plus de 10 ans : formation d'actualisation (date + attestation).
+  const [acacedRenouv, setAcacedRenouv]     = useState('');
+  const [acacedActuAsso, setAcacedActuAsso] = useState<File | null>(null);
   const [phone, setPhone]                   = useState('');
   // E-mail de contact de l'association (fiche publique) ; par défaut celui du compte.
   const { user: compteAsso } = useAuth();
@@ -770,6 +773,7 @@ function AssociationForm({ uid, onBack, onSaved }: {
     if (!siretDocFile)          errs.push('Justificatif SIRET');
     if (!acaced.trim())         errs.push('N° ACACED');
     if (!acacedDate)            errs.push("Date d'obtention ACACED");
+    errs.push(...acacedActualisationManquante(acacedDate, acacedRenouv, acacedActuAsso, false));
     if (!rue.trim())            errs.push('Rue');
     if (!ville.trim())          errs.push('Ville');
     if (!cp.trim())             errs.push('Code postal');
@@ -788,7 +792,11 @@ function AssociationForm({ uid, onBack, onSaved }: {
         rna:               rna.replace(/\s/g, '').toUpperCase() || null,
         ordre_veterinaire: rna.replace(/\s/g, '').toUpperCase() || null,
         siret:             siret.trim(),
-        certifications:    [{ nom: 'ACACED', numero: acaced.trim(), date_obtention: acacedDate }],
+        certifications:    [{ nom: 'ACACED', numero: acaced.trim(), date_obtention: acacedDate,
+          ...(acacedExpire(acacedDate) && acacedRenouv ? { date_renouvellement: acacedRenouv } : {}) }],
+        acaced_numero:     acaced.trim(),
+        acaced_date_obtention: acacedDate,
+        ...(acacedExpire(acacedDate) && acacedRenouv ? { acaced_date_renewal: acacedRenouv } : {}),
         phone:             phone.trim() || null,
         email_contact:     emailContact.trim() || null,
         site_web:          siteWeb.trim() || null,
@@ -826,6 +834,13 @@ function AssociationForm({ uid, onBack, onSaved }: {
           const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
           profileData.acaced_doc_url = pub.publicUrl;
         }
+      }
+      // ACACED expiré : l'attestation d'actualisation devient le justificatif en cours.
+      if (acacedExpire(acacedDate) && acacedRenouv && acacedActuAsso) {
+        const ext = acacedActuAsso.name.split('.').pop() ?? 'pdf';
+        const path = `documents/${uid}/asso_acaced_actualisation.${ext}`;
+        const { data: up } = await supabase.storage.from('documents').upload(path, acacedActuAsso, { upsert: true });
+        if (up) profileData.acaced_doc_url = supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
       }
 
       // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
@@ -937,6 +952,9 @@ function AssociationForm({ uid, onBack, onSaved }: {
               </button>
             )}
           </div>
+
+          <AcacedActualisation obtention={acacedDate} renouvellement={acacedRenouv}
+            onRenouvellement={setAcacedRenouv} fichier={acacedActuAsso} onFichier={setAcacedActuAsso} fichierRequis={false} />
 
           <div>
             <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Adresse du siège</p>

@@ -6,7 +6,10 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/condition_general.dart';
 import 'package:PetsMatch/pages/particulier/securityregister.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
+import 'package:PetsMatch/utils/acaced.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Étape 1/4 : informations personnelles du responsable
@@ -298,6 +301,15 @@ class _RegisterAssociationInformationPageState
   final _cpCtrl         = TextEditingController();
   final _villeCtrl      = TextEditingController();
   final _autreEspeceCtrl = TextEditingController();
+  // ACACED (miroir site « Ajouter un profil » association) : n° + date
+  // d'obtention obligatoires, certificat facultatif ; plus de 10 ans : date de
+  // la formation d'actualisation obligatoire, attestation facultative.
+  final _acacedCtrl = TextEditingController();
+  DateTime? _acacedObtention;
+  DateTime? _acacedRenouvellement;
+  File? _acacedDoc;
+  File? _acacedActuDoc;
+  String? _acacedErreur;
   double? _lat;
   double? _lng;
 
@@ -319,6 +331,7 @@ class _RegisterAssociationInformationPageState
     _cpCtrl.dispose();
     _villeCtrl.dispose();
     _autreEspeceCtrl.dispose();
+    _acacedCtrl.dispose();
     super.dispose();
   }
 
@@ -345,6 +358,24 @@ class _RegisterAssociationInformationPageState
     });
     if (!_nomAssoOk || !_rnaOk) return;
     _rnaCtrl.text = rna;
+    final aActualiser = acacedExpire(_acacedObtention);
+    final manque = _acacedCtrl.text.trim().isEmpty ? 'Indiquez le numéro ACACED.'
+        : _acacedObtention == null ? "Indiquez la date d'obtention ACACED."
+        : aActualiser && _acacedRenouvellement == null ? "ACACED de plus de 10 ans : indiquez la date de la formation d'actualisation."
+        : aActualiser && acacedExpire(_acacedRenouvellement) ? "La formation d'actualisation doit dater de moins de 10 ans."
+        : null;
+    setState(() => _acacedErreur = manque);
+    if (manque != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(manque, style: const TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
+    User_Info.acacedNumero        = _acacedCtrl.text.trim();
+    User_Info.acacedDateObtention = _acacedObtention!.toIso8601String();
+    User_Info.acacedDateRenewal   = aActualiser ? _acacedRenouvellement!.toIso8601String() : '';
+    // Fichiers déposés après la création du compte ; l'attestation passe après
+    // le certificat et devient le justificatif en cours.
+    PhotosInscription.acaced = _acacedDoc;
+    PhotosInscription.acacedActualisation = aActualiser ? _acacedActuDoc : null;
 
     User_Info.nameElevage          = _nomAssoCtrl.text.trim();
     User_Info.rna                  = _rnaCtrl.text.trim();
@@ -454,6 +485,42 @@ class _RegisterAssociationInformationPageState
             _field(ctrl: _phoneCtrl, label: 'Téléphone',
                 icon: Icons.phone_outlined,
                 keyboard: TextInputType.phone),
+          ]),
+          const SizedBox(height: 16),
+
+          // ACACED
+          _card([
+            _sectionTitle('ACACED *'),
+            const SizedBox(height: 12),
+            _field(ctrl: _acacedCtrl, label: 'N° ACACED *', icon: Icons.badge_outlined,
+                valid: !(_acacedErreur != null && _acacedCtrl.text.trim().isEmpty), error: 'N° ACACED requis'),
+            const SizedBox(height: 12),
+            _acacedDate("Date d'obtention ACACED *", _acacedObtention, (d) => setState(() => _acacedObtention = d)),
+            const SizedBox(height: 12),
+            _acacedFichier('Certificat ACACED (facultatif)', _acacedDoc, (f) => setState(() => _acacedDoc = f)),
+            if (acacedExpire(_acacedObtention)) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('ACACED expiré : actualisation requise',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Colors.red)),
+                  const SizedBox(height: 4),
+                  Text("L'ACACED est valable 10 ans. Indiquez la date de la formation d'actualisation des connaissances et joignez son attestation.",
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+                  const SizedBox(height: 10),
+                  _acacedDate("Date de la formation d'actualisation *", _acacedRenouvellement,
+                      (d) => setState(() => _acacedRenouvellement = d)),
+                  const SizedBox(height: 10),
+                  _acacedFichier("Attestation d'actualisation", _acacedActuDoc, (f) => setState(() => _acacedActuDoc = f)),
+                ]),
+              ),
+            ],
           ]),
           const SizedBox(height: 16),
 
@@ -586,6 +653,47 @@ class _RegisterAssociationInformationPageState
   Widget _sectionTitle(String text) => Text(text,
       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
           fontSize: 14, color: Color(0xFF1F2A2E)));
+
+  Widget _acacedDate(String libelle, DateTime? valeur, ValueChanged<DateTime> onChoisi) => InkWell(
+        onTap: () async {
+          final d = await showDatePicker(context: context, initialDate: valeur ?? DateTime.now(),
+              firstDate: DateTime(1980), lastDate: DateTime.now());
+          if (d != null) onChoisi(d);
+        },
+        borderRadius: BorderRadius.circular(10),
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: libelle,
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+            prefixIcon: const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF6F767B)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            isDense: true,
+          ),
+          child: Text(valeur != null ? DateFormat('dd/MM/yyyy').format(valeur) : 'Sélectionner',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: valeur != null ? const Color(0xFF1F2A2E) : Colors.grey)),
+        ),
+      );
+
+  Widget _acacedFichier(String libelle, File? fichier, ValueChanged<File?> onChange) => Row(children: [
+        Icon(fichier != null ? Icons.check_circle_outline : Icons.attach_file_outlined, size: 18,
+            color: fichier != null ? _green : const Color(0xFF6F767B)),
+        const SizedBox(width: 8),
+        Expanded(child: Text(fichier != null ? fichier.path.split(RegExp(r'[/\\]')).last : libelle,
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+        if (fichier != null)
+          TextButton(onPressed: () => onChange(null), child: const Text('Retirer', style: TextStyle(fontFamily: 'Galey')))
+        else
+          TextButton(
+            onPressed: () async {
+              final r = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png']);
+              final chemin = r?.files.single.path;
+              if (chemin != null) onChange(File(chemin));
+            },
+            child: const Text('Joindre', style: TextStyle(fontFamily: 'Galey', color: _teal)),
+          ),
+      ]);
 
   Widget _field({
     required TextEditingController ctrl,

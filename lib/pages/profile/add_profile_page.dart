@@ -371,7 +371,9 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
   DateTime? _acacedObtention;
   DateTime? _acacedRenouvellement;
   File? _acacedActuDoc;
-  bool get _acacedRequis => widget.typeInfo.type == 'education' || widget.typeInfo.type == 'garde' || _isEleveurType;
+  bool get _acacedRequis => widget.typeInfo.type == 'education' || widget.typeInfo.type == 'garde' || _isEleveurType || _isAssociationType;
+  // Association : certificat / attestation facultatifs à la création (miroir site).
+  bool get _acacedDocObligatoire => !_isAssociationType;
   bool get _acacedAActualiser => acacedExpire(_acacedObtention);
 
   Future<void> _choisirAcacedDoc(ImageSource source, {bool actualisation = false}) async {
@@ -391,11 +393,11 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
     if (!_acacedRequis) return null;
     if (_acacedCtrl.text.trim().isEmpty) return 'Indiquez le numéro ACACED.';
     if (_acacedObtention == null) return "Indiquez la date d'obtention ACACED.";
-    if (_acacedDoc == null) return 'Joignez le certificat ACACED (photo ou scan) pour créer le profil.';
+    if (_acacedDocObligatoire && _acacedDoc == null) return 'Joignez le certificat ACACED (photo ou scan) pour créer le profil.';
     if (_acacedAActualiser) {
       if (_acacedRenouvellement == null) return "ACACED de plus de 10 ans : indiquez la date de la formation d'actualisation.";
       if (acacedExpire(_acacedRenouvellement)) return "La formation d'actualisation doit dater de moins de 10 ans.";
-      if (_acacedActuDoc == null) return "Joignez l'attestation de la formation d'actualisation ACACED.";
+      if (_acacedDocObligatoire && _acacedActuDoc == null) return "Joignez l'attestation de la formation d'actualisation ACACED.";
     }
     return null;
   }
@@ -408,7 +410,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
           Expanded(child: Text('$libelle joint', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF2E7D5E), fontWeight: FontWeight.w600))),
           TextButton(onPressed: onRetirer, child: const Text('Retirer', style: TextStyle(fontFamily: 'Galey'))),
         ] else ...[
-          Expanded(child: Text('$libelle * (photo ou scan)', style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+          Expanded(child: Text('$libelle${_acacedDocObligatoire ? ' *' : ''} (photo ou scan)', style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
           IconButton(tooltip: 'Prendre une photo', icon: const Icon(Icons.camera_alt_outlined),
               onPressed: () => _choisirAcacedDoc(ImageSource.camera, actualisation: actualisation)),
           IconButton(tooltip: 'Choisir un fichier', icon: const Icon(Icons.upload_file_outlined),
@@ -556,6 +558,14 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       if (_acacedObtention != null) data['acaced_date_obtention'] = DateFormat('yyyy-MM-dd').format(_acacedObtention!);
       final actualise = _acacedAActualiser && _acacedRenouvellement != null;
       if (actualise) data['acaced_date_renewal'] = DateFormat('yyyy-MM-dd').format(_acacedRenouvellement!);
+      // Association : ACACED aussi dans certifications (lu par sa fiche, comme sur le site).
+      if (_isAssociationType) {
+        data['certifications'] = [{
+          'nom': 'ACACED', 'numero': _acacedCtrl.text.trim(),
+          if (data['acaced_date_obtention'] != null) 'date_obtention': data['acaced_date_obtention'],
+          if (actualise) 'date_renouvellement': data['acaced_date_renewal'],
+        }];
+      }
       try {
         final ts = DateTime.now().millisecondsSinceEpoch;
         if (_acacedDoc != null) {
@@ -666,6 +676,11 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
             const SizedBox(height: 16),
             _section('E-mail de contact (visible sur votre fiche)'),
             _field(_emailContactCtrl, 'contact@monentreprise.fr'),
+          ],
+
+          if (_isAssociationType) ...[
+            const SizedBox(height: 16),
+            ..._acacedChamps('Ex : ACE-2023-XXXX'),
           ],
 
           if (_isEleveurType) ...[
