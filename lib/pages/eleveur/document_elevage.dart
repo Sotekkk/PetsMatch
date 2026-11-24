@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:PetsMatch/utils/acaced.dart';
 
 class RegisterDocumentElevage extends StatefulWidget {
   const RegisterDocumentElevage({super.key});
@@ -32,6 +33,11 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
   String? _acacedDocUrl;
   String? _siretDocName;
   String? _acacedDocName;
+  // ACACED de plus de 10 ans : formation d'actualisation (date + attestation).
+  DateTime? _actuDate;
+  bool _actuUploaded = false;
+  String? _actuDocUrl;
+  String? _actuDocName;
   String? _selectedCategory;
   String? _selectedProfession;
 
@@ -139,6 +145,42 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
     }
   }
 
+  Future<void> _pickActualisation() async {
+    final result = await FilePicker.pickFiles(
+        type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'png', 'jpeg']);
+    if (result?.files.single.path == null) return;
+    setState(() => _uploading = true);
+    try {
+      final file = File(result!.files.single.path!);
+      if (PhotosInscription.enAttenteDeCompte) PhotosInscription.acacedActualisation = file;
+      final url = PhotosInscription.enAttenteDeCompte
+          ? '' : await _uploadToFirebase(file, 'documentElevage/Acaced/${file.path.split('/').last}');
+      setState(() {
+        _actuDocUrl = url;
+        _actuDocName = result.files.single.name;
+        _actuUploaded = true;
+      });
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur upload: $e')));
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _pickActuDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _actuDate ?? DateTime.now(),
+      firstDate: DateTime(1990),
+      lastDate: DateTime.now(),
+      builder: (ctx, child) => Theme(
+        data: ThemeData.light().copyWith(colorScheme: const ColorScheme.light(primary: _green)),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _actuDate = picked);
+  }
+
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -184,9 +226,28 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
           _showError('Le numéro ACACED, la date d\'obtention et le certificat sont obligatoires.');
           return;
         }
+        // Plus de 10 ans : formation d'actualisation obligatoire.
+        final aActualiser = acacedExpire(_acacedDate);
+        if (aActualiser && (_actuDate == null || !_actuUploaded)) {
+          _showError("ACACED de plus de 10 ans : indiquez la date de la formation d'actualisation et joignez son attestation.");
+          return;
+        }
+        if (aActualiser && acacedExpire(_actuDate)) {
+          _showError("La formation d'actualisation doit dater de moins de 10 ans.");
+          return;
+        }
         User_Info.acacedNumero = _acacedCtrl.text.trim();
         User_Info.acacedDateObtention = _acacedDate!.toIso8601String();
         User_Info.acacedDocUrl = _acacedDocUrl ?? '';
+        User_Info.acacedDateRenewal = aActualiser ? _actuDate!.toIso8601String() : '';
+        if (aActualiser) {
+          // L'attestation devient le justificatif ACACED en cours.
+          User_Info.acacedDocUrl = _actuDocUrl ?? '';
+          User_Info.documentElevage.removeWhere((d) => d['category'] == 'Acaced_ou_autre');
+          User_Info.documentElevage.add({'name': _actuDocName, 'category': 'Acaced_ou_autre', 'url': _actuDocUrl ?? '', 'uploaded': true});
+        } else {
+          PhotosInscription.acacedActualisation = null;
+        }
       }
     }
 
@@ -268,6 +329,54 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
                     User_Info.documentElevage.removeWhere((d) => d['category'] == 'Acaced_ou_autre');
                   }),
                 ),
+                // Plus de 10 ans : actualisation demandée directement ici.
+                if (acacedExpire(_acacedDate)) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.withOpacity(0.3)),
+                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('ACACED expiré : actualisation requise',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Colors.red)),
+                      const SizedBox(height: 4),
+                      Text("Indiquez la date de votre formation d'actualisation des connaissances et joignez son attestation.",
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+                      const SizedBox(height: 10),
+                      InkWell(
+                        onTap: _pickActuDate,
+                        child: InputDecorator(
+                          decoration: InputDecoration(
+                            labelText: "Date de la formation d'actualisation *",
+                            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            isDense: true,
+                            suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18, color: _green),
+                          ),
+                          child: Text(
+                            _actuDate != null ? DateFormat('dd/MM/yyyy').format(_actuDate!) : 'Sélectionner',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                                color: _actuDate != null ? const Color(0xFF1F2A2E) : Colors.grey),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _uploadTile(
+                        label: "Joindre l'attestation d'actualisation",
+                        uploaded: _actuUploaded,
+                        fileName: _actuDocName,
+                        onTap: _pickActualisation,
+                        onRemove: () => setState(() {
+                          _actuUploaded = false; _actuDocName = null; _actuDocUrl = null; PhotosInscription.acacedActualisation = null;
+                        }),
+                      ),
+                    ]),
+                  ),
+                ],
               ]),
               const SizedBox(height: 20),
             ],

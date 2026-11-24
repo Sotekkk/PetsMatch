@@ -11,6 +11,7 @@ import { notifyProfilePendingValidation } from '@/lib/notifications';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { ecrireLigne } from '@/lib/ecriture-sure';
 import EspecesProSelect from '@/components/pro/EspecesProSelect';
+import AcacedActualisation, { acacedExpire, acacedActualisationManquante } from '@/components/AcacedActualisation';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 const PROFILE_TYPES = [
@@ -171,6 +172,9 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
   const [numElevage, setNumElevage] = useState('');
   const [acaced, setAcaced] = useState('');
   const [acacedDateObtention, setAcacedDateObtention] = useState('');
+  // ACACED de plus de 10 ans : formation d'actualisation (date + attestation).
+  const [acacedDateRenewal, setAcacedDateRenewal] = useState('');
+  const [acacedActuFile, setAcacedActuFile] = useState<File | null>(null);
   const [siretDocFile, setSiretDocFile] = useState<File | null>(null);
   const [acacedDocFile, setAcacedDocFile] = useState<File | null>(null);
   const siretDocRef = useRef<HTMLInputElement>(null);
@@ -267,6 +271,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
       if (!acacedDateObtention) errs.push("Date d'obtention ACACED");
       if (!acacedDocFile) errs.push('Certificat ACACED');
     }
+    if (isEleveur || acacedRequis) errs.push(...acacedActualisationManquante(acacedDateObtention, acacedDateRenewal, acacedActuFile, true));
     if (errs.length > 0) { setError(`Champs obligatoires manquants : ${errs.join(', ')}`); return; }
     setSaving(true);
     setError('');
@@ -335,6 +340,16 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
           }
         }
       }
+      // ACACED expiré : date + attestation d'actualisation (justificatif en cours).
+      if ((isEleveur || acacedRequis) && acacedExpire(acacedDateObtention) && acacedDateRenewal) {
+        data.acaced_date_renewal = acacedDateRenewal;
+        if (acacedActuFile) {
+          const ext = acacedActuFile.name.split('.').pop() ?? 'jpg';
+          const path = `documents/${uid}/acaced_actualisation${isEleveur ? '' : `_${typeInfo.type}`}.${ext}`;
+          const { data: up } = await supabase.storage.from('documents').upload(path, acacedActuFile, { upsert: true });
+          if (up) data.acaced_doc_url = supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
+        }
+      }
       if (isProType) {
         data.cat_pro           = typeInfo.type;
         data.nom               = nomCabinet.trim();
@@ -388,6 +403,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
           uid,
           acaced: acaced.trim(),
           acaced_date_obtention: acacedDateObtention,
+          ...(data.acaced_date_renewal ? { acaced_date_renewal: data.acaced_date_renewal } : {}),
         };
         if (isEleveur) usersPayload.siret = siret.trim();
         if (data.kbis_url) usersPayload.kbis_url = data.kbis_url;
@@ -579,6 +595,9 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
                 )}
               </div>
 
+              <AcacedActualisation obtention={acacedDateObtention} renouvellement={acacedDateRenewal}
+                onRenouvellement={setAcacedDateRenewal} fichier={acacedActuFile} onFichier={setAcacedActuFile} />
+
               <Field label="Numéro d'élevage (optionnel)">
                 <input value={numElevage} onChange={e => setNumElevage(e.target.value)}
                   className="w-full input-field" placeholder="Numéro SIREN/DDPP" />
@@ -642,6 +661,8 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
                       </button>
                     )}
                   </div>
+                  <AcacedActualisation obtention={acacedDateObtention} renouvellement={acacedDateRenewal}
+                    onRenouvellement={setAcacedDateRenewal} fichier={acacedActuFile} onFichier={setAcacedActuFile} />
                 </>
               )}
               {hasRayon && (

@@ -66,6 +66,11 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
   String? _siretDocUrl;
   File?   _acacedDocFile;
   String? _acacedDocUrl;
+  // ACACED expiré (ou bientôt) : attestation de la formation d'actualisation,
+  // jointe directement sous l'alerte. Elle devient le justificatif ACACED en
+  // cours (acaced_doc_url) et sa date la date de renouvellement (miroir site).
+  bool  _aRenouveler = false;
+  File? _actuFile;
 
   // ── Places autocomplete ───────────────────────────────────────────────────────
   late final GoogleMapsPlaces _places;
@@ -132,7 +137,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       elevRow = await Supabase.instance.client
           .from('user_profiles_complet')
           .select('id, is_main, avatar_url, profile_picture_url_pro, montre_reproducteurs, desc_entreprise, description, '
-              'instagram, facebook, site_web, numero_elevage, phone_number, email_contact')
+              'instagram, facebook, site_web, numero_elevage, phone_number, email_contact, acaced_date_obtention, acaced_date_renewal')
           .eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
       montreRepro = elevRow?['montre_reproducteurs'] == true;
     } catch (_) {}
@@ -183,6 +188,13 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       if (d['acacedDateRenewal'] != null) {
         try { _acacedDateRenewal = DateFormat('dd/MM/yyyy').parse(d['acacedDateRenewal']); } catch (_) {}
       }
+      // Dates saisies sur le site : en base seulement (AAAA-MM-JJ), la plus récente l'emporte.
+      final obtBase = DateTime.tryParse(elev('acaced_date_obtention'));
+      final renBase = DateTime.tryParse(elev('acaced_date_renewal'));
+      if (obtBase != null && _acacedDateObtention == null) _acacedDateObtention = obtBase;
+      if (renBase != null && (_acacedDateRenewal == null || renBase.isAfter(_acacedDateRenewal!))) _acacedDateRenewal = renBase;
+      final expAcaced = _acacedExpiration;
+      _aRenouveler = expAcaced != null && expAcaced.difference(DateTime.now()).inDays < 180;
 
       // Espèces — nouveau format ou migration depuis isDog/isCat
       if (d['especesElevees'] != null) {
@@ -420,6 +432,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     if (_acacedDateObtention == null)      missing.add("Date d'obtention ACACED");
     if (_acacedDocFile == null && (_acacedDocUrl == null || _acacedDocUrl!.isEmpty))
       missing.add('Certificat ACACED');
+    if (_actuFile != null && _acacedDateRenewal == null)
+      missing.add("Date de la formation d'actualisation ACACED");
 
     final emailContact = _emailContactCtrl.text.trim();
     if (emailContact.isNotEmpty && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(emailContact)) {
@@ -471,6 +485,11 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       if (_acacedDocFile != null) {
         acacedDocUrl = await uploadPhotoPrive(_acacedDocFile!, 'profiles/$uid/acaced.jpg');
         setState(() => _acacedDocUrl = acacedDocUrl);
+      }
+      // Attestation d'actualisation ACACED : justificatif ACACED en cours.
+      if (_actuFile != null) {
+        acacedDocUrl = await uploadPhotoPrive(_actuFile!, 'profiles/$uid/acaced_actualisation.jpg');
+        setState(() { _acacedDocUrl = acacedDocUrl; _actuFile = null; });
       }
 
       final isDog = _hasEspece('chien');
@@ -576,6 +595,9 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           'bio':            _descCtrl.text.trim(),
           if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
           if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
+          // Dates ACACED aussi en base (lues par le site), format AAAA-MM-JJ.
+          if (_acacedDateObtention != null) 'acaced_date_obtention': DateFormat('yyyy-MM-dd').format(_acacedDateObtention!),
+          if (_acacedDateRenewal != null) 'acaced_date_renewal': DateFormat('yyyy-MM-dd').format(_acacedDateRenewal!),
         }, {'uid': uid});
 
         // Sync user_profiles (source V2) — description prend le même contenu
@@ -608,6 +630,9 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           'desc_entreprise': _descCtrl.text.trim(),
           if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
           if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
+          // Dates ACACED aussi en base (lues par le site), format AAAA-MM-JJ.
+          if (_acacedDateObtention != null) 'acaced_date_obtention': DateFormat('yyyy-MM-dd').format(_acacedDateObtention!),
+          if (_acacedDateRenewal != null) 'acaced_date_renewal': DateFormat('yyyy-MM-dd').format(_acacedDateRenewal!),
         }).eq('uid', uid).eq('profile_type', 'eleveur');
       } catch (_) {}
 
@@ -1269,8 +1294,78 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
             ]),
           ),
         ],
+
+        // Actualisation ACACED : directement sous l'alerte d'expiration.
+        if (_aRenouveler) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0C5C6C).withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF0C5C6C).withOpacity(0.3)),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Actualisation ACACED',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
+              const SizedBox(height: 4),
+              Text("Vous avez suivi la formation d'actualisation des connaissances ? Indiquez sa date et joignez l'attestation : "
+                  'elle remplace le certificat comme justificatif en cours, et la validité repart pour 10 ans.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+              const SizedBox(height: 10),
+              _datePicker(
+                label: "Date de la formation d'actualisation *",
+                value: _acacedDateRenewal,
+                onPicked: (d) => setState(() => _acacedDateRenewal = d),
+                clearable: true,
+                onClear: () => setState(() => _acacedDateRenewal = null),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: _actuFile == null
+                    ? ElevatedButton.icon(
+                        onPressed: _pickActualisation,
+                        icon: const Icon(Icons.upload_file, size: 18, color: Colors.white),
+                        label: const Text("Joindre l'attestation d'actualisation",
+                            style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0C5C6C),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      )
+                    : OutlinedButton.icon(
+                        onPressed: _pickActualisation,
+                        icon: const Icon(Icons.check_circle_outline, size: 18, color: Color(0xFF6E9E57)),
+                        label: Text('${_actuFile!.path.split('/').last} — Changer',
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF1F2A2E))),
+                      ),
+              ),
+              const SizedBox(height: 6),
+              Text('Enregistrée avec le bouton « Enregistrer ».',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+            ]),
+          ),
+        ],
       ]),
     );
+  }
+
+  Future<void> _pickActualisation() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(leading: const Icon(Icons.photo_camera_outlined), title: const Text('Prendre en photo', style: TextStyle(fontFamily: 'Galey')),
+            onTap: () => Navigator.pop(ctx, ImageSource.camera)),
+        ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Choisir dans la galerie', style: TextStyle(fontFamily: 'Galey')),
+            onTap: () => Navigator.pop(ctx, ImageSource.gallery)),
+      ])),
+    );
+    if (source == null) return;
+    final picked = await ImagePicker().pickImage(source: source, imageQuality: 90);
+    if (picked != null && mounted) setState(() => _actuFile = File(picked.path));
   }
 
   // ── Shared widgets ────────────────────────────────────────────────────────────

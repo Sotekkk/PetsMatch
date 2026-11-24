@@ -61,6 +61,12 @@ export default function ProfilEleveurPage() {
   const acacedOk = !!acaced;
   const kbisOk   = !!userData.kbisUrl;
   const acacedDocOk = !!userData.acacedDocUrl;
+  // Validité ACACED : 10 ans après l'obtention ou la dernière actualisation.
+  // null = valide (ou date inconnue) ; false = expire dans moins de 6 mois ; true = expiré.
+  const acacedBase = userData.acacedDateRenewal || acacedDate;
+  const acacedFin = acacedBase ? (() => { const b = new Date(acacedBase); return new Date(b.getFullYear() + 10, b.getMonth(), b.getDate()); })() : null;
+  const acacedJours = acacedFin ? (acacedFin.getTime() - Date.now()) / 86400000 : null;
+  const acacedExpire = acacedJours === null || acacedJours >= 180 ? null : acacedJours < 0;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
@@ -210,6 +216,17 @@ export default function ProfilEleveurPage() {
           {acacedDate && <CertRow label="Date obtention ACACED" value={new Date(acacedDate).toLocaleDateString('fr-FR')} ok={true} />}
           <CertRow label="Certificat ACACED" ok={acacedDocOk} />
         </div>
+        {acacedExpire !== null && (
+          <div className={`mt-3 rounded-xl px-3 py-2.5 text-xs ${acacedExpire ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-orange-50 border border-orange-200 text-orange-700'}`}>
+            <p className="font-semibold mb-2">
+              {acacedExpire ? 'ACACED expiré' : 'ACACED bientôt expiré'}{acacedFin ? ` (${acacedFin.toLocaleDateString('fr-FR')})` : ''} : joignez l&apos;attestation de votre formation d&apos;actualisation.
+            </p>
+            <Link href="/elevage/profil/edit#acaced"
+              className="inline-block rounded-lg px-3 py-1.5 font-semibold text-white bg-[#0C5C6C] hover:bg-[#094F5D]">
+              Mettre mon attestation d&apos;actualisation
+            </Link>
+          </div>
+        )}
         {(!siretOk || !acacedOk || !kbisOk || !acacedDocOk) && (
           <p className="text-xs text-amber-600 mt-3">
             Des informations sont manquantes. Complétez votre profil pour accélérer la validation.

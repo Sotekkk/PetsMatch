@@ -281,6 +281,12 @@ export default function EleveurProfilEditPage() {
   const [acacedDocUrl, setAcacedDocUrl] = useState<string | null>(null);
   const siretDocRef = useRef<HTMLInputElement>(null);
   const acacedDocRef = useRef<HTMLInputElement>(null);
+  // ACACED expiré (ou bientôt) : attestation de la formation d'actualisation,
+  // jointe directement sous l'alerte. Elle devient le justificatif ACACED en
+  // cours (acaced_doc_url) et sa date la date de renouvellement.
+  const [aRenouveler, setARenouveler] = useState(false);
+  const [actuFile, setActuFile] = useState<File | null>(null);
+  const actuRef = useRef<HTMLInputElement>(null);
 
   // Photos
   const [bannerFile, setBannerFile] = useState<File | null>(null);
@@ -341,6 +347,18 @@ export default function EleveurProfilEditPage() {
     setAcacedDocUrl(userData.acacedDocUrl ?? null);
     setAcacedDateObtention(userData.acacedDateObtention ?? '');
     setAcacedDateRenewal(userData.acacedDateRenewal ?? '');
+    {
+      const base = userData.acacedDateRenewal || userData.acacedDateObtention;
+      if (base) {
+        const b = new Date(base);
+        const exp = new Date(b.getFullYear() + 10, b.getMonth(), b.getDate());
+        if ((exp.getTime() - Date.now()) / 86400000 < 180) {
+          setARenouveler(true);
+          // Arrivée depuis « Mettre mon attestation » : on descend jusqu'au bloc.
+          if (window.location.hash === '#acaced') setTimeout(() => document.getElementById('acaced')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+        }
+      }
+    }
     setInstagram(userData.instagram ?? '');
     setFacebook(userData.facebook ?? '');
     setSiteWeb(userData.siteWeb ?? '');
@@ -499,6 +517,7 @@ export default function EleveurProfilEditPage() {
     if (!acacedNum.trim()) errs.push('Numéro ACACED requis');
     if (!acacedDateObtention) errs.push("Date d'obtention ACACED requise");
     if (!acacedDocUrl && !acacedDocFile) errs.push('Certificat ACACED requis');
+    if (actuFile && !acacedDateRenewal) errs.push("Date de la formation d'actualisation ACACED requise");
     return errs;
   }
 
@@ -566,6 +585,17 @@ export default function EleveurProfilEditPage() {
           payload.acaced_doc_url = pub.publicUrl;
           setAcacedDocUrl(pub.publicUrl);
         }
+      }
+
+      // Attestation d'actualisation ACACED : justificatif ACACED en cours.
+      if (actuFile) {
+        const ext = actuFile.name.split('.').pop() ?? 'jpg';
+        const path = `documents/${user!.uid}/acaced_actualisation.${ext}`;
+        const { data: up } = await supabase.storage.from('documents').upload(path, actuFile, { upsert: true });
+        if (!up) { setFormErrors(["Envoi de l'attestation d'actualisation impossible, réessayez."]); return; }
+        const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
+        payload.acaced_doc_url = pub.publicUrl;
+        setAcacedDocUrl(pub.publicUrl);
       }
 
       // Upload bannière
@@ -993,6 +1023,8 @@ export default function EleveurProfilEditPage() {
             onChange={e => { const f = e.target.files?.[0]; if (f) setSiretDocFile(f); e.target.value = ''; }} />
           <input ref={acacedDocRef} type="file" accept="image/*,application/pdf" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) setAcacedDocFile(f); e.target.value = ''; }} />
+          <input ref={actuRef} type="file" accept="image/*,application/pdf" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) setActuFile(f); e.target.value = ''; }} />
 
           <Field label="SIRET *">
             <input value={siret} onChange={e => setSiret(e.target.value)} className={inputCls}
@@ -1094,6 +1126,31 @@ export default function EleveurProfilEditPage() {
               }`}>
                 <span>{acacedStatus.color === 'red' ? '⚠️' : acacedStatus.color === 'orange' ? '⏳' : '✓'}</span>
                 {acacedStatus.label}
+              </div>
+            )}
+            {aRenouveler && (
+              <div id="acaced" className="mt-3 rounded-xl border border-[#0C5C6C]/30 bg-[#0C5C6C]/5 p-3 space-y-2.5">
+                <p className="text-sm font-semibold text-[#1F2A2E]">Actualisation ACACED</p>
+                <p className="text-xs text-gray-600">
+                  Vous avez suivi la formation d&apos;actualisation des connaissances ? Indiquez sa date et joignez l&apos;attestation :
+                  elle remplace le certificat comme justificatif en cours, et la validité repart pour 10 ans.
+                </p>
+                <Field label="Date de la formation d'actualisation *">
+                  <input type="date" value={acacedDateRenewal} onChange={e => setAcacedDateRenewal(e.target.value)} className={inputCls} />
+                </Field>
+                {actuFile ? (
+                  <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                    <span className="text-xs text-green-700 flex-1 truncate">{actuFile.name}</span>
+                    <button type="button" onClick={() => actuRef.current?.click()}
+                      className="text-xs text-[#0C5C6C] font-medium hover:underline">Changer</button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => actuRef.current?.click()}
+                    className="w-full rounded-xl py-3 text-sm font-semibold text-white bg-[#0C5C6C] hover:bg-[#094F5D] transition-colors">
+                    Joindre l&apos;attestation d&apos;actualisation (image ou PDF)
+                  </button>
+                )}
+                <p className="text-[11px] text-gray-500">Enregistrée avec le bouton « Enregistrer » en bas de la page.</p>
               </div>
             )}
           </div>

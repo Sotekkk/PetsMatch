@@ -13,6 +13,7 @@ import { bornesNaissancePersonne } from '@/lib/ages-plausibles';
 import AddressInput from '@/components/AdresseGoogleInput';
 
 import { ecrireLigne } from '@/lib/ecriture-sure';
+import AcacedActualisation, { acacedExpire, acacedActualisationManquante } from '@/components/AcacedActualisation';
 
 // Âge minimum pour créer un compte (CGU : personne physique majeure, 18 ans
 // révolus — cessions / ventes d'animaux, contrats, paiements). Miroir de
@@ -172,6 +173,10 @@ export default function InscriptionPage() {
   // Step docs — éleveur uniquement
   const [acacedNumero, setAcacedNumero] = useState('');
   const [acacedFile, setAcacedFile] = useState<File | null>(null);
+  const [acacedDateObtention, setAcacedDateObtention] = useState('');
+  // ACACED de plus de 10 ans : formation d'actualisation (date + attestation).
+  const [acacedDateRenewal, setAcacedDateRenewal] = useState('');
+  const [acacedActuFile, setAcacedActuFile] = useState<File | null>(null);
 
   // Step docs — pro uniquement
   const [categoriePro, setCategoriePro] = useState('');
@@ -215,6 +220,16 @@ export default function InscriptionPage() {
       return;
     }
     // KBIS optionnel — la vérification API SIRET est suffisante ; le Kbis est un plus
+    // ACACED (éleveur, éducateur) : numéro + date d'obtention ; si plus de 10 ans,
+    // date de la formation d'actualisation (attestation : avant validation).
+    if (role === 'eleveur' || (role === 'pro' && isEducation)) {
+      const manque = [
+        ...(acacedNumero.trim() ? [] : ['le numéro ACACED']),
+        ...(acacedDateObtention ? [] : ["la date d'obtention ACACED"]),
+        ...acacedActualisationManquante(acacedDateObtention, acacedDateRenewal, acacedActuFile, false).map(m => m.toLowerCase()),
+      ];
+      if (manque.length) { setError(`Indiquez ${manque.join(', ')}.`); return; }
+    }
     if (role === 'pro') {
       if (!categoriePro || !professionPro) {
         setError('Veuillez sélectionner votre catégorie et profession.');
@@ -299,6 +314,15 @@ export default function InscriptionPage() {
     if (acacedFile) {
       acacedDocUrl = await uploadToStorage(acacedFile, `documents/${uid}/acaced_${ts}_${acacedFile.name}`);
     }
+    // ACACED expiré : l'attestation d'actualisation devient le justificatif en cours.
+    const actualise = acacedExpire(acacedDateObtention) && !!acacedDateRenewal;
+    if (actualise && acacedActuFile) {
+      acacedDocUrl = await uploadToStorage(acacedActuFile, `documents/${uid}/acaced_actualisation_${ts}_${acacedActuFile.name}`);
+    }
+    const datesAcaced = {
+      ...(acacedDateObtention ? { acaced_date_obtention: acacedDateObtention } : {}),
+      ...(actualise ? { acaced_date_renewal: acacedDateRenewal } : {}),
+    };
 
     const catPro = professionPro ? CAT_PRO_MAP[professionPro] ?? 'autre' : undefined;
     const certifications = isVet && ordreVet.trim()
@@ -332,6 +356,7 @@ export default function InscriptionPage() {
         Object.assign(base, {
           acaced: acacedNumero.trim() || null,
           acaced_doc_url: acacedDocUrl || null,
+          ...datesAcaced,
         });
       }
       if (role === 'pro') {
@@ -344,6 +369,7 @@ export default function InscriptionPage() {
           Object.assign(base, {
             acaced: acacedNumero.trim() || null,
             acaced_doc_url: acacedDocUrl || null,
+            ...datesAcaced,
           });
         }
       }
@@ -368,8 +394,14 @@ export default function InscriptionPage() {
     // (create_main_profile_on_signup ne le recopie pas) : fiche publique.
     if (isEleveurOrPro) {
       const contact = emailContact.trim() || emailAddr;
+      // Dates + justificatif ACACED : le trigger de création ne les recopie pas.
+      const acacedProfil = (role === 'eleveur' || isEducation) ? {
+        ...datesAcaced, ...(acacedNumero.trim() ? { acaced_numero: acacedNumero.trim() } : {}),
+        ...(acacedDocUrl ? { acaced_doc_url: acacedDocUrl } : {}),
+      } : {};
       await supabase.from('user_profiles').update({
         ...(contact ? { email_contact: contact } : {}), contact_messages: contactMessages, contact_email: contactEmailOk,
+        ...acacedProfil,
       }).eq('uid', uid).neq('profile_type', 'particulier');
     }
 
@@ -704,12 +736,14 @@ export default function InscriptionPage() {
                 {role === 'eleveur' && (
                   <>
                     <div>
-                      <label className={labelCls}>
-                        Numéro ACACED
-                        <span className="text-xs text-gray-400 font-normal ml-1">(obligatoire pour chiens/chats)</span>
-                      </label>
+                      <label className={labelCls}>Numéro ACACED *</label>
                       <input type="text" value={acacedNumero} onChange={(e) => setAcacedNumero(e.target.value)}
                         placeholder="2022/9fd5-fd12" className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Date d&apos;obtention ACACED *</label>
+                      <input type="date" value={acacedDateObtention} onChange={(e) => setAcacedDateObtention(e.target.value)}
+                        max={new Date().toISOString().slice(0, 10)} className={inputCls} />
                     </div>
                     <div>
                       <label className={labelCls}>
@@ -719,6 +753,8 @@ export default function InscriptionPage() {
                       <UploadTile label="Déposer le certificat ACACED"
                         file={acacedFile} onSelect={setAcacedFile} onRemove={() => setAcacedFile(null)} />
                     </div>
+                    <AcacedActualisation obtention={acacedDateObtention} renouvellement={acacedDateRenewal}
+                      onRenouvellement={setAcacedDateRenewal} fichier={acacedActuFile} onFichier={setAcacedActuFile} fichierRequis={false} />
                   </>
                 )}
 
@@ -766,6 +802,11 @@ export default function InscriptionPage() {
                             placeholder="2022/9fd5-fd12" className={inputCls} />
                         </div>
                         <div>
+                          <label className={labelCls}>Date d&apos;obtention ACACED *</label>
+                          <input type="date" value={acacedDateObtention} onChange={(e) => setAcacedDateObtention(e.target.value)}
+                            max={new Date().toISOString().slice(0, 10)} className={inputCls} />
+                        </div>
+                        <div>
                           <label className={labelCls}>
                             Document ACACED
                             <span className="text-xs text-gray-400 font-normal ml-1">(optionnel maintenant, requis avant validation)</span>
@@ -773,6 +814,8 @@ export default function InscriptionPage() {
                           <UploadTile label="Déposer le certificat ACACED"
                             file={acacedFile} onSelect={setAcacedFile} onRemove={() => setAcacedFile(null)} />
                         </div>
+                        <AcacedActualisation obtention={acacedDateObtention} renouvellement={acacedDateRenewal}
+                          onRenouvellement={setAcacedDateRenewal} fichier={acacedActuFile} onFichier={setAcacedActuFile} fichierRequis={false} />
                       </>
                     )}
                   </>

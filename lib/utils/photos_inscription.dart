@@ -16,6 +16,7 @@ class PhotosInscription {
   static File? banniere;     // bannière du profil pro
   static File? kbis;         // justificatif SIRET (KBIS…)
   static File? acaced;       // certificat ACACED ou équivalent
+  static File? acacedActualisation; // attestation d'actualisation ACACED (plus de 10 ans)
 
   /// Personne n'est encore connecté : les fichiers doivent être retenus.
   static bool get enAttenteDeCompte => FirebaseAuth.instance.currentUser == null;
@@ -60,6 +61,14 @@ class PhotosInscription {
       User_Info.acacedDocUrl = url;
       _majDocument('Acaced_ou_autre', url);
       acaced = null;
+    });
+    // Après le certificat : l'attestation d'actualisation devient le justificatif en cours.
+    await essai(() async {
+      if (acacedActualisation == null) return;
+      final url = await uploadDocument(acacedActualisation!, _cheminDoc('Acaced', uid, acacedActualisation!));
+      User_Info.acacedDocUrl = url;
+      _majDocument('Acaced_ou_autre', url);
+      acacedActualisation = null;
     });
   }
 

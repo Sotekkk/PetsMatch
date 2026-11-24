@@ -505,6 +505,8 @@ class User_Info {
   static List<String> catBreeds = [];
   static String acacedNumero = "";
   static String acacedDateObtention = "";
+  /// Date de la formation d'actualisation ACACED (ISO), si l'obtention a plus de 10 ans.
+  static String acacedDateRenewal = "";
   static String acacedDocUrl = "";
   static List<String> especesElevees = [];
   static String bannerUrl = '';

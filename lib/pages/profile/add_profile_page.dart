@@ -12,6 +12,8 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/services/profile_service.dart';
 import 'package:PetsMatch/widgets/especes_pro_selector.dart';
+import 'package:PetsMatch/utils/acaced.dart';
+import 'package:intl/intl.dart';
 
 // ── Types de profil ────────────────────────────────────────────────────────────
 
@@ -361,14 +363,109 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
   }.contains(widget.typeInfo.type); // restauration = lieu fixe, pas de rayon
   bool get _hasSubProfession => _subProfessions.containsKey(widget.typeInfo.type);
 
-  /// Justificatif ACACED (pet-sitter, éducateur) — obligatoire à la création,
-  /// comme dans l'édition du profil (Code rural, art. L214-6-1).
+  /// ACACED (éleveur, pet-sitter, éducateur) — n°, date d'obtention et
+  /// certificat obligatoires à la création, comme sur le site (Code rural,
+  /// art. L214-6-1). Plus de 10 ans : formation d'actualisation (date +
+  /// attestation), qui devient le justificatif en cours.
   File? _acacedDoc;
-  bool get _acacedRequis => widget.typeInfo.type == 'education' || widget.typeInfo.type == 'garde';
+  DateTime? _acacedObtention;
+  DateTime? _acacedRenouvellement;
+  File? _acacedActuDoc;
+  bool get _acacedRequis => widget.typeInfo.type == 'education' || widget.typeInfo.type == 'garde' || _isEleveurType;
+  bool get _acacedAActualiser => acacedExpire(_acacedObtention);
 
-  Future<void> _choisirAcacedDoc(ImageSource source) async {
+  Future<void> _choisirAcacedDoc(ImageSource source, {bool actualisation = false}) async {
     final f = await ImagePicker().pickImage(source: source, imageQuality: 90);
-    if (f != null && mounted) setState(() => _acacedDoc = File(f.path));
+    if (f == null || !mounted) return;
+    setState(() { if (actualisation) { _acacedActuDoc = File(f.path); } else { _acacedDoc = File(f.path); } });
+  }
+
+  Future<DateTime?> _choisirDateAcaced(DateTime? initiale) => showDatePicker(
+        context: context,
+        initialDate: initiale ?? DateTime.now(),
+        firstDate: DateTime(1980),
+        lastDate: DateTime.now(),
+      );
+
+  String? _acacedManquant() {
+    if (!_acacedRequis) return null;
+    if (_acacedCtrl.text.trim().isEmpty) return 'Indiquez le numéro ACACED.';
+    if (_acacedObtention == null) return "Indiquez la date d'obtention ACACED.";
+    if (_acacedDoc == null) return 'Joignez le certificat ACACED (photo ou scan) pour créer le profil.';
+    if (_acacedAActualiser) {
+      if (_acacedRenouvellement == null) return "ACACED de plus de 10 ans : indiquez la date de la formation d'actualisation.";
+      if (acacedExpire(_acacedRenouvellement)) return "La formation d'actualisation doit dater de moins de 10 ans.";
+      if (_acacedActuDoc == null) return "Joignez l'attestation de la formation d'actualisation ACACED.";
+    }
+    return null;
+  }
+
+  Widget _acacedDocLigne(String libelle, File? doc, VoidCallback onRetirer, {bool actualisation = false}) => Row(children: [
+        if (doc != null) ...[
+          ClipRRect(borderRadius: BorderRadius.circular(8),
+              child: Image.file(doc, width: 52, height: 52, fit: BoxFit.cover)),
+          const SizedBox(width: 10),
+          Expanded(child: Text('$libelle joint', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF2E7D5E), fontWeight: FontWeight.w600))),
+          TextButton(onPressed: onRetirer, child: const Text('Retirer', style: TextStyle(fontFamily: 'Galey'))),
+        ] else ...[
+          Expanded(child: Text('$libelle * (photo ou scan)', style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+          IconButton(tooltip: 'Prendre une photo', icon: const Icon(Icons.camera_alt_outlined),
+              onPressed: () => _choisirAcacedDoc(ImageSource.camera, actualisation: actualisation)),
+          IconButton(tooltip: 'Choisir un fichier', icon: const Icon(Icons.upload_file_outlined),
+              onPressed: () => _choisirAcacedDoc(ImageSource.gallery, actualisation: actualisation)),
+        ],
+      ]);
+
+  Widget _acacedDateLigne(String libelle, DateTime? valeur, ValueChanged<DateTime> onChoisi) => InkWell(
+        onTap: () async { final d = await _choisirDateAcaced(valeur); if (d != null) onChoisi(d); },
+        borderRadius: BorderRadius.circular(10),
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: libelle,
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            isDense: true,
+            suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
+          ),
+          child: Text(valeur != null ? DateFormat('dd/MM/yyyy').format(valeur) : 'Sélectionner',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: valeur != null ? const Color(0xFF1F2A2E) : Colors.grey)),
+        ),
+      );
+
+  /// N°, date d'obtention, certificat ; si plus de 10 ans : actualisation.
+  List<Widget> _acacedChamps(String exemple) {
+    final fin = acacedFinValidite(_acacedObtention);
+    return [
+      _section('Numéro ACACED *'),
+      _field(_acacedCtrl, exemple, required: true),
+      const SizedBox(height: 10),
+      _acacedDateLigne("Date d'obtention ACACED *", _acacedObtention, (d) => setState(() => _acacedObtention = d)),
+      const SizedBox(height: 8),
+      _acacedDocLigne('Certificat ACACED', _acacedDoc, () => setState(() => _acacedDoc = null)),
+      if (_acacedAActualiser) ...[
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.red.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.red.withOpacity(0.3)),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('ACACED expiré${fin != null ? ' depuis le ${DateFormat('dd/MM/yyyy').format(fin)}' : ''} : actualisation requise',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Colors.red)),
+            const SizedBox(height: 4),
+            Text("L'ACACED est valable 10 ans. Indiquez la date de votre formation d'actualisation des connaissances et joignez son attestation.",
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+            const SizedBox(height: 10),
+            _acacedDateLigne("Date de la formation d'actualisation *", _acacedRenouvellement,
+                (d) => setState(() => _acacedRenouvellement = d)),
+            const SizedBox(height: 8),
+            _acacedDocLigne("Attestation d'actualisation", _acacedActuDoc, () => setState(() => _acacedActuDoc = null), actualisation: true),
+          ]),
+        ),
+      ],
+    ];
   }
 
   Future<void> _save() async {
@@ -381,9 +478,10 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       ));
       return;
     }
-    if (_acacedRequis && _acacedDoc == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Joignez le justificatif ACACED (photo ou scan) pour créer le profil.', style: TextStyle(fontFamily: 'Galey')),
+    final acacedManque = _acacedManquant();
+    if (acacedManque != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(acacedManque, style: const TextStyle(fontFamily: 'Galey')),
         backgroundColor: Colors.orange, behavior: SnackBarBehavior.floating,
       ));
       return;
@@ -445,26 +543,33 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       data['siret']              = _siretCtrl.text.trim();
       data['rayon_intervention'] = _rayon;
       data['especes_acceptees']  = _especesAcceptees.toList();
-      if (type == 'education' || type == 'garde') {
-        data['acaced_numero'] = _acacedCtrl.text.trim();
-        if (_acacedDoc != null) {
-          try {
-            data['acaced_doc_url'] = await uploadPhotoPrive(
-                _acacedDoc!, 'profiles/$uid/acaced_${type}_${DateTime.now().millisecondsSinceEpoch}.jpg');
-          } catch (e) {
-            if (mounted) {
-              setState(() => _saving = false);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Envoi du justificatif impossible : $e')));
-            }
-            return;
-          }
-        }
-      }
       if (_isVet) {
         // Numéro d'inscription à l'Ordre des vétérinaires — distinct du SIRET
         // (identifiant d'entreprise). Colonne dédiée sur user_profiles, déjà
         // en base mais jusqu'ici jamais écrite par aucun formulaire.
         data['numero_ordre'] = _numOrdreCtrl.text.trim();
+      }
+    }
+    // ACACED (éleveur, éducateur, pet-sitter) : n°, dates, justificatif en cours.
+    if (_acacedRequis) {
+      data['acaced_numero'] = _acacedCtrl.text.trim();
+      if (_acacedObtention != null) data['acaced_date_obtention'] = DateFormat('yyyy-MM-dd').format(_acacedObtention!);
+      final actualise = _acacedAActualiser && _acacedRenouvellement != null;
+      if (actualise) data['acaced_date_renewal'] = DateFormat('yyyy-MM-dd').format(_acacedRenouvellement!);
+      try {
+        final ts = DateTime.now().millisecondsSinceEpoch;
+        if (_acacedDoc != null) {
+          data['acaced_doc_url'] = await uploadPhotoPrive(_acacedDoc!, 'profiles/$uid/acaced_${type}_$ts.jpg');
+        }
+        if (actualise && _acacedActuDoc != null) {
+          data['acaced_doc_url'] = await uploadPhotoPrive(_acacedActuDoc!, 'profiles/$uid/acaced_actualisation_${type}_$ts.jpg');
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _saving = false);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Envoi du justificatif impossible : $e')));
+        }
+        return;
       }
     }
     if (_isRestauration) {
@@ -568,8 +673,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
             _section('Numéro d\'élevage'),
             _field(_numElevageCtrl, 'Numéro SIREN/DDPP', required: true),
             const SizedBox(height: 8),
-            _section('Numéro ACACED (facultatif)'),
-            _field(_acacedCtrl, 'Ex : ACE-2023-XXXX'),
+            ..._acacedChamps('Ex : ACE-2023-XXXX'),
             const SizedBox(height: 16),
             _section('Espèces élevées'),
             _especesChips(_especesElevees),
@@ -588,26 +692,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
             ],
             if (widget.typeInfo.type == 'education' || widget.typeInfo.type == 'garde') ...[
               const SizedBox(height: 16),
-              _section('Numéro ACACED *'),
-              _field(_acacedCtrl, 'Ex : 2022/9fd5-fd12', required: true),
-              const SizedBox(height: 8),
-              // Justificatif obligatoire (photo ou scan de l'attestation).
-              Row(children: [
-                if (_acacedDoc != null) ...[
-                  ClipRRect(borderRadius: BorderRadius.circular(8),
-                      child: Image.file(_acacedDoc!, width: 52, height: 52, fit: BoxFit.cover)),
-                  const SizedBox(width: 10),
-                  const Expanded(child: Text('Justificatif ACACED joint', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF2E7D5E), fontWeight: FontWeight.w600))),
-                  TextButton(onPressed: () => setState(() => _acacedDoc = null),
-                      child: const Text('Retirer', style: TextStyle(fontFamily: 'Galey'))),
-                ] else ...[
-                  const Expanded(child: Text('Justificatif ACACED * (photo ou scan)', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
-                  IconButton(tooltip: 'Prendre une photo', icon: const Icon(Icons.camera_alt_outlined),
-                      onPressed: () => _choisirAcacedDoc(ImageSource.camera)),
-                  IconButton(tooltip: 'Choisir un fichier', icon: const Icon(Icons.upload_file_outlined),
-                      onPressed: () => _choisirAcacedDoc(ImageSource.gallery)),
-                ],
-              ]),
+              ..._acacedChamps('Ex : 2022/9fd5-fd12'),
             ],
             if (_hasRayon) ...[
               const SizedBox(height: 16),

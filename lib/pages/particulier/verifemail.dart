@@ -199,6 +199,7 @@ Future<Object> registerElevage(String email, String password) async {
       'agrementPrefectoral': User_Info.agrementPrefectoral,
       'acacedNumero': User_Info.acacedNumero,
       'acacedDateObtention': User_Info.acacedDateObtention,
+      if (User_Info.acacedDateRenewal.isNotEmpty) 'acacedDateRenewal': User_Info.acacedDateRenewal,
       'acacedDocUrl': User_Info.acacedDocUrl,
       'isDog': User_Info.isDog,
       'isCat': User_Info.isCat,
@@ -297,6 +298,11 @@ Future<Object> registerElevage(String email, String password) async {
         'dog_breeds':            User_Info.dogBreeds,
         'cat_breeds':            User_Info.catBreeds,
         if (especesEleveesJson != null)    'especes_elevees':    especesEleveesJson,
+        // ACACED (éleveur) : jusqu'ici seulement dans Firestore, le site lit la base.
+        if (User_Info.acacedNumero.isNotEmpty) 'acaced': User_Info.acacedNumero,
+        if (User_Info.acacedDateObtention.length >= 10) 'acaced_date_obtention': User_Info.acacedDateObtention.substring(0, 10),
+        if (User_Info.acacedDateRenewal.length >= 10) 'acaced_date_renewal': User_Info.acacedDateRenewal.substring(0, 10),
+        if (User_Info.acacedDocUrl.isNotEmpty) 'acaced_doc_url': User_Info.acacedDocUrl,
         if (especesAccepteesJson != null)  'especes_acceptees':  especesAccepteesJson,
         if (User_Info.certifications.isNotEmpty) 'certifications': User_Info.certifications,
         if (User_Info.isPro || User_Info.isElevage) 'statut_pro': 'en_attente',
@@ -325,6 +331,17 @@ Future<Object> registerElevage(String email, String password) async {
     // du profil principal (create_main_profile_on_signup) ne copie pas cette
     // colonne, donc `user_profiles.numero_ordre` (colonne dédiée, déjà en
     // base) resterait vide. On le reporte ici explicitement.
+    // ACACED sur le profil élevage créé par le trigger (qui ne recopie pas les dates).
+    if (User_Info.isElevage && User_Info.acacedNumero.isNotEmpty) {
+      try {
+        await Supabase.instance.client.from('user_profiles').update({
+          'acaced_numero': User_Info.acacedNumero,
+          if (User_Info.acacedDateObtention.length >= 10) 'acaced_date_obtention': User_Info.acacedDateObtention.substring(0, 10),
+          if (User_Info.acacedDateRenewal.length >= 10) 'acaced_date_renewal': User_Info.acacedDateRenewal.substring(0, 10),
+          if (User_Info.acacedDocUrl.isNotEmpty) 'acaced_doc_url': User_Info.acacedDocUrl,
+        }).eq('uid', uid).eq('profile_type', 'eleveur');
+      } catch (_) {}
+    }
     if (User_Info.isPro && User_Info.especesElevees.isNotEmpty) {
       try {
         await Supabase.instance.client.from('user_profiles')
