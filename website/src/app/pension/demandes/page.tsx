@@ -80,6 +80,16 @@ export default function DemandesAccesPage() {
         if (a) { r.animal_nom = a.nom ?? 'Animal'; r.photo_url = a.photo_url; r.puce = a.identification; }
       }
     }
+    // Fiche pas (encore) lisible : nom et puce du registre de la pension.
+    const sansNom = rows.filter(r => !r.animal_nom).map(r => r.animal_id);
+    if (sansNom.length > 0) {
+      const { data: ent } = await supabase.from('pension_entrees').select('animal_id, animal_nom, puce')
+        .eq('pro_profile_id', proProfileId).in('animal_id', sansNom);
+      for (const r of rows) {
+        const e = r.animal_nom ? undefined : (ent ?? []).find(x => String(x.animal_id) === String(r.animal_id));
+        if (e) { r.animal_nom = e.animal_nom ?? undefined; r.puce = e.puce; }
+      }
+    }
     // Séjour terminé et rien à venir : retiré de la liste (sauf demande en attente).
     const partis = await animauxPartis(proProfileId, new Map(rows.map(r => [String(r.animal_id), r.granted_at ?? r.created_at])));
     setDemandes(rows.filter(r => r.statut === 'pending' || !partis.has(String(r.animal_id))));
@@ -90,6 +100,17 @@ export default function DemandesAccesPage() {
 
   const q = recherche.trim().toLowerCase();
   const qPuce = q.replace(/[\s-]/g, '');
+  // Demande restée sans réponse : retirée (le propriétaire ne peut plus y répondre).
+  async function supprimerDemande(d: PensionAcces) {
+    if (!confirm(`Supprimer la demande d'accès à la fiche de ${d.animal_nom ?? 'cet animal'} ? Vous pourrez en refaire une plus tard.`)) return;
+    const { data, error } = await supabase.from('animal_access').delete()
+      .eq('id', d.id).eq('statut', 'pending').select('id');
+    if (error) { alert("La demande n'a pas pu être supprimée. Réessayez."); return; }
+    // Aucune ligne : le propriétaire a répondu entre-temps.
+    if (!data?.length) alert('Cette demande a changé entre-temps : la liste est mise à jour.');
+    await load();
+  }
+
   const filtered = demandes.filter(d => (tab === 'tous' || d.statut === tab)
     && (!q || (d.animal_nom ?? '').toLowerCase().includes(q)
       || (!!qPuce && (d.puce ?? '').toLowerCase().replace(/[\s-]/g, '').includes(qPuce))));
@@ -160,7 +181,7 @@ export default function DemandesAccesPage() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {filtered.map(d => <DemandeCard key={d.id} demande={d} />)}
+            {filtered.map(d => <DemandeCard key={d.id} demande={d} onSupprimer={() => supprimerDemande(d)} />)}
           </div>
         )}
       </div>
@@ -170,7 +191,8 @@ export default function DemandesAccesPage() {
 
 // ── Carte demande ─────────────────────────────────────────────────────────────
 
-function DemandeCard({ demande }: { demande: PensionAcces }) {
+function DemandeCard({ demande, onSupprimer }: { demande: PensionAcces; onSupprimer: () => Promise<void> }) {
+  const [suppression, setSuppression] = useState(false);
   const router = useRouter();
   const [photoKo, setPhotoKo] = useState(false);
   const cfg = STATUT_CONFIG[demande.statut];
@@ -196,7 +218,7 @@ function DemandeCard({ demande }: { demande: PensionAcces }) {
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <span style={{ fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 16, color: '#1E2025' }}>
-              {demande.animal_nom ?? 'Animal'}
+              {demande.animal_nom ?? 'Animal (fiche non visible)'}
             </span>
             <span style={{
               padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
@@ -226,11 +248,17 @@ function DemandeCard({ demande }: { demande: PensionAcces }) {
               Le propriétaire a refusé la demande.
             </p>
           )}
-          {demande.statut === 'pending' && (
+          {demande.statut === 'pending' && (<>
             <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#e08000' }}>
               En attente de réponse du propriétaire.
             </p>
-          )}
+            <button disabled={suppression}
+              onClick={async () => { setSuppression(true); try { await onSupprimer(); } finally { setSuppression(false); } }}
+              style={{ marginTop: 8, padding: '8px 16px', background: 'white', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: 10,
+                fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: suppression ? 0.5 : 1 }}>
+              {suppression ? 'Suppression…' : 'Supprimer la demande'}
+            </button>
+          </>)}
         </div>
       </div>
     </div>

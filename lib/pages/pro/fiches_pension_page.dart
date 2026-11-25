@@ -27,6 +27,9 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
   List<_FicheItem> _items     = [];
   // Avec les animaux partis : scan de la puce (retour d'un ancien pensionnaire).
   List<_FicheItem> _tous      = [];
+  // Demandes d'accès sans réponse du propriétaire (miroir site : /pension/demandes).
+  List<_DemandeAttente> _attente = [];
+  String? _suppressionId;
   bool _loading               = true;
   String? _filterEspece;
 
@@ -116,6 +119,134 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
     }
   }
 
+  Future<List<_DemandeAttente>> _chargerAttente(String proProfileId) async {
+    try {
+      final rows = List<Map<String, dynamic>>.from(await _supa.from('animal_access')
+          .select('id, animal_id, created_at').eq('pro_profile_id', proProfileId).eq('statut', 'pending')
+          .order('created_at', ascending: false));
+      if (rows.isEmpty) return [];
+      final ids = rows.map((r) => r['animal_id'].toString()).toList();
+      final animaux = {
+        for (final a in List<Map<String, dynamic>>.from(await _supa.from('animaux')
+            .select('id, nom, photo_url, identification').inFilter('id', ids))) a['id'].toString(): a,
+      };
+      // Fiche pas (encore) lisible : nom et puce du registre de la pension.
+      final entrees = {
+        for (final e in List<Map<String, dynamic>>.from(await _supa.from('pension_entrees')
+            .select('animal_id, animal_nom, puce').eq('pro_profile_id', proProfileId).inFilter('animal_id', ids)))
+          e['animal_id'].toString(): e,
+      };
+      return [
+        for (final r in rows)
+          (() {
+            final id = r['animal_id'].toString();
+            final a = animaux[id], e = entrees[id];
+            return _DemandeAttente(
+              id: r['id'].toString(),
+              nom: a != null ? (a['nom'] ?? 'Animal').toString() : e?['animal_nom']?.toString(),
+              photoUrl: a?['photo_url']?.toString(),
+              puce: (a != null ? a['identification'] : e?['puce'])?.toString(),
+              date: r['created_at']?.toString(),
+            );
+          })(),
+      ];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  List<_DemandeAttente> get _attenteFiltrees {
+    final q = _searchCtrl.text.toLowerCase().trim();
+    final qPuce = q.replaceAll(RegExp(r'[\s\-]'), '');
+    if (q.isEmpty) return _attente;
+    return _attente.where((d) => (d.nom ?? '').toLowerCase().contains(q)
+        || (qPuce.isNotEmpty && (d.puce ?? '').toLowerCase().replaceAll(RegExp(r'[\s\-]'), '').contains(qPuce))).toList();
+  }
+
+  Future<void> _supprimerDemande(_DemandeAttente d) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Supprimer la demande', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text("Supprimer la demande d'accès à la fiche de ${d.nom ?? 'cet animal'} ? Vous pourrez en refaire une plus tard.",
+            style: const TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Conserver')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _suppressionId = d.id);
+    String? message;
+    try {
+      final r = await _supa.from('animal_access').delete().eq('id', d.id).eq('statut', 'pending').select('id');
+      // Aucune ligne : le propriétaire a répondu entre-temps.
+      if ((r as List).isEmpty) message = 'Cette demande a changé entre-temps : la liste est mise à jour.';
+    } catch (_) {
+      message = "La demande n'a pas pu être supprimée. Réessayez.";
+    }
+    if (!mounted) return;
+    setState(() => _suppressionId = null);
+    if (message != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message, style: const TextStyle(fontFamily: 'Galey'))));
+    }
+    await _load();
+  }
+
+  Widget _carteAttente(_DemandeAttente d) {
+    final initiale = Container(
+      width: 52, height: 52, alignment: Alignment.center,
+      decoration: BoxDecoration(color: _purple.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+      child: Text((d.nom ?? 'A').isEmpty ? 'A' : (d.nom ?? 'A')[0].toUpperCase(),
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 22, fontWeight: FontWeight.w700, color: _purple)),
+    );
+    final date = DateTime.tryParse(d.date ?? '')?.toLocal();
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        (d.photoUrl ?? '').isEmpty ? initiale : ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: CachedNetworkImage(imageUrl: d.photoUrl!, width: 52, height: 52, fit: BoxFit.cover,
+              errorWidget: (_, __, ___) => initiale),
+        ),
+        const SizedBox(width: 14),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(d.nom ?? 'Animal (fiche non visible)',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1E2025))),
+          if (date != null)
+            Text('Demande envoyée le ${DateFormat('dd/MM/yyyy').format(date)}',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
+          if ((d.puce ?? '').isNotEmpty)
+            Text('Puce : ${d.puce}', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF9CA3AF))),
+          const Text('En attente de réponse du propriétaire.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFE08000))),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: _suppressionId != null ? null : () => _supprimerDemande(d),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red.shade700,
+              side: BorderSide(color: Colors.red.shade700),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text(_suppressionId == d.id ? 'Suppression…' : 'Supprimer la demande',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          ),
+        ])),
+      ]),
+    );
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
@@ -130,9 +261,11 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
         proProfileId = proProfile?['id'] as String? ?? '';
       }
       if (proProfileId.isEmpty) {
-        if (mounted) setState(() { _items = []; _loading = false; });
+        if (mounted) setState(() { _items = []; _tous = []; _attente = []; _loading = false; });
         return;
       }
+      final attente = await _chargerAttente(proProfileId);
+      if (mounted) setState(() => _attente = attente);
       final acces = await _supa
           .from('animal_access')
           .select('animal_id, granted_by_profile_id, created_at, granted_at')
@@ -142,7 +275,7 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
 
       final ids = (acces as List).map((a) => a['animal_id'] as String).toList();
       if (ids.isEmpty) {
-        if (mounted) setState(() { _items = []; _loading = false; });
+        if (mounted) setState(() { _items = []; _tous = []; _loading = false; });
         return;
       }
 
@@ -260,6 +393,7 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered;
+    final attente = _attenteFiltrees;
     final especes  = _items.map((e) => e.espece).where((s) => s.isNotEmpty).toSet().toList()..sort();
 
     return Scaffold(
@@ -288,7 +422,7 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _purple))
-          : _items.isEmpty
+          : _items.isEmpty && _attente.isEmpty
               ? _buildEmpty()
               : Column(children: [
                   // Barre de recherche
@@ -336,15 +470,16 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
                     child: RefreshIndicator(
                       onRefresh: _load,
                       color: _purple,
-                      child: filtered.isEmpty
+                      child: filtered.isEmpty && attente.isEmpty
                           ? const Center(child: Text('Aucun résultat',
                               style: TextStyle(fontFamily: 'Galey', color: Colors.grey)))
                           : ListView.separated(
                               padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
-                              itemCount: filtered.length,
+                              itemCount: attente.length + filtered.length,
                               separatorBuilder: (_, __) => const SizedBox(height: 10),
                               itemBuilder: (_, i) {
-                                final item = filtered[i];
+                                if (i < attente.length) return _carteAttente(attente[i]);
+                                final item = filtered[i - attente.length];
                                 return _FicheCard(
                                   item: item,
                                   onViewFiche: () => Navigator.push(context, MaterialPageRoute(
@@ -432,6 +567,12 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
       ),
     ]),
   );
+}
+
+class _DemandeAttente {
+  final String id;
+  final String? nom, photoUrl, puce, date;
+  const _DemandeAttente({required this.id, this.nom, this.photoUrl, this.puce, this.date});
 }
 
 // ── Modèle ─────────────────────────────────────────────────────────────────────
