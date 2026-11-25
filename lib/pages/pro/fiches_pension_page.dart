@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart' show PensionEntreeSheet;
 import 'package:PetsMatch/services/chip_scanner_service.dart';
+import 'package:PetsMatch/utils/pensionnaires_partis.dart';
 
 class FichesPensionPage extends StatefulWidget {
   const FichesPensionPage({super.key});
@@ -24,9 +25,10 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   List<_FicheItem> _items     = [];
+  // Avec les animaux partis : scan de la puce (retour d'un ancien pensionnaire).
+  List<_FicheItem> _tous      = [];
   bool _loading               = true;
   String? _filterEspece;
-  bool _showSearch            = false;
 
   @override
   void initState() {
@@ -43,11 +45,12 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
 
   List<_FicheItem> get _filtered {
     final q = _searchCtrl.text.toLowerCase().trim();
+    final qPuce = q.replaceAll(RegExp(r'[\s\-]'), '');
     return _items.where((item) {
       if (_filterEspece != null && item.espece != _filterEspece) return false;
       if (q.isNotEmpty) {
         final matchNom  = item.animalNom.toLowerCase().contains(q);
-        final matchPuce = (item.puce ?? '').toLowerCase().contains(q);
+        final matchPuce = qPuce.isNotEmpty && (item.puce ?? '').toLowerCase().replaceAll(RegExp(r'[\s\-]'), '').contains(qPuce);
         if (!matchNom && !matchPuce) return false;
       }
       return true;
@@ -95,7 +98,7 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
 
   void _matchAndOpen(String chip) {
     final normalized = chip.replaceAll(RegExp(r'[\s\-]'), '');
-    final match = _items.where((item) {
+    final match = _tous.where((item) {
       final p = (item.puce ?? '').replaceAll(RegExp(r'[\s\-]'), '');
       return p == normalized;
     }).toList();
@@ -132,7 +135,7 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
       }
       final acces = await _supa
           .from('animal_access')
-          .select('animal_id, granted_by_profile_id, created_at')
+          .select('animal_id, granted_by_profile_id, created_at, granted_at')
           .eq('pro_profile_id', proProfileId)
           .eq('statut', 'active')
           .order('created_at', ascending: false);
@@ -238,7 +241,17 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
         );
       }).toList();
 
-      if (mounted) setState(() { _items = items; _loading = false; });
+      // Séjour terminé et rien à venir : retiré de la liste.
+      final partis = await animauxPartis(proProfileId, {
+        for (final a in acces as List) a['animal_id'].toString(): (a['granted_at'] ?? a['created_at'] ?? '').toString(),
+      });
+      if (mounted) {
+        setState(() {
+          _tous = items;
+          _items = items.where((i) => !partis.contains(i.animalId)).toList();
+          _loading = false;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -271,14 +284,6 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
             tooltip: 'Saisir la puce manuellement',
             onPressed: _enterPuceManually,
           ),
-          IconButton(
-            icon: Icon(_showSearch ? Icons.search_off_rounded : Icons.search_rounded),
-            tooltip: 'Rechercher',
-            onPressed: () => setState(() {
-              _showSearch = !_showSearch;
-              if (!_showSearch) _searchCtrl.clear();
-            }),
-          ),
         ],
       ),
       body: _loading
@@ -287,12 +292,10 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
               ? _buildEmpty()
               : Column(children: [
                   // Barre de recherche
-                  if (_showSearch)
-                    Padding(
+                  Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                       child: TextField(
                         controller: _searchCtrl,
-                        autofocus: true,
                         style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
                         decoration: InputDecoration(
                           hintText: 'Nom ou numéro de puce…',

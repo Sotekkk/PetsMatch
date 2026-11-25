@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { animauxPartis } from '@/lib/pensionnaires-partis';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -13,7 +14,10 @@ interface PensionAcces {
   animal_id: string;
   statut: 'pending' | 'active' | 'revoked';
   animal_nom?: string;
+  photo_url?: string | null;
+  puce?: string | null;
   created_at: string;
+  granted_at?: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -40,6 +44,7 @@ export default function DemandesAccesPage() {
 
   const [demandes, setDemandes] = useState<PensionAcces[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [recherche, setRecherche] = useState('');
   const [tab, setTab]           = useState<'pending' | 'active' | 'revoked' | 'tous'>('tous');
 
 
@@ -62,26 +67,32 @@ export default function DemandesAccesPage() {
     }
     if (!proProfileId) { setDemandes([]); setLoading(false); return; }
     const { data } = await supabase.from('animal_access')
-      .select('id, animal_id, statut, created_at')
+      .select('id, animal_id, statut, created_at, granted_at')
       .eq('pro_profile_id', proProfileId)
       .order('created_at', { ascending: false });
     const rows = (data ?? []) as PensionAcces[];
     const ids = rows.map(r => r.animal_id);
     if (ids.length > 0) {
-      const { data: animaux } = await supabase.from('animaux').select('id, nom').in('id', ids);
-      const nomById: Record<string, string> = {};
-      for (const a of animaux ?? []) nomById[a.id] = a.nom ?? 'Animal';
-      for (const r of rows) r.animal_nom = nomById[r.animal_id];
+      const { data: animaux } = await supabase.from('animaux').select('id, nom, photo_url, identification').in('id', ids);
+      const parId = new Map((animaux ?? []).map(a => [String(a.id), a]));
+      for (const r of rows) {
+        const a = parId.get(String(r.animal_id));
+        if (a) { r.animal_nom = a.nom ?? 'Animal'; r.photo_url = a.photo_url; r.puce = a.identification; }
+      }
     }
-    setDemandes(rows);
+    // Séjour terminé et rien à venir : retiré de la liste (sauf demande en attente).
+    const partis = await animauxPartis(proProfileId, new Map(rows.map(r => [String(r.animal_id), r.granted_at ?? r.created_at])));
+    setDemandes(rows.filter(r => r.statut === 'pending' || !partis.has(String(r.animal_id))));
     setLoading(false);
   }, [user, activeProfileId]);
 
   useEffect(() => { load(); }, [load]);
 
-  const filtered = demandes.filter(d =>
-    tab === 'tous' ? true : d.statut === tab
-  );
+  const q = recherche.trim().toLowerCase();
+  const qPuce = q.replace(/[\s-]/g, '');
+  const filtered = demandes.filter(d => (tab === 'tous' || d.statut === tab)
+    && (!q || (d.animal_nom ?? '').toLowerCase().includes(q)
+      || (!!qPuce && (d.puce ?? '').toLowerCase().replace(/[\s-]/g, '').includes(qPuce))));
 
   const counts = {
     tous:    demandes.length,
@@ -132,16 +143,20 @@ export default function DemandesAccesPage() {
           borderRadius: 12, padding: '12px 16px', marginBottom: 20,
           fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#374151', lineHeight: 1.5,
         }}>
-          🔑 Scannez la puce d'un animal depuis l'application mobile pour envoyer une demande d'accès à son propriétaire.
+          Scannez la puce d'un animal depuis l'application mobile pour envoyer une demande d'accès à son propriétaire.
           Le propriétaire reçoit une notification et peut autoriser ou refuser la consultation de la fiche.
         </div>
+
+        <input value={recherche} onChange={e => setRecherche(e.target.value)}
+          placeholder="Rechercher par nom ou numéro de puce" aria-label="Rechercher par nom ou numéro de puce"
+          style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', borderRadius: 12, border: '1px solid #d1d5db',
+            background: 'white', fontFamily: 'Galey, sans-serif', fontSize: 14, marginBottom: 16, outline: 'none' }} />
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: 60, color: '#999' }}>Chargement…</div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 60, color: '#aaa' }}>
-            <div style={{ fontSize: 48, marginBottom: 12 }}>🔑</div>
-            <p style={{ fontFamily: 'Galey, sans-serif', fontSize: 16 }}>Aucune demande</p>
+            <p style={{ fontFamily: 'Galey, sans-serif', fontSize: 16 }}>{q ? 'Aucun résultat' : 'Aucune demande'}</p>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -156,6 +171,8 @@ export default function DemandesAccesPage() {
 // ── Carte demande ─────────────────────────────────────────────────────────────
 
 function DemandeCard({ demande }: { demande: PensionAcces }) {
+  const router = useRouter();
+  const [photoKo, setPhotoKo] = useState(false);
   const cfg = STATUT_CONFIG[demande.statut];
 
   return (
@@ -164,13 +181,17 @@ function DemandeCard({ demande }: { demande: PensionAcces }) {
       border: '1px solid #e5e7eb', boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        {/* Icône animal */}
-        <div style={{
-          width: 48, height: 48, borderRadius: 10,
+        {/* Photo de l'animal, sinon son initiale */}
+        {demande.photo_url && !photoKo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={demande.photo_url} alt={demande.animal_nom ?? 'Animal'} onError={() => setPhotoKo(true)}
+            style={{ width: 64, height: 64, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
+        ) : <div style={{
+          width: 64, height: 64, borderRadius: 10,
           background: 'rgba(12,92,108,0.08)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 24, flexShrink: 0,
-        }}>🐾</div>
+          fontSize: 24, flexShrink: 0, fontFamily: 'Galey, sans-serif', fontWeight: 700, color: TEAL,
+        }}>{(demande.animal_nom ?? 'A').charAt(0).toUpperCase()}</div>}
 
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -188,11 +209,18 @@ function DemandeCard({ demande }: { demande: PensionAcces }) {
             Demande envoyée le {fmtDate(demande.created_at)}
           </p>
 
-          {demande.statut === 'active' && (
-            <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#6E9E57', fontWeight: 600 }}>
-              ✓ Le propriétaire a autorisé l'accès à cette fiche.
-            </p>
+          {demande.puce && (
+            <p style={{ margin: '0 0 4px', fontFamily: 'Galey, sans-serif', fontSize: 12, color: '#9ca3af' }}>Puce : {demande.puce}</p>
           )}
+
+          {demande.statut === 'active' && (<>
+            <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#6E9E57', fontWeight: 600 }}>
+              Le propriétaire a autorisé l'accès à cette fiche.
+            </p>
+            <button onClick={() => router.push(`/pension/fiche/${demande.animal_id}`)}
+              style={{ marginTop: 8, padding: '8px 16px', background: TEAL, color: 'white', border: 'none', borderRadius: 10,
+                fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Voir la fiche</button>
+          </>)}
           {demande.statut === 'revoked' && (
             <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#d32f2f' }}>
               Le propriétaire a refusé la demande.
@@ -200,7 +228,7 @@ function DemandeCard({ demande }: { demande: PensionAcces }) {
           )}
           {demande.statut === 'pending' && (
             <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#e08000' }}>
-              ⏳ En attente de réponse du propriétaire.
+              En attente de réponse du propriétaire.
             </p>
           )}
         </div>
