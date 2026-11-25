@@ -15,6 +15,7 @@ import { Icone, Puce, BORDURE, OMBRE, TEAL } from '@/components/dashboard/kit';
 import { chargerTableauBord, animauxDuProfil, stockBas, ymd, type DonneesTB, type LigneTB, HORIZON_JOURS } from '@/lib/tableau-bord-eleveur';
 import PorteeSoinModal, { type SoinAnimal } from '@/components/animaux/PorteeSoinModal';
 import { useSoinDepuisTache } from '@/components/animaux/SoinDepuisTache';
+import { cocherTachesSoinFaites } from '@/lib/soin-depuis-tache';
 import AnnonceStatsModal from '@/components/AnnonceStatsModal';
 import ValiderSoinsProtocoleModal from '@/components/planning/ValiderSoinsProtocoleModal';
 import { basculerRoutine, basculerTacheManuelle } from '@/lib/valider-tache';
@@ -208,6 +209,25 @@ export default function EleveurDashboard() {
     setSoinOuvert({ ligne: l, animaux, ownerUid, dateRappel });
   }
 
+  // Dernière tâche cochée (retirée de l'accueil) : bandeau « Annuler » quelques secondes.
+  const [derniereCochee, setDerniereCochee] = useState<LigneTB | null>(null);
+  useEffect(() => {
+    if (!derniereCochee) return;
+    const h = setTimeout(() => setDerniereCochee(null), 6000);
+    return () => clearTimeout(h);
+  }, [derniereCochee]);
+  async function annulerCoche() {
+    const l = derniereCochee;
+    if (!user || !l?.cochable) return;
+    setDerniereCochee(null);
+    const qui = { uid: user.uid, profileId: activeProfileId || null };
+    try {
+      if (l.cochable.table === 'taches_elevage') await basculerTacheManuelle(l.cochable.ligne, qui);
+      else await basculerRoutine(l.cochable.ligne, qui);
+    } catch { /* l'agenda reste la référence */ }
+    chargerTB();
+  }
+
   async function cocher(l: LigneTB) {
     if (!user || !l.cochable || enCours) return;
     setEnCours(l.cle);
@@ -216,12 +236,12 @@ export default function EleveurDashboard() {
       if (l.cochable.table === 'taches_elevage') {
         const statut = await basculerTacheManuelle(l.cochable.ligne, qui);
         const ligne = { ...l.cochable.ligne, statut };
-        // La tâche cochée reste visible, cochée.
-        setDonnees(d => d && ({ ...d, aFaire: d.aFaire.map(x => x.cle === l.cle ? { ...x, fait: statut === 'fait', cochable: { table: 'taches_elevage', ligne } } : x) }));
+        // Cochée : retirée de l'accueil (elle reste, faite, dans l'agenda), avec « Annuler ».
+        if (statut === 'fait') { setDonnees(d => d && ({ ...d, aFaire: d.aFaire.filter(x => x.cle !== l.cle) })); setDerniereCochee({ ...l, cochable: { table: 'taches_elevage', ligne } }); }
       } else {
         const statut = await basculerRoutine(l.cochable.ligne, qui);
         const ligne = { ...l.cochable.ligne, statut };
-        setDonnees(d => d && ({ ...d, aFaire: d.aFaire.map(x => x.cle === l.cle ? { ...x, fait: statut === 'fait', cochable: { table: 'plan_taches', ligne } } : x) }));
+        if (statut === 'fait') { setDonnees(d => d && ({ ...d, aFaire: d.aFaire.filter(x => x.cle !== l.cle) })); setDerniereCochee({ ...l, cochable: { table: 'plan_taches', ligne } }); }
       }
     } catch {
       alert("La tâche n'a pas pu être mise à jour. Réessayez depuis l'agenda.");
@@ -425,6 +445,12 @@ export default function EleveurDashboard() {
         </div>
       </div>
       {soinTache.modal}
+      {derniereCochee && (
+        <div role="status" className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-[#1E2025] text-white text-sm rounded-xl px-4 py-3 shadow-lg max-w-[calc(100vw-32px)]">
+          <span>Tâche validée. Elle reste visible dans l&apos;agenda.</span>
+          <button type="button" onClick={annulerCoche} className="font-semibold text-[#9FD38A] hover:underline">Annuler</button>
+        </div>
+      )}
       {soinOuvert && soinOuvert.ligne.soin && (
         <PorteeSoinModal
           titre={soinOuvert.ligne.titre}
@@ -437,7 +463,12 @@ export default function EleveurDashboard() {
             selection: soinOuvert.ligne.soin.animalIds,
             dateRappel: soinOuvert.dateRappel,
           }}
-          onSaved={chargerTB}
+          onSaved={async () => {
+            // Tâches de l'agenda du même soin (« … en retard — Luna ») : cochées.
+            const liees = soinOuvert.ligne.tachesLiees ?? [];
+            if (liees.length && user) await cocherTachesSoinFaites(liees, { uid: user.uid, profileId: activeProfileId || null });
+            chargerTB();
+          }}
           onClose={() => setSoinOuvert(null)} />
       )}
       {protoOuvert?.protocole && user && (

@@ -6,9 +6,12 @@
 //   • Soins    : rappels du CARNET (vaccinations / vermifuges / antiparasitaires,
 //                dernière ligne de chaque soin, règle de functions/sante.js), soins des
 //                protocoles (plan_taches, type_acte sanitaire) et tâches
-//                « Vaccin — … » des rappels (masquées si le rappel du carnet du
-//                même jour est listé). Les copies d'agenda « Rappel vaccin — … »
+//                « Vaccin — … » / « Antiparasitaire en retard — … » des rappels
+//                (masquées quand le carnet liste déjà ce soin pour ces animaux :
+//                elles sont rattachées à la ligne du carnet et cochées quand le
+//                soin y est enregistré). Les copies d'agenda « Rappel vaccin — … »
 //                ne sont pas reprises ;
+// Tableau de bord : les lignes faites n'apparaissent pas (elles restent dans l'agenda).
 //   • Agenda   : autres événements + RDV vétérinaires à venir ;
 //   • Activité : contrats à envoyer / à signer, demandes de récupération.
 // Filtres de profil : ceux de l'agenda (agenda_page.dart _loadTasks).
@@ -62,6 +65,9 @@ class LigneTB {
   final SoinTB? soin;
   /// Soins d'un protocole le même jour (une ligne) : tâches non faites à valider ensemble.
   final List<Map<String, dynamic>>? protocole;
+  /// Rappel du carnet : tâches de l'agenda du même soin (« Antiparasitaire en
+  /// retard — Luna »…), masquées ici et cochées quand le soin est enregistré.
+  final List<Map<String, dynamic>> tachesLiees = [];
   LigneTB({
     required this.cle, required this.titre, required this.date, this.heure, this.animal,
     this.responsable, this.fait = false, this.retard = false, this.couleur, this.sousTitre,
@@ -102,7 +108,14 @@ String sansPictos(String t) => t
     .replaceAll(RegExp(r'\s{2,}'), ' ')
     .trim();
 
-final _acteTitre = RegExp(r'^(vaccin|vermifuge|antiparasitaire|traitement)s?\s+—\s+', caseSensitive: false);
+// « Antiparasitaire — Luna » (jour J) et « Antiparasitaire en retard — Luna » (functions/sante.js).
+final _acteTitre = RegExp(r'^(vaccin|vermifuge|antiparasitaire|traitement)s?(?:\s+en\s+retard)?\s+—\s+', caseSensitive: false);
+const _acteDeType = {'vaccination': 'vaccin', 'vermifuge': 'vermifuge', 'antiparasitaire': 'antiparasitaire'};
+/// Noms d'une tâche groupée : « Luna, Arya, Tokyo +2 ».
+List<String> _nomsTache(Object? v) => [
+      for (final n in (v ?? '').toString().replaceAll(RegExp(r'\s*\+\d+$'), '').split(','))
+        if (n.trim().isNotEmpty) n.trim().toLowerCase()
+    ];
 final _acteRappel = RegExp(r'^rappel\s+(vaccin|vermifuge|antiparasitaire)\s+—\s+', caseSensitive: false);
 String _acte(String titre, RegExp re) => (re.firstMatch(sansPictos(titre))?.group(1) ?? '').toLowerCase();
 
@@ -232,8 +245,15 @@ Future<DonneesTB> chargerTableauBord({
   }
 
   final carnet = await carnetF;
-  soins.addAll(_grouperRappels(carnet));
-  final soinsDuJour = {for (final l in carnet) l.cleSoin!};
+  final lignesCarnet = _grouperRappels(carnet);
+  soins.addAll(lignesCarnet);
+  // Soins déjà listés depuis le carnet, quel que soit le jour : acte|animal et acte|nom.
+  final carnetIds = <String>{}, carnetNoms = <String>{};
+  for (final l in carnet) {
+    final acte = l.cleSoin!.split('|')[1];
+    carnetIds.add('$acte|${l.animalId}');
+    if ((l.animal ?? '').isNotEmpty) carnetNoms.add('$acte|${l.animal!.toLowerCase()}');
+  }
   for (final t in taches) {
     final date = _jour(t['date'].toString());
     final fait = t['statut'] == 'fait';
@@ -257,8 +277,23 @@ Future<DonneesTB> chargerTableauBord({
         cible: acte.isNotEmpty && !fait ? CibleTB.tacheSoin : CibleTB.jour,
         tableCochable: acte.isNotEmpty ? null : 'taches_elevage', brut: t);
     if (acte.isNotEmpty) {
-      // Même rappel déjà listé depuis le carnet : la tâche du jour n'est pas répétée.
-      if ((t['animal_id']?.toString() ?? '').isNotEmpty && soinsDuJour.contains('${_ymd(date)}|$acte|${t['animal_id']}')) continue;
+      // Même soin déjà listé depuis le carnet (rappel groupé « Virbac » des 5
+      // chiens) : la tâche n'est pas répétée, elle est rattachée à cette ligne
+      // et cochée quand le soin y est enregistré.
+      final aid = t['animal_id']?.toString() ?? '';
+      final noms = _nomsTache(t['animal_nom']);
+      final couverte = aid.isNotEmpty ? carnetIds.contains('$acte|$aid')
+          : noms.isNotEmpty && noms.every((n) => carnetNoms.contains('$acte|$n'));
+      if (couverte) {
+        if (!fait) {
+          for (final l in lignesCarnet) {
+            if (_acteDeType[l.soin?.typeActe] != acte) continue;
+            final lNoms = (l.animal ?? '').toLowerCase().split(', ');
+            if (aid.isNotEmpty ? (l.soin?.animalIds.contains(aid) ?? false) : noms.any(lNoms.contains)) l.tachesLiees.add(t);
+          }
+        }
+        continue;
+      }
       soins.add(ligne);
     } else {
       aFaire.add(ligne);
@@ -286,6 +321,8 @@ Future<DonneesTB> chargerTableauBord({
     final h = (a.heure ?? '99').compareTo(b.heure ?? '99');
     return h != 0 ? h : a.titre.compareTo(b.titre);
   }
+  // Faites : retirées de l'accueil (plus lisible), elles restent dans l'agenda.
+  aFaire.removeWhere((l) => l.fait); soins.removeWhere((l) => l.fait); agenda.removeWhere((l) => l.fait);
   aFaire.sort(tri); soins.sort(tri); agenda.sort(tri);
 
   // Contrats et récupérations : seulement les animaux de CE profil.

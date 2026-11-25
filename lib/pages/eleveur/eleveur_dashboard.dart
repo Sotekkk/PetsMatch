@@ -168,6 +168,8 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
         acteInitial: soin.typeActe, produitInitial: soin.produit,
         rappelInitial: soin.ecartJours == null ? null : DateTime.now().add(Duration(days: soin.ecartJours!)),
         selectionInitiale: soin.animalIds.toSet());
+    // Tâches de l'agenda du même soin (« … en retard — Luna ») : cochées.
+    if (ok && l.tachesLiees.isNotEmpty) await cocherTachesSoinFaites(l.tachesLiees);
     if (ok && mounted) _charger();
   }
 
@@ -274,8 +276,25 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
       final statut = l.tableCochable == 'taches_elevage'
           ? await basculerTacheManuelle(l.brut!, uid: uid, profileId: pid)
           : await basculerRoutine(l.brut!, uid: uid, profileId: pid);
-      // La tâche cochée reste visible, cochée.
-      if (mounted) setState(() { l.brut!['statut'] = statut; l.fait = statut == 'fait'; });
+      // Cochée : retirée de l'accueil (elle reste, faite, dans l'agenda), avec « Annuler ».
+      if (mounted) {
+        setState(() {
+          l.brut!['statut'] = statut; l.fait = statut == 'fait';
+          if (l.fait) _donnees?.aFaire.remove(l);
+        });
+        if (l.fait) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(behavior: SnackBarBehavior.floating,
+              content: const Text("Tâche validée. Elle reste visible dans l'agenda.", style: TextStyle(fontFamily: 'Galey')),
+              action: SnackBarAction(label: 'Annuler', onPressed: () async {
+                try {
+                  l.tableCochable == 'taches_elevage'
+                      ? await basculerTacheManuelle(l.brut!, uid: uid, profileId: pid)
+                      : await basculerRoutine(l.brut!, uid: uid, profileId: pid);
+                } catch (_) {}
+                if (mounted) _charger();
+              })));
+        }
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(behavior: SnackBarBehavior.floating,

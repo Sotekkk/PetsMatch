@@ -6,15 +6,18 @@
 //   • Soins     : rappels du CARNET (vaccinations / vermifuges / antiparasitaires,
 //                 date_rappel de la dernière ligne de chaque soin, même règle
 //                 de renouvellement que functions/sante.js), soins des protocoles
-//                 (plan_taches, type_acte sanitaire) et tâches « Vaccin — … »
-//                 posées par les rappels (masquées quand le rappel du carnet
-//                 du même jour est déjà listé). Les événements d'agenda
+//                 (plan_taches, type_acte sanitaire) et tâches « Vaccin — … » /
+//                 « Antiparasitaire en retard — … » posées par les rappels
+//                 (masquées quand le carnet liste déjà ce soin pour ces animaux :
+//                 rattachées à la ligne du carnet, cochées quand le soin y est
+//                 enregistré). Les événements d'agenda
 //                 « Rappel vaccin — … » (copies du carnet) ne sont pas repris ;
 //   • Agenda    : autres événements de l'agenda + RDV vétérinaires à venir
 //                 (taches_elevage.rdv_veto_cabinet) ;
 //   • Activité  : contrats à envoyer / à signer, demandes de récupération.
 // Filtres de profil : ceux de l'agenda de l'élevage (app/elevage/agenda/page.tsx,
 // withProfileFilter + sansAutresProfils). Miroir appli : lib/utils/tableau_bord_eleveur.dart.
+// Les lignes faites n'apparaissent pas à l'accueil (elles restent dans l'agenda).
 import { supabase } from '@/lib/supabase';
 import { ACTES_CARNET } from '@/lib/carnet-depuis-tache';
 import { sansAutresProfils } from '@/lib/cloisonnement-profils';
@@ -47,6 +50,9 @@ export interface LigneTB {
   /** Tâche « rappel du carnet » (Antiparasitaire — 5 animaux…) : vérifiée puis
    *  formulaire de soin (components/animaux/SoinDepuisTache.tsx). */
   tacheSoin?: TacheBrute;
+  /** Rappel du carnet : tâches de l'agenda du même soin (« Antiparasitaire en
+   *  retard — Luna »…), masquées ici et cochées quand le soin est enregistré. */
+  tachesLiees?: TacheBrute[];
   /** Coche directe possible (tâches simples uniquement). */
   cochable?: { table: 'taches_elevage'; ligne: TacheBrute } | { table: 'plan_taches'; ligne: RoutineBrute };
 }
@@ -197,7 +203,11 @@ export function sansPictos(t: string): string {
   return t.replace(/[\p{Extended_Pictographic}️‍]/gu, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-const ACTE_TITRE = /^(vaccin|vermifuge|antiparasitaire|traitement)s?\s+—\s+/i;
+// « Antiparasitaire — Luna » (jour J) et « Antiparasitaire en retard — Luna » (functions/sante.js).
+const ACTE_TITRE = /^(vaccin|vermifuge|antiparasitaire|traitement)s?(?:\s+en\s+retard)?\s+—\s+/i;
+const ACTE_DE_TYPE: Record<string, string> = { vaccination: 'vaccin', vermifuge: 'vermifuge', antiparasitaire: 'antiparasitaire' };
+/** Noms d'une tâche groupée : « Luna, Arya, Tokyo +2 ». */
+const nomsTache = (v?: string | null) => (v ?? '').replace(/\s*\+\d+$/, '').split(',').map(n => n.trim().toLowerCase()).filter(Boolean);
 const ACTE_RAPPEL = /^rappel\s+(vaccin|vermifuge|antiparasitaire)\s+—\s+/i;
 const acteDe = (titre: string, re: RegExp) => (sansPictos(titre).match(re)?.[1] ?? '').toLowerCase();
 
@@ -313,8 +323,15 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
   }
 
   const carnet = await carnetP;
-  soins.push(...grouperRappels(carnet, association ? '/association/animaux' : '/mes-animaux'));
-  const soinsDuJour = new Set(carnet.map(l => l.cleSoin!));
+  const lignesCarnet = grouperRappels(carnet, association ? '/association/animaux' : '/mes-animaux');
+  soins.push(...lignesCarnet);
+  // Soins déjà listés depuis le carnet, quel que soit le jour : acte|animal et acte|nom.
+  const carnetIds = new Set<string>(), carnetNoms = new Set<string>();
+  for (const l of carnet) {
+    const acte = l.cleSoin!.split('|')[1];
+    carnetIds.add(`${acte}|${l.soin?.animalIds[0]}`);
+    if (l.animal) carnetNoms.add(`${acte}|${l.animal.toLowerCase()}`);
+  }
   for (const t of taches) {
     const date = t.date.slice(0, 10);
     const fait = t.statut === 'fait';
@@ -334,8 +351,22 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
       responsable: resp, fait, retard: !fait && date < today, lien: lienJ(date),
     };
     if (acte) {
-      // Même rappel déjà listé depuis le carnet : la tâche du jour n'est pas répétée.
-      if (t.animal_id && soinsDuJour.has(`${date}|${acte}|${t.animal_id}`)) continue;
+      // Même soin déjà listé depuis le carnet (rappel groupé « Virbac » des 5
+      // chiens) : la tâche n'est pas répétée, elle est rattachée à cette ligne
+      // et cochée quand le soin y est enregistré.
+      const aid = t.animal_id ? String(t.animal_id) : '';
+      const noms = nomsTache(t.animal_nom);
+      const couverte = aid ? carnetIds.has(`${acte}|${aid}`) : noms.length > 0 && noms.every(n => carnetNoms.has(`${acte}|${n}`));
+      if (couverte) {
+        if (!fait) {
+          for (const l of lignesCarnet) {
+            if (ACTE_DE_TYPE[l.soin?.typeActe ?? ''] !== acte) continue;
+            const lNoms = (l.animal ?? '').toLowerCase().split(', ');
+            if (aid ? l.soin?.animalIds.includes(aid) : noms.some(n => lNoms.includes(n))) l.tachesLiees = [...(l.tachesLiees ?? []), t];
+          }
+        }
+        continue;
+      }
       soins.push({ ...ligne, sousTitre: 'Rappel du carnet', tacheSoin: t });
     } else {
       aFaire.push({ ...ligne, cochable: { table: 'taches_elevage', ligne: t } });
@@ -359,6 +390,11 @@ export async function chargerTableauBord(p: { userUid: string; ownerUid: string;
   const tri = (a: LigneTB, b: LigneTB) =>
     Number(b.retard) - Number(a.retard) || a.date.localeCompare(b.date) || Number(a.fait) - Number(b.fait)
     || (a.heure ?? '99').localeCompare(b.heure ?? '99') || a.titre.localeCompare(b.titre);
+  // Faites : retirées de l'accueil (plus lisible), elles restent dans l'agenda.
+  for (const liste of [aFaire, soins, agenda]) {
+    const ouvertes = liste.filter(l => !l.fait);
+    liste.splice(0, liste.length, ...ouvertes);
+  }
   aFaire.sort(tri); soins.sort(tri); agenda.sort(tri);
 
   // Contrats et récupérations : seulement les animaux de CE profil.

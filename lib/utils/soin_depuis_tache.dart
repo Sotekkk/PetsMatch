@@ -17,24 +17,22 @@ const _kActes = <String, _Acte>{
   'vermifuge': (acte: 'vermifuge', table: 'vermifuges', col: 'produit', label: 'Vermifuge'),
   'antiparasitaire': (acte: 'antiparasitaire', table: 'antiparasitaires', col: 'produit', label: 'Antiparasitaire'),
 };
-// Titre posé par functions/sante.js (pictogramme éventuel devant).
-final _reTitre = RegExp(r'^[^A-Za-zÀ-ÿ]*(Vaccin|Vermifuge|Antiparasitaire) — ');
+// Titre posé par functions/sante.js (pictogramme éventuel devant) : jour J
+// « Antiparasitaire — Luna » ou relance « Antiparasitaire en retard — Luna ».
+final _reTitre = RegExp(r'^[^A-Za-zÀ-ÿ]*(Vaccin|Vermifuge|Antiparasitaire)( en retard)? — ');
 
 bool estTacheRappelSoin(String? titre) => _reTitre.hasMatch(titre ?? '');
 
 const _partis = {'sorti', 'decede', 'adopte', 'transfere', 'vendu'};
 
-/// true : la tâche est prise en charge ici (cochée, ou formulaire ouvert).
-Future<bool> traiterTacheSoin(BuildContext context, Map<String, dynamic> tache, {VoidCallback? apres}) async {
-  if (tache['statut'] == 'fait' || !estTacheRappelSoin(tache['titre']?.toString())) return false;
-  final supa = Supabase.instance.client;
-  final uid = FirebaseAuth.instance.currentUser?.uid;
-  if (uid == null) return false;
-  try {
+/// Soin d'une tâche « rappel du carnet » : acte, produit, animaux, et ceux
+/// pour qui le soin est déjà au carnet. null : pas une tâche de rappel.
+Future<({Map<String, dynamic> t, _Acte a, String produit, List<String> ids, Set<String> faits})?> _etatTache(String tacheId) async {
+    final supa = Supabase.instance.client;
     // select() complet : soin_rappel n'existe qu'après migration_taches_soin_rappel.sql.
-    final t = await supa.from('taches_elevage').select().eq('id', tache['id'].toString()).maybeSingle();
+    final t = await supa.from('taches_elevage').select().eq('id', tacheId).maybeSingle();
     final m = _reTitre.firstMatch(t?['titre']?.toString() ?? '');
-    if (t == null || m == null) return false;
+    if (t == null || m == null) return null;
     final a = _kActes[m.group(1)!.toLowerCase()]!;
     var produit = '';
     var ids = <String>[];
@@ -42,6 +40,13 @@ Future<bool> traiterTacheSoin(BuildContext context, Map<String, dynamic> tache, 
     if (sr is Map && sr['animal_ids'] is List && (sr['animal_ids'] as List).isNotEmpty) {
       produit = (sr['produit'] ?? '').toString().trim();
       ids = [for (final x in sr['animal_ids'] as List) x.toString()];
+    } else if (m.group(2) != null) {
+      // Relance « en retard » : notes = « Produit pour Luna devait être fait… ».
+      final notes = (t['notes'] ?? '').toString();
+      final i = notes.indexOf(' pour ');
+      produit = i > 0 ? notes.substring(0, i).trim() : '';
+      if (produit.toLowerCase() == a.label.toLowerCase()) produit = '';
+      if ((t['animal_id']?.toString() ?? '').isNotEmpty) ids = [t['animal_id'].toString()];
     } else {
       // Tâches créées avant la colonne : notes = « Produit — Animaux : A, B, C ».
       final parts = (t['notes'] ?? '').toString().trim().split(' — ');
@@ -51,7 +56,7 @@ Future<bool> traiterTacheSoin(BuildContext context, Map<String, dynamic> tache, 
       } else {
         final liste = parts.firstWhere((x) => x.startsWith('Animaux :'), orElse: () => '');
         final noms = [for (final n in liste.replaceFirst('Animaux :', '').split(',')) if (n.trim().isNotEmpty) n.trim()];
-        if (noms.isEmpty) return false;
+        if (noms.isEmpty) return null;
         final rows = await supa.from('animaux').select('id, nom, statut')
             .eq('uid_eleveur', t['uid_eleveur'].toString()).inFilter('nom', noms);
         final parNom = <String, String>{};
@@ -62,7 +67,7 @@ Future<bool> traiterTacheSoin(BuildContext context, Map<String, dynamic> tache, 
         ids = [for (final n in noms) if (parNom[n] != null) parNom[n]!];
       }
     }
-    if (ids.isEmpty) return false;
+    if (ids.isEmpty) return null;
 
     // Déjà au carnet : même produit (ou n'importe lequel si inconnu), donné le
     // jour du rappel ou après, ou renouvelé avec un rappel plus lointain.
@@ -75,6 +80,39 @@ Future<bool> traiterTacheSoin(BuildContext context, Map<String, dynamic> tache, 
       final d10 = d.length >= 10 ? d.substring(0, 10) : '', dr10 = dr.length >= 10 ? dr.substring(0, 10) : '';
       if ((d10.isNotEmpty && d10.compareTo(jour) >= 0) || (dr10.isNotEmpty && dr10.compareTo(jour) > 0)) faits.add(r['animal_id'].toString());
     }
+    return (t: t, a: a, produit: produit, ids: ids, faits: faits);
+}
+
+/// Soin enregistré depuis le rappel du carnet (accueil) : les tâches de
+/// l'agenda du même soin dont tous les animaux sont maintenant au carnet sont
+/// cochées. Rend le nombre de tâches cochées.
+Future<int> cocherTachesSoinFaites(List<Map<String, dynamic>> taches) async {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return 0;
+  var n = 0;
+  for (final tache in taches) {
+    try {
+      final e = await _etatTache(tache['id'].toString());
+      if (e == null || e.t['statut'] == 'fait' || e.ids.any((i) => !e.faits.contains(i))) continue;
+      await basculerTacheManuelle({...e.t, 'statut': 'a_faire'}, uid: uid, profileId: User_Info.activeProfileId);
+      n++;
+    } catch (err) {
+      debugPrint('Tâche de soin ${tache['id']} non cochée : $err');
+    }
+  }
+  return n;
+}
+
+/// true : la tâche est prise en charge ici (cochée, ou formulaire ouvert).
+Future<bool> traiterTacheSoin(BuildContext context, Map<String, dynamic> tache, {VoidCallback? apres}) async {
+  if (tache['statut'] == 'fait' || !estTacheRappelSoin(tache['titre']?.toString())) return false;
+  final supa = Supabase.instance.client;
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return false;
+  try {
+    final e = await _etatTache(tache['id'].toString());
+    if (e == null) return false;
+    final t = e.t, a = e.a, produit = e.produit, ids = e.ids, faits = e.faits;
     final restants = ids.where((i) => !faits.contains(i)).toSet();
     final pid = User_Info.activeProfileId;
     Future<void> valider() async {

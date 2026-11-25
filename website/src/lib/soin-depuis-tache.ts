@@ -20,8 +20,9 @@ const ACTES: Record<string, Omit<SoinTache, 'produit' | 'animalIds'>> = {
   antiparasitaire: { typeActe: 'antiparasitaire', table: 'antiparasitaires', colNom: 'produit', label: 'Antiparasitaire' },
 };
 
-// Titre posé par functions/sante.js (pictogramme éventuel devant).
-const RE_TITRE = /^[^A-Za-zÀ-ÿ]*(Vaccin|Vermifuge|Antiparasitaire) — /;
+// Titre posé par functions/sante.js (pictogramme éventuel devant) : jour J
+// « Antiparasitaire — Luna » ou relance « Antiparasitaire en retard — Luna ».
+const RE_TITRE = /^[^A-Za-zÀ-ÿ]*(Vaccin|Vermifuge|Antiparasitaire)( en retard)? — /;
 
 export const estTacheRappelSoin = (titre?: string | null) => RE_TITRE.test(titre ?? '');
 
@@ -35,6 +36,14 @@ export async function resoudreSoinTache(tacheId: string): Promise<SoinTache | nu
   const acte = ACTES[m[1].toLowerCase()];
   const sr = t.soin_rappel;
   if (sr?.animal_ids?.length) return { ...acte, produit: (sr.produit ?? '').trim(), animalIds: sr.animal_ids.map(String) };
+  if (m[2]) {
+    // Relance « en retard » : notes = « Produit pour Luna devait être fait… ».
+    const n = t.notes ?? '';
+    const i = n.indexOf(' pour ');
+    let produit = i > 0 ? n.slice(0, i).trim() : '';
+    if (produit.toLowerCase() === acte.label.toLowerCase()) produit = '';
+    return t.animal_id ? { ...acte, produit, animalIds: [String(t.animal_id)] } : null;
+  }
 
   // Tâches créées avant la colonne : notes = « Produit — Animaux : A, B, C ».
   const notes = (t.notes ?? '').trim();
@@ -67,4 +76,30 @@ export async function dejaAdministres(soin: SoinTache, jourRappel: string): Prom
     if ((d && d >= jourRappel) || (dr && dr > jourRappel)) faits.add(String(r.animal_id));
   }
   return faits;
+}
+
+/** Soin enregistré depuis le rappel du carnet (accueil) : les tâches de
+ *  l'agenda du même soin dont tous les animaux sont maintenant au carnet sont
+ *  cochées. Miroir appli : cocherTachesSoinFaites. */
+export async function cocherTachesSoinFaites(
+  taches: { id: string; date: string; statut: string }[],
+  qui: { uid: string; profileId: string | null },
+): Promise<number> {
+  const { basculerTacheManuelle } = await import('@/lib/valider-tache');
+  let n = 0;
+  for (const t of taches) {
+    try {
+      if (t.statut === 'fait') continue;
+      const soin = await resoudreSoinTache(t.id);
+      if (!soin) continue;
+      const faits = await dejaAdministres(soin, t.date.slice(0, 10));
+      if (soin.animalIds.some(id => !faits.has(id))) continue;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await basculerTacheManuelle({ ...(t as any), statut: 'a_faire' }, qui);
+      n++;
+    } catch (e) {
+      console.error('Tâche de soin non cochée', t.id, e);
+    }
+  }
+  return n;
 }
