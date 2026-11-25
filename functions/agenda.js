@@ -424,6 +424,8 @@ exports.sendMiseBasReminders = functions
 
             const gestations = await supabaseSelect("gestations",
                 `gestation_confirmee=eq.true` +
+                // Mise bas déjà enregistrée (en avance) : ni rappel ni « Préparer la maternité ».
+                `&date_naissance=is.null` +
                 `&${field}=eq.false` +
                 `&date_prevue=eq.${encodeURIComponent(dateStr)}`);
 
@@ -495,6 +497,7 @@ exports.sendMiseBasReminders = functions
                             notes: `Mise-bas prévue le ${miseBas}`,
                             statut: "a_faire",
                             profil_source: "eleveur",
+                            animal_id: String(g.animal_id),
                             animal_nom: animalNom,
                             ...(profileId ? {profile_id: profileId, eleveur_profile_id: profileId} : {}),
                         }]);
