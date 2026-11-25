@@ -4,6 +4,7 @@
 // /facture/[token] : identité complète de l'émetteur, destinataire, lignes,
 // mentions légales obligatoires. Utilisé pour figer + archiver la facture.
 
+import { animauxDeLaFacture, libelleAnimalFacture, titreAnimaux, type AnimalLigne } from './facture-animaux';
 import { htLigneRemisee, libelleRemise, montantRemise } from './facture-remise';
 
 const TEAL: [number, number, number] = [12, 92, 108];
@@ -20,6 +21,8 @@ export interface FacturePdfLigne {
   animalId?: string | null;
   animalNom?: string | null;
   animalIdentification?: string | null;
+  /** Animaux couverts par la ligne quand il y en a plusieurs (acompte groupé). */
+  animaux?: AnimalLigne[] | null;
   /** … ou prestation commune au dossier client (comptée une seule fois). */
   commune?: boolean;
   /** Remise en % (une seule par ligne) et son motif. */
@@ -38,6 +41,7 @@ export function lignePdfDepuisJson(l: Record<string, unknown>): FacturePdfLigne 
     animalId: (l.animalId as string | null | undefined) ?? null,
     animalNom: (l.animalNom as string | null | undefined) ?? null,
     animalIdentification: (l.animalIdentification as string | null | undefined) ?? null,
+    animaux: (l.animaux as AnimalLigne[] | null | undefined) ?? null,
     commune: l.commune === true,
     remise: l.remisePct != null ? Number(l.remisePct) : null,
     remiseMotif: (l.remiseMotif as string | null | undefined) ?? null,
@@ -184,7 +188,7 @@ export async function facturePdfBlob(d: FacturePdfData): Promise<Blob> {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
   doc.setTextColor(140);
-  doc.text('DESTINATAIRE', W - M - 240 + 10, y + 13);
+  doc.text('CLIENT :', W - M - 240 + 10, y + 13);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(40);
@@ -209,7 +213,7 @@ export async function facturePdfBlob(d: FacturePdfData): Promise<Blob> {
   // Regroupement : une section par animal (ordre d'apparition), puis les
   // prestations communes ; chaque ligne n'apparaît qu'une fois.
   const cleAnimal = (l: FacturePdfLigne) => l.commune ? '' : clean(l.animalId) || clean(l.animalNom);
-  const sections: { cle: string; nom: string; ident: string; lignes: FacturePdfLigne[] }[] = [];
+  const sections: { cle: string; nom: string; lignes: FacturePdfLigne[] }[] = [];
   const communes: FacturePdfLigne[] = [];
   const sansAnimal: FacturePdfLigne[] = [];
   for (const l of d.lignes) {
@@ -217,7 +221,7 @@ export async function facturePdfBlob(d: FacturePdfData): Promise<Blob> {
     const cle = cleAnimal(l);
     if (!cle) { sansAnimal.push(l); continue; }
     let s = sections.find(x => x.cle === cle);
-    if (!s) { s = { cle, nom: clean(l.animalNom) || 'Animal', ident: clean(l.animalIdentification), lignes: [] }; sections.push(s); }
+    if (!s) { s = { cle, nom: clean(l.animalNom) || 'Animal', lignes: [] }; sections.push(s); }
     s.lignes.push(l);
   }
   const groupe = sections.length > 1 || (sections.length >= 1 && (communes.length > 0 || sansAnimal.length > 0));
@@ -232,17 +236,19 @@ export async function facturePdfBlob(d: FacturePdfData): Promise<Blob> {
       ...(d.franchise ? [] : [{ content: eur(sHt), styles: { halign: 'right', fontStyle: 'bold' } }]),
       { content: eur(d.franchise ? sHt : sTtc), styles: { halign: 'right', fontStyle: 'bold' } }]);
   };
+  // Tous les animaux de la facture et leur identification, sous « Désignation : ».
+  const animaux = animauxDeLaFacture(d.lignes);
+  if (animaux.length) {
+    body.push([{ content: animaux.length === 1
+      ? `${titreAnimaux(1)} ${libelleAnimalFacture(animaux[0])}`
+      : [titreAnimaux(animaux.length), ...animaux.map(libelleAnimalFacture)].join('\n'),
+      colSpan: nbCol, styles: { fillColor: [255, 255, 255], textColor: TEAL, fontStyle: 'bold' } }]);
+  }
   if (!groupe) {
-    // Un seul animal (ou aucun) : présentation simple, animal rappelé au-dessus.
-    if (sections.length === 1) {
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...TEAL);
-      doc.text(`Animal : ${sections[0].nom}${sections[0].ident ? ` — Identification : ${sections[0].ident}` : ''}`, M, y);
-      y += 12;
-    }
     for (const l of d.lignes) body.push(ligneTable(l));
   } else {
     for (const s of sections) {
-      entete(`${s.nom.toUpperCase()}${s.ident ? `   ·   Identification : ${s.ident}` : ''}`);
+      entete(s.nom.toUpperCase());
       for (const l of s.lignes) body.push(ligneTable(l));
       sousTotal(s.nom, s.lignes);
     }
@@ -257,8 +263,8 @@ export async function facturePdfBlob(d: FacturePdfData): Promise<Blob> {
     startY: y,
     margin: { left: M, right: M, bottom: 50 },
     head: d.franchise
-      ? [['Désignation', 'Qté', 'P.U.', 'Total']]
-      : [['Désignation', 'Qté', 'P.U. HT', 'TVA', 'Total HT', 'Total TTC']],
+      ? [['Désignation :', 'Qté', 'P.U.', 'Total']]
+      : [['Désignation :', 'Qté', 'P.U. HT', 'TVA', 'Total HT', 'Total TTC']],
     body: body as never,
     showHead: 'everyPage',
     rowPageBreak: 'avoid',

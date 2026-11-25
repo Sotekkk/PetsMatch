@@ -30,6 +30,7 @@ import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
 import 'package:PetsMatch/utils/facture_remise.dart';
+import 'package:PetsMatch/utils/facture_animaux.dart';
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS
@@ -605,7 +606,7 @@ class FactureDetailPage extends StatelessWidget {
               if ((data['rmEmetteur'] ?? '').toString().isNotEmpty) 'RM : ${data['rmEmetteur']}',
             ])),
             const SizedBox(width: 12),
-            Expanded(child: _InfoBlock(title: 'Client', lines: [
+            Expanded(child: _InfoBlock(title: 'Client :', lines: [
               '${data['prenomClient'] ?? ''} ${data['nomClient'] ?? ''}'.trim(),
               '${data['rueClient'] ?? ''}',
               '${data['cpClient'] ?? ''} ${data['villeClient'] ?? ''}',
@@ -628,6 +629,7 @@ class FactureDetailPage extends StatelessWidget {
           // Lignes
           _Card(child: Column(children: [
             _TableHeader(franchise: franchise),
+            _AnimauxFacture(animauxDeLaFacture(lignes)),
             ...lignes.map((l) => _TableRow(ligne: l, franchise: franchise)),
           ])),
           const SizedBox(height: 16),
@@ -745,6 +747,9 @@ class FacturePrefillLigne {
   /// Rattachement : un animal (section du PDF) ou prestation commune.
   final String? animalId;
   final String? animalNom;
+  final String? animalIdentification;
+  /// Animaux couverts par la ligne quand il y en a plusieurs (acompte groupé).
+  final List<Map<String, dynamic>> animaux;
   final bool commune;
   /// Remise en % (une par ligne) et son motif.
   final double? remisePct;
@@ -760,6 +765,8 @@ class FacturePrefillLigne {
     this.tauxTVA = 20,
     this.animalId,
     this.animalNom,
+    this.animalIdentification,
+    this.animaux = const [],
     this.commune = false,
     this.remisePct,
     this.remiseMotif,
@@ -899,8 +906,8 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
         // Un seul animal et lignes non rattachées : toutes à cet animal.
         for (final l in _lignes) {
           if (l.commune) continue;
-          final a = liste.where((x) => x.id == l.animalId).firstOrNull ?? (liste.length == 1 && l.animalId == null ? liste.first : null);
-          if (a != null) { l.animalId = a.id; l.animalNom = a.nom; l.animalIdentification = a.identification; }
+          final a = liste.where((x) => x.id == l.animalId).firstOrNull ?? (liste.length == 1 && l.animalId == null && l.animalNom == null && l.animaux.isEmpty ? liste.first : null);
+          if (a != null) { l.animalId = a.id; l.animalNom = a.nom; if (a.identification.isNotEmpty) l.animalIdentification = a.identification; }
         }
       });
     } catch (_) {}
@@ -930,6 +937,8 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
         ..prixTTCRef = l.prixTTC
         ..animalId = l.animalId
         ..animalNom = l.animalNom
+        ..animalIdentification = l.animalIdentification
+        ..animaux = l.animaux
         ..commune = l.commune
         ..poserRemise(l.remisePct, l.remiseMotif)
         ..pensionEntreeId = l.pensionEntreeId;
@@ -1692,6 +1701,8 @@ class _Ligne {
   String? animalId;
   String? animalNom;
   String? animalIdentification;
+  /// Animaux couverts par la ligne quand il y en a plusieurs (acompte groupé).
+  List<Map<String, dynamic>> animaux = const [];
   bool commune = false;
   /// Remise en % (une seule par ligne, pas de cumul) et son motif.
   double? remise;
@@ -1726,6 +1737,7 @@ class _Ligne {
       'remisePct': remise, 'remiseMotif': (remiseMotif ?? '').isEmpty ? 'Remise' : remiseMotif, 'montantRemiseHT': montantRemiseHT,
     },
     if ((pensionEntreeId ?? '').isNotEmpty) 'pensionEntreeId': pensionEntreeId,
+    if (animaux.isNotEmpty) 'animaux': animaux,
     if (commune) 'commune': true
     else if (animalId != null || animalNom != null) ...{
       'animalId': animalId, 'animalNom': animalNom,
@@ -1793,6 +1805,7 @@ class _LigneCardState extends State<_LigneCard> {
               final a = widget.animaux.where((x) => x.id == v).firstOrNull;
               l.commune = v == 'commune';
               l.animalId = a?.id; l.animalNom = a?.nom; l.animalIdentification = a?.identification;
+              l.animaux = const [];
               widget.onChanged();
             }),
           ),
@@ -1895,7 +1908,7 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
 
   // Regroupement : une section par animal (ordre d'apparition), puis les
   // prestations communes ; chaque ligne n'apparaît qu'une fois.
-  final sections = <({String cle, String nom, String ident, List<Map<String, dynamic>> lignes})>[];
+  final sections = <({String cle, String nom, List<Map<String, dynamic>> lignes})>[];
   final communes = <Map<String, dynamic>>[];
   final sansAnimal = <Map<String, dynamic>>[];
   for (final l in lignes) {
@@ -1906,7 +1919,7 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
     if (i >= 0) {
       sections[i].lignes.add(l);
     } else {
-      sections.add((cle: cle, nom: (l['animalNom'] ?? 'Animal').toString(), ident: (l['animalIdentification'] ?? '').toString(), lignes: [l]));
+      sections.add((cle: cle, nom: (l['animalNom'] ?? 'Animal').toString(), lignes: [l]));
     }
   }
   final groupe = sections.length > 1 || (sections.isNotEmpty && (communes.isNotEmpty || sansAnimal.isNotEmpty));
@@ -1950,15 +1963,22 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
           pw.Text(eur(ls.fold<double>(0, (a, l) => a + ttcL(l))), style: pw.TextStyle(font: bold, fontSize: 9.5)),
         ]),
       );
+  // Tous les animaux de la facture et leur identification, sous « Désignation : ».
+  final animaux = animauxDeLaFacture(lignes);
   final blocsLignes = <pw.Widget>[
-    if (!groupe && sections.length == 1)
-      pw.Padding(padding: const pw.EdgeInsets.only(bottom: 4),
-          child: pw.Text('Animal : ${sections.first.nom}${sections.first.ident.isNotEmpty ? ' — Identification : ${sections.first.ident}' : ''}',
-              style: pw.TextStyle(font: bold, fontSize: 10, color: tealPdf))),
+    if (animaux.isNotEmpty)
+      pw.Padding(padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+            pw.Text(animaux.length == 1 ? '${titreAnimaux(1)} ${libelleAnimalFacture(animaux.first)}' : titreAnimaux(animaux.length),
+                style: pw.TextStyle(font: bold, fontSize: 10, color: tealPdf)),
+            if (animaux.length > 1)
+              for (final a in animaux)
+                pw.Text(libelleAnimalFacture(a), style: pw.TextStyle(font: font, fontSize: 9.5)),
+          ])),
     if (!groupe) tableLignes(lignes)
     else ...[
       for (final sct in sections) ...[
-        enteteSection('${sct.nom.toUpperCase()}${sct.ident.isNotEmpty ? '   ·   Identification : ${sct.ident}' : ''}'),
+        enteteSection(sct.nom.toUpperCase()),
         tableLignes(sct.lignes),
         sousTotal(sct.nom, sct.lignes),
       ],
@@ -2036,7 +2056,7 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
             borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
           ),
           child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-            pw.Text('DESTINATAIRE', style: pw.TextStyle(font: bold, fontSize: 8, color: PdfColor.fromHex('#888888'))),
+            pw.Text('CLIENT :', style: pw.TextStyle(font: bold, fontSize: 8, color: PdfColor.fromHex('#888888'))),
             pw.SizedBox(height: 4),
             pw.Text('${d['prenomClient'] ?? ''} ${d['nomClient'] ?? ''}'.trim(), style: pw.TextStyle(font: bold, fontSize: 11)),
             pw.Text('${d['rueClient'] ?? ''}', style: pw.TextStyle(font: font, fontSize: 10)),
@@ -2059,7 +2079,7 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
           pw.TableRow(
             decoration: pw.BoxDecoration(color: tealPdf),
             children: [
-              _pdfCell('Désignation', bold, white: true),
+              _pdfCell('Désignation :', bold, white: true),
               _pdfCell('Qté', bold, white: true, center: true),
               _pdfCell('Prix HT', bold, white: true, center: true),
               if (!franchise) _pdfCell('TVA', bold, white: true, center: true),
@@ -2320,6 +2340,24 @@ class _InfoBlock extends StatelessWidget {
   );
 }
 
+/// Animaux de la facture et leur identification, sous « Désignation : ».
+class _AnimauxFacture extends StatelessWidget {
+  final List<AnimalFacture> animaux;
+  const _AnimauxFacture(this.animaux);
+  @override
+  Widget build(BuildContext context) => animaux.isEmpty ? const SizedBox.shrink() : Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(animaux.length == 1 ? '${titreAnimaux(1)} ${libelleAnimalFacture(animaux.first)}' : titreAnimaux(animaux.length),
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _teal)),
+      if (animaux.length > 1)
+        for (final a in animaux)
+          Text(libelleAnimalFacture(a), style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _dark)),
+    ]),
+  );
+}
+
 class _TableHeader extends StatelessWidget {
   final bool franchise;
   const _TableHeader({required this.franchise});
@@ -2328,7 +2366,7 @@ class _TableHeader extends StatelessWidget {
     color: const Color(0xFFEEF5EA),
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
     child: Row(children: [
-      const Expanded(flex: 3, child: Text('Désignation', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _teal))),
+      const Expanded(flex: 3, child: Text('Désignation :', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _teal))),
       const _Th('Qté'),
       const _Th('HT'),
       if (!franchise) const _Th('TVA'),

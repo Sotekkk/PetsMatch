@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { animauxDeLaFacture, libelleAnimalFacture, titreAnimaux, type AnimalLigne } from '@/lib/facture-animaux';
 import { htLigneRemisee, libelleRemise, montantRemise } from '@/lib/facture-remise';
 
 const supabase = createClient(
@@ -17,6 +18,7 @@ interface Ligne {
   prixUnitaire?: number;
   tauxTVA?: number;
   animalId?: string | null; animalNom?: string | null; animalIdentification?: string | null; commune?: boolean;
+  animaux?: AnimalLigne[] | null;
   tva?: number;
   totalHT?: number;
   totalTTC?: number;
@@ -193,6 +195,7 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
     ? [...sections, ...(autres.length ? [{ titre: 'Autres prestations', ident: '', lignes: autres }] : []),
        ...(communes.length ? [{ titre: 'Prestations communes', ident: '', lignes: communes }] : [])]
     : [{ titre: '', ident: '', lignes }];
+  const animaux = animauxDeLaFacture(f.lignes ?? []);
   const parTaux = new Map<number, number>();
   for (const l of lignes) parTaux.set(l.taux, (parTaux.get(l.taux) ?? 0) + l.ht);
   const clientPro = !!(f.siret_client || f.tva_client);
@@ -243,7 +246,7 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
 
         <div className="flex justify-end">
           <div className="border border-gray-200 rounded-xl p-4 w-64">
-            <h2>Client</h2>
+            <h2>Client :</h2>
             <p className="font-semibold text-sm">{[f.prenom_client, f.nom_client].filter(Boolean).join(' ') || '—'}</p>
             {(f.rue_client || f.ville_client) && (
               <p className="text-xs text-gray-500">
@@ -259,22 +262,26 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
 
         <div className="border border-gray-200 rounded-xl overflow-hidden">
           <div className={`grid ${franchise ? 'grid-cols-[1fr_50px_90px_90px]' : 'grid-cols-[1fr_46px_78px_54px_88px]'} gap-2 bg-gray-50 px-4 py-2 text-[10px] font-bold uppercase text-gray-500`}>
-            <span>Désignation</span>
+            <span>Désignation :</span>
             <span className="text-right">Qté</span>
             <span className="text-right">P.U. HT</span>
             {!franchise && <span className="text-right">TVA</span>}
             <span className="text-right">{franchise ? 'Total' : 'Total TTC'}</span>
           </div>
-          {!groupe && sections.length === 1 && (
-            <div className="px-4 py-2 text-xs font-bold text-[#0C5C6C] bg-white">
-              Animal : {sections[0].titre}{sections[0].ident ? ` — Identification : ${sections[0].ident}` : ''}
+          {animaux.length === 1 && (
+            <div className="px-4 py-2 text-xs font-bold text-[#0C5C6C] bg-white">{titreAnimaux(1)} {libelleAnimalFacture(animaux[0])}</div>
+          )}
+          {animaux.length > 1 && (
+            <div className="px-4 py-2 text-xs text-gray-700 bg-white">
+              <p className="font-bold text-[#0C5C6C]">{titreAnimaux(animaux.length)}</p>
+              {animaux.map((a, i) => <p key={i}>{libelleAnimalFacture(a)}</p>)}
             </div>
           )}
           {blocs.map((b, bi) => (
             <div key={bi}>
               {b.titre && (
                 <div className="px-4 py-2 text-xs font-bold text-[#0C5C6C] bg-[#ECF4F5] uppercase tracking-wide">
-                  {b.titre}{b.ident ? <span className="normal-case font-semibold text-gray-500"> · Identification : {b.ident}</span> : null}
+                  {b.titre}
                 </div>
               )}
               {b.lignes.map((l, i) => (

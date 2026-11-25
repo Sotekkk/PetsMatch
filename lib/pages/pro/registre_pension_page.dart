@@ -4095,6 +4095,20 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
       final desc = 'Pension du ${fmtDate(e['date_entree']?.toString())} au ${fmtDate(dateSortie)} — '
           '${e['animal_nom'] ?? ''}';
       final tauxTVA = _avecTVA ? 20.0 : 0.0;
+      // Identification de chaque animal : sa fiche, sinon la puce du registre.
+      final sejours = [e, ..._autresInclus.map((a) => a.entree)];
+      final identParId = <String, String>{};
+      final idsAnimaux = [for (final s in sejours) if ((s['animal_id'] ?? '').toString().isNotEmpty) s['animal_id'].toString()];
+      if (idsAnimaux.isNotEmpty) {
+        try {
+          final rows = await Supabase.instance.client.from('animaux').select('id, identification').inFilter('id', idsAnimaux);
+          for (final a in rows as List) { identParId[a['id'].toString()] = (a['identification'] ?? '').toString().trim(); }
+        } catch (_) {}
+      }
+      String identDe(Map<String, dynamic> s) {
+        final fiche = identParId[s['animal_id']?.toString()] ?? '';
+        return fiche.isNotEmpty ? fiche : (s['puce'] ?? '').toString().trim();
+      }
       // Une ligne de pension par animal (section du PDF), réduction long
       // séjour en remise identifiable ; suppléments rattachés au 1er animal.
       FacturePrefillLigne lignePension(Map<String, dynamic> s, double tarifNuit, int nuits, double red) => FacturePrefillLigne(
@@ -4103,7 +4117,7 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
             // Prix TTC : le moteur de facturation en déduit le HT selon le régime de TVA.
             prixHT: tauxTVA > 0 ? ((tarifNuit / (1 + tauxTVA / 100)) * 100).round() / 100 : tarifNuit,
             prixTTC: tarifNuit, quantite: nuits.toDouble(), tauxTVA: tauxTVA,
-            animalId: s['animal_id']?.toString(), animalNom: s['animal_nom']?.toString(),
+            animalId: s['animal_id']?.toString(), animalNom: s['animal_nom']?.toString(), animalIdentification: identDe(s),
             pensionEntreeId: s['id']?.toString(),
             remisePct: red > 0 ? red : null,
             remiseMotif: red > 0 ? 'Réduction long séjour ($nuits nuit${nuits > 1 ? 's' : ''})' : null,
@@ -4114,14 +4128,18 @@ class _FacturationSheetState extends State<PensionFacturationSheet> {
                   '${_autresInclus.isNotEmpty ? ' — ${[e['animal_nom'], ..._autresInclus.map((a) => a.entree['animal_nom'])].where((x) => (x?.toString() ?? '').isNotEmpty).join(', ')}' : ''}',
               prixHT: tauxTVA > 0 ? ((_montantFacture / (1 + tauxTVA / 100)) * 100).round() / 100 : _montantFacture,
               prixTTC: _montantFacture, tauxTVA: tauxTVA,
-              animalId: _autresInclus.isEmpty ? animalId : null, animalNom: _autresInclus.isEmpty ? e['animal_nom']?.toString() : null)
+              animalId: _autresInclus.isEmpty ? animalId : null, animalNom: _autresInclus.isEmpty ? e['animal_nom']?.toString() : null,
+              animalIdentification: _autresInclus.isEmpty ? identDe(e) : null,
+              animaux: _autresInclus.isEmpty ? const [] : [
+                for (final s in sejours) {'id': s['animal_id']?.toString(), 'nom': s['animal_nom']?.toString(), 'identification': identDe(s)},
+              ])
         else ...[
           lignePension(e, _tarif, _nbNuits, _reduction),
           if (_supp > 0)
             FacturePrefillLigne(
                 designation: _suppDescCtrl.text.trim().isNotEmpty ? _suppDescCtrl.text.trim() : 'Suppléments',
                 prixHT: tauxTVA > 0 ? ((_supp / (1 + tauxTVA / 100)) * 100).round() / 100 : _supp,
-                prixTTC: _supp, tauxTVA: tauxTVA, animalId: animalId, animalNom: e['animal_nom']?.toString()),
+                prixTTC: _supp, tauxTVA: tauxTVA, animalId: animalId, animalNom: e['animal_nom']?.toString(), animalIdentification: identDe(e)),
           for (final a in _autresInclus) lignePension(a.entree, a.prix, a.n, a.red),
         ],
       ];

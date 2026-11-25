@@ -19,6 +19,7 @@ import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 import LienDocument from '@/components/LienDocument';
 import { allerOuFermer } from '@/lib/panneau';
 import ReglementsFacture from '@/components/facturation/ReglementsFacture';
+import { animauxDeLaFacture, libelleAnimalFacture, titreAnimaux, type AnimalLigne } from '@/lib/facture-animaux';
 import { appliquerRemise, cibleDegressif, htLigneRemisee, libelleRemise, montantRemise, remisesRemplacees } from '@/lib/facture-remise';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,8 @@ interface Ligne {
   animalId?: string | null;
   animalNom?: string | null;
   animalIdentification?: string | null;
+  /** Animaux couverts par la ligne quand il y en a plusieurs (acompte groupé). */
+  animaux?: AnimalLigne[] | null;
   commune?: boolean;
   /** Remise en % (une seule par ligne, pas de cumul) et son motif. */
   remise?: number | null;
@@ -449,7 +452,7 @@ export default function FacturationPage() {
 
             <div className="space-y-2 mb-4">
               {[
-                ['Client', [selected.prenom_client, selected.nom_client].filter(Boolean).join(' ')],
+                ['Client :', [selected.prenom_client, selected.nom_client].filter(Boolean).join(' ')],
                 ['Email', selected.email_client],
                 ['Téléphone', selected.telephone_client],
                 ['Adresse', [selected.rue_client, selected.cp_client, selected.ville_client].filter(Boolean).join(', ')],
@@ -469,13 +472,25 @@ export default function FacturationPage() {
                 <table className="w-full text-xs">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Description</th>
+                      <th className="text-left px-3 py-2 text-gray-500 font-medium">Désignation :</th>
                       <th className="text-right px-3 py-2 text-gray-500 font-medium">Qté</th>
                       <th className="text-right px-3 py-2 text-gray-500 font-medium">P.U.</th>
                       <th className="text-right px-3 py-2 text-gray-500 font-medium">TVA</th>
                     </tr>
                   </thead>
                   <tbody>
+                    {(() => {
+                      const animaux = animauxDeLaFacture(selected.lignes ?? []);
+                      return animaux.length === 0 ? null : (
+                        <tr className="border-t border-gray-100">
+                          <td colSpan={4} className="px-3 py-2 text-gray-700">
+                            <span className="font-bold text-[#0C5C6C]">{titreAnimaux(animaux.length)}</span>
+                            {animaux.length === 1 ? ` ${libelleAnimalFacture(animaux[0])}`
+                              : animaux.map((a, i) => <span key={i} className="block">{libelleAnimalFacture(a)}</span>)}
+                          </td>
+                        </tr>
+                      );
+                    })()}
                     {(selected.lignes ?? []).map((l, i) => {
                       const ll = l as Ligne & { designation?: string; prixUnitaireHT?: number; tauxTVA?: number };
                       return (
@@ -682,15 +697,16 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       // Un seul animal et lignes non rattachées : toutes à cet animal.
       setLignes(prev => prev.map(l => {
         if (l.commune) return l;
-        const a = liste.find(x => x.id === l.animalId) ?? (liste.length === 1 && !l.animalId ? liste[0] : undefined);
-        return a ? { ...l, animalId: a.id, animalNom: a.nom, animalIdentification: a.identification || null } : l;
+        const a = liste.find(x => x.id === l.animalId) ?? (liste.length === 1 && !l.animalId && !l.animalNom && !l.animaux?.length ? liste[0] : undefined);
+        return a ? { ...l, animalId: a.id, animalNom: a.nom, animalIdentification: a.identification || l.animalIdentification || null } : l;
       }));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   function rattacher(i: number, v: string) {
-    setLignes(prev => prev.map((l, idx) => {
-      if (idx !== i) return l;
+    setLignes(prev => prev.map((l0, idx) => {
+      if (idx !== i) return l0;
+      const l = { ...l0, animaux: null };
       if (v === 'commune') return { ...l, commune: true, animalId: null, animalNom: null, animalIdentification: null };
       const a = animauxFacture.find(x => x.id === v);
       return a ? { ...l, commune: false, animalId: a.id, animalNom: a.nom, animalIdentification: a.identification || null }
@@ -820,6 +836,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       ...(Number(l.remise ?? 0) > 0 ? { remisePct: Number(l.remise), remiseMotif: l.remiseMotif || 'Remise',
         montantRemiseHT: montantRemise(l.quantite, l.prixUnitaire, l.remise) } : {}),
       ...(l.pensionEntreeId ? { pensionEntreeId: l.pensionEntreeId } : {}),
+      ...(l.animaux?.length ? { animaux: l.animaux } : {}),
       // Rattachement (sections du PDF) : animal ou prestation commune.
       ...(l.commune ? { commune: true } : l.animalId || l.animalNom
         ? { animalId: l.animalId ?? null, animalNom: l.animalNom ?? null, animalIdentification: l.animalIdentification ?? null } : {}),

@@ -93,11 +93,11 @@ table{width:100%;border-collapse:collapse;margin-bottom:12px}th{background:#f0f0
   </div>
 </div>
 <div class="grid">
-  <div class="box"><b>ANIMAL</b>${esc(d.animal.nom) || '—'}${d.animal.espece ? ` · ${espLabel(d.animal.espece)}` : ''}${d.animal.race ? `<br>${esc(d.animal.race)}` : ''}${d.animal.puce ? `<br>Puce : ${esc(d.animal.puce)}` : ''}</div>
-  <div class="box"><b>CLIENT</b>${esc(d.proprietaire.nom) || '—'}${d.proprietaire.adresse ? `<br>${esc(d.proprietaire.adresse)}` : ''}${d.proprietaire.email ? `<br>${esc(d.proprietaire.email)}` : ''}${d.proprietaire.contact ? `<br>${esc(d.proprietaire.contact)}` : ''}</div>
+  <div class="box"><b>ANIMAL :</b>${esc(d.animal.nom) || '—'}${d.animal.espece ? ` · ${espLabel(d.animal.espece)}` : ''}${d.animal.race ? `<br>${esc(d.animal.race)}` : ''}${d.animal.puce ? `<br>Puce : ${esc(d.animal.puce)}` : ''}</div>
+  <div class="box"><b>CLIENT :</b>${esc(d.proprietaire.nom) || '—'}${d.proprietaire.adresse ? `<br>${esc(d.proprietaire.adresse)}` : ''}${d.proprietaire.email ? `<br>${esc(d.proprietaire.email)}` : ''}${d.proprietaire.contact ? `<br>${esc(d.proprietaire.contact)}` : ''}</div>
   <div class="box"><b>SÉJOUR</b>Entrée : ${fmtD(d.sejour.dateEntree)}<br>Sortie : ${fmtD(d.sejour.dateSortie)}<br><b style="color:${TEAL}">${nuits} nuit${nuits > 1 ? 's' : ''}</b></div>
 </div>
-<table><thead><tr><th>Désignation</th><th>Qté</th><th>P.U. HT</th><th>Total HT</th></tr></thead><tbody>
+<table><thead><tr><th>Désignation :</th><th>Qté</th><th>P.U. HT</th><th>Total HT</th></tr></thead><tbody>
 <tr><td>Pension pour animal — du ${fmtD(d.sejour.dateEntree)} au ${fmtD(d.sejour.dateSortie)}</td><td>${nuits}</td><td>${eur(tarif)}</td><td>${eur(tarif * nuits)}</td></tr>
 ${supp > 0 ? `<tr><td>${esc(d.suppDesc) || 'Suppléments'}</td><td>1</td><td>${eur(supp)}</td><td>${eur(supp)}</td></tr>` : ''}
 </tbody></table>

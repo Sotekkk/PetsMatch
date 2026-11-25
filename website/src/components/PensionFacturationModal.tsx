@@ -135,6 +135,16 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
     const groupe = autresInclus.length > 0;
     const noms = [entree.animal_nom ?? '', ...autresInclus.map(a => String(a.entree.animal_nom ?? ''))].filter(Boolean).join(', ');
     const desc = `Pension du ${fmtIso(entree.date_entree)} au ${fmtIso(dateSortie)}${groupe ? '' : ` — ${entree.animal_nom ?? ''}`}`;
+    // Identification de chaque animal : sa fiche, sinon la puce du registre.
+    const sejours = [entree as unknown as Record<string, unknown>, ...autresInclus.map(a => a.entree)];
+    const idsAnimaux = sejours.map(s => s.animal_id as string | null).filter((x): x is string => !!x);
+    const identParId = new Map<string, string>();
+    if (idsAnimaux.length) {
+      const { data } = await supabase.from('animaux').select('id, identification').in('id', idsAnimaux);
+      for (const a of data ?? []) identParId.set(String(a.id), String(a.identification ?? '').trim());
+    }
+    const identDe = (s: Record<string, unknown>) => identParId.get(String(s.animal_id ?? '')) || String(s.puce ?? '').trim() || null;
+    const identEntree = identDe(sejours[0]);
     // Une ligne de pension par animal (section du PDF), réduction long séjour
     // en remise identifiable ; suppléments rattachés au 1er animal.
     const lignePension = (e: Record<string, unknown>, tarifNuit: number, nuits: number, red: number) => {
@@ -143,7 +153,7 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
         description: `Pension du ${fmtIso(e.date_entree as string | null)} au ${fmtIso(sortie)}`,
         // Prix TTC : le moteur de facturation en déduit le HT selon le régime de TVA.
         quantite: nuits, prixUnitaire: tva ? Math.round(tarifNuit / (1 + tva / 100) * 100) / 100 : tarifNuit, prixTTC: tarifNuit, tva,
-        animalId: (e.animal_id as string | null) ?? null, animalNom: (e.animal_nom as string | null) ?? null,
+        animalId: (e.animal_id as string | null) ?? null, animalNom: (e.animal_nom as string | null) ?? null, animalIdentification: identDe(e),
         pensionEntreeId: String(e.id),
         ...(red > 0 ? { remise: red, remiseMotif: `Réduction long séjour (${nuits} nuit${nuits > 1 ? 's' : ''})` } : {}),
       };
@@ -151,12 +161,14 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
     const lignes = isAcompte
       ? [{ description: `Acompte ${pctNum}% — ${desc}${groupe ? ` — ${noms}` : ''}`, quantite: 1,
           prixUnitaire: tva ? Math.round(montantFacture / (1 + tva / 100) * 100) / 100 : montantFacture, prixTTC: montantFacture, tva,
-          ...(groupe ? {} : { animalId: entree.animal_id ?? null, animalNom: entree.animal_nom ?? null }) }]
+          ...(groupe
+            ? { animaux: sejours.map(s => ({ id: (s.animal_id as string | null) ?? null, nom: (s.animal_nom as string | null) ?? null, identification: identDe(s) })) }
+            : { animalId: entree.animal_id ?? null, animalNom: entree.animal_nom ?? null, animalIdentification: identEntree }) }]
       : [
           lignePension(entree as unknown as Record<string, unknown>, tarifNum, nuitsNum, reductionNum),
           ...(suppNum > 0 ? [{ description: suppDesc.trim() || 'Suppléments', quantite: 1,
             prixUnitaire: tva ? Math.round(suppNum / (1 + tva / 100) * 100) / 100 : suppNum, prixTTC: suppNum, tva,
-            animalId: entree.animal_id ?? null, animalNom: entree.animal_nom ?? null }] : []),
+            animalId: entree.animal_id ?? null, animalNom: entree.animal_nom ?? null, animalIdentification: identEntree }] : []),
           ...autresInclus.map(a => lignePension(a.entree, num(a.tarif), parseInt(a.nuits, 10) || 1, num(a.reduction))),
         ];
     // Client du séjour (demande, sinon propriétaire de la fiche — profil exact).

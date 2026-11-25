@@ -72,12 +72,12 @@ export async function pensionInvoicePdfBlob(d: PensionFactureData): Promise<Blob
 
   const boxW = (595 - M * 2 - 16) / 3;
   const boxes: [string, string[]][] = [
-    ['ANIMAL', [
+    ['ANIMAL :', [
       `${d.animal.nom ?? '—'}${d.animal.espece ? ` · ${espLabel(d.animal.espece)}` : ''}`,
       ...(d.animal.race ? [d.animal.race] : []),
       ...(d.animal.puce ? [`Puce : ${d.animal.puce}`] : []),
     ]],
-    ['CLIENT', [
+    ['CLIENT :', [
       d.proprietaire.nom ?? '—',
       ...(d.proprietaire.adresse ? [d.proprietaire.adresse] : []),
       ...(d.proprietaire.email ? [d.proprietaire.email] : []),
@@ -108,7 +108,7 @@ export async function pensionInvoicePdfBlob(d: PensionFactureData): Promise<Blob
   autoTable(doc, {
     startY: y,
     margin: { left: M, right: M },
-    head: [['Description', 'Qté', 'P.U. HT', 'Total HT']],
+    head: [['Désignation :', 'Qté', 'P.U. HT', 'Total HT']],
     body: [
       [
         `Pension du ${fmtD(d.sejour.dateEntree)} au ${fmtD(d.sejour.dateSortie)}`,
