@@ -839,6 +839,17 @@ class _ChaleursSuiviSheetState extends State<_ChaleursSuiviSheet> {
 
 // ─── Feuille de permissions (côté employeur) ─────────────────────────────────
 
+/// Autorisations d'un employé (ligne `employes.id`), depuis une autre page
+/// (ex. « Mes employés » de la pension).
+Future<void> ouvrirAccesEmploye(BuildContext context, {required Object employeId, required String nom,
+    Color teal = const Color(0xFF0C5C6C)}) =>
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _PermissionsSheet(employeId: employeId.toString(), nom: nom, teal: teal),
+    );
+
 class _PermissionsSheet extends StatefulWidget {
   final String employeId, nom;
   final Color teal;
@@ -857,6 +868,11 @@ const _kPerms = [
   ('write_inventaire',Icons.inventory_2_outlined,  'Inventaire',              'Gérer les stocks et alertes'),
   ('write_notes',     Icons.notes_outlined,         'Notes',                   'Ajouter des notes internes'),
   ('read_planning_pension', Icons.calendar_view_week_outlined, 'Planning pension', 'Voir le planning d\'occupation et les fiches des animaux en pension'),
+  // Actions pension (migration_employe_pension_actions.sql) — donnent aussi « Planning pension ».
+  ('pension_arrivees_sorties', Icons.login_rounded, 'Arrivées et sorties', "Enregistrer l'arrivée et le départ des pensionnaires"),
+  ('pension_nouvelles', Icons.add_a_photo_outlined, 'Nouvelles + photos', 'Envoyer des nouvelles avec photos ou vidéos au propriétaire'),
+  ('pension_logements', Icons.swap_horiz_rounded, 'Changer de logement', "Déplacer un pensionnaire d'un logement à un autre"),
+  ('pension_consignes', Icons.edit_note_outlined, 'Consignes du séjour', 'Compléter les consignes du séjour'),
   ('suivi_chaleurs',  Icons.favorite_outlined,     'Suivi des chaleurs',      'Recevoir les rappels de chaleurs des femelles confiées (indépendant des tâches d\'agenda)'),
   ('vet_agenda',      Icons.calendar_month_outlined, 'Agenda de la clinique',  'Voir, prendre, déplacer et accepter les rendez-vous'),
   ('vet_rdv_demandes', Icons.notifications_active_outlined, 'Demandes de RDV', "Être notifié(e) de chaque nouvelle demande de rendez-vous (avec l'agenda pour l'accepter)"),
@@ -945,6 +961,10 @@ bool _permApplies(String key, String catPro) {
   if (catPro == 'veterinaire' && (key == 'write_animaux' || key == 'write_planning')) return false;
   switch (key) {
     case 'read_planning_pension':
+    case 'pension_arrivees_sorties':
+    case 'pension_nouvelles':
+    case 'pension_logements':
+    case 'pension_consignes':
       return catPro == 'pension';
     case 'write_repro': // saillies/gestations/portées : cœur de métier éleveur uniquement
       return catPro.isEmpty;
@@ -1026,6 +1046,8 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
           .delete()
           .eq('eleveur_profile_id', _eleveurProfileId!)
           .eq('employe_profile_id', _employeProfileId!);
+      // Une action pension sans voir les pensionnaires n'aurait pas de sens.
+      if (_perms.any((p) => p.startsWith('pension_'))) _perms.add('read_planning_pension');
       if (_perms.isNotEmpty) {
         await _supa.from('employe_permissions').insert([
           for (final p in _perms)
@@ -3936,7 +3958,8 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                             ),
                           )),
                           onPlanningTap: () => Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => PensionPlanningPage(employerUid: uid, employerNom: nom),
+                            builder: (_) => PensionPlanningPage(employerUid: uid, employerNom: nom,
+                                peutDeplacer: perms.contains('pension_logements')),
                           )),
                           onProtocolesTap: () {
                             final relType = u['profile_type_relation'] as String?;

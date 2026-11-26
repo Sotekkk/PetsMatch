@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { AddTacheModal, loadMembres, type MembreOption } from '@/components/agenda/AddTacheModal';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
+import { PERMS_ACTIONS_PENSION, completerPermsPension } from '@/lib/permissions-pension';
 import AddEmployeModal from '@/components/pro/AddEmployeModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -73,6 +74,7 @@ const PERMS_LIST = [
   { key: 'write_inventaire', label: 'Inventaire',            desc: 'Gérer les stocks et alertes' },
   { key: 'write_notes',      label: 'Notes',                 desc: 'Ajouter des notes internes' },
   { key: 'read_planning_pension', label: 'Planning pension', desc: 'Voir le planning d\'occupation et les fiches des animaux en pension' },
+  ...PERMS_ACTIONS_PENSION,
   { key: 'suivi_chaleurs',   label: 'Suivi des chaleurs',    desc: 'Recevoir les rappels de chaleurs des femelles confiées (indépendant des tâches d\'agenda)' },
 ] as const;
 
@@ -184,7 +186,7 @@ export default function EmployesPage() {
   // Clinique : droits vet_* à la place des droits génériques animaux / planning.
   const permsList = isClinique
     ? [...PERMS_VETO, ...PERMS_LIST.filter(p => !['write_animaux', 'write_planning', 'write_repro', 'read_planning_pension'].includes(p.key))]
-    : PERMS_LIST.filter(p => p.key !== 'read_planning_pension' || isPension);
+    : PERMS_LIST.filter(p => (p.key !== 'read_planning_pension' && !p.key.startsWith('pension_')) || isPension);
   const notifPermsList = NOTIF_PERMS_LIST.filter(p => !p.eleveurOnly || !isPension);
 
   const load = useCallback(async () => {
@@ -378,9 +380,10 @@ export default function EmployesPage() {
       .delete()
       .eq('eleveur_profile_id', permsModal.eleveurProfileId)
       .eq('employe_profile_id', permsModal.employeProfileId);
-    if (permsData.size > 0) {
+    const permsFinales = completerPermsPension(permsData);
+    if (permsFinales.size > 0) {
       await supabase.from('employe_permissions').insert(
-        [...permsData].map(p => ({
+        [...permsFinales].map(p => ({
           eleveur_profile_id: permsModal.eleveurProfileId,
           employe_profile_id: permsModal.employeProfileId,
           permission: p,

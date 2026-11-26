@@ -119,6 +119,9 @@ function PensionPlanningPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const employerUid = searchParams.get('employerUid');
+  const employerProfileId = searchParams.get('employerProfileId');
+  /** Vue employé : autorisation « Changer de logement ». */
+  const [peutDeplacer, setPeutDeplacer] = useState(false);
   const readOnly = !!employerUid;
   const activeProfileId = useActiveProfile();
   const [employerOk, setEmployerOk] = useState(!employerUid);
@@ -160,24 +163,33 @@ function PensionPlanningPageInner() {
   useEffect(() => {
     if (!employerUid || !user) return;
     (async () => {
-      const { data: emp } = await supabase.from('employes')
-        .select('eleveur_profile_id').eq('uid_employe', user.uid).eq('uid_eleveur', employerUid).eq('actif', true).maybeSingle();
-      if (!emp?.eleveur_profile_id) { router.push('/mes-employeurs'); return; }
-      const { data: perm } = await supabase.from('employe_permissions')
-        .select('permission').eq('eleveur_profile_id', emp.eleveur_profile_id)
-        .eq('employe_profile_id', activeProfileId).eq('permission', 'read_planning_pension').maybeSingle();
-      if (!perm) { router.push('/mes-employeurs'); return; }
+      // Relation avec CE profil pension (l'employeur peut avoir d'autres profils).
+      let eq = supabase.from('employes').select('eleveur_profile_id, employe_profile_id')
+        .eq('uid_employe', user.uid).eq('uid_eleveur', employerUid).eq('actif', true);
+      if (employerProfileId) eq = eq.eq('eleveur_profile_id', employerProfileId);
+      const { data: emps } = await eq;
+      let emp: { eleveur_profile_id: string; perms: string[] } | null = null;
+      for (const e of (emps ?? []) as { eleveur_profile_id: string | null; employe_profile_id: string | null }[]) {
+        if (!e.eleveur_profile_id) continue;
+        const { data: p } = await supabase.from('employe_permissions').select('permission')
+          .eq('eleveur_profile_id', e.eleveur_profile_id).eq('employe_profile_id', e.employe_profile_id ?? activeProfileId ?? '');
+        const perms = (p ?? []).map(x => String(x.permission));
+        if (perms.includes('read_planning_pension')) { emp = { eleveur_profile_id: e.eleveur_profile_id, perms }; break; }
+      }
+      if (!emp) { router.push('/mes-employeurs'); return; }
+      setPeutDeplacer(emp.perms.includes('pension_logements'));
       const { data: u } = await supabase.from('user_profiles_complet').select('firstname, lastname, nom, profile_type').eq('uid', employerUid).eq('is_main', true).maybeSingle();
       setEmployerNom(u?.profile_type === 'eleveur' ? (u?.nom ?? 'Employeur') : `${u?.firstname ?? ''} ${u?.lastname ?? ''}`.trim());
       setEmployerOk(true);
     })();
-  }, [employerUid, user, activeProfileId, router]);
+  }, [employerUid, employerProfileId, user, activeProfileId, router]);
 
   /** Séjour glissé sur un autre logement : espèce acceptée, place libre sur
    *  tout le séjour (désinfection comprise), puis tâches à venir refaites. */
   async function deplacer(entreeId: string, l: { id: string; nom: string; especes?: string[] | null }) {
     const e = entrees.find(x => x.id === entreeId);
     if (!e || e.logement_id === l.id) return;
+    if (readOnly && !peutDeplacer) { window.alert("Vous n'avez pas l'autorisation « Changer de logement »."); return; }
     if (!logementAccepteEspece(l.especes ?? [], e.espece)) { window.alert(`${l.nom} n'accueille pas cette espèce.`); return; }
     const alerte = await avertissementLogementComplet(supabase, l.id, e as unknown as { date_entree?: string | null; date_sortie_prevue?: string | null; seul_dans_logement?: boolean | null; pro_profile_id?: string | null }, [e.id]);
     if (alerte) { window.alert(alerte); return; }
@@ -196,7 +208,8 @@ function PensionPlanningPageInner() {
     const [{ data: log }, { data: ent }, { data: net }] = await Promise.all([
       supabase.from('enclos_chenil').select('id, nom, type, capacite, especes').eq('uid_eleveur', effectiveUid).order('nom'),
       supabase.from('pension_entrees').select('id, pro_uid, pro_profile_id, animal_nom, espece, race, puce, proprietaire_nom, proprietaire_contact, proprietaire_email, proprietaire_adresse, logement_id, animal_id, seul_dans_logement, statut, date_entree, date_sortie_prevue, date_sortie_effective, notes, created_at')
-        .eq('pro_uid', effectiveUid).lte('date_entree', windowEndStr).order('date_entree'),
+        .eq('pro_uid', effectiveUid).lte('date_entree', windowEndStr).order('date_entree')
+        .then(r => ({ ...r, data: employerProfileId ? (r.data ?? []).filter(x => !x.pro_profile_id || x.pro_profile_id === employerProfileId) : r.data })),
       supabase.from('pension_nettoyages').select('logement_id, date').eq('uid_eleveur', effectiveUid)
         .gte('date', windowStartStr).lte('date', windowEndStr),
     ]);
@@ -319,7 +332,7 @@ function PensionPlanningPageInner() {
                   </tr>
                   {ls.map(l => {
                     const deposer = {
-                      onDragOver: (ev: React.DragEvent) => { if (!readOnly) { ev.preventDefault(); setSurvol(l.id); } },
+                      onDragOver: (ev: React.DragEvent) => { if (!readOnly || peutDeplacer) { ev.preventDefault(); setSurvol(l.id); } },
                       onDragLeave: () => setSurvol(s => (s === l.id ? null : s)),
                       onDrop: (ev: React.DragEvent) => { ev.preventDefault(); setSurvol(null); void deplacer(ev.dataTransfer.getData('text/plain'), l); },
                     };
@@ -344,7 +357,7 @@ function PensionPlanningPageInner() {
                                 {e && st ? (
                                   <button
                                     onClick={() => readOnly ? setReadOnlyEntree(e) : setEditingEntree(e)}
-                                    draggable={!readOnly}
+                                    draggable={!readOnly || peutDeplacer}
                                     onDragStart={ev => { ev.dataTransfer.setData('text/plain', e.id); ev.dataTransfer.effectAllowed = 'move'; }}
                                     title={readOnly ? e.animal_nom : `${e.animal_nom} — glisser vers un autre logement pour le déplacer`}
                                     className="w-full h-6 rounded relative flex items-center justify-center overflow-hidden px-0.5"

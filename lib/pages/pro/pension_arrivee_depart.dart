@@ -111,7 +111,8 @@ List<String> dernierGroupePension = [];
 /// Autres animaux du même client (e-mail ou nom), même pension : attendus le
 /// même jour (arrivée) ou présents et partant le même jour (départ).
 Future<List<Map<String, dynamic>>> _compagnons(Map<String, dynamic> entree, {required bool arrivee}) async {
-  final uid = FirebaseAuth.instance.currentUser?.uid;
+  // Pension du séjour (un employé enregistre pour son employeur).
+  final uid = (entree['pro_uid']?.toString() ?? '').isNotEmpty ? entree['pro_uid'].toString() : FirebaseAuth.instance.currentUser?.uid;
   if (uid == null) return [];
   final supa = Supabase.instance.client;
   try {
@@ -173,7 +174,7 @@ Widget _blocCompagnons(List<Map<String, dynamic>> compagnons, Map<String, bool> 
 /// Arrivée : heure réelle, déposant, hébergement, apports, consignes.
 Future<bool> confirmerArriveePension(BuildContext context, Map<String, dynamic> entree) async {
   dernierGroupePension = [];
-  final uid = FirebaseAuth.instance.currentUser?.uid;
+  final uid = (entree['pro_uid']?.toString() ?? '').isNotEmpty ? entree['pro_uid'].toString() : FirebaseAuth.instance.currentUser?.uid;
   if (uid == null) return false;
   final supa = Supabase.instance.client;
   // Arrivée déjà enregistrée (autre appareil, double appui) : pas de second enregistrement.

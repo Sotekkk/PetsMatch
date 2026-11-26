@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import AddEmployeModal from '@/components/pro/AddEmployeModal';
+import { completerPermsPension } from '@/lib/permissions-pension';
 
 export interface Competence { key: string; label: string }
 
@@ -53,7 +54,10 @@ export default function EmployesAvancesPage({
   abonnementHref,
   guardOk,
   guardLoading,
+  permissions,
 }: {
+  /** Autorisations réglables ici (ex. pension) ; absent = pas de bouton. */
+  permissions?: readonly { key: string; label: string; desc: string }[];
   themeColor: string;
   title: string;
   competences: Competence[];
@@ -73,6 +77,7 @@ export default function EmployesAvancesPage({
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Employe | null>(null);
   const [ajout, setAjout] = useState(false);
+  const [autorisations, setAutorisations] = useState<Employe | null>(null);
 
   useEffect(() => {
     if (authLoading || guardLoading) return;
@@ -148,8 +153,9 @@ export default function EmployesAvancesPage({
       ) : (
         <div className="space-y-2">
           {employes.map(e => (
-            <button key={e.id} onClick={() => setEditing(e)}
-              className="w-full flex items-center gap-3 border rounded-xl p-3 text-left hover:bg-gray-50">
+            <div key={e.id} className="flex items-stretch gap-2">
+            <button onClick={() => setEditing(e)}
+              className="flex-1 min-w-0 flex items-center gap-3 border rounded-xl p-3 text-left hover:bg-gray-50">
               {e.photo
                 // eslint-disable-next-line @next/next/no-img-element
                 ? <img src={e.photo} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 border-2" style={{ borderColor: e.couleur_planning || themeColor }} />
@@ -164,6 +170,13 @@ export default function EmployesAvancesPage({
               </div>
               <span className="text-gray-300">›</span>
             </button>
+            {permissions && e.employe_profile_id && (
+              <button onClick={() => setAutorisations(e)}
+                className="shrink-0 px-3 rounded-xl border text-xs font-semibold hover:bg-gray-50" style={{ color: themeColor }}>
+                Autorisations
+              </button>
+            )}
+            </div>
           ))}
         </div>
       )}
@@ -177,9 +190,77 @@ export default function EmployesAvancesPage({
           onSaved={() => { setEditing(null); load(); }}
         />
       )}
+      {autorisations && permissions && profileId && (
+        <AutorisationsModal employe={autorisations} eleveurProfileId={profileId} permissions={permissions}
+          themeColor={themeColor} onClose={() => setAutorisations(null)} />
+      )}
       {ajout && user && (
         <AddEmployeModal uid={user.uid} profileId={profileId} onClose={() => { setAjout(false); load(); }} />
       )}
+    </div>
+  );
+}
+
+/** Autorisations d'un employé, limitées à la liste de la page (les autres sont conservées). */
+function AutorisationsModal({ employe, eleveurProfileId, permissions, themeColor, onClose }: {
+  employe: Employe; eleveurProfileId: string; permissions: readonly { key: string; label: string; desc: string }[];
+  themeColor: string; onClose: () => void;
+}) {
+  const [choix, setChoix] = useState<Set<string> | null>(null);
+  const [enregistrement, setEnregistrement] = useState(false);
+  const [erreur, setErreur] = useState('');
+  const cles = permissions.map(p => p.key);
+  useEffect(() => {
+    supabase.from('employe_permissions').select('permission')
+      .eq('eleveur_profile_id', eleveurProfileId).eq('employe_profile_id', employe.employe_profile_id ?? '')
+      .then(({ data }) => setChoix(new Set((data ?? []).map(r => String(r.permission)).filter(p => cles.includes(p)))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employe.id, eleveurProfileId]);
+  async function enregistrer() {
+    if (!choix || !employe.employe_profile_id) return;
+    setEnregistrement(true); setErreur('');
+    const finales = completerPermsPension(choix);
+    const { error: e1 } = await supabase.from('employe_permissions').delete()
+      .eq('eleveur_profile_id', eleveurProfileId).eq('employe_profile_id', employe.employe_profile_id).in('permission', cles);
+    const { error: e2 } = finales.size === 0 || e1 ? { error: e1 } : await supabase.from('employe_permissions').insert(
+      [...finales].map(permission => ({ eleveur_profile_id: eleveurProfileId, employe_profile_id: employe.employe_profile_id, permission })));
+    setEnregistrement(false);
+    if (e1 || e2) { setErreur("Les autorisations n'ont pas pu être enregistrées. Réessayez."); return; }
+    onClose();
+  }
+  const nom = `${employe.prenom ?? ''} ${employe.nom ?? ''}`.trim() || 'cet employé';
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-5" onClick={ev => ev.stopPropagation()}>
+        <h2 className="font-bold text-lg mb-1" style={{ color: themeColor }}>Autorisations de {nom}</h2>
+        <p className="text-xs text-gray-500 mb-4">Les actions sur les pensionnaires donnent aussi « Planning pension ».</p>
+        {!choix ? <p className="text-center text-gray-400 py-6">Chargement…</p> : (
+          <div className="space-y-2">
+            {permissions.map(p => (
+              <label key={p.key} className="flex items-start gap-3 border rounded-xl p-3 cursor-pointer hover:bg-gray-50">
+                <input type="checkbox" className="mt-1" checked={choix.has(p.key)}
+                  onChange={ev => setChoix(prev => {
+                    const s = new Set(prev ?? []);
+                    if (ev.target.checked) s.add(p.key); else s.delete(p.key);
+                    return s;
+                  })} />
+                <span>
+                  <span className="block text-sm font-semibold text-gray-800">{p.label}</span>
+                  <span className="block text-xs text-gray-500">{p.desc}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+        {erreur && <p className="text-sm text-red-600 mt-3">{erreur}</p>}
+        <div className="flex gap-2 mt-4">
+          <button onClick={onClose} className="flex-1 py-2.5 border rounded-xl text-sm text-gray-600">Annuler</button>
+          <button onClick={enregistrer} disabled={!choix || enregistrement}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ backgroundColor: themeColor }}>
+            {enregistrement ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

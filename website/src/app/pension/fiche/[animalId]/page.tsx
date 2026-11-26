@@ -146,6 +146,10 @@ export default function AnimalFichePensionWebPage() {
   // Compléter vermifuges / antiparasitaires : seulement si le propriétaire l'a autorisé.
   const [peutModifierSante, setPeutModifierSante] = useState(false);
   const [loading, setLoading]             = useState(true);
+  /** Vue employé : ses autorisations chez la pension (null = la pension elle-même). */
+  const [permsEmploye, setPermsEmploye] = useState<Set<string> | null>(null);
+  const peut = (permission: string) => permsEmploye === null || permsEmploye.has(permission);
+  const [consignesEdition, setConsignesEdition] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -186,7 +190,14 @@ export default function AnimalFichePensionWebPage() {
           if (!emp.eleveur_profile_id || !allowedEleveurProfileIds.has(emp.eleveur_profile_id)) continue;
           const { data: employerAcc } = await supabase.from('animal_access').select('statut, permissions')
             .eq('animal_id', animalId).eq('pro_profile_id', emp.eleveur_profile_id).eq('statut', 'active').maybeSingle();
-          if (employerAcc) { acc = employerAcc; proProfileId = emp.eleveur_profile_id; break; }
+          if (employerAcc) {
+            acc = employerAcc; proProfileId = emp.eleveur_profile_id;
+            // Autorisations de l'employé chez CE profil pension (actions de la fiche).
+            const { data: mesPerms } = await supabase.from('employe_permissions').select('permission')
+              .eq('eleveur_profile_id', emp.eleveur_profile_id).eq('employe_profile_id', activeProfileId ?? '');
+            setPermsEmploye(new Set((mesPerms ?? []).map(p => String(p.permission))));
+            break;
+          }
         }
       }
     }
@@ -347,14 +358,14 @@ export default function AnimalFichePensionWebPage() {
                     <p style={ligne}>Arrivée : {fmtFr(pensionEntry.date_entree)}{pensionEntry.arrivee_reelle_le ? ` à ${hmFr(pensionEntry.arrivee_reelle_le)}` : ''}{pensionEntry.depose_par ? ` · déposé par ${pensionEntry.depose_par}` : ''}</p>
                     <p style={ligne}>Départ prévu : {pensionEntry.date_sortie_prevue ? fmtFr(pensionEntry.date_sortie_prevue) : 'non renseigné'}</p>
                     <p style={ligne}>Hébergement : {(pensionEntry.logement_id && logementsNoms[pensionEntry.logement_id]) || 'non attribué'}</p>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                    {peut('pension_arrivees_sorties') && <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
                       {!pensionEntry.arrivee_reelle_le && (
                         <button onClick={() => setAction('arrivee')} style={{ padding: '8px 14px', borderRadius: 10, border: 'none', background: '#E6F2F3', color: TEAL, fontWeight: 700, cursor: 'pointer' }}>Enregistrer l&apos;arrivée</button>
                       )}
                       {present && (
                         <button onClick={() => setAction('depart')} style={{ padding: '8px 14px', borderRadius: 10, border: 'none', background: '#EFE9F7', color: PURPLE, fontWeight: 700, cursor: 'pointer' }}>Enregistrer le départ</button>
                       )}
-                    </div>
+                    </div>}
                   </>
                 )}
               </div>
@@ -364,6 +375,12 @@ export default function AnimalFichePensionWebPage() {
                 {allergies.map(a => <p key={a.id} style={{ ...ligne, color: '#B3261E' }}>Allergie : {String(a.nom ?? a.allergene ?? a.description ?? '')}</p>)}
                 {traitsEnCours.map(t => <p key={t.id} style={ligne}>Traitement : {String(t.nom ?? '')}{t.posologie ? ` — ${String(t.posologie)}` : ''}</p>)}
                 {!pensionEntry?.consignes_sejour && allergies.length === 0 && traitsEnCours.length === 0 && <p style={discret}>Aucune consigne particulière renseignée.</p>}
+                {pensionEntry && peut('pension_consignes') && (
+                  <button onClick={() => setConsignesEdition(pensionEntry.consignes_sejour ?? '')}
+                    style={{ marginTop: 8, padding: '6px 12px', borderRadius: 10, border: `1px solid ${TEAL}`, background: 'white', color: TEAL, fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+                    Modifier les consignes du séjour
+                  </button>
+                )}
               </div>
               <div style={carte}>
                 <p style={titre}>Tâches du jour</p>
@@ -463,9 +480,11 @@ export default function AnimalFichePensionWebPage() {
                   </div>
                 </div>
               ))}
-              <button onClick={() => setJournalOuvert(true)} style={{ marginTop: 8, width: '100%', padding: '10px 0', borderRadius: 12, border: `1px solid ${TEAL}`, background: 'white', color: TEAL, fontWeight: 600, cursor: 'pointer' }}>
-                Ajouter une observation ou une photo
-              </button>
+              {peut('pension_nouvelles') && (
+                <button onClick={() => setJournalOuvert(true)} style={{ marginTop: 8, width: '100%', padding: '10px 0', borderRadius: 12, border: `1px solid ${TEAL}`, background: 'white', color: TEAL, fontWeight: 600, cursor: 'pointer' }}>
+                  Ajouter une observation ou une photo
+                </button>
+              )}
             </div>
             <JournalTab
               animalId={animalId}
@@ -477,6 +496,26 @@ export default function AnimalFichePensionWebPage() {
         {action && pensionEntry && pensionUid && (
           <ArriveeDepartModal sejour={{ ...pensionEntry, animal_id: animalId, animal_nom: animal?.nom ?? pensionEntry.animal_nom }} mode={action} uid={pensionUid}
             onClose={() => setAction(null)} onDone={() => { setAction(null); load(); }} />
+        )}
+        {consignesEdition !== null && pensionEntry && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 }}
+            onClick={() => setConsignesEdition(null)}>
+            <div style={{ background: 'white', borderRadius: 16, padding: 20, width: '100%', maxWidth: 460 }} onClick={ev => ev.stopPropagation()}>
+              <p style={{ fontWeight: 700, fontSize: 16, color: TEAL, margin: '0 0 10px' }}>Consignes du séjour</p>
+              <textarea value={consignesEdition} onChange={ev => setConsignesEdition(ev.target.value)} rows={6}
+                placeholder="Promenades, alimentation, médicaments…"
+                style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d1d5db', borderRadius: 10, padding: 10, fontFamily: 'Galey, sans-serif', fontSize: 14 }} />
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button onClick={() => setConsignesEdition(null)} style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer' }}>Annuler</button>
+                <button onClick={async () => {
+                  const { error } = await supabase.from('pension_entrees')
+                    .update({ consignes_sejour: consignesEdition.trim() || null }).eq('id', pensionEntry.id);
+                  if (error) { window.alert("Les consignes n'ont pas pu être enregistrées."); return; }
+                  setConsignesEdition(null); load();
+                }} style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: TEAL, color: 'white', fontWeight: 700, cursor: 'pointer' }}>Enregistrer</button>
+              </div>
+            </div>
+          </div>
         )}
         {journalOuvert && (
           <PensionJournal animalId={animalId} pensionEntreeId={pensionEntry?.id} animalNom={animal?.nom ?? 'Animal'}

@@ -24,6 +24,9 @@ class PensionJournalPage extends StatefulWidget {
   /// Garde de plusieurs animaux : les autres animaux gardés reçoivent la même
   /// nouvelle (compte rendu commun, onglet « Pension & Garde » de chaque fiche).
   final List<String> autresAnimauxIds;
+  /// Employé de la pension : nouvelles publiées au nom de la pension.
+  final String? proUid;
+  final String? pensionNom;
 
   const PensionJournalPage({
     super.key,
@@ -35,6 +38,8 @@ class PensionJournalPage extends StatefulWidget {
     this.clientUid,
     this.clientProfileId,
     this.autresAnimauxIds = const [],
+    this.proUid,
+    this.pensionNom,
   });
 
   bool get isGarde => journalKind == 'garde';
@@ -125,7 +130,7 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
       }
       final ligne = {
         'pension_entree_id': widget.pensionEntreeId,
-        'pro_uid':            uid,
+        'pro_uid':            (widget.proUid ?? '').isNotEmpty ? widget.proUid : uid,
         'photo_url':          photoUrl,
         'video_url':          videoUrl,
         'note':               _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
@@ -233,7 +238,7 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
           ownerProfileId = p?['id'] as String?;
         } catch (_) {}
       }
-      final proNom = User_Info.nameElevage.isNotEmpty
+      final proNom = (widget.pensionNom ?? '').isNotEmpty ? widget.pensionNom! : User_Info.nameElevage.isNotEmpty
           ? User_Info.nameElevage : '${User_Info.firstname} ${User_Info.lastname}'.trim();
       final who = proNom.isNotEmpty ? proNom : (widget.isGarde ? 'Votre pet sitter' : 'La pension');
       await _supa.from('notifications').insert({

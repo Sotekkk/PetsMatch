@@ -560,7 +560,7 @@ export default function MesEmployeursPage() {
                     </Link>
                   )}
                   {emp.cat_pro === 'pension' && emp.perms.includes('read_planning_pension') && (
-                    <Link href={`/pension/planning?employerUid=${emp.uid}`}
+                    <Link href={`/pension/planning?employerUid=${emp.uid}${emp.eleveur_profile_id ? `&employerProfileId=${emp.eleveur_profile_id}` : ''}`}
                       className="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C] hover:bg-[#0C5C6C]/20 transition-colors">
                       📅 Planning
                     </Link>

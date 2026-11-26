@@ -73,6 +73,12 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
   List<Map<String, dynamic>> _taches = [];
   List<Map<String, dynamic>> _observations = [];
   String _consignesVue = 'alimentation';
+  /// Vue employé : ses autorisations chez la pension (null = la pension elle-même).
+  Set<String>? _permsEmploye;
+  /// Pension du séjour (compte et nom) — celle de l'employeur pour un employé.
+  String? _pensionUid;
+  String? _pensionNom;
+  bool _peut(String permission) => _permsEmploye == null || _permsEmploye!.contains(permission);
 
   @override
   void initState() {
@@ -102,10 +108,14 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
         final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
         final moi = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', myUid).eq('profile_type', 'particulier').maybeSingle();
-        final perm = moi == null ? null : await _supa.from('employe_permissions').select('permission')
-            .eq('eleveur_profile_id', employeur).eq('employe_profile_id', moi['id'])
-            .eq('permission', 'read_planning_pension').maybeSingle();
-        proProfileId = perm == null ? '' : employeur;
+        final perms = moi == null ? const [] : await _supa.from('employe_permissions').select('permission')
+            .eq('eleveur_profile_id', employeur).eq('employe_profile_id', moi['id']) as List;
+        _permsEmploye = {for (final p in perms) p['permission'].toString()};
+        proProfileId = _permsEmploye!.contains('read_planning_pension') ? employeur : '';
+        try {
+          final pension = await _supa.from('user_profiles_complet').select('nom').eq('id', employeur).maybeSingle();
+          _pensionNom = pension?['nom']?.toString();
+        } catch (_) {}
       } else if (proProfileId.isEmpty) {
         final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
         final proProfile = myUid.isEmpty ? null : await _supa.from('user_profiles_complet')
@@ -189,11 +199,20 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
         }
       }
 
-      // Séjours de CETTE pension uniquement (pro_uid + profil actif).
-      final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-      final tous = List<Map<String, dynamic>>.from((await _supa.from('pension_entrees').select()
-          .eq('animal_id', widget.animalId).eq('pro_uid', myUid)
-          .order('date_entree', ascending: false)) as List).where(sejourDuProfil).toList();
+      // Séjours de CETTE pension uniquement (pro_uid + profil actif ; vue
+      // employé : le profil pension de l'employeur).
+      final employeur = widget.employeurProfileId ?? '';
+      final tous = employeur.isNotEmpty
+          ? List<Map<String, dynamic>>.from(await _supa.from('pension_entrees').select()
+              .eq('animal_id', widget.animalId).eq('pro_profile_id', employeur)
+              .order('date_entree', ascending: false) as List)
+          : List<Map<String, dynamic>>.from((await _supa.from('pension_entrees').select()
+              .eq('animal_id', widget.animalId).eq('pro_uid', FirebaseAuth.instance.currentUser?.uid ?? '')
+              .order('date_entree', ascending: false)) as List).where(sejourDuProfil).toList();
+      final myUid = employeur.isNotEmpty
+          ? (tous.isEmpty ? '' : tous.first['pro_uid']?.toString() ?? '')
+          : FirebaseAuth.instance.currentUser?.uid ?? '';
+      _pensionUid = myUid;
       final enPension = tous.where((e) => e['statut'] == 'en_pension').toList();
       final jourStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final sejour = enPension.where((e) => (e['date_entree']?.toString() ?? '').compareTo(jourStr) <= 0).firstOrNull
@@ -390,6 +409,33 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
         child: Text(t, style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: couleur ?? const Color(0xFF1F2A2E), fontWeight: poids)),
       );
 
+  /// Consignes du séjour (pension, ou employé autorisé « Consignes du séjour »).
+  Future<void> _modifierConsignes() async {
+    final s = _sejourActuel;
+    if (s == null) return;
+    final ctrl = TextEditingController(text: s['consignes_sejour']?.toString() ?? '');
+    final texte = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Consignes du séjour', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: TextField(controller: ctrl, maxLines: 6, minLines: 3,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Promenades, alimentation, médicaments…')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Enregistrer')),
+      ],
+    ));
+    if (texte == null || !mounted) return;
+    try {
+      await _supa.from('pension_entrees').update({'consignes_sejour': texte.trim().isEmpty ? null : texte.trim()}).eq('id', s['id'].toString());
+      _loadProprietaireEtSejour();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(
+            "Les consignes n'ont pas pu être enregistrées.", style: TextStyle(fontFamily: 'Galey'))));
+      }
+    }
+  }
+
   Future<void> _arrivee() async {
     final s = _sejourActuel;
     if (s != null && await confirmerArriveePension(context, s)) _loadProprietaireEtSejour();
@@ -423,7 +469,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
                 _ligne('Départ prévu : ${(s['date_sortie_prevue']?.toString() ?? '').isEmpty ? 'non renseigné' : _fmtDate(s['date_sortie_prevue']?.toString())}'),
                 _ligne('Hébergement : ${_logementsNoms[s['logement_id']?.toString()] ?? 'non attribué'}'),
                 const SizedBox(height: 6),
-                Wrap(spacing: 8, children: [
+                if (_peut('pension_arrivees_sorties')) Wrap(spacing: 8, children: [
                   if (s['arrivee_reelle_le'] == null)
                     FilledButton.tonal(onPressed: _arrivee, child: const Text("Enregistrer l'arrivée", style: TextStyle(fontFamily: 'Galey'))),
                   if (_present)
@@ -436,6 +482,12 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
           for (final t in traitementsEnCours) _ligne('Traitement : ${t['nom'] ?? ''}${(t['posologie']?.toString() ?? '').isNotEmpty ? ' — ${t['posologie']}' : ''}'),
           if (consignes.isEmpty && _allergies.isEmpty && traitementsEnCours.isEmpty)
             _discret('Aucune consigne particulière renseignée.'),
+          if (s != null && _peut('pension_consignes'))
+            Align(alignment: Alignment.centerLeft, child: TextButton.icon(
+              onPressed: _modifierConsignes,
+              icon: const Icon(Icons.edit_note_outlined, size: 18),
+              label: const Text('Modifier les consignes du séjour', style: TextStyle(fontFamily: 'Galey')),
+            )),
         ]), action: TextButton(onPressed: () => _tabs.animateTo(2), child: const Text('Détail', style: TextStyle(fontFamily: 'Galey')))),
         _carte("Tâches du jour", Icons.checklist_rtl_outlined, tachesJour.isEmpty
             ? _discret("Aucune tâche prévue aujourd'hui.")
@@ -603,12 +655,15 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
               ]),
             ),
           const SizedBox(height: 4),
-          SizedBox(width: double.infinity, child: OutlinedButton.icon(
+          if (_peut('pension_nouvelles')) SizedBox(width: double.infinity, child: OutlinedButton.icon(
             onPressed: () async {
               await Navigator.push(context, MaterialPageRoute(builder: (_) => PensionJournalPage(
                 animalId: widget.animalId,
                 pensionEntreeId: _sejourActuel?['id']?.toString(),
                 animalNom: (_animal?['nom'] ?? widget.animalNom ?? 'Animal').toString(),
+                // Employé : au nom de la pension (bouton affiché avec « Nouvelles + photos »).
+                proUid: _pensionUid,
+                pensionNom: _pensionNom,
               )));
               _loadProprietaireEtSejour();
             },

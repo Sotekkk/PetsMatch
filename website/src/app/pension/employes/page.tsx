@@ -4,6 +4,7 @@ import EmployesAvancesPage from '@/components/pro/EmployesAvancesPage';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { usePensionPlan } from '@/lib/use-plan';
 import { PENSION_ESPECES } from '@/lib/pension-especes';
+import { PERMS_PENSION } from '@/lib/permissions-pension';
 
 export default function PensionEmployesPage() {
   const { isPension, loading: guardLoading } = usePensionAccess();
@@ -19,6 +20,7 @@ export default function PensionEmployesPage() {
       abonnementHref="/pension/abonnement"
       guardOk={isPension}
       guardLoading={guardLoading}
+      permissions={PERMS_PENSION}
     />
   );
 }

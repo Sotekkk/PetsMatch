@@ -11,7 +11,9 @@ import 'package:PetsMatch/utils/pension_protocoles.dart' show changerLogementSej
 class PensionPlanningPage extends StatefulWidget {
   final String? employerUid;  // vue employé : consulte le planning d'un employeur pension
   final String? employerNom;
-  const PensionPlanningPage({super.key, this.employerUid, this.employerNom});
+  /// Vue employé : autorisation « Changer de logement ».
+  final bool peutDeplacer;
+  const PensionPlanningPage({super.key, this.employerUid, this.employerNom, this.peutDeplacer = false});
   @override
   State<PensionPlanningPage> createState() => _PensionPlanningPageState();
 }
@@ -122,6 +124,11 @@ class _PensionPlanningPageState extends State<PensionPlanningPage> {
   Future<void> _deplacer(Map<String, dynamic> e, Map<String, dynamic> l) async {
     if (e['logement_id']?.toString() == l['id']?.toString()) return;
     final nom = l['nom']?.toString() ?? 'ce logement';
+    if (_readOnly && !widget.peutDeplacer) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(
+          "Vous n'avez pas l'autorisation « Changer de logement ».", style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
     void info(String t) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t, style: const TextStyle(fontFamily: 'Galey'))));
     if (!logementAccepteEspece(l['especes'] as List?, e['espece']?.toString())) { info("$nom n'accueille pas cette espèce."); return; }
     if (!await confirmerLogementLibre(context, l['id'].toString(), e, exclure: [e['id'].toString()])) return;

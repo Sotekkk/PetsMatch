@@ -55,7 +55,25 @@ class _PensionEmployesPageState extends State<PensionEmployesPage> {
             : Future.value(<Map<String, dynamic>>[]),
       ]);
       final planCode = results[0] as String;
-      final rows = results[1] as List;
+      final rows = List<Map<String, dynamic>>.from(results[1] as List);
+      // Nom de l'employé : son profil particulier (prenom / nom de `employes`
+      // ne sont pas remplis à l'invitation).
+      final pids = [for (final e in rows) if ((e['employe_profile_id'] ?? '').toString().isNotEmpty) e['employe_profile_id'].toString()];
+      if (pids.isNotEmpty) {
+        try {
+          final profils = {
+            for (final p in await _supa.from('user_profiles_complet').select('id, firstname, lastname, avatar_url').inFilter('id', pids) as List)
+              p['id'].toString(): p,
+          };
+          for (final e in rows) {
+            final p = profils[e['employe_profile_id']?.toString()];
+            if (p == null) continue;
+            if ((e['prenom'] ?? '').toString().isEmpty) e['prenom'] = p['firstname'];
+            if ((e['nom'] ?? '').toString().isEmpty) e['nom'] = p['lastname'];
+            e['_photo'] = p['avatar_url'];
+          }
+        } catch (_) {}
+      }
       if (mounted) setState(() {
         _hasEmployes = PlanService.getPensionConfig(planCode).hasEmployes;
         _employes = List<Map<String, dynamic>>.from(rows);
@@ -132,14 +150,25 @@ class _PensionEmployesPageState extends State<PensionEmployesPage> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                           child: ListTile(
                             onTap: () => _openEdit(e),
-                            leading: CircleAvatar(backgroundColor: couleur, radius: 10),
+                            leading: (e['_photo'] ?? '').toString().isNotEmpty
+                                ? CircleAvatar(radius: 18, backgroundColor: couleur, child: CircleAvatar(radius: 16, backgroundImage: NetworkImage(e['_photo'].toString())))
+                                : CircleAvatar(backgroundColor: couleur, radius: 10),
                             title: Text('${e['prenom'] ?? ''} ${e['nom'] ?? ''}'.trim(),
                                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                             subtitle: Text(competences.isEmpty
                                 ? 'Toutes espèces'
                                 : competences.map((c) => [...kPensionEspeces, kPensionEspeceFermeLegacy].firstWhere((e2) => e2['key'] == c, orElse: () => {'label': c})['label']).join(', '),
                                 style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-                            trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                            // Autorisations (arrivées, nouvelles, logements…), puis fiche employé.
+                            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                              IconButton(
+                                icon: const Icon(Icons.tune_rounded, color: _teal),
+                                tooltip: 'Autorisations',
+                                onPressed: () => ouvrirAccesEmploye(context, employeId: e['id'],
+                                    nom: '${e['prenom'] ?? ''} ${e['nom'] ?? ''}'.trim().isEmpty ? 'cet employé' : '${e['prenom'] ?? ''} ${e['nom'] ?? ''}'.trim()),
+                              ),
+                              const Icon(Icons.chevron_right, color: Colors.grey),
+                            ]),
                           ),
                         );
                       },
