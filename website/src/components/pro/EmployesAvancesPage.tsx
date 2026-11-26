@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import AddEmployeModal from '@/components/pro/AddEmployeModal';
 
 export interface Competence { key: string; label: string }
 
@@ -69,6 +70,7 @@ export default function EmployesAvancesPage({
   const [employes, setEmployes] = useState<Employe[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Employe | null>(null);
+  const [ajout, setAjout] = useState(false);
 
   useEffect(() => {
     if (authLoading || guardLoading) return;
@@ -108,11 +110,13 @@ export default function EmployesAvancesPage({
     <div className="max-w-2xl mx-auto p-4 sm:p-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold" style={{ color: themeColor }}>{title}</h1>
-        <Link href="/elevage/employes"
-          className="text-sm font-semibold px-3 py-2 rounded-lg text-white"
-          style={{ backgroundColor: themeColor }}>
-          + Inviter
-        </Link>
+        {hasEmployes && (
+          <button onClick={() => setAjout(true)}
+            className="text-sm font-semibold px-3 py-2 rounded-lg text-white"
+            style={{ backgroundColor: themeColor }}>
+            + Inviter
+          </button>
+        )}
       </div>
 
       {!hasEmployes ? (
@@ -154,6 +158,9 @@ export default function EmployesAvancesPage({
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }}
         />
+      )}
+      {ajout && user && (
+        <AddEmployeModal uid={user.uid} profileId={profileId} onClose={() => { setAjout(false); load(); }} />
       )}
     </div>
   );
