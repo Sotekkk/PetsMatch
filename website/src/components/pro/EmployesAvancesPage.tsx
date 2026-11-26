@@ -22,6 +22,8 @@ interface Employe {
   couleur_planning: string | null;
   competences: string[] | null;
   horaires: Record<string, { debut: string; fin: string }> | null;
+  /** Photo du profil de l'employé (chargée à part). */
+  photo?: string | null;
 }
 
 interface Conge {
@@ -96,7 +98,20 @@ export default function EmployesAvancesPage({
     const { data } = await supabase.from('employes').select('*')
       .eq('eleveur_profile_id', pid).eq('actif', true)
       .or('type.is.null,type.neq.benevole');
-    setEmployes((data ?? []) as Employe[]);
+    // Nom de l'employé : son profil particulier (les colonnes prenom / nom de
+    // `employes` ne sont pas remplies à l'invitation).
+    const rows = (data ?? []) as Employe[];
+    const pids = rows.map(e => e.employe_profile_id).filter((x): x is string => !!x);
+    if (pids.length) {
+      const { data: profils } = await supabase.from('user_profiles_complet')
+        .select('id, firstname, lastname, avatar_url').in('id', pids);
+      const parId = new Map((profils ?? []).map(p => [String(p.id), p]));
+      for (const e of rows) {
+        const p = e.employe_profile_id ? parId.get(e.employe_profile_id) : undefined;
+        if (p) { e.prenom = e.prenom || p.firstname; e.nom = e.nom || p.lastname; e.photo = p.avatar_url; }
+      }
+    }
+    setEmployes(rows);
     setLoading(false);
   }, [user, activeProfileId]);
 
@@ -135,7 +150,10 @@ export default function EmployesAvancesPage({
           {employes.map(e => (
             <button key={e.id} onClick={() => setEditing(e)}
               className="w-full flex items-center gap-3 border rounded-xl p-3 text-left hover:bg-gray-50">
-              <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: e.couleur_planning || themeColor }} />
+              {e.photo
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={e.photo} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 border-2" style={{ borderColor: e.couleur_planning || themeColor }} />
+                : <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: e.couleur_planning || themeColor }} />}
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-sm truncate">{`${e.prenom ?? ''} ${e.nom ?? ''}`.trim() || 'Employé'}</div>
                 <div className="text-xs text-gray-500 truncate">

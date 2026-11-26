@@ -118,7 +118,7 @@ const ACTIVITE_LABEL: Record<string, string> = {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AnimalFichePensionWebPage() {
-  const { user, userData, isPension, loading: authLoading } = usePensionAccess();
+  const { user, userData, loading: authLoading } = usePensionAccess();
   const router = useRouter();
   const params = useParams();
   const animalId = params?.animalId as string;
@@ -151,8 +151,9 @@ export default function AnimalFichePensionWebPage() {
   useEffect(() => {
     if (authLoading) return;
     if (!user) { router.push('/connexion'); return; }
-    if (userData && !isPension) { router.push('/'); return; }
-  }, [user, userData, isPension, authLoading, router]);
+    // Employé d'une pension (profil particulier) : pas de redirection, l'accès
+    // est vérifié au chargement (autorisation « Planning pension »).
+  }, [user, authLoading, router]);
 
   const load = useCallback(async () => {
     if (!user || !animalId) return;

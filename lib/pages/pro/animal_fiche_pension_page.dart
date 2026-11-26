@@ -17,11 +17,15 @@ import 'package:PetsMatch/utils/soin_remplace.dart';
 class AnimalFichePensionPage extends StatefulWidget {
   final String animalId;
   final String? animalNom;
+  /// Vue employé : profil pension de l'employeur. L'accès passe par celui de
+  /// la pension, si l'employé a l'autorisation « Planning pension ».
+  final String? employeurProfileId;
 
   const AnimalFichePensionPage({
     super.key,
     required this.animalId,
     this.animalNom,
+    this.employeurProfileId,
   });
 
   @override
@@ -92,7 +96,17 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
       // Repli (profil actif inconnu) : le profil pension / pet-sitter du
       // compte — jamais is_main (souvent l'élevage, accès d'un autre profil).
       var proProfileId = User_Info.activeProfileId;
-      if (proProfileId.isEmpty) {
+      final employeur = widget.employeurProfileId ?? '';
+      if (employeur.isNotEmpty) {
+        // Employé : autorisation « Planning pension » de son profil particulier.
+        final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final moi = await _supa.from('user_profiles_complet')
+            .select('id').eq('uid', myUid).eq('profile_type', 'particulier').maybeSingle();
+        final perm = moi == null ? null : await _supa.from('employe_permissions').select('permission')
+            .eq('eleveur_profile_id', employeur).eq('employe_profile_id', moi['id'])
+            .eq('permission', 'read_planning_pension').maybeSingle();
+        proProfileId = perm == null ? '' : employeur;
+      } else if (proProfileId.isEmpty) {
         final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
         final proProfile = myUid.isEmpty ? null : await _supa.from('user_profiles_complet')
             .select('id').eq('uid', myUid).inFilter('profile_type', ['pension', 'garde']).limit(1).maybeSingle();

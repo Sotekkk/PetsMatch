@@ -56,6 +56,8 @@ import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/pro/cr_a_valider_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
+import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
+import 'package:PetsMatch/utils/pensionnaires_employe.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/widgets/conge_date_range_sheet.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart' show AddTacheSheet;
@@ -3673,7 +3675,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         invitingProfileIds.isEmpty
             ? Future.value(<Map<String, dynamic>>[])
             : _supa.from('user_profiles_complet')
-                .select('id, nom, avatar_url, profile_type')
+                .select('id, nom, avatar_url, profile_type, cat_pro')
                 .inFilter('id', invitingProfileIds),
         _supa.from('taches_elevage')
             .select('id, titre, date, statut, animal_id, uid_eleveur, eleveur_profile_id')
@@ -3791,6 +3793,9 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         // association, ou pro avec cat_pro=pension) — sert à ouvrir les
         // protocoles dans le bon contexte (write_protocoles).
         u['profile_type_relation'] = (invitingProfile?['profile_type'] as String?) ?? primaryUser['profile_type'];
+        // Métier du profil qui a invité (pension…), pas celui du compte
+        // principal (souvent l'élevage) : vue, planning et onglets en dépendent.
+        if (invitingProfile != null) u['cat_pro'] = invitingProfile['cat_pro'];
         if (invitingProfile != null) {
           final nom = (invitingProfile['nom'] as String?) ?? '';
           if (nom.isNotEmpty) {
@@ -4139,13 +4144,17 @@ class _EmployeurExpandedCard extends StatelessWidget {
         Container(
           decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
           child: Row(children: [
-            _tab(context, '🐾 Animaux (${animaux.length})', activeTab == 'animaux', () => onTabChange('animaux')),
+            _tab(context, catPro == 'pension' ? 'Pensionnaires' : '🐾 Animaux (${animaux.length})', activeTab == 'animaux', () => onTabChange('animaux')),
             _tab(context, '✅ Tâches (${taches.length})', activeTab == 'taches', () => onTabChange('taches')),
             _tab(context, '🗃️ Inventaire', activeTab == 'inventaire', () => onTabChange('inventaire')),
           ]),
         ),
         // Contenu
-        if (activeTab == 'animaux') _EmployeAnimauxSection(
+        if (activeTab == 'animaux' && catPro == 'pension') _PensionnairesEmployeSection(
+          pensionProfileId: eleveurProfileId, autorise: perms.contains('read_planning_pension'),
+          pensionNom: nom, teal: teal, dark: dark,
+        )
+        else if (activeTab == 'animaux') _EmployeAnimauxSection(
           animaux: animaux, perms: perms, eleveurUid: uid, teal: teal, dark: dark,
           onAnimalTap: onAnimalTap, onReload: onReload,
         )
@@ -4621,6 +4630,87 @@ class _EmployeAnimauxSection extends StatefulWidget {
 
   @override
   State<_EmployeAnimauxSection> createState() => _EmployeAnimauxSectionState();
+}
+
+/// Pension : pensionnaires présents, selon l'autorisation « Planning pension ».
+class _PensionnairesEmployeSection extends StatefulWidget {
+  final String pensionProfileId, pensionNom;
+  final bool autorise;
+  final Color teal, dark;
+  const _PensionnairesEmployeSection({required this.pensionProfileId, required this.autorise,
+      required this.pensionNom, required this.teal, required this.dark});
+  @override
+  State<_PensionnairesEmployeSection> createState() => _PensionnairesEmployeSectionState();
+}
+
+class _PensionnairesEmployeSectionState extends State<_PensionnairesEmployeSection> {
+  late Future<List<Map<String, dynamic>>> _liste;
+
+  @override
+  void initState() {
+    super.initState();
+    _liste = widget.autorise ? pensionnairesPresents(widget.pensionProfileId) : Future.value(const []);
+  }
+
+  String _date(Object? v) {
+    final d = DateTime.tryParse(v?.toString() ?? '');
+    return d == null ? '' : '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+  }
+
+  Widget _message(String txt) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Text(txt, textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.autorise) {
+      return _message('Vous n\'avez pas l\'autorisation « Planning pension ». '
+          'Demandez à ${widget.pensionNom.isEmpty ? 'la pension' : widget.pensionNom} de vous la donner pour voir les pensionnaires.');
+    }
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _liste,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator()));
+        }
+        if (snap.hasError) return _message('Les pensionnaires n\'ont pas pu être chargés.');
+        final liste = snap.data ?? const [];
+        if (liste.isEmpty) return _message('Aucun pensionnaire présent.');
+        return Column(children: [
+          for (final p in liste)
+            ListTile(
+              leading: CircleAvatar(
+                radius: 22,
+                backgroundColor: widget.teal.withOpacity(0.12),
+                backgroundImage: (p['photo_url'] ?? '').toString().isNotEmpty
+                    ? CachedNetworkImageProvider(p['photo_url'].toString()) : null,
+                child: (p['photo_url'] ?? '').toString().isNotEmpty ? null
+                    : Text(((p['animal_nom'] ?? 'A').toString().isEmpty ? 'A' : p['animal_nom'].toString()[0]).toUpperCase(),
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: widget.teal)),
+              ),
+              title: Text((p['animal_nom'] ?? 'Animal').toString(),
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: widget.dark)),
+              subtitle: Text([
+                [p['espece'], p['race']].where((x) => (x ?? '').toString().isNotEmpty).join(' · '),
+                if ((p['logement'] ?? '').toString().isNotEmpty) p['logement'].toString(),
+                'du ${_date(p['date_entree'])}${_date(p['date_sortie_prevue']).isEmpty ? '' : ' au ${_date(p['date_sortie_prevue'])}'}',
+              ].where((x) => x.isNotEmpty).join(' — '),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              trailing: (p['animal_id'] ?? '').toString().isEmpty ? null : Icon(Icons.chevron_right, color: widget.teal),
+              onTap: (p['animal_id'] ?? '').toString().isEmpty ? null : () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => AnimalFichePensionPage(
+                  animalId: p['animal_id'].toString(),
+                  animalNom: p['animal_nom']?.toString(),
+                  employeurProfileId: widget.pensionProfileId,
+                ),
+              )),
+            ),
+        ]);
+      },
+    );
+  }
 }
 
 class _EmployeAnimauxSectionState extends State<_EmployeAnimauxSection> {
