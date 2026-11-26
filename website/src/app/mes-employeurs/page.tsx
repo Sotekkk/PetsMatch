@@ -929,6 +929,9 @@ function EspacePensionEmploye({ pensionProfileId, perms, pensionNom }: { pension
   const [espace, setEspace] = useState<EspacePension | null>(null);
   const [erreur, setErreur] = useState(false);
   const [action, setAction] = useState<{ sejour: SejourEmploye; mode: 'arrivee' | 'depart' } | null>(null);
+  // Recherche (nom, puce, propriétaire, logement) et filtre par espèce.
+  const [recherche, setRecherche] = useState('');
+  const [espece, setEspece] = useState<string | null>(null);
   const charger = useCallback(() => {
     if (!autorise || !pensionProfileId) return;
     chargerEspacePension(pensionProfileId).then(setEspace).catch(() => setErreur(true));
@@ -940,6 +943,19 @@ function EspacePensionEmploye({ pensionProfileId, perms, pensionNom }: { pension
   if (!autorise) return message(`Vous n'avez pas l'autorisation « Planning pension ». Demandez à ${pensionNom || 'la pension'} de vous la donner pour voir les pensionnaires.`);
   if (erreur) return message("Les pensionnaires n'ont pas pu être chargés.");
   if (!espace) return message('Chargement…');
+  const q = recherche.trim().toLowerCase();
+  const qPuce = q.replace(/[\s-]/g, '');
+  const retenu = (p: SejourEmploye) => {
+    if (espece && (p.espece ?? '').toLowerCase() !== espece) return false;
+    if (!q) return true;
+    return [p.animal_nom, p.proprietaire_nom, p.logement, p.race].some(x => (x ?? '').toLowerCase().includes(q))
+      || (!!qPuce && String(p.puce ?? '').toLowerCase().replace(/[\s-]/g, '').includes(qPuce));
+  };
+  const especes = [...new Set([...espace.presents, ...espace.arrivees].map(p => (p.espece ?? '').toLowerCase()).filter(Boolean))].sort();
+  const vue: EspacePension = {
+    presents: espace.presents.filter(retenu), arrivees: espace.arrivees.filter(retenu), departs: espace.departs.filter(retenu),
+  };
+  const filtre = !!espece || !!q;
   const infos = (p: SejourEmploye, fin: string[]) =>
     [[p.espece, p.race].filter(Boolean).join(' · '), p.logement, ...fin].filter(Boolean).join(' — ');
   const ligne = (p: SejourEmploye, detail: string, bouton?: { label: string; mode: 'arrivee' | 'depart' }) => (
@@ -976,26 +992,39 @@ function EspacePensionEmploye({ pensionProfileId, perms, pensionNom }: { pension
   return (
     <div className="p-4 space-y-4">
       <div className="flex gap-2">
-        {compteur('présents', espace.presents.length, '#0C5C6C')}
-        {compteur(espace.arrivees.length > 1 ? 'arrivées' : 'arrivée', espace.arrivees.length, '#6E9E57')}
-        {compteur(espace.departs.length > 1 ? 'départs' : 'départ', espace.departs.length, '#7B5EA7')}
+        {compteur('présents', vue.presents.length, '#0C5C6C')}
+        {compteur(vue.arrivees.length > 1 ? 'arrivées' : 'arrivée', vue.arrivees.length, '#6E9E57')}
+        {compteur(vue.departs.length > 1 ? 'départs' : 'départ', vue.departs.length, '#7B5EA7')}
       </div>
-      {espace.arrivees.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-sm font-bold text-[#1F2A2E]">Arrivées du jour ({espace.arrivees.length})</p>
-          {espace.arrivees.map(p => ligne(p, infos(p, [heure(p.heure_arrivee_prevue) ? `vers ${heure(p.heure_arrivee_prevue)}` : '']), { label: 'Arrivée', mode: 'arrivee' }))}
+      <input value={recherche} onChange={ev => setRecherche(ev.target.value)}
+        placeholder="Nom, puce, propriétaire, logement…" aria-label="Rechercher un pensionnaire"
+        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+      {especes.length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          {[null, ...especes].map(esp => (
+            <button key={esp ?? 'toutes'} onClick={() => setEspece(esp)}
+              className={`text-xs px-3 py-1 rounded-full border ${espece === esp ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'border-gray-200 text-gray-600'}`}>
+              {esp ? esp.charAt(0).toUpperCase() + esp.slice(1) : 'Toutes'}
+            </button>
+          ))}
         </div>
       )}
-      {espace.departs.length > 0 && (
+      {vue.arrivees.length > 0 && (
         <div className="space-y-2">
-          <p className="text-sm font-bold text-[#1F2A2E]">Départs du jour ({espace.departs.length})</p>
-          {espace.departs.map(p => ligne(p, infos(p, [heure(p.heure_depart_prevue) ? `vers ${heure(p.heure_depart_prevue)}` : '']), { label: 'Départ', mode: 'depart' }))}
+          <p className="text-sm font-bold text-[#1F2A2E]">Arrivées du jour ({vue.arrivees.length})</p>
+          {vue.arrivees.map(p => ligne(p, infos(p, [heure(p.heure_arrivee_prevue) ? `vers ${heure(p.heure_arrivee_prevue)}` : '']), { label: 'Arrivée', mode: 'arrivee' }))}
+        </div>
+      )}
+      {vue.departs.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-bold text-[#1F2A2E]">Départs du jour ({vue.departs.length})</p>
+          {vue.departs.map(p => ligne(p, infos(p, [heure(p.heure_depart_prevue) ? `vers ${heure(p.heure_depart_prevue)}` : '']), { label: 'Départ', mode: 'depart' }))}
         </div>
       )}
       <div className="space-y-2">
-        <p className="text-sm font-bold text-[#1F2A2E]">Pensionnaires présents ({espace.presents.length})</p>
-        {espace.presents.length === 0 ? message('Aucun pensionnaire présent.')
-          : espace.presents.map(p => ligne(p, infos(p, [p.date_sortie_prevue ? `jusqu'au ${date(p.date_sortie_prevue)}` : ''])))}
+        <p className="text-sm font-bold text-[#1F2A2E]">Pensionnaires présents ({vue.presents.length})</p>
+        {vue.presents.length === 0 ? message(filtre ? 'Aucun pensionnaire ne correspond.' : 'Aucun pensionnaire présent.')
+          : vue.presents.map(p => ligne(p, infos(p, [p.date_sortie_prevue ? `jusqu'au ${date(p.date_sortie_prevue)}` : ''])))}
       </div>
       {action && (
         <ArriveeDepartModal sejour={action.sejour} mode={action.mode} uid={action.sejour.pro_uid}

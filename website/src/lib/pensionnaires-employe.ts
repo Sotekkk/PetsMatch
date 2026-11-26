@@ -15,6 +15,7 @@ export interface SejourEmploye {
   animal_nom: string | null;
   espece: string | null;
   race: string | null;
+  puce?: string | null;
   proprietaire_nom: string | null;
   logement_id: string | null;
   date_entree: string | null;

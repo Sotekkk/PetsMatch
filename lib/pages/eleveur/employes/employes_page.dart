@@ -4679,7 +4679,28 @@ class EspacePensionEmploye extends StatefulWidget {
 
 class _EspacePensionEmployeState extends State<EspacePensionEmploye> {
   late Future<EspacePension> _espace;
+  // Recherche (nom, puce, propriétaire, logement) et filtre par espèce.
+  final _rechercheCtrl = TextEditingController();
+  String? _espece;
   bool get _autorise => widget.perms.contains('read_planning_pension');
+
+  @override
+  void dispose() {
+    _rechercheCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _retenu(Map<String, dynamic> p) {
+    if (_espece != null && (p['espece'] ?? '').toString().toLowerCase() != _espece) return false;
+    final q = _rechercheCtrl.text.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    final qPuce = q.replaceAll(RegExp(r'[\s\-]'), '');
+    return [p['animal_nom'], p['proprietaire_nom'], p['logement'], p['race']]
+            .any((x) => (x ?? '').toString().toLowerCase().contains(q))
+        || (qPuce.isNotEmpty && (p['puce'] ?? '').toString().toLowerCase().replaceAll(RegExp(r'[\s\-]'), '').contains(qPuce));
+  }
+
+  String _especeLabel(String e) => e.isEmpty ? e : e[0].toUpperCase() + e.substring(1);
   bool get _mouvements => widget.perms.contains('pension_arrivees_sorties');
 
   @override
@@ -4773,7 +4794,17 @@ class _EspacePensionEmployeState extends State<EspacePensionEmploye> {
           return const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator()));
         }
         if (snap.hasError) return _message("Les pensionnaires n'ont pas pu être chargés.");
-        final e = snap.data ?? const EspacePension();
+        final tout = snap.data ?? const EspacePension();
+        final especes = {
+          for (final p in [...tout.presents, ...tout.arrivees])
+            if ((p['espece'] ?? '').toString().isNotEmpty) (p['espece'] ?? '').toString().toLowerCase(),
+        }.toList()..sort();
+        final e = EspacePension(
+          presents: tout.presents.where(_retenu).toList(),
+          arrivees: tout.arrivees.where(_retenu).toList(),
+          departs: tout.departs.where(_retenu).toList(),
+        );
+        final filtre = _espece != null || _rechercheCtrl.text.trim().isNotEmpty;
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
@@ -4783,6 +4814,41 @@ class _EspacePensionEmployeState extends State<EspacePensionEmploye> {
               _compteur(e.departs.length > 1 ? 'départs' : 'départ', e.departs.length, const Color(0xFF7B5EA7)),
             ]),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+            child: TextField(
+              controller: _rechercheCtrl,
+              onChanged: (_) => setState(() {}),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Nom, puce, propriétaire, logement…',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: _rechercheCtrl.text.isEmpty ? null : IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () => setState(_rechercheCtrl.clear),
+                ),
+                isDense: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+          if (especes.length > 1)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+              child: Row(children: [
+                for (final esp in [null, ...especes])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(esp == null ? 'Toutes' : _especeLabel(esp), style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                      selected: _espece == esp,
+                      showCheckmark: false,
+                      onSelected: (_) => setState(() => _espece = esp),
+                    ),
+                  ),
+              ]),
+            ),
           if (e.arrivees.isNotEmpty) ...[
             _titre("Arrivées du jour", e.arrivees.length),
             for (final p in e.arrivees)
@@ -4804,7 +4870,7 @@ class _EspacePensionEmployeState extends State<EspacePensionEmploye> {
                   ) : null),
           ],
           _titre('Pensionnaires présents', e.presents.length),
-          if (e.presents.isEmpty) _message('Aucun pensionnaire présent.'),
+          if (e.presents.isEmpty) _message(filtre ? 'Aucun pensionnaire ne correspond.' : 'Aucun pensionnaire présent.'),
           for (final p in e.presents)
             _ligne(p, detail: _infos(p, [
               (p['date_sortie_prevue'] ?? '').toString().isEmpty ? '' : "jusqu'au ${_date(p['date_sortie_prevue'])}",
