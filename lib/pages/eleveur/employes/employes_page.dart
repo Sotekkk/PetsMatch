@@ -1226,7 +1226,7 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
       // filtrer sur is_main excluait tous les pros et associations.
       final profileRows = await _supa
           .from('user_profiles_complet')
-          .select('uid, id, firstname, lastname, avatar_url')
+          .select('uid, id, firstname, lastname, avatar_url, ville')
           .eq('profile_type', 'particulier')
           .neq('uid', widget.uid)
           .limit(2000);
@@ -1452,14 +1452,17 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
                 final nom   = _nomUser(u);
                 final photo = _photoUser(u);
                 return ListTile(
+                  // Photo de profil (homonymes) + ville.
                   leading: CircleAvatar(
+                    radius: 24,
                     backgroundColor: widget.teal.withOpacity(0.12),
                     backgroundImage: photo != null ? CachedNetworkImageProvider(photo) : null,
                     child: photo == null ? Icon(Icons.person, color: widget.teal) : null,
                   ),
                   title: Text(nom.isEmpty ? 'Utilisateur' : nom,
                       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                  subtitle: Text('Particulier',
+                  subtitle: Text(
+                      ['Particulier', if ((u['ville'] ?? '').toString().trim().isNotEmpty) u['ville'].toString().trim()].join(' · '),
                       style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: widget.teal)),
                   trailing: Icon(Icons.add_circle_outline, color: widget.teal),
                   onTap: () => _ajouter(u),

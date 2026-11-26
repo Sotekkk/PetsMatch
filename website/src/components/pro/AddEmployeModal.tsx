@@ -8,6 +8,8 @@ import { supabase } from '@/lib/supabase';
 import { ROLES_VETO, controleFormuleVeto, appliquerDroitsRoleVeto, type RoleVeto } from '@/lib/clinique';
 
 interface CandidateUser {
+  photo?: string | null;
+  ville?: string | null;
   uid: string;
   firstname: string | null;
   lastname: string | null;
@@ -43,7 +45,7 @@ export default function AddEmployeModal({ uid, profileId, estClinique = false, o
         `${profile?.firstname ?? ''} ${profile?.lastname ?? ''}`.trim()
       );
       const { data } = await supabase.from('user_profiles_complet')
-        .select('uid, firstname, lastname, nom, profile_type, cat_pro')
+        .select('uid, firstname, lastname, nom, profile_type, cat_pro, avatar_url, ville')
         .neq('uid', uid).eq('profile_type', 'particulier').limit(2000);
       const filtered = (data ?? []).map(u => ({
         uid: u.uid as string,
@@ -53,6 +55,8 @@ export default function AddEmployeModal({ uid, profileId, estClinique = false, o
         is_elevage: u.profile_type === 'eleveur',
         is_pro: !!u.profile_type && u.profile_type !== 'eleveur' && u.profile_type !== 'particulier',
         cat_pro: u.cat_pro as string | null,
+        photo: u.avatar_url as string | null,
+        ville: u.ville as string | null,
       })).filter(u => !(u.is_pro && CAT_SANTE.has((u.cat_pro ?? '').toLowerCase().trim())));
       setAllUsers(filtered);
       setLoading(false);
@@ -67,7 +71,7 @@ export default function AddEmployeModal({ uid, profileId, estClinique = false, o
     const lq = q.toLowerCase();
     setResults(
       allUsers.filter(u =>
-        `${u.firstname ?? ''} ${u.lastname ?? ''} ${u.name_elevage ?? ''}`.toLowerCase().includes(lq)
+        `${u.firstname ?? ''} ${u.lastname ?? ''}`.toLowerCase().includes(lq)
       ).slice(0, 15)
     );
   }
@@ -194,10 +198,17 @@ export default function AddEmployeModal({ uid, profileId, estClinique = false, o
               const nom = candidateNom(u);
               return (
                 <div key={u.uid} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
-                  <div className="w-10 h-10 rounded-full bg-teal-50 flex items-center justify-center flex-shrink-0 font-bold text-teal-600">
-                    {nom[0]?.toUpperCase() ?? '?'}
-                  </div>
-                  <span className="flex-1 text-sm font-medium text-[#1F2A2E]">{nom}</span>
+                  {/* Photo de profil : distinguer les homonymes. */}
+                  {u.photo
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={u.photo} alt={nom} className="w-12 h-12 rounded-full object-cover flex-shrink-0 border border-gray-100" />
+                    : <div className="w-12 h-12 rounded-full bg-teal-50 flex items-center justify-center flex-shrink-0 font-bold text-teal-600">
+                        {nom[0]?.toUpperCase() ?? '?'}
+                      </div>}
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium text-[#1F2A2E]">{nom}</span>
+                    <span className="block text-xs text-gray-500">Particulier{u.ville ? ` · ${u.ville}` : ''}</span>
+                  </span>
                   <button onClick={() => ajouter(u)} disabled={adding === u.uid}
                     className="text-sm font-semibold text-teal-700 border border-teal-700 hover:bg-teal-50 px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50">
                     {adding === u.uid ? '…' : 'Ajouter'}
