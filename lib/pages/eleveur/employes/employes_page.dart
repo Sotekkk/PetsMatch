@@ -58,6 +58,7 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/utils/pensionnaires_employe.dart';
+import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart' show confirmerArriveePension, enregistrerDepartPension;
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/widgets/conge_date_range_sheet.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart' show AddTacheSheet;
@@ -3697,7 +3698,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         invitingProfileIds.isEmpty
             ? Future.value(<Map<String, dynamic>>[])
             : _supa.from('user_profiles_complet')
-                .select('id, nom, avatar_url, profile_type, cat_pro')
+                .select('id, nom, profile_label, avatar_url, profile_picture_url_pro, profile_type, cat_pro, is_main')
                 .inFilter('id', invitingProfileIds),
         _supa.from('taches_elevage')
             .select('id, titre, date, statut, animal_id, uid_eleveur, eleveur_profile_id')
@@ -3817,15 +3818,22 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         u['profile_type_relation'] = (invitingProfile?['profile_type'] as String?) ?? primaryUser['profile_type'];
         // Métier du profil qui a invité (pension…), pas celui du compte
         // principal (souvent l'élevage) : vue, planning et onglets en dépendent.
-        if (invitingProfile != null) u['cat_pro'] = invitingProfile['cat_pro'];
         if (invitingProfile != null) {
-          final nom = (invitingProfile['nom'] as String?) ?? '';
+          u['cat_pro'] = invitingProfile['profile_type'] == 'pension' ? 'pension' : invitingProfile['cat_pro'];
+        }
+        if (invitingProfile != null) {
+          // Nom et photo de CE profil (ex. la pension), jamais ceux du profil
+          // principal du compte (ex. l'élevage) : nom, sinon libellé du profil ;
+          // photo du profil, sinon aucune (initiale) pour un profil secondaire.
+          String v(Object? x) => (x?.toString() ?? '').trim();
+          final nom = v(invitingProfile['nom']).isNotEmpty ? v(invitingProfile['nom']) : v(invitingProfile['profile_label']);
           if (nom.isNotEmpty) {
             u['name_elevage'] = nom;
             u['is_elevage'] = true;
           }
-          if ((invitingProfile['avatar_url'] as String?)?.isNotEmpty == true) {
-            u['profile_picture_url_elevage'] = invitingProfile['avatar_url'];
+          final photo = v(invitingProfile['avatar_url']).isNotEmpty ? v(invitingProfile['avatar_url']) : v(invitingProfile['profile_picture_url_pro']);
+          if (photo.isNotEmpty || invitingProfile['is_main'] != true) {
+            u['profile_picture_url_elevage'] = photo.isEmpty ? null : photo;
           }
         }
         // Animaux/tâches : scopés au profil précis de CETTE relation, jamais à
@@ -3943,6 +3951,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                             builder: (_) => EmployeurDetailPage(
                               eleveurUid: uid, eleveurNom: nom,
                               perms: perms, eleveurProfileId: eleveurProfileId,
+                              catPro: catPro,
                             ),
                           )),
                           onMarquerFait: _marquerFait,
@@ -4167,15 +4176,14 @@ class _EmployeurExpandedCard extends StatelessWidget {
         Container(
           decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
           child: Row(children: [
-            _tab(context, catPro == 'pension' ? 'Pensionnaires' : '🐾 Animaux (${animaux.length})', activeTab == 'animaux', () => onTabChange('animaux')),
+            _tab(context, catPro == 'pension' ? "Aujourd'hui" : '🐾 Animaux (${animaux.length})', activeTab == 'animaux', () => onTabChange('animaux')),
             _tab(context, '✅ Tâches (${taches.length})', activeTab == 'taches', () => onTabChange('taches')),
             _tab(context, '🗃️ Inventaire', activeTab == 'inventaire', () => onTabChange('inventaire')),
           ]),
         ),
         // Contenu
-        if (activeTab == 'animaux' && catPro == 'pension') _PensionnairesEmployeSection(
-          pensionProfileId: eleveurProfileId, autorise: perms.contains('read_planning_pension'),
-          pensionNom: nom, teal: teal, dark: dark,
+        if (activeTab == 'animaux' && catPro == 'pension') EspacePensionEmploye(
+          pensionProfileId: eleveurProfileId, perms: perms, pensionNom: nom, teal: teal, dark: dark,
         )
         else if (activeTab == 'animaux') _EmployeAnimauxSection(
           animaux: animaux, perms: perms, eleveurUid: uid, teal: teal, dark: dark,
@@ -4655,29 +4663,45 @@ class _EmployeAnimauxSection extends StatefulWidget {
   State<_EmployeAnimauxSection> createState() => _EmployeAnimauxSectionState();
 }
 
-/// Pension : pensionnaires présents, selon l'autorisation « Planning pension ».
-class _PensionnairesEmployeSection extends StatefulWidget {
+/// Espace pension de l'employé : chiffres du jour, arrivées et départs du jour
+/// (enregistrables avec « Arrivées et sorties »), pensionnaires présents —
+/// avec l'autorisation « Planning pension ». Miroir site : EspacePensionEmploye
+/// (mes-employeurs).
+class EspacePensionEmploye extends StatefulWidget {
   final String pensionProfileId, pensionNom;
-  final bool autorise;
+  final Set<String> perms;
   final Color teal, dark;
-  const _PensionnairesEmployeSection({required this.pensionProfileId, required this.autorise,
+  const EspacePensionEmploye({super.key, required this.pensionProfileId, required this.perms,
       required this.pensionNom, required this.teal, required this.dark});
   @override
-  State<_PensionnairesEmployeSection> createState() => _PensionnairesEmployeSectionState();
+  State<EspacePensionEmploye> createState() => _EspacePensionEmployeState();
 }
 
-class _PensionnairesEmployeSectionState extends State<_PensionnairesEmployeSection> {
-  late Future<List<Map<String, dynamic>>> _liste;
+class _EspacePensionEmployeState extends State<EspacePensionEmploye> {
+  late Future<EspacePension> _espace;
+  bool get _autorise => widget.perms.contains('read_planning_pension');
+  bool get _mouvements => widget.perms.contains('pension_arrivees_sorties');
 
   @override
   void initState() {
     super.initState();
-    _liste = widget.autorise ? pensionnairesPresents(widget.pensionProfileId) : Future.value(const []);
+    _charger();
   }
+
+  void _charger() {
+    _espace = _autorise ? chargerEspacePension(widget.pensionProfileId) : Future.value(const EspacePension());
+  }
+
+  void _recharger() => setState(_charger);
 
   String _date(Object? v) {
     final d = DateTime.tryParse(v?.toString() ?? '');
-    return d == null ? '' : '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+    return d == null ? '' : DateFormat('dd/MM').format(d);
+  }
+
+  String _heure(Object? v) {
+    final h = (v?.toString() ?? '').trim();
+    return h.length >= 5 ? h.substring(0, 5).replaceFirst(':', 'h') : h;
   }
 
   Widget _message(String txt) => Padding(
@@ -4686,50 +4710,106 @@ class _PensionnairesEmployeSectionState extends State<_PensionnairesEmployeSecti
             style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
       );
 
+  Widget _titre(String t, int n) => Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
+        child: Text('$t ($n)', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: widget.dark)),
+      );
+
+  Widget _compteur(String label, int n, Color couleur) => Expanded(child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(color: couleur.withOpacity(0.08), borderRadius: BorderRadius.circular(12)),
+        child: Column(children: [
+          Text('$n', style: TextStyle(fontFamily: 'Galey', fontSize: 20, fontWeight: FontWeight.w700, color: couleur)),
+          Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey)),
+        ]),
+      ));
+
+  Widget _avatar(Map<String, dynamic> p) {
+    final photo = (p['photo_url'] ?? '').toString();
+    final nom = (p['animal_nom'] ?? 'A').toString();
+    return CircleAvatar(
+      radius: 22,
+      backgroundColor: widget.teal.withOpacity(0.12),
+      backgroundImage: photo.isNotEmpty ? CachedNetworkImageProvider(photo) : null,
+      child: photo.isNotEmpty ? null : Text((nom.isEmpty ? 'A' : nom[0]).toUpperCase(),
+          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: widget.teal)),
+    );
+  }
+
+  void _ouvrirFiche(Map<String, dynamic> p) {
+    if ((p['animal_id'] ?? '').toString().isEmpty) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => AnimalFichePensionPage(
+      animalId: p['animal_id'].toString(), animalNom: p['animal_nom']?.toString(),
+      employeurProfileId: widget.pensionProfileId,
+    ))).then((_) { if (mounted) _recharger(); });
+  }
+
+  Widget _ligne(Map<String, dynamic> p, {required String detail, Widget? action}) => ListTile(
+        leading: _avatar(p),
+        title: Text((p['animal_nom'] ?? 'Animal').toString(),
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: widget.dark)),
+        subtitle: Text(detail, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+        trailing: action ?? ((p['animal_id'] ?? '').toString().isEmpty ? null : Icon(Icons.chevron_right, color: widget.teal)),
+        onTap: () => _ouvrirFiche(p),
+      );
+
+  String _infos(Map<String, dynamic> p, List<String> fin) => [
+        [p['espece'], p['race']].where((x) => (x ?? '').toString().isNotEmpty).join(' · '),
+        if ((p['logement'] ?? '').toString().isNotEmpty) p['logement'].toString(),
+        ...fin,
+      ].where((x) => x.isNotEmpty).join(' — ');
+
   @override
   Widget build(BuildContext context) {
-    if (!widget.autorise) {
-      return _message('Vous n\'avez pas l\'autorisation « Planning pension ». '
+    if (!_autorise) {
+      return _message("Vous n'avez pas l'autorisation « Planning pension ». "
           'Demandez à ${widget.pensionNom.isEmpty ? 'la pension' : widget.pensionNom} de vous la donner pour voir les pensionnaires.');
     }
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _liste,
+    return FutureBuilder<EspacePension>(
+      future: _espace,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator()));
         }
-        if (snap.hasError) return _message('Les pensionnaires n\'ont pas pu être chargés.');
-        final liste = snap.data ?? const [];
-        if (liste.isEmpty) return _message('Aucun pensionnaire présent.');
-        return Column(children: [
-          for (final p in liste)
-            ListTile(
-              leading: CircleAvatar(
-                radius: 22,
-                backgroundColor: widget.teal.withOpacity(0.12),
-                backgroundImage: (p['photo_url'] ?? '').toString().isNotEmpty
-                    ? CachedNetworkImageProvider(p['photo_url'].toString()) : null,
-                child: (p['photo_url'] ?? '').toString().isNotEmpty ? null
-                    : Text(((p['animal_nom'] ?? 'A').toString().isEmpty ? 'A' : p['animal_nom'].toString()[0]).toUpperCase(),
-                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: widget.teal)),
-              ),
-              title: Text((p['animal_nom'] ?? 'Animal').toString(),
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: widget.dark)),
-              subtitle: Text([
-                [p['espece'], p['race']].where((x) => (x ?? '').toString().isNotEmpty).join(' · '),
-                if ((p['logement'] ?? '').toString().isNotEmpty) p['logement'].toString(),
-                'du ${_date(p['date_entree'])}${_date(p['date_sortie_prevue']).isEmpty ? '' : ' au ${_date(p['date_sortie_prevue'])}'}',
-              ].where((x) => x.isNotEmpty).join(' — '),
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-              trailing: (p['animal_id'] ?? '').toString().isEmpty ? null : Icon(Icons.chevron_right, color: widget.teal),
-              onTap: (p['animal_id'] ?? '').toString().isEmpty ? null : () => Navigator.push(context, MaterialPageRoute(
-                builder: (_) => AnimalFichePensionPage(
-                  animalId: p['animal_id'].toString(),
-                  animalNom: p['animal_nom']?.toString(),
-                  employeurProfileId: widget.pensionProfileId,
-                ),
-              )),
-            ),
+        if (snap.hasError) return _message("Les pensionnaires n'ont pas pu être chargés.");
+        final e = snap.data ?? const EspacePension();
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
+            child: Row(children: [
+              _compteur('présents', e.presents.length, widget.teal),
+              _compteur(e.arrivees.length > 1 ? 'arrivées' : 'arrivée', e.arrivees.length, const Color(0xFF6E9E57)),
+              _compteur(e.departs.length > 1 ? 'départs' : 'départ', e.departs.length, const Color(0xFF7B5EA7)),
+            ]),
+          ),
+          if (e.arrivees.isNotEmpty) ...[
+            _titre("Arrivées du jour", e.arrivees.length),
+            for (final p in e.arrivees)
+              _ligne(p,
+                  detail: _infos(p, [if (_heure(p['heure_arrivee_prevue']).isNotEmpty) 'vers ${_heure(p['heure_arrivee_prevue'])}']),
+                  action: _mouvements ? TextButton(
+                    onPressed: () async { if (await confirmerArriveePension(context, p) && mounted) _recharger(); },
+                    child: const Text('Arrivée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  ) : null),
+          ],
+          if (e.departs.isNotEmpty) ...[
+            _titre('Départs du jour', e.departs.length),
+            for (final p in e.departs)
+              _ligne(p,
+                  detail: _infos(p, [if (_heure(p['heure_depart_prevue']).isNotEmpty) 'vers ${_heure(p['heure_depart_prevue'])}']),
+                  action: _mouvements ? TextButton(
+                    onPressed: () async { if (await enregistrerDepartPension(context, p) && mounted) _recharger(); },
+                    child: const Text('Départ', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  ) : null),
+          ],
+          _titre('Pensionnaires présents', e.presents.length),
+          if (e.presents.isEmpty) _message('Aucun pensionnaire présent.'),
+          for (final p in e.presents)
+            _ligne(p, detail: _infos(p, [
+              (p['date_sortie_prevue'] ?? '').toString().isEmpty ? '' : "jusqu'au ${_date(p['date_sortie_prevue'])}",
+            ])),
+          const SizedBox(height: 8),
         ]);
       },
     );
@@ -4945,7 +5025,11 @@ class EmployeurDetailPage extends StatefulWidget {
     required this.eleveurNom,
     this.perms = const {},
     this.eleveurProfileId,
+    this.catPro,
   });
+  /// Métier du profil employeur : « pension » → Espace pension.
+  final String? catPro;
+  bool get estPension => catPro == 'pension';
   @override
   State<EmployeurDetailPage> createState() => _EmployeurDetailPageState();
 }
@@ -5167,20 +5251,42 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
           icon: const Icon(Icons.arrow_back_ios_new, color: _dark, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(widget.eleveurNom,
+        title: Text(widget.estPension ? 'Espace pension — ${widget.eleveurNom}' : widget.eleveurNom,
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: _dark)),
+        actions: [
+          if (widget.estPension && widget.perms.contains('read_planning_pension'))
+            IconButton(
+              icon: const Icon(Icons.calendar_view_week_outlined, color: _teal),
+              tooltip: 'Planning',
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PensionPlanningPage(
+                employerUid: widget.eleveurUid, employerNom: widget.eleveurNom,
+                peutDeplacer: widget.perms.contains('pension_logements')))),
+            ),
+        ],
         bottom: TabBar(
           controller: _tab,
           labelColor: _teal,
           unselectedLabelColor: Colors.grey,
           indicatorColor: _teal,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
-          tabs: const [Tab(text: 'Mes Tâches'), Tab(text: 'Animaux'), Tab(text: 'Inventaire')],
+          tabs: [
+            Tab(text: widget.estPension ? "Aujourd'hui" : 'Mes Tâches'),
+            Tab(text: widget.estPension ? 'Mes tâches' : 'Animaux'),
+            const Tab(text: 'Inventaire'),
+          ],
         ),
       ),
       body: TabBarView(
         controller: _tab,
         children: [
+          if (widget.estPension) ...[
+            // Pension : arrivées / départs du jour, pensionnaires présents.
+            SingleChildScrollView(child: EspacePensionEmploye(
+              pensionProfileId: widget.eleveurProfileId ?? '', perms: widget.perms,
+              pensionNom: widget.eleveurNom, teal: _teal, dark: _dark,
+            )),
+            _buildTachesTab(),
+          ] else ...[
           _buildTachesTab(),
           // Même vue que « Mes animaux » de l'éleveur, scopée sur le profil
           // élevage de CETTE relation (eleveur_profile_id), actions selon
@@ -5193,6 +5299,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
               perms: widget.perms,
             ),
           ),
+          ],
           _InventaireEmployeTab(
             eleveurProfileId: widget.eleveurProfileId ?? '',
             eleveurUid: widget.eleveurUid,

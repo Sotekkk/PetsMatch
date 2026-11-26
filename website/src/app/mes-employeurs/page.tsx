@@ -5,7 +5,8 @@ import { ACTES_CARNET, validerTachesProtocole } from '@/lib/carnet-depuis-tache'
 import { moiIntervenant } from '@/lib/registre-source';
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
-import { pensionnairesPresents, type PensionnaireEmploye } from '@/lib/pensionnaires-employe';
+import { chargerEspacePension, type EspacePension, type SejourEmploye } from '@/lib/pensionnaires-employe';
+import ArriveeDepartModal from '@/components/pension/ArriveeDepartModal';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -310,11 +311,11 @@ export default function MesEmployeursPage() {
 
     // Profils user_profiles précis utilisés à l'invitation (peut différer du
     // compte principal — ex : invité depuis un profil pension secondaire).
-    type InvitingProfile = { id: string; nom: string | null; avatar_url: string | null; profile_type: string | null; cat_pro: string | null };
+    type InvitingProfile = { id: string; nom: string | null; profile_label: string | null; avatar_url: string | null; profile_picture_url_pro: string | null; profile_type: string | null; cat_pro: string | null; is_main: boolean | null };
     let invitingProfileById: Record<string, InvitingProfile> = {};
     if (allProfileIds.length > 0) {
       const { data: invitingProfiles } = await supabase.from('user_profiles_complet')
-        .select('id, nom, avatar_url, profile_type, cat_pro')
+        .select('id, nom, profile_label, avatar_url, profile_picture_url_pro, profile_type, cat_pro, is_main')
         .in('id', allProfileIds) as unknown as { data: InvitingProfile[] | null };
       invitingProfileById = Object.fromEntries((invitingProfiles ?? []).map(p => [p.id, p]));
     }
@@ -418,9 +419,14 @@ export default function MesEmployeursPage() {
       // (éleveur, association...), jamais celui du compte principal — sinon
       // deux relations du même employeur affichent le même nom.
       const invitingProfile = eleveurProfileId ? invitingProfileById[eleveurProfileId] : null;
-      const invitingNom = invitingProfile?.nom || '';
+      // Nom et photo de CE profil (ex. la pension), jamais ceux du profil
+      // principal du compte (ex. l'élevage) : nom, sinon libellé du profil ;
+      // photo du profil, sinon aucune (initiale) pour un profil secondaire.
+      const invitingNom = invitingProfile?.nom?.trim() || invitingProfile?.profile_label?.trim() || '';
+      const invitingPhoto = invitingProfile?.avatar_url || invitingProfile?.profile_picture_url_pro || null;
       const nameOverride = invitingNom
-        ? { name_elevage: invitingNom, is_elevage: true, profile_picture_url_elevage: invitingProfile?.avatar_url || u.profile_picture_url_elevage }
+        ? { name_elevage: invitingNom, is_elevage: true,
+            profile_picture_url_elevage: invitingPhoto ?? (invitingProfile?.is_main ? u.profile_picture_url_elevage : null) }
         : {};
 
       list.push({
@@ -428,7 +434,7 @@ export default function MesEmployeursPage() {
         ...nameOverride,
         // Métier du profil qui a invité (pension…), pas celui du compte
         // principal (souvent l'élevage) : vue, planning et onglets en dépendent.
-        ...(invitingProfile ? { cat_pro: invitingProfile.cat_pro } : {}),
+        ...(invitingProfile ? { cat_pro: invitingProfile.profile_type === 'pension' ? 'pension' : invitingProfile.cat_pro } : {}),
         employeId: rel.id,
         eleveur_profile_id: eleveurProfileId,
         profile_type_relation: invitingProfile?.profile_type ?? null,
@@ -580,7 +586,7 @@ export default function MesEmployeursPage() {
                 {/* Onglets */}
                 <div className="flex border-b border-gray-100">
                   {([
-                    ['animaux',    emp.cat_pro === 'pension' ? 'Pensionnaires' : `🐾 Animaux (${emp.animaux.length})`],
+                    ['animaux',    emp.cat_pro === 'pension' ? "Aujourd'hui" : `🐾 Animaux (${emp.animaux.length})`],
                     ['taches',     `✅ Tâches (${tachesEnCours.length})`],
                     ['inventaire', `🗃️ Inventaire`],
                   ] as const).map(([v, l]) => (
@@ -598,8 +604,7 @@ export default function MesEmployeursPage() {
 
                 {/* Onglet Animaux */}
                 {activeTab === 'animaux' && emp.cat_pro === 'pension' && (
-                  <PensionnairesEmploye pensionProfileId={emp.eleveur_profile_id}
-                    autorise={emp.perms.includes('read_planning_pension')} pensionNom={name} />
+                  <EspacePensionEmploye pensionProfileId={emp.eleveur_profile_id} perms={emp.perms} pensionNom={name} />
                 )}
                 {activeTab === 'animaux' && emp.cat_pro !== 'pension' && (
                   // Même vue que « Mes animaux » de l'éleveur, scopée sur le
@@ -915,47 +920,87 @@ function CreateTacheModal({ employer, myUid, myProfileId, onClose, onCreated }: 
   );
 }
 
-/** Pension : pensionnaires présents, selon l'autorisation « Planning pension » (miroir appli). */
-function PensionnairesEmploye({ pensionProfileId, autorise, pensionNom }: { pensionProfileId: string | null; autorise: boolean; pensionNom: string }) {
-  const [liste, setListe] = useState<PensionnaireEmploye[] | null>(null);
+/** Espace pension de l'employé : chiffres du jour, arrivées et départs du jour
+ *  (enregistrables avec « Arrivées et sorties »), pensionnaires présents — avec
+ *  l'autorisation « Planning pension ». Miroir appli : EspacePensionEmploye. */
+function EspacePensionEmploye({ pensionProfileId, perms, pensionNom }: { pensionProfileId: string | null; perms: string[]; pensionNom: string }) {
+  const autorise = perms.includes('read_planning_pension');
+  const mouvements = perms.includes('pension_arrivees_sorties');
+  const [espace, setEspace] = useState<EspacePension | null>(null);
   const [erreur, setErreur] = useState(false);
-  useEffect(() => {
+  const [action, setAction] = useState<{ sejour: SejourEmploye; mode: 'arrivee' | 'depart' } | null>(null);
+  const charger = useCallback(() => {
     if (!autorise || !pensionProfileId) return;
-    pensionnairesPresents(pensionProfileId).then(setListe).catch(() => setErreur(true));
+    chargerEspacePension(pensionProfileId).then(setEspace).catch(() => setErreur(true));
   }, [autorise, pensionProfileId]);
-  const date = (v: string | null) => v ? new Date(v).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '';
+  useEffect(() => { charger(); }, [charger]);
+  const date = (v: string | null | undefined) => v ? new Date(v).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '';
+  const heure = (v: string | null | undefined) => v && v.length >= 5 ? v.slice(0, 5).replace(':', 'h') : '';
   const message = (t: string) => <p className="text-center text-sm text-gray-400 py-4 px-4">{t}</p>;
   if (!autorise) return message(`Vous n'avez pas l'autorisation « Planning pension ». Demandez à ${pensionNom || 'la pension'} de vous la donner pour voir les pensionnaires.`);
   if (erreur) return message("Les pensionnaires n'ont pas pu être chargés.");
-  if (!liste) return message('Chargement…');
-  if (liste.length === 0) return message('Aucun pensionnaire présent.');
+  if (!espace) return message('Chargement…');
+  const infos = (p: SejourEmploye, fin: string[]) =>
+    [[p.espece, p.race].filter(Boolean).join(' · '), p.logement, ...fin].filter(Boolean).join(' — ');
+  const ligne = (p: SejourEmploye, detail: string, bouton?: { label: string; mode: 'arrivee' | 'depart' }) => (
+    <div key={`${p.id}-${bouton?.mode ?? 'present'}`} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
+      {p.photo_url
+        // eslint-disable-next-line @next/next/no-img-element
+        ? <img src={p.photo_url} alt={p.animal_nom ?? 'Animal'} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
+        : <div className="w-12 h-12 rounded-xl bg-[#E8F4F6] flex items-center justify-center font-bold text-[#0C5C6C] flex-shrink-0">
+            {(p.animal_nom ?? 'A').charAt(0).toUpperCase()}
+          </div>}
+      {p.animal_id ? (
+        <Link href={`/pension/fiche/${p.animal_id}`} className="flex-1 min-w-0 hover:underline">
+          <p className="font-semibold text-[#1F2A2E] text-sm truncate">{p.animal_nom ?? 'Animal'}</p>
+          <p className="text-xs text-gray-500 truncate">{detail}</p>
+        </Link>
+      ) : (
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-[#1F2A2E] text-sm truncate">{p.animal_nom ?? 'Animal'}</p>
+          <p className="text-xs text-gray-500 truncate">{detail}</p>
+        </div>
+      )}
+      {bouton && mouvements && (
+        <button onClick={() => setAction({ sejour: p, mode: bouton.mode })}
+          className="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full bg-[#0C5C6C] text-white">{bouton.label}</button>
+      )}
+    </div>
+  );
+  const compteur = (label: string, n: number, couleur: string) => (
+    <div className="flex-1 rounded-xl py-2.5 text-center" style={{ background: `${couleur}14` }}>
+      <p className="text-xl font-bold" style={{ color: couleur }}>{n}</p>
+      <p className="text-[11px] text-gray-500">{label}</p>
+    </div>
+  );
   return (
-    <div className="p-4 space-y-2">
-      {liste.map(p => {
-        const contenu = (
-          <>
-            {p.photo_url
-              // eslint-disable-next-line @next/next/no-img-element
-              ? <img src={p.photo_url} alt={p.animal_nom ?? 'Animal'} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
-              : <div className="w-12 h-12 rounded-xl bg-[#E8F4F6] flex items-center justify-center font-bold text-[#0C5C6C] flex-shrink-0">
-                  {(p.animal_nom ?? 'A').charAt(0).toUpperCase()}
-                </div>}
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-[#1F2A2E] text-sm truncate">{p.animal_nom ?? 'Animal'}</p>
-              <p className="text-xs text-gray-500 truncate">
-                {[[p.espece, p.race].filter(Boolean).join(' · '), p.logement,
-                  `du ${date(p.date_entree)}${p.date_sortie_prevue ? ` au ${date(p.date_sortie_prevue)}` : ''}`].filter(Boolean).join(' — ')}
-              </p>
-            </div>
-          </>
-        );
-        return p.animal_id ? (
-          <Link key={p.id} href={`/pension/fiche/${p.animal_id}`}
-            className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5 hover:bg-gray-100 transition-colors">
-            {contenu}<span className="text-[#0C5C6C] font-semibold" aria-hidden>→</span>
-          </Link>
-        ) : <div key={p.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">{contenu}</div>;
-      })}
+    <div className="p-4 space-y-4">
+      <div className="flex gap-2">
+        {compteur('présents', espace.presents.length, '#0C5C6C')}
+        {compteur(espace.arrivees.length > 1 ? 'arrivées' : 'arrivée', espace.arrivees.length, '#6E9E57')}
+        {compteur(espace.departs.length > 1 ? 'départs' : 'départ', espace.departs.length, '#7B5EA7')}
+      </div>
+      {espace.arrivees.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-bold text-[#1F2A2E]">Arrivées du jour ({espace.arrivees.length})</p>
+          {espace.arrivees.map(p => ligne(p, infos(p, [heure(p.heure_arrivee_prevue) ? `vers ${heure(p.heure_arrivee_prevue)}` : '']), { label: 'Arrivée', mode: 'arrivee' }))}
+        </div>
+      )}
+      {espace.departs.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-bold text-[#1F2A2E]">Départs du jour ({espace.departs.length})</p>
+          {espace.departs.map(p => ligne(p, infos(p, [heure(p.heure_depart_prevue) ? `vers ${heure(p.heure_depart_prevue)}` : '']), { label: 'Départ', mode: 'depart' }))}
+        </div>
+      )}
+      <div className="space-y-2">
+        <p className="text-sm font-bold text-[#1F2A2E]">Pensionnaires présents ({espace.presents.length})</p>
+        {espace.presents.length === 0 ? message('Aucun pensionnaire présent.')
+          : espace.presents.map(p => ligne(p, infos(p, [p.date_sortie_prevue ? `jusqu'au ${date(p.date_sortie_prevue)}` : ''])))}
+      </div>
+      {action && (
+        <ArriveeDepartModal sejour={action.sejour} mode={action.mode} uid={action.sejour.pro_uid}
+          onClose={() => setAction(null)} onDone={() => { setAction(null); charger(); }} />
+      )}
     </div>
   );
 }
