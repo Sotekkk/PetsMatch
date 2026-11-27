@@ -1579,10 +1579,20 @@ class _CompleterRegistreSheetState extends State<_CompleterRegistreSheet> {
 
   Future<void> _charger() async {
     try {
-      var q = _supa.from('animaux').select('id, nom, espece, reproducteur')
-          .eq('uid_eleveur', widget.uid).or('statut.is.null,statut.eq.present');
-      if (widget.profileId.isNotEmpty) q = q.eq('profile_id', widget.profileId);
-      final liste = List<Map<String, dynamic>>.from(await q.order('nom') as List);
+      // Animaux dont le profil est propriétaire (comme « Mes animaux ») — pas
+      // seulement ceux nés à l'élevage : un reproducteur acheté y figure.
+      var pq = _supa.from('animaux_proprietes').select('animal_id')
+          .eq('uid_proprio', widget.uid).eq('statut', 'actif').isFilter('date_fin', null);
+      if (widget.profileId.isNotEmpty) pq = pq.eq('profile_id_proprio', widget.profileId);
+      final ids = {for (final p in await pq as List) p['animal_id'].toString()}.toList();
+      final liste = <Map<String, dynamic>>[];
+      for (var i = 0; i < ids.length; i += 200) {
+        final rows = await _supa.from('animaux').select('id, nom, espece, reproducteur, statut')
+            .inFilter('id', ids.skip(i).take(200).toList()) as List;
+        // Toujours à l'élevage (présent, réservé, disponible, en soin…) ; seuls les partis sont écartés.
+        liste.addAll([for (final a in rows) if (!const {'sorti', 'adopte', 'decede', 'cede', 'vendu'}.contains((a['statut'] ?? '').toString())) Map<String, dynamic>.from(a)]);
+      }
+      liste.sort((a, b) => (a['nom'] ?? '').toString().toLowerCase().compareTo((b['nom'] ?? '').toString().toLowerCase()));
       for (var i = 0; i < liste.length; i += 100) {
         final ids = [for (final a in liste.skip(i).take(100)) a['id'].toString()];
         final r = await _supa.rpc('pm_registre_completer', params: {'p_animal_ids': ids, 'p_simuler': true});

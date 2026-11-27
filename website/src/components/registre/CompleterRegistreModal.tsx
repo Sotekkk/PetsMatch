@@ -21,11 +21,21 @@ export default function CompleterRegistreModal({ uid, profileId, onClose, onDone
 
   useEffect(() => {
     (async () => {
-      let q = supabase.from('animaux').select('id, nom, espece, reproducteur')
-        .eq('uid_eleveur', uid).or('statut.is.null,statut.eq.present');
-      if (profileId) q = q.eq('profile_id', profileId);
-      const { data } = await q.order('nom');
-      const liste = (data ?? []) as AnimalRegistre[];
+      // Animaux dont le profil est propriétaire (comme « Mes animaux ») — pas
+      // seulement ceux nés à l'élevage : un reproducteur acheté y figure.
+      let pq = supabase.from('animaux_proprietes').select('animal_id')
+        .eq('uid_proprio', uid).eq('statut', 'actif').is('date_fin', null);
+      if (profileId) pq = pq.eq('profile_id_proprio', profileId);
+      const { data: props } = await pq;
+      const ids = [...new Set(((props ?? []) as { animal_id: string }[]).map(p => String(p.animal_id)))];
+      const liste: AnimalRegistre[] = [];
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data } = await supabase.from('animaux').select('id, nom, espece, reproducteur, statut').in('id', ids.slice(i, i + 200));
+        liste.push(...((data ?? []) as (AnimalRegistre & { statut?: string | null })[])
+          // Toujours à l'élevage (présent, réservé, disponible, en soin…) ; seuls les partis sont écartés.
+          .filter(a => !['sorti', 'adopte', 'decede', 'cede', 'vendu'].includes(a.statut ?? '')));
+      }
+      liste.sort((a, b) => (a.nom ?? '').localeCompare(b.nom ?? '', 'fr'));
       // Soins du carnet pas encore au registre, par animal (simulation, sans écriture).
       const compte: Record<string, number> = {};
       for (let i = 0; i < liste.length; i += 100) {
