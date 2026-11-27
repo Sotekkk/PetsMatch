@@ -223,6 +223,8 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
     setState(() { _hasRegistres = config.hasRegistres; _planLoading = false; });
   }
 
+  int _versionListe = 0;
+
   int get _activeFilterCount =>
       (_filterEspece != null ? 1 : 0) + (_filterType != null ? 1 : 0);
 
@@ -578,6 +580,8 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
         ],
       ),
       body: _RegistreList(
+        // Relue après l'ajout d'un acte (liste non temps réel).
+        key: ValueKey(_versionListe),
         filterEspece: _filterEspece,
         filterType: _filterType,
         isAssociation: widget.isAssociation,
@@ -590,8 +594,10 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
         label: const Text('Nouvel acte',
             style: TextStyle(fontFamily: 'Galey',
                 fontWeight: FontWeight.w600, color: Colors.white)),
-        onPressed: () => Navigator.push(
-            context, MaterialPageRoute(builder: (_) => const _NouvelActePage())),
+        onPressed: () async {
+          await Navigator.push(context, MaterialPageRoute(builder: (_) => const _NouvelActePage()));
+          if (mounted) setState(() => _versionListe++);
+        },
       ),
     );
   }
@@ -599,30 +605,53 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
 
 // ── Liste des actes ────────────────────────────────────────────────────────────
 
-class _RegistreList extends StatelessWidget {
+class _RegistreList extends StatefulWidget {
   final String? filterEspece;
   final String? filterType;
   final bool isAssociation;
   final bool isPension;
   final Set<String> assoAnimalIds;
-  const _RegistreList({this.filterEspece, this.filterType, this.isAssociation = false, this.isPension = false, this.assoAnimalIds = const {}});
+  const _RegistreList({super.key, this.filterEspece, this.filterType, this.isAssociation = false, this.isPension = false, this.assoAnimalIds = const {}});
 
+  @override
+  State<_RegistreList> createState() => _RegistreListState();
+}
+
+class _RegistreListState extends State<_RegistreList> {
   static String get _uid => _uidRegistre;
+  late Future<List<Map<String, dynamic>>> _actes;
+
+  @override
+  void initState() {
+    super.initState();
+    _actes = _charger();
+  }
+
+  // Lecture simple, relue après chaque suppression (le flux temps réel ne
+  // retirait pas toujours la ligne supprimée de l'écran).
+  Future<List<Map<String, dynamic>>> _charger() async {
+    final rows = await Supabase.instance.client
+        .from('registre_sanitaire').select().eq('uid_eleveur', _uid)
+        .order('date_acte', ascending: false).order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows as List);
+  }
+
+  Future<void> _recharger() async {
+    final f = _charger();
+    setState(() => _actes = f);
+    await f;
+  }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: Supabase.instance.client
-          .from('registre_sanitaire')
-          .stream(primaryKey: ['id'])
-          .eq('uid_eleveur', _uid)
-          .order('date_acte', ascending: false),
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _actes,
       builder: (ctx, snap) {
-        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+        if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
         var docs = snap.data ?? [];
-        if (isPension) {
+        if (widget.isPension) {
           docs = docs.where((d) => d['profil_source'] == 'pension').toList();
-        } else if (isAssociation) {
+        } else if (widget.isAssociation) {
           docs = docs.where((d) => d['profil_source'] == 'association').toList();
         } else {
           docs = docs.where((d) {
@@ -630,20 +659,31 @@ class _RegistreList extends StatelessWidget {
             return ps == null || ps == 'eleveur';
           }).toList();
         }
-        if (filterEspece != null) {
-          docs = docs.where((d) => d['espece'] == filterEspece).toList();
+        if (widget.filterEspece != null) {
+          docs = docs.where((d) => d['espece'] == widget.filterEspece).toList();
         }
-        if (filterType != null) {
-          docs = docs.where((d) => d['type_acte'] == filterType).toList();
+        if (widget.filterType != null) {
+          docs = docs.where((d) => d['type_acte'] == widget.filterType).toList();
         }
-        final filtered = filterEspece != null || filterType != null;
-        if (docs.isEmpty) return _EmptyState(filtered: filtered);
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-          itemCount: docs.length,
-          itemBuilder: (_, i) => _ActeCard(
-            doc: docs[i],
-            onDelete: () => _confirmDelete(ctx, docs[i]),
+        // Plus récent en haut : date de l'acte, puis saisie la plus récente.
+        docs.sort((a, b) {
+          final d = (b['date_acte']?.toString() ?? '').compareTo(a['date_acte']?.toString() ?? '');
+          return d != 0 ? d : (b['created_at']?.toString() ?? '').compareTo(a['created_at']?.toString() ?? '');
+        });
+        final filtered = widget.filterEspece != null || widget.filterType != null;
+        if (docs.isEmpty) {
+          return RefreshIndicator(onRefresh: _recharger,
+              child: ListView(children: [SizedBox(height: 400, child: _EmptyState(filtered: filtered))]));
+        }
+        return RefreshIndicator(
+          onRefresh: _recharger,
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+            itemCount: docs.length,
+            itemBuilder: (_, i) => _ActeCard(
+              doc: docs[i],
+              onDelete: () => _confirmDelete(ctx, docs[i]),
+            ),
           ),
         );
       },
@@ -671,10 +711,23 @@ class _RegistreList extends StatelessWidget {
         ],
       ),
     );
-    if (confirmed == true) {
-      await Supabase.instance.client
-          .from('registre_sanitaire').delete().eq('id', doc['id']);
+    if (confirmed != true) return;
+    // Résultat vérifié : un refus de la base ne doit pas faire croire que c'est supprimé.
+    String? erreur;
+    try {
+      final r = await Supabase.instance.client
+          .from('registre_sanitaire').delete().eq('id', doc['id']).select('id');
+      if ((r as List).isEmpty) {
+        erreur = "Suppression impossible : cette ligne n'appartient pas à ce registre (enregistrée par un autre profil ou un autre élevage).";
+      }
+    } catch (e) {
+      erreur = 'Suppression impossible : $e';
     }
+    if (!mounted) return;
+    if (erreur != null) {
+      ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text(erreur, style: const TextStyle(fontFamily: 'Galey'))));
+    }
+    await _recharger();
   }
 }
 

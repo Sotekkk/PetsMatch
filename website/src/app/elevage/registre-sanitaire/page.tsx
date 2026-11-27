@@ -49,7 +49,11 @@ function RegistreSanitairePageInner() {
   const isPensionSource = profilSource === 'pension';
   const planGateLoading = isPensionSource ? pensionPlanLoading : planLoading;
   const hasRegistreAccess = isPensionSource ? pensionPlan !== 'free' : planConfig.hasRegistres;
-  const [actes, setActes] = useState<Acte[]>([]);
+  const [actesBruts, setActes] = useState<Acte[]>([]);
+  // Plus récent en haut : date de l'acte, puis saisie la plus récente (même jour).
+  const actes = [...actesBruts].sort((a, b) =>
+    (b.date_acte ?? '').localeCompare(a.date_acte ?? '')
+    || String((b as { created_at?: string }).created_at ?? '').localeCompare(String((a as { created_at?: string }).created_at ?? '')));
   const [fetching, setFetching] = useState(true);
   const [filtreType, setFiltreType] = useState('tous');
   const [search, setSearch] = useState('');
@@ -107,7 +111,14 @@ function RegistreSanitairePageInner() {
 
   async function handleDelete(id: string) {
     if (!confirm('Supprimer cet acte ?')) return;
-    await supabase.from('registre_sanitaire').delete().eq('id', id);
+    // Résultat vérifié : un refus de la base ne doit pas faire croire que c'est supprimé.
+    const { data, error } = await supabase.from('registre_sanitaire').delete().eq('id', id).select('id');
+    if (error || !data?.length) {
+      alert(error
+        ? `Suppression impossible : ${error.message}`
+        : "Suppression impossible : cette ligne n'appartient pas à ce registre (enregistrée par un autre profil ou un autre élevage).");
+      return;
+    }
     setActes((prev) => prev.filter((a) => a.id !== id));
     setSelected(null);
   }
