@@ -18,7 +18,7 @@ async function emailsDuCompte(uid: string): Promise<string[]> {
   const { data: u } = await admin.from('users').select('email').eq('uid', uid).maybeSingle();
   const e = (u as { email?: string | null } | null)?.email?.trim().toLowerCase();
   if (e) out.add(e);
-  const { data: profs } = await admin.from('user_profiles_complet').select('email_contact').eq('uid', uid);
+  const { data: profs } = await admin.from('user_profiles').select('email_contact').eq('uid', uid);
   for (const p of (profs ?? []) as { email_contact?: string | null }[]) {
     const x = p.email_contact?.trim().toLowerCase();
     if (x) out.add(x);

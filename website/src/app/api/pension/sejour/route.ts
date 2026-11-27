@@ -441,7 +441,7 @@ export async function POST(req: NextRequest) {
     const aTraiter = ouvertes.filter(d => verrouillees.has(String(d.id)));
     if (!aTraiter.length) return NextResponse.json({ error: 'Demande déjà traitée' }, { status: 409 });
     const { data: cp } = d0.client_profile_id
-      ? await admin.from('user_profiles_complet').select('firstname, lastname, nom, phone_number, email_contact, rue, code_postal, ville').eq('id', d0.client_profile_id).maybeSingle()
+      ? await admin.from('user_profiles').select('firstname, lastname, nom, phone_number, email_contact, rue, code_postal, ville').eq('id', d0.client_profile_id).maybeSingle()
       : { data: null };
     const c = cp as Record<string, string | null> | null;
     const acceptes: Demande[] = [];

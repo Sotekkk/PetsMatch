@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
 
   // Client du séjour (demande, sinon propriétaire de la fiche — profil exact :
   // un élevage reste l'élevage) et ses coordonnées (profil, compte, séjour).
-  const client = await clientDuSejour(admin, e, proUid);
+  const client = await clientDuSejour(admin, e, proUid, { tablesBrutes: true });
   const clientUid = client.uid, clientProfileId = client.profileId;
   const clientNom = nomComplet(client) || null;
   const clientEmail = client.email || null;

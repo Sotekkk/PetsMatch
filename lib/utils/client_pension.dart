@@ -56,7 +56,7 @@ Future<ClientPension> clientDuSejour(Map<String, dynamic> e) async {
   if (uid != null) {
     try {
       compte = await supa.from('users_complet')
-          .select('firstname, lastname, email, phone_number, rue, code_postal, ville').eq('uid', uid).maybeSingle();
+          .select('firstname, lastname, email, phone_number, rue, code_postal, ville, adress').eq('uid', uid).maybeSingle();
     } catch (_) {}
   }
 
@@ -80,7 +80,7 @@ Future<ClientPension> clientDuSejour(Map<String, dynamic> e) async {
       (RegExp(r'\b\d{5}\b').hasMatch(b) ? 1 : 0) + (b.split(RegExp(r'[\s,]+')).where((x) => x.isNotEmpty).length >= 3 ? 1 : 0);
   var aRue = rue, aCp = cp, aVille = ville;
   var score = scoreChamps(rue, cp, ville);
-  for (final b in (estPro ? [prof?['adresse_pro'], prof?['adresse'], e['proprietaire_adresse']] : [prof?['adresse'], e['proprietaire_adresse']]).map(t)) {
+  for (final b in (estPro ? [prof?['adresse_pro'], prof?['adresse'], e['proprietaire_adresse']] : [prof?['adresse'], compte?['adress'], e['proprietaire_adresse']]).map(t)) {
     if (scoreBloc(b) > score) { aRue = b; aCp = ''; aVille = ''; score = scoreBloc(b); }
   }
   return ClientPension(

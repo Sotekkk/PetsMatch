@@ -34,7 +34,13 @@ function meilleureAdresse(champs: { rue: string; cp: string; ville: string }, bl
 export function nomComplet(c: ClientPension) { return `${c.prenom} ${c.nom}`.trim(); }
 export function adresseClient(c: ClientPension) { return [c.rue, [c.cp, c.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '); }
 
-export async function clientDuSejour(sb: SupabaseClient, e: Ligne, pensionUid?: string | null): Promise<ClientPension> {
+export async function clientDuSejour(sb: SupabaseClient, e: Ligne, pensionUid?: string | null,
+  /** Serveur (service role, sans jeton) : tables d'origine. Les vues *_complet
+   *  masquent téléphone, rue et code postal à qui n'est ni le titulaire ni un pro
+   *  — sans jeton, seule la ville passait (contrat « Adresse : Chatou »). */
+  opts: { tablesBrutes?: boolean } = {}): Promise<ClientPension> {
+  const tProfils = opts.tablesBrutes ? 'user_profiles' : 'user_profiles_complet';
+  const tComptes = opts.tablesBrutes ? 'users' : 'users_complet';
   let uid: string | null = null, pid: string | null = null;
   try {
     const { data: dem } = await sb.from('pension_demandes').select('client_uid, client_profile_id')
@@ -52,13 +58,13 @@ export async function clientDuSejour(sb: SupabaseClient, e: Ligne, pensionUid?: 
   }
   let prof: Ligne | null = null, compte: Ligne | null = null;
   if (pid) {
-    const { data } = await sb.from('user_profiles_complet')
+    const { data } = await sb.from(tProfils)
       .select('profile_type, nom, firstname, lastname, phone_number, phone, telephone, email_contact, rue, code_postal, ville, rue_pro, code_postal_pro, ville_pro, adresse, adresse_pro')
       .eq('id', pid).maybeSingle();
     prof = data as Ligne | null;
   }
   if (uid) {
-    const { data } = await sb.from('users_complet').select('firstname, lastname, email, phone_number, rue, code_postal, ville').eq('uid', uid).maybeSingle();
+    const { data } = await sb.from(tComptes).select('firstname, lastname, email, phone_number, rue, code_postal, ville, adress').eq('uid', uid).maybeSingle();
     compte = data as Ligne | null;
   }
   const type = t(prof?.profile_type);
@@ -71,7 +77,7 @@ export async function clientDuSejour(sb: SupabaseClient, e: Ligne, pensionUid?: 
   const cp = estPro ? premier(prof?.code_postal_pro, prof?.code_postal) : premier(prof?.code_postal, compte?.code_postal);
   const ville = estPro ? premier(prof?.ville_pro, prof?.ville) : premier(prof?.ville, compte?.ville);
   const adr = meilleureAdresse({ rue, cp, ville },
-    estPro ? [prof?.adresse_pro, prof?.adresse, e.proprietaire_adresse] : [prof?.adresse, e.proprietaire_adresse]);
+    estPro ? [prof?.adresse_pro, prof?.adresse, e.proprietaire_adresse] : [prof?.adresse, compte?.adress, e.proprietaire_adresse]);
   return {
     uid, profileId: pid, estPro, prenom, nom,
     email: premier(prof?.email_contact, e.proprietaire_email, contact.includes('@') ? contact : '', compte?.email),

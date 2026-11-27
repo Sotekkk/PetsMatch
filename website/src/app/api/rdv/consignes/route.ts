@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
     }
     // E-mail : profil du client, rendez-vous, puis e-mail du compte.
     let email: string | null = null;
-    if (rdv.client_profile_id) email = ((await admin.from('user_profiles_complet').select('email_contact').eq('id', rdv.client_profile_id).maybeSingle()).data as { email_contact?: string } | null)?.email_contact ?? null;
+    if (rdv.client_profile_id) email = ((await admin.from('user_profiles').select('email_contact').eq('id', rdv.client_profile_id).maybeSingle()).data as { email_contact?: string } | null)?.email_contact ?? null;
     if (!emailValide(email)) email = rdv.client_email_manuel;
     if (!emailValide(email) && rdv.client_uid) email = ((await admin.from('users').select('email').eq('uid', rdv.client_uid).maybeSingle()).data as { email?: string } | null)?.email ?? null;
     let emailEnvoye = false;

@@ -75,7 +75,7 @@ async function correspond(uid: string, a: Animal): Promise<boolean> {
   const c = a.acquereur_contact_manuel;
   if (!c || (!c.email && !c.tel)) return false;
   const { data: u } = await admin.from('users').select('email, phone_number').eq('uid', uid).maybeSingle();
-  const { data: profs } = await admin.from('user_profiles_complet').select('email_contact, phone_number').eq('uid', uid);
+  const { data: profs } = await admin.from('user_profiles').select('email_contact, phone_number').eq('uid', uid);
   const emails = new Set([(u as { email?: string } | null)?.email, ...((profs ?? []) as { email_contact?: string }[]).map(p => p.email_contact)]
     .filter(Boolean).map(e => String(e).trim().toLowerCase()));
   const tels = new Set([(u as { phone_number?: string } | null)?.phone_number, ...((profs ?? []) as { phone_number?: string }[]).map(p => p.phone_number)]

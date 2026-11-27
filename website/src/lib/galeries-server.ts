@@ -157,7 +157,7 @@ export async function contenuGalerie(album: AlbumRow, role: 'pro' | 'client') {
 export async function emailClientAlbum(album: AlbumRow): Promise<string | null> {
   if (album.client_email?.trim()) return album.client_email.trim();
   if (album.client_profile_id) {
-    const { data } = await admin.from('user_profiles_complet').select('email_contact').eq('id', album.client_profile_id).maybeSingle();
+    const { data } = await admin.from('user_profiles').select('email_contact').eq('id', album.client_profile_id).maybeSingle();
     const e = (data as { email_contact?: string | null } | null)?.email_contact?.trim();
     if (e) return e;
   }
