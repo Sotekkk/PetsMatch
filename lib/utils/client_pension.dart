@@ -49,7 +49,7 @@ Future<ClientPension> clientDuSejour(Map<String, dynamic> e) async {
   if (pid != null) {
     try {
       prof = await supa.from('user_profiles_complet')
-          .select('profile_type, nom, firstname, lastname, phone_number, email_contact, rue, code_postal, ville, rue_pro, code_postal_pro, ville_pro')
+          .select('profile_type, nom, firstname, lastname, phone_number, phone, telephone, email_contact, rue, code_postal, ville, rue_pro, code_postal_pro, ville_pro, adresse, adresse_pro')
           .eq('id', pid).maybeSingle();
     } catch (_) {}
   }
@@ -69,11 +69,25 @@ Future<ClientPension> clientDuSejour(Map<String, dynamic> e) async {
   final rue = estPro ? premier([prof?['rue_pro'], prof?['rue']]) : premier([prof?['rue'], compte?['rue']]);
   final cp = estPro ? premier([prof?['code_postal_pro'], prof?['code_postal']]) : premier([prof?['code_postal'], compte?['code_postal']]);
   final ville = estPro ? premier([prof?['ville_pro'], prof?['ville']]) : premier([prof?['ville'], compte?['ville']]);
+  // Téléphone utilisable (pas le « 0000000000 » des anciens profils).
+  String telValide(Object? v) => RegExp(r'^0+$').hasMatch(t(v).replaceAll(RegExp(r'\D'), '')) ? '' : t(v);
+  // Adresse la plus complète connue : rue avec numéro, code postal, ville
+  // (profil, compte, adresse saisie d'un bloc sur le profil ou le séjour).
+  int scoreChamps(String r, String c, String v) =>
+      (r.isNotEmpty ? 1 : 0) + (RegExp(r'\d').hasMatch(r) ? 1 : 0) + (c.isNotEmpty ? 1 : 0) + (v.isNotEmpty ? 1 : 0);
+  int scoreBloc(String b) =>
+      (b.isNotEmpty ? 1 : 0) + (RegExp(r'\d').hasMatch(b.replaceFirst(RegExp(r'\b\d{5}\b'), '')) ? 1 : 0) +
+      (RegExp(r'\b\d{5}\b').hasMatch(b) ? 1 : 0) + (b.split(RegExp(r'[\s,]+')).where((x) => x.isNotEmpty).length >= 3 ? 1 : 0);
+  var aRue = rue, aCp = cp, aVille = ville;
+  var score = scoreChamps(rue, cp, ville);
+  for (final b in (estPro ? [prof?['adresse_pro'], prof?['adresse'], e['proprietaire_adresse']] : [prof?['adresse'], e['proprietaire_adresse']]).map(t)) {
+    if (scoreBloc(b) > score) { aRue = b; aCp = ''; aVille = ''; score = scoreBloc(b); }
+  }
   return ClientPension(
     uid: uid, profileId: pid, estPro: estPro, prenom: prenom, nom: nom,
     email: premier([prof?['email_contact'], e['proprietaire_email'], contact.contains('@') ? contact : null, compte?['email']]),
-    tel: premier([prof?['phone_number'], contact.contains('@') ? null : contact, compte?['phone_number']]),
-    rue: rue.isEmpty && cp.isEmpty && ville.isEmpty ? t(e['proprietaire_adresse']) : rue,
-    cp: cp, ville: ville,
+    tel: premier([telValide(prof?['phone_number']), telValide(prof?['phone']), telValide(prof?['telephone']),
+      contact.contains('@') ? null : telValide(contact), telValide(compte?['phone_number'])]),
+    rue: aRue, cp: aCp, ville: aVille,
   );
 }

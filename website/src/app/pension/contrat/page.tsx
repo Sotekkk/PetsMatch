@@ -60,12 +60,18 @@ export default function PensionContratPage() {
     if (!user) return;
     const [{ data: ent }, { data: docsData }, { data: log }, { data: profil }] = await Promise.all([
       supabase.from('pension_entrees').select('*').eq('pro_uid', user.uid).order('date_entree', { ascending: false }).limit(50),
-      supabase.from('documents_animaux').select('id, pension_entree_id, token, statut').eq('uid_eleveur', user.uid).eq('type', 'contrat_hebergement'),
+      supabase.from('documents_animaux').select('id, pension_entree_id, token, statut, metadata').eq('uid_eleveur', user.uid)
+        .eq('type', 'contrat_hebergement').neq('statut', 'annule'),
       supabase.from('enclos_chenil').select('id, nom').eq('uid_eleveur', user.uid),
       supabase.from('users_complet').select('arrhes_pourcentage').eq('uid', user.uid).maybeSingle(),
     ]);
     setEntrees(ent ?? []);
-    setDocs(Object.fromEntries(((docsData ?? []) as Doc[]).map(d => [d.pension_entree_id, d])));
+    // Contrat commun à plusieurs animaux : affiché sur chacun de ses séjours.
+    const parSejour: Record<string, Doc> = {};
+    for (const d of (docsData ?? []) as (Doc & { metadata?: { entree_ids?: string[] | null } | null })[]) {
+      for (const sid of [d.pension_entree_id, ...(d.metadata?.entree_ids ?? [])]) if (sid && !parSejour[sid]) parSejour[sid] = d;
+    }
+    setDocs(parSejour);
     setLogements(Object.fromEntries((log ?? []).map((l: { id: string; nom: string }) => [l.id, l.nom])));
     setArrhesDefaut((profil?.arrhes_pourcentage as number) ?? 0);
     setLoading(false);
@@ -170,6 +176,11 @@ export default function PensionContratPage() {
                     </button>
                   ) : doc.statut === 'brouillon' ? (
                     <>
+                      {/* Refaire le brouillon avec les données à jour (client, animaux du même client). */}
+                      <button onClick={() => genererContrat(e)} disabled={generating === e.id}
+                        className="text-teal-700 px-2 py-1.5 text-xs font-galey font-semibold hover:underline disabled:opacity-50">
+                        {generating === e.id ? '…' : 'Actualiser'}
+                      </button>
                       {/* Relire le contrat avant de l'envoyer au client. */}
                       <a href={`/signer-contrat/${doc.token}`} target="_blank" rel="noopener noreferrer"
                         className="border border-teal-200 text-teal-700 px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-50">

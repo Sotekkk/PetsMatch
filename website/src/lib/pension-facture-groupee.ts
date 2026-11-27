@@ -72,7 +72,9 @@ export async function sejoursFactures(sb: SupabaseClient, proProfileId: string, 
  * Autres séjours du même client qui chevauchent celui-ci (même pension),
  * pas encore facturés : proposés pour une facture groupée.
  */
-export async function sejoursMemeClient(sb: SupabaseClient, e: Sejour, proProfileId: string): Promise<Sejour[]> {
+export async function sejoursMemeClient(sb: SupabaseClient, e: Sejour, proProfileId: string,
+  /** Contrat : séjours déjà facturés compris (la facture n'a rien à voir). */
+  opts: { avecFactures?: boolean } = {}): Promise<Sejour[]> {
   const debut = t(e.date_entree).slice(0, 10);
   const fin = (t(e.date_sortie_effective) || t(e.date_sortie_prevue) || new Date().toISOString()).slice(0, 10);
   if (!debut) return [];
@@ -83,11 +85,12 @@ export async function sejoursMemeClient(sb: SupabaseClient, e: Sejour, proProfil
     return xFin >= debut;
   });
   if (candidats.length === 0) return [];
-  const [client, factures] = await Promise.all([clientDuSejour(sb, e), sejoursFactures(sb, proProfileId, false)]);
+  const [client, factures] = await Promise.all([clientDuSejour(sb, e),
+    opts.avecFactures ? Promise.resolve(new Set<string>()) : sejoursFactures(sb, proProfileId, false)]);
   const nom = t(e.proprietaire_nom).toLowerCase();
   const res: Sejour[] = [];
   for (const x of candidats) {
-    if (factures.has(t(x.id))) continue;
+    if (factures.has(t(x.id)) || t(x.statut) === 'annule') continue;
     const c = await clientDuSejour(sb, x);
     const meme = client.uid
       ? c.uid === client.uid && (!client.profileId || !c.profileId || c.profileId === client.profileId)

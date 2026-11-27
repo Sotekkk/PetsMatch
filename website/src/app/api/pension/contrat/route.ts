@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireUser } from '@/lib/server-auth';
 import { adresseClient, clientDuSejour, nomComplet } from '@/lib/client-pension';
+import { sejoursMemeClient } from '@/lib/pension-facture-groupee';
 import { pensionPrixNuit, pensionTarifKeyForEspece, pensionTarifPourKey, type TarifsPension } from '@/lib/pension-especes';
 
 // Pension — contrat d'hébergement d'un séjour (documents_animaux,
@@ -46,7 +47,16 @@ export async function POST(req: NextRequest) {
 
   // Plusieurs animaux du même client (arrivée groupée) : un seul contrat qui
   // les liste tous (`entreeIds`) ; le séjour `entreeId` porte le contrat.
-  const idsGroupe = [...new Set([String(e.id), ...(Array.isArray(b.entreeIds) ? b.entreeIds.map(String) : [])])].slice(0, 20);
+  // Liste non fournie (page Contrats…) : autres séjours du même client sur la
+  // même période dans cette pension, trouvés ici.
+  let autresIds = Array.isArray(b.entreeIds) ? b.entreeIds.map(String) : [];
+  if (autresIds.length === 0 && txt(e.pro_profile_id)) {
+    try {
+      const memes = await sejoursMemeClient(admin, e as never, String(e.pro_profile_id), { avecFactures: true });
+      autresIds = memes.map(x => String((x as Ligne).id));
+    } catch { /* séjour seul */ }
+  }
+  const idsGroupe = [...new Set([String(e.id), ...autresIds])].slice(0, 20);
   let sejours: Ligne[] = [e];
   if (idsGroupe.length > 1) {
     const { data: autres } = await admin.from('pension_entrees').select('*').in('id', idsGroupe).eq('pro_uid', proUid);
@@ -138,6 +148,13 @@ export async function POST(req: NextRequest) {
     }).select('id, token').single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     id = (cree as { id: string }).id; token = (cree as { token: string }).token;
+  }
+  // Regroupement : brouillons faits séparément pour les autres animaux du
+  // client, remplacés par ce contrat commun (annulés, jamais un contrat envoyé).
+  if (groupe) {
+    await admin.from('documents_animaux').update({ statut: 'annule' })
+      .in('pension_entree_id', sejours.map(x => String(x.id))).eq('type', 'contrat_hebergement')
+      .eq('statut', 'brouillon').neq('id', id);
   }
 
   if (b.transmettre && clientUid) {
