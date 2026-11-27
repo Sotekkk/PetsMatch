@@ -1,5 +1,6 @@
 'use client';
 
+import { erreurIdentification, normaliserIdentification, regleIdentification } from '@/lib/identification-espece';
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { uploadDocument } from '@/lib/upload-media';
@@ -87,6 +88,35 @@ function fmtDate(s?: string) {
 
 export default function CessionModal({ animal, uid, profileId, eleveurInfo, onClose, onCeded, isReCession = false, associationSeulement = false, reservation = null }: Props) {
   const [step, setStep] = useState<'acquéreur' | 'details' | 'documents'>(reservation ? 'details' : 'acquéreur');
+
+  // Identification obligatoire avant la cession (relue sur la fiche : la
+  // valeur passée par la page peut être ancienne).
+  const [identification, setIdentification] = useState<string | null>(null);
+  const [identSaisie, setIdentSaisie] = useState('');
+  const [identErreur, setIdentErreur] = useState<string | null>(null);
+  const [identEnregistrement, setIdentEnregistrement] = useState(false);
+  useEffect(() => {
+    let annule = false;
+    supabase.from('animaux').select('identification').eq('id', animal.id).maybeSingle()
+      .then(({ data }) => { if (!annule) setIdentification(String(data?.identification ?? animal.identification ?? '').trim()); });
+    return () => { annule = true; };
+  }, [animal.id, animal.identification]);
+  async function enregistrerIdentification() {
+    const err = erreurIdentification(animal.espece, identSaisie);
+    if (err) { setIdentErreur(err); return; }
+    const v = normaliserIdentification(identSaisie);
+    setIdentEnregistrement(true); setIdentErreur(null);
+    const { error } = await supabase.from('animaux').update({ identification: v, updated_at: new Date().toISOString() }).eq('id', animal.id);
+    setIdentEnregistrement(false);
+    if (error) {
+      const m = error.message.toLowerCase();
+      setIdentErreur(m.includes('puce') || m.includes('unique') || m.includes('duplicate')
+        ? 'Ce numéro est déjà utilisé par une autre fiche. Vérifiez-le.'
+        : `L'identification n'a pas pu être enregistrée : ${error.message}`);
+      return;
+    }
+    setIdentification(v);
+  }
 
   // Acquéreur — préremplis depuis la réservation active s'il y en a une
   const [searchQuery, setSearchQuery]   = useState('');
@@ -482,7 +512,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
         client: { nom: nomComplet, adresse: adresse.trim(), tel: tel.trim(), email: email.trim() },
         animal: {
           nom: animal.nom, espece: animal.espece, race: animal.race,
-          identification: animal.identification, date_naissance: animal.date_naissance,
+          identification: identification || animal.identification, date_naissance: animal.date_naissance,
         },
       });
       const path = `cessions/${uid}/${animal.id}/facture_${Date.now()}.pdf`;
@@ -712,6 +742,44 @@ Céder quand même ?`)) return;
     !!prenom.trim() && !!email.trim() && !!tel.trim() && !!adresse.trim() &&
     (!sterilRequise || (parseInt(sterilAgeMois, 10) || 0) > 0)
   ));
+
+  // Pas de cession sans identification : saisie d'abord, enregistrée sur la fiche.
+  // (Sauf abandon d'un particulier à une association : le refuge l'identifie.)
+  if (!associationSeulement && (identification === null || !identification)) {
+    const regle = regleIdentification(animal.espece);
+    return (
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4">
+        <div className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl p-5 space-y-4">
+          {identification === null ? <p className="text-center text-sm text-gray-400 py-6">Chargement…</p> : (
+            <>
+              <h2 className="text-base font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey,sans-serif' }}>
+                Identification obligatoire — {animal.nom ?? 'cet animal'}
+              </h2>
+              <div className="bg-amber-50 border border-amber-300 text-amber-800 rounded-xl px-4 py-3 text-sm">
+                Cet animal n&apos;a pas d&apos;identification : la cession est impossible tant qu&apos;elle n&apos;est pas renseignée.
+                <span className="block mt-1">{regle.aide}</span>
+              </div>
+              <label className="block">
+                <span className="block text-xs font-semibold text-gray-500 mb-1">{regle.libelle}</span>
+                <input value={identSaisie} onChange={e => setIdentSaisie(e.target.value)} autoFocus
+                  inputMode={regle.numerique ? 'numeric' : 'text'} placeholder={regle.exemple}
+                  onKeyDown={e => { if (e.key === 'Enter') enregistrerIdentification(); }}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm uppercase focus:outline-none focus:border-[#0C5C6C]" />
+              </label>
+              {identErreur && <p className="text-sm text-red-600">{identErreur}</p>}
+              <div className="flex gap-2">
+                <button onClick={onClose} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600">Annuler</button>
+                <button onClick={enregistrerIdentification} disabled={identEnregistrement}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-[#0C5C6C] disabled:opacity-50">
+                  {identEnregistrement ? 'Enregistrement…' : 'Enregistrer et continuer'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4">

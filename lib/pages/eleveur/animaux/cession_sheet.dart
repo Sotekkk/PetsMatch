@@ -15,6 +15,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/acquereur_contact.dart' show adr
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
+import 'package:PetsMatch/utils/identification_espece.dart';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -66,6 +67,110 @@ class _CessionSheetState extends State<CessionSheet> {
 
   // Étapes
   int _step = 0; // 0 = acquéreur, 1 = détails, 2 = documents
+
+  // Identification obligatoire avant la cession (relue sur la fiche : la
+  // valeur passée par l'écran appelant peut être ancienne).
+  bool _identVerifiee = false;
+  String _identification = '';
+  final _identCtrl = TextEditingController();
+  String? _identErreur;
+  bool _identEnregistrement = false;
+  String get _identActuelle => _identification.isNotEmpty ? _identification : '${widget.animal['identification'] ?? ''}';
+
+  Future<void> _verifierIdentification() async {
+    var ident = '${widget.animal['identification'] ?? ''}'.trim();
+    final id = widget.animal['id']?.toString() ?? '';
+    if (id.isNotEmpty) {
+      try {
+        final a = await _supa.from('animaux').select('identification').eq('id', id).maybeSingle();
+        ident = (a?['identification'] ?? ident).toString().trim();
+      } catch (_) {}
+    }
+    if (mounted) setState(() { _identification = ident; _identVerifiee = true; });
+  }
+
+  Future<void> _enregistrerIdentification() async {
+    final espece = widget.animal['espece']?.toString();
+    final err = erreurIdentification(espece, _identCtrl.text);
+    if (err != null) { setState(() => _identErreur = err); return; }
+    final v = normaliserIdentification(_identCtrl.text);
+    setState(() { _identEnregistrement = true; _identErreur = null; });
+    try {
+      await _supa.from('animaux').update({'identification': v, 'updated_at': DateTime.now().toUtc().toIso8601String()})
+          .eq('id', widget.animal['id'].toString());
+      try { widget.animal['identification'] = v; } catch (_) {}
+      if (mounted) setState(() { _identification = v; _identEnregistrement = false; });
+    } catch (e) {
+      final m = e.toString().toLowerCase();
+      if (mounted) {
+        setState(() {
+          _identEnregistrement = false;
+          _identErreur = m.contains('puce') || m.contains('unique') || m.contains('duplicate')
+              ? 'Ce numéro est déjà utilisé par une autre fiche. Vérifiez-le.'
+              : "L'identification n'a pas pu être enregistrée : $e";
+        });
+      }
+    }
+  }
+
+  /// Étape préalable : pas de cession sans identification de l'animal.
+  Widget _blocIdentification() {
+    final regle = regleIdentification(widget.animal['espece']?.toString());
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        child: !_identVerifiee
+            ? const Padding(padding: EdgeInsets.all(30), child: Center(child: CircularProgressIndicator()))
+            : Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Center(child: Container(width: 40, height: 4,
+                    decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+                const SizedBox(height: 14),
+                Text('Identification obligatoire — ${widget.animal['nom'] ?? 'cet animal'}',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _dark)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: const Color(0xFFFFF8E1), borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFFFCC02))),
+                  child: Text("Cet animal n'a pas d'identification : la cession est impossible tant qu'elle n'est pas renseignée.\n${regle.aide}",
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF8A6100), height: 1.35)),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _identCtrl,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.characters,
+                  keyboardType: regle.numerique ? TextInputType.number : TextInputType.text,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 15),
+                  decoration: InputDecoration(
+                    labelText: regle.libelle,
+                    hintText: regle.exemple,
+                    errorText: _identErreur,
+                    errorMaxLines: 3,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onSubmitted: (_) => _enregistrerIdentification(),
+                ),
+                const SizedBox(height: 14),
+                Row(children: [
+                  Expanded(child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey')),
+                  )),
+                  const SizedBox(width: 10),
+                  Expanded(child: FilledButton(
+                    onPressed: _identEnregistrement ? null : _enregistrerIdentification,
+                    style: FilledButton.styleFrom(backgroundColor: _teal),
+                    child: Text(_identEnregistrement ? 'Enregistrement…' : 'Enregistrer et continuer',
+                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  )),
+                ]),
+              ]),
+      ),
+    );
+  }
 
   // Recherche utilisateur PetsMatch
   final _searchCtrl = TextEditingController();
@@ -146,6 +251,7 @@ class _CessionSheetState extends State<CessionSheet> {
   void initState() {
     super.initState();
     _dateCession = DateTime.now();
+    _verifierIdentification();
     if (widget.associationSeulement) _qualite = 'refuge';
     _loadExistingDocs();
     final r = widget.reservation;
@@ -292,7 +398,7 @@ class _CessionSheetState extends State<CessionSheet> {
       'race':                  widget.animal['race'],
       'nom_animal':            widget.animal['nom'] ?? '',
       'date_naissance_animal': widget.animal['date_naissance'],
-      'num_identification':    widget.animal['identification'],
+      'num_identification':    _identActuelle,
       if (_foundUser?['uid'] != null) 'acquereur_uid': _foundUser?['uid'],
       'acquereur_nom':         _nomCtrl.text.trim(),
       'acquereur_prenom':      _prenomCtrl.text.trim(),
@@ -716,7 +822,7 @@ class _CessionSheetState extends State<CessionSheet> {
           if ('${widget.animal['nom_mere'] ?? ''}'.isNotEmpty) 'animal_nom_mere': '${widget.animal['nom_mere']}',
           if ('${widget.animal['puce_pere'] ?? ''}'.isNotEmpty) 'animal_puce_pere': '${widget.animal['puce_pere']}',
           if ('${widget.animal['puce_mere'] ?? ''}'.isNotEmpty) 'animal_puce_mere': '${widget.animal['puce_mere']}',
-          if ('${widget.animal['identification'] ?? ''}'.isNotEmpty) 'animal_identification': '${widget.animal['identification']}',
+          if (_identActuelle.isNotEmpty) 'animal_identification': _identActuelle,
           'prix':              _prixCtrl.text.trim(),
           'date_cession':      _dateCession.toIso8601String().split('T').first,
           'notes':             _notesCtrl.text.trim(),
@@ -1247,6 +1353,9 @@ class _CessionSheetState extends State<CessionSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Pas de cession sans identification : saisie d'abord, enregistrée sur la fiche.
+    // (Sauf abandon d'un particulier à une association : le refuge l'identifie.)
+    if (!widget.associationSeulement && (!_identVerifiee || _identActuelle.trim().isEmpty)) return _blocIdentification();
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
