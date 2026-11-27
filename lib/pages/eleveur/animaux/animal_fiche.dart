@@ -30,6 +30,7 @@ import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/portee_form_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/reservation_sheet.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
@@ -5735,6 +5736,38 @@ class _ReproListState extends State<_ReproList> {
     }
   }
 
+  /// Mise bas réelle et nombre de nés saisis, portée pas encore créée.
+  bool _porteeACreer(Map<String, dynamic> g) =>
+      (g['date_naissance']?.toString() ?? '').isNotEmpty &&
+      (int.tryParse(g['nb_nes']?.toString() ?? '') ?? 0) > 0 &&
+      (g['portee_id']?.toString() ?? '').isEmpty;
+
+  Future<void> _creerPortee(String gestationId) async {
+    final cree = await Navigator.push<bool>(context, MaterialPageRoute(
+        builder: (_) => PorteeFormPage(gestationId: gestationId)));
+    if (cree == true) await _refresh();
+  }
+
+  /// Après l'enregistrement d'une gestation : mise bas saisie → créer la portée ?
+  Future<void> _proposerPortee({String? id}) async {
+    if (widget.collection != 'gestations' || widget.readOnly || !mounted) return;
+    final g = id != null
+        ? _data.where((x) => x['id']?.toString() == id).firstOrNull
+        : _data.where(_porteeACreer).firstOrNull;
+    if (g == null || !_porteeACreer(g)) return;
+    final nb = int.tryParse(g['nb_nes'].toString()) ?? 0;
+    final oui = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Créer la portée ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: Text('La mise bas est enregistrée avec $nb petit${nb > 1 ? 's' : ''}. Créer maintenant la portée '
+          '(fiches des petits, mère, père, race et date de naissance préremplis) ?', style: const TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Plus tard')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Créer la portée')),
+      ],
+    ));
+    if (oui == true && mounted) await _creerPortee(g['id'].toString());
+  }
+
   Future<void> _confirmGestation(String id) async {
     try {
       final supa = Supabase.instance.client;
@@ -5823,7 +5856,8 @@ class _ReproListState extends State<_ReproList> {
       floatingActionButton: widget.readOnly ? null : FloatingActionButton.small(
         onPressed: () async {
           await showDialog(context: context, builder: widget.addBuilder);
-          _refresh();
+          await _refresh();
+          await _proposerPortee();
         },
         backgroundColor: const Color(0xFF6E9E57),
         child: const Icon(Icons.add, color: Colors.white),
@@ -5848,8 +5882,10 @@ class _ReproListState extends State<_ReproList> {
                       onDelete: () => _delete(id),
                       onEdit: widget.readOnly || widget.editBuilder == null ? null : () async {
                         await showDialog(context: context, builder: (ctx) => widget.editBuilder!(ctx, d));
-                        _refresh();
+                        await _refresh();
+                        await _proposerPortee(id: id);
                       },
+                      onCreerPortee: (isGestation && !widget.readOnly && _porteeACreer(d)) ? () => _creerPortee(id) : null,
                       onConfirmGestation: (isGestation && !alreadyConfirmed && !widget.readOnly)
                           ? () => _confirmGestation(id)
                           : null,
@@ -6353,9 +6389,46 @@ class _SimpleCard extends StatelessWidget {
   final VoidCallback? onEdit;
   final String? collection;
   final VoidCallback? onConfirmGestation;
+  /// Gestation avec mise bas réelle et nés : créer la portée.
+  final VoidCallback? onCreerPortee;
   final bool readOnly;
   const _SimpleCard({required this.data, required this.onDelete, this.onEdit,
-      this.collection, this.onConfirmGestation, this.readOnly = false});
+      this.collection, this.onConfirmGestation, this.onCreerPortee, this.readOnly = false});
+
+  static const _rose = Color(0xFFD63384);
+  /// Mise bas réelle saisie : elle remplace la date prévue (grisée).
+  DateTime? get _miseBasReelle => collection == 'gestations' ? DateTime.tryParse(data['date_naissance']?.toString() ?? '') : null;
+  bool get _porteeCreee => (data['portee_id']?.toString() ?? '').isNotEmpty;
+
+  List<Widget> _blocMiseBas() {
+    final reelle = _miseBasReelle;
+    if (collection != 'gestations') return const [];
+    final prevue = _gestationFenetreLabel();
+    return [
+      if (reelle != null)
+        Padding(padding: const EdgeInsets.only(top: 3),
+          child: Text('Mise-bas : ${DateFormat('dd/MM/yyyy').format(reelle)}',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: _rose, fontWeight: FontWeight.w700))),
+      if (prevue != null)
+        Padding(padding: const EdgeInsets.only(top: 3),
+          child: Text(reelle != null ? 'Prévue : ${prevue.replaceFirst('Mise-bas prévue : ', '')}' : prevue,
+              style: reelle != null
+                  ? TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400, decoration: TextDecoration.lineThrough)
+                  : const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF4A7A3A), fontWeight: FontWeight.w600))),
+      if (_porteeCreee)
+        Padding(padding: const EdgeInsets.only(top: 4),
+          child: Text('Portée créée', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w600))),
+      if (onCreerPortee != null)
+        Padding(padding: const EdgeInsets.only(top: 6),
+          child: OutlinedButton.icon(
+            onPressed: onCreerPortee,
+            icon: const Icon(Icons.diversity_3, size: 16, color: _rose),
+            label: Text('Créer la portée (${data['nb_nes']} né${(int.tryParse(data['nb_nes'].toString()) ?? 0) > 1 ? 's' : ''})',
+                style: const TextStyle(fontFamily: 'Galey', color: _rose, fontWeight: FontWeight.w700)),
+            style: OutlinedButton.styleFrom(side: const BorderSide(color: _rose)),
+          )),
+    ];
+  }
 
   static const _labels = {
     'nom_partenaire':   'Partenaire',
@@ -6374,7 +6447,7 @@ class _SimpleCard extends StatelessWidget {
   static const _excludedKeys = {
     'date', 'id', 'animal_id', 'created_at', 'partenaire_animal_id', 'gestation_confirmee',
     'reminder_j7_sent', 'reminder_j3_sent', 'reminder_j1_sent',
-    'dates', 'date_prevue', 'date_prevue_fin',
+    'dates', 'date_prevue', 'date_prevue_fin', 'portee_id',
   };
 
   // Résumé « saillies » : liste des dates numérotées (Saillie 1, 2, 3…).
@@ -6447,10 +6520,12 @@ class _SimpleCard extends StatelessWidget {
             _DetailRow(label: 'Date', value: date),
           if (_saillieDatesLabel() != null)
             _DetailRow(label: 'Saillies', value: _saillieDatesLabel()!.replaceAll('  ·  ', '\n')),
+          if (_miseBasReelle != null)
+            _DetailRow(label: 'Mise-bas', value: DateFormat('dd/MM/yyyy').format(_miseBasReelle!)),
           if (_gestationFenetreLabel() != null)
-            _DetailRow(label: 'Mise-bas', value: _gestationFenetreLabel()!),
+            _DetailRow(label: _miseBasReelle != null ? 'Prévue' : 'Mise-bas', value: _gestationFenetreLabel()!),
           ...data.entries
-              .where((e) => !_excludedKeys.contains(e.key)
+              .where((e) => !_excludedKeys.contains(e.key) && !(e.key == 'date_naissance' && collection == 'gestations')
                   && e.value != null && e.value.toString().isNotEmpty)
               .map((e) {
                 final v = _fmt(e.key, e.value);
@@ -6556,12 +6631,9 @@ class _SimpleCard extends StatelessWidget {
             Padding(padding: const EdgeInsets.only(top: 3),
               child: Text(_saillieDatesLabel()!,
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF4A7A3A), fontWeight: FontWeight.w600))),
-          if (_gestationFenetreLabel() != null)
-            Padding(padding: const EdgeInsets.only(top: 3),
-              child: Text(_gestationFenetreLabel()!,
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF4A7A3A), fontWeight: FontWeight.w600))),
+          ..._blocMiseBas(),
           ...data.entries
-              .where((e) => !_excludedKeys.contains(e.key)
+              .where((e) => !_excludedKeys.contains(e.key) && !(e.key == 'date_naissance' && collection == 'gestations')
                   && e.value != null && e.value.toString().isNotEmpty)
               .map((e) {
             final v = _fmt(e.key, e.value);

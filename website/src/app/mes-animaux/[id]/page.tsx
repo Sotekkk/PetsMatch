@@ -2365,7 +2365,15 @@ function SuiviReproTab({ isMale, espece, race, uidEleveur, animalId, userId, ani
               {editId === r.id ? (
                 <GestationForm espece={espece} initial={editData} saving={savingRepro}
                   onCancel={() => setEditId(null)}
-                  onSave={async d => { await updateRepro('gestations', r.id, d); setEditId(null); }} />
+                  onSave={async d => {
+                    await updateRepro('gestations', r.id, d); setEditId(null);
+                    // Mise bas réelle et nés saisis : proposer la portée (miroir appli).
+                    const nb = Number((d as Record<string, unknown>).nb_nes ?? 0);
+                    if (!readOnly && (d as Record<string, unknown>).date_naissance && nb > 0 && !r.portee_id
+                      && window.confirm(`La mise bas est enregistrée avec ${nb} petit${nb > 1 ? 's' : ''}. Créer maintenant la portée (fiches des petits, mère, père, race et date de naissance préremplis) ?`)) {
+                      window.location.href = `/mes-animaux/portee?gestation=${encodeURIComponent(r.id)}`;
+                    }
+                  }} />
               ) : (
                 <div className="flex items-start gap-3">
                   <div className="flex-1 cursor-pointer" onClick={() => startEdit(r)}>
@@ -2377,25 +2385,35 @@ function SuiviReproTab({ isMale, espece, race, uidEleveur, animalId, userId, ani
                         </span>
                       )}
                     </div>
+                    {/* Mise bas réelle (rose) : remplace la date prévue, grisée. */}
+                    {!!r.date_naissance && <p className="text-sm font-bold" style={{ color: '#D63384' }}>Mise-bas : {fmtDate(String(r.date_naissance))}</p>}
                     {!!r.date_prevue && (() => {
                       const d0 = String(r.date_prevue).substring(0, 10);
                       const d1 = r.date_prevue_fin ? String(r.date_prevue_fin).substring(0, 10) : '';
-                      if (!d1 || d1 === d0) return <p className="text-xs text-gray-600">Mise-bas prévue : {fmtDate(d0)}</p>;
+                      const reelle = !!r.date_naissance;
+                      if (!d1 || d1 === d0) return <p className={`text-xs ${reelle ? 'text-gray-300 line-through' : 'text-gray-600'}`}>{reelle ? 'Prévue' : 'Mise-bas prévue'} : {fmtDate(d0)}</p>;
                       const prob = new Date((new Date(d0).getTime() + new Date(d1).getTime()) / 2).toISOString().substring(0, 10);
                       return (
-                        <p className="text-xs text-green-700">
+                        <p className={`text-xs ${reelle ? 'text-gray-300 line-through' : 'text-green-700'}`}>
                           Fenêtre mise-bas : {fmtDate(d0)} → {fmtDate(d1)}<br />
                           Date la plus probable : {fmtDate(prob)}
                         </p>
                       );
                     })()}
-                    {!!r.date_naissance && <p className="text-xs text-gray-600">Née le : {fmtDate(String(r.date_naissance))}</p>}
                     {!!r.nb_attendu && <p className="text-xs text-gray-400">{String(r.nb_attendu)} attendu(s){r.nb_nes ? ` · ${String(r.nb_nes)} né(s)` : ''}</p>}
                     {!!r.notes && <p className="text-xs text-gray-400">{String(r.notes)}</p>}
+                    {!!r.portee_id && <p className="text-xs font-semibold text-gray-500 mt-1">Portée créée</p>}
                     <p className="text-xs text-[#0C5C6C] mt-1">Modifier →</p>
                   </div>
                   {!readOnly && <button onClick={() => deleteRepro('gestations', r.id)} className="text-red-300 hover:text-red-500 text-lg">×</button>}
                 </div>
+              )}
+              {/* Mise bas et nés saisis, portée pas encore créée. */}
+              {editId !== r.id && !readOnly && !!r.date_naissance && Number(r.nb_nes ?? 0) > 0 && !r.portee_id && (
+                <a href={`/mes-animaux/portee?gestation=${encodeURIComponent(r.id)}`}
+                  className="mt-2 inline-block text-sm font-bold px-3 py-1.5 rounded-xl border" style={{ color: '#D63384', borderColor: '#D63384' }}>
+                  Créer la portée ({String(r.nb_nes)} né{Number(r.nb_nes) > 1 ? 's' : ''})
+                </a>
               )}
             </div>
           ))}

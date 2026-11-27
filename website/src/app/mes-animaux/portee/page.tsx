@@ -12,6 +12,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { loadBreeds } from '@/lib/breeds';
 import { uploadBlob } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
+import { preparerPorteeDepuisGestation, filiationAFaire, mentionFiliation, nomProvisoirePetit, type PorteeDepuisGestation } from '@/lib/portee-depuis-gestation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,9 +89,13 @@ export default function PorteePage() {
     resoudreEmployeur(p, user.uid).then(c => { if (!annule) { setEmployeurParam(p); setEmployeur(c); } });
     return () => { annule = true; };
   }, [user]);
-  /** Propriétaire : élevage de l'employeur (vue employé) ou profil actif. */
-  const proprioUid = employeur?.uid ?? user?.uid ?? '';
-  const proprioProfileId = employeur ? employeur.profileId : activeProfileId;
+  // Portée créée depuis la gestation de la mère : ?gestation=<id>.
+  const [depuisGestation, setDepuisGestation] = useState<PorteeDepuisGestation | null>(null);
+  const [gestationId, setGestationId] = useState('');
+  /** Propriétaire : élevage de la mère (portée depuis une gestation), de
+   *  l'employeur (vue employé) ou profil actif. */
+  const proprioUid = depuisGestation?.mere.uid_eleveur || employeur?.uid || user?.uid || '';
+  const proprioProfileId = depuisGestation?.mere.profile_id || (employeur ? employeur.profileId : activeProfileId);
 
   // Champs communs
   const [espece,        setEspece]        = useState('chien');
@@ -141,6 +146,37 @@ export default function PorteePage() {
   useEffect(() => {
     loadBreeds(espece).then(list => setBreeds([...list, 'Autre']));
   }, [espece]);
+
+  // Gestation : mère, père (ou alerte multi-saillie), race, date, petits.
+  useEffect(() => {
+    const gid = new URLSearchParams(window.location.search).get('gestation') ?? '';
+    if (!gid || !user) return;
+    let annule = false;
+    preparerPorteeDepuisGestation(gid).then(p => {
+      if (annule) return;
+      if (!p) { setError("Saisissez d'abord la date de mise bas réelle et le nombre de nés dans la gestation."); return; }
+      setGestationId(gid);
+      setDepuisGestation(p);
+      setEspece(p.espece);
+      setRace(p.race);
+      setDateNaissance(p.dateNaissance);
+      const m = p.mere;
+      setMereSelected(m); setNomMere(m.nom ?? ''); setPuceMere(m.identification ?? ''); setRaceMere(m.race ?? '');
+      setNomPedigreeMere(m.nom_pedigree ?? ''); setDateNaissanceMere(m.date_naissance?.slice(0, 10) ?? '');
+      if (p.pere) {
+        const pe = p.pere;
+        setPereSelected(pe); setNomPere(pe.nom ?? ''); setPucePere(pe.identification ?? ''); setRacePere(pe.race ?? '');
+        setNomPedigreePere(pe.nom_pedigree ?? ''); setDateNaissancePere(pe.date_naissance?.slice(0, 10) ?? '');
+      } else if (!filiationAFaire(p)) {
+        setNomPere(p.pereNom); setPucePere(p.perePuce);
+      }
+      if (filiationAFaire(p)) setDescription(d => d || mentionFiliation(p));
+      setAnimaux(Array.from({ length: p.nbNes }, (_, i) => ({
+        ...newRow(), nom: nomProvisoirePetit(p.espece, i + 1), notes: filiationAFaire(p) ? mentionFiliation(p) : '',
+      })));
+    });
+    return () => { annule = true; };
+  }, [user]);
 
   function onEspeceChange(val: string) {
     setEspece(val);
@@ -301,6 +337,9 @@ export default function PorteePage() {
       const { error: err } = await supabase.from('animaux').upsert(rows);
       if (err) throw err;
 
+      // Gestation d'origine : reliée à la portée (pas de seconde création).
+      if (gestationId) await supabase.from('gestations').update({ portee_id: porteeId }).eq('id', gestationId);
+
       // Ligne de propriété (profil élevage) — sans elle la portée n'apparaît
       // pas dans « Mes animaux », filtré par animaux_proprietes.profile_id_proprio
       // (même pattern que mes-animaux/ajouter et l'appli portee_form_page).
@@ -348,11 +387,30 @@ export default function PorteePage() {
         </button>
         <div>
           <h1 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-            🐣 Nouvelle portée
+            {depuisGestation ? `Portée de ${depuisGestation.mere.nom ?? 'la mère'}` : '🐣 Nouvelle portée'}
           </h1>
           <p className="text-gray-400 text-sm">Créer plusieurs animaux d&apos;un coup</p>
         </div>
       </div>
+
+      {depuisGestation && (
+        <div className="space-y-2 mb-4">
+          <div className="bg-green-50 border border-green-300 text-green-800 rounded-xl px-4 py-3 text-sm">
+            Portée de {depuisGestation.mere.nom ?? 'la mère'} née le {new Date(depuisGestation.dateNaissance).toLocaleDateString('fr-FR')} :
+            {' '}{depuisGestation.nbNes} petit{depuisGestation.nbNes > 1 ? 's' : ''} d&apos;après la gestation.
+            Complétez les fiches (sexe, couleur, puce…) puis enregistrez.
+          </div>
+          {filiationAFaire(depuisGestation) && (
+            <div className="bg-amber-50 border border-amber-300 text-amber-800 rounded-xl px-4 py-3 text-sm">
+              Attention : plusieurs mâles ont sailli ({depuisGestation.malesMultiples.join(', ')}). Le père ne peut pas être rempli
+              dans la fiche des petits : filiation à faire pour confirmer la parenté. La mention est ajoutée aux fiches et à la portée.
+            </div>
+          )}
+          {depuisGestation.alerteRace && (
+            <div className="bg-amber-50 border border-amber-300 text-amber-800 rounded-xl px-4 py-3 text-sm">{depuisGestation.alerteRace}</div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">

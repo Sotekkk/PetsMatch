@@ -14,6 +14,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
+import 'package:PetsMatch/utils/portee_depuis_gestation.dart';
 
 // ─── Modèle d'un animal dans la portée ───────────────────────────────────────
 
@@ -46,7 +47,10 @@ class PorteeFormPage extends StatefulWidget {
   /// l'employeur (uid + profil), pas pour le profil actif de l'employé.
   final String? eleveurUidOverride;
   final String? profileIdOverride;
-  const PorteeFormPage({super.key, this.eleveurUidOverride, this.profileIdOverride});
+  /// Portée créée depuis la gestation de la mère (mise bas réelle saisie) :
+  /// mère, père, race, date et nombre de petits préremplis, gestation reliée.
+  final String? gestationId;
+  const PorteeFormPage({super.key, this.eleveurUidOverride, this.profileIdOverride, this.gestationId});
   @override
   State<PorteeFormPage> createState() => _PorteeFormPageState();
 }
@@ -96,6 +100,8 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
   String? _adresseElevage;
   bool _loading = true;
   bool _saving  = false;
+  /// Préremplissage depuis une gestation (null sinon).
+  PorteeDepuisGestation? _depuisGestation;
   int? _uploadingPhotoIdx;
 
   List<String> get _currentBreeds {
@@ -107,8 +113,76 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
   @override
   void initState() {
     super.initState();
-    _addAnimal();
+    if (widget.gestationId == null) _addAnimal();
     _load();
+  }
+
+  /// Gestation : mère, père (ou alerte multi-saillie), race, date, petits.
+  Future<void> _prefillGestation() async {
+    final p = await preparerPorteeDepuisGestation(widget.gestationId!);
+    if (!mounted) return;
+    if (p == null) {
+      _addAnimal();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(
+          'Saisissez d\'abord la date de mise bas réelle et le nombre de nés dans la gestation.')));
+      return;
+    }
+    String dn(Map<String, dynamic>? a) => (a?['date_naissance'] ?? '').toString();
+    setState(() {
+      _depuisGestation = p;
+      _espece = p.espece;
+      _raceCtrl.text = p.race;
+      _dateNaissance = p.dateNaissance;
+      final m = p.mere;
+      _mereSelected = m;
+      _nomMereCtrl.text = (m['nom'] ?? '').toString();
+      _puceMereCtrl.text = (m['identification'] ?? '').toString();
+      _raceMereCtrl.text = (m['race'] ?? '').toString();
+      _nomPedigreeMereCtrl.text = (m['nom_pedigree'] ?? '').toString();
+      _dateNaissanceMere = DateTime.tryParse(dn(m));
+      final pe = p.pere;
+      if (pe != null) {
+        _pereSelected = pe;
+        _nomPereCtrl.text = (pe['nom'] ?? '').toString();
+        _pucePereCtrl.text = (pe['identification'] ?? '').toString();
+        _racePereCtrl.text = (pe['race'] ?? '').toString();
+        _nomPedigreePereCtrl.text = (pe['nom_pedigree'] ?? '').toString();
+        _dateNaissancePere = DateTime.tryParse(dn(pe));
+      } else if (!p.filiationAFaire) {
+        _nomPereCtrl.text = p.pereNom;
+        _pucePereCtrl.text = p.perePuce;
+      }
+      if (p.filiationAFaire && _descriptionCtrl.text.isEmpty) _descriptionCtrl.text = p.mentionFiliation;
+      for (var i = 1; i <= p.nbNes; i++) {
+        final r = _AnimalRow()..nom.text = nomProvisoirePetit(p.espece, i);
+        if (p.filiationAFaire) r.notes.text = p.mentionFiliation;
+        _animaux.add(r);
+      }
+    });
+  }
+
+  /// Alertes de la portée préremplie (race, père incertain).
+  Widget _alertesGestation() {
+    final p = _depuisGestation;
+    if (p == null) return const SizedBox.shrink();
+    Widget bloc(String txt, Color fond, Color bord, Color texte) => Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: fond, borderRadius: BorderRadius.circular(12), border: Border.all(color: bord)),
+          child: Text(txt, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: texte, height: 1.35)),
+        );
+    return Column(children: [
+      bloc('Portée de ${p.mere['nom'] ?? 'la mère'} née le ${_fmt.format(p.dateNaissance)} : ${p.nbNes} petit${p.nbNes > 1 ? 's' : ''} '
+          'créé${p.nbNes > 1 ? 's' : ''} d\'après la gestation. Complétez les fiches (sexe, couleur, puce…) puis enregistrez.',
+          const Color(0xFFEEF5EA), const Color(0xFF6E9E57), const Color(0xFF3F6B2E)),
+      if (p.filiationAFaire)
+        bloc('Attention : plusieurs mâles ont sailli (${p.malesMultiples.join(', ')}). Le père ne peut pas être rempli '
+            'dans la fiche des petits : filiation à faire pour confirmer la parenté. La mention est ajoutée aux fiches et à la portée.',
+            const Color(0xFFFFF8E1), const Color(0xFFFFCC02), const Color(0xFF8A6100)),
+      if (p.alerteRace != null)
+        bloc(p.alerteRace!, const Color(0xFFFFF8E1), const Color(0xFFFFCC02), const Color(0xFF8A6100)),
+    ]);
   }
 
   Future<void> _load() async {
@@ -173,6 +247,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+    if (widget.gestationId != null) await _prefillGestation();
   }
 
   // Parents proposés : reproducteurs actifs uniquement (utils/reproducteurs.dart).
@@ -329,8 +404,10 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       // uid : un cogérant (elevage_cogerants) a un uid différent du gérant,
       // mais la ligne user_profiles du profil emprunté (activeProfileId)
       // reste celle du gérant.
-      String ownerUid = widget.eleveurUidOverride ?? uid;
-      if (widget.eleveurUidOverride == null && User_Info.activeProfileId.isNotEmpty) {
+      // Portée depuis une gestation : élevage de la mère (uid + profil).
+      final mereUid = (_depuisGestation?.mere['uid_eleveur'] ?? '').toString();
+      String ownerUid = widget.eleveurUidOverride ?? (mereUid.isNotEmpty ? mereUid : uid);
+      if (widget.eleveurUidOverride == null && mereUid.isEmpty && User_Info.activeProfileId.isNotEmpty) {
         final ownerRow = await _supa.from('user_profiles_complet')
             .select('uid').eq('id', User_Info.activeProfileId).maybeSingle();
         ownerUid = (ownerRow?['uid'] as String?) ?? uid;
@@ -352,7 +429,8 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       }
       if (mounted) setState(() => _uploadingPhotoIdx = null);
 
-      final activeProfileId = widget.profileIdOverride ?? User_Info.activeProfileId;
+      final mereProfil = (_depuisGestation?.mere['profile_id'] ?? '').toString();
+      final activeProfileId = widget.profileIdOverride ?? (mereProfil.isNotEmpty ? mereProfil : User_Info.activeProfileId);
       final rows = _animaux.asMap().entries.map((e) => {
         'id':                  '${porteeId}_${e.key}',
         'uid_eleveur':         ownerUid,
@@ -396,6 +474,13 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       }).toList();
 
       await _supa.from('animaux').upsert(rows);
+
+      // Gestation d'origine : reliée à la portée (pas de seconde création).
+      if (widget.gestationId != null) {
+        try {
+          await _supa.from('gestations').update({'portee_id': porteeId}).eq('id', widget.gestationId!);
+        } catch (_) {}
+      }
 
       // Initialise animaux_proprietes pour chaque nouveau-né (même logique
       // que animal_fiche.dart) — sans quoi les animaux restent invisibles
@@ -459,7 +544,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7F5),
       appBar: AppBar(
-        title: const Text('Nouvelle portée',
+        title: Text(_depuisGestation != null ? 'Portée de ${_depuisGestation!.mere['nom'] ?? 'la mère'}' : 'Nouvelle portée',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         backgroundColor: _teal,
         foregroundColor: Colors.white,
@@ -483,6 +568,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                _alertesGestation(),
                 _sectionInfosCommunes(),
                 const SizedBox(height: 12),
                 _sectionPedigree(),
