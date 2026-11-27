@@ -1,5 +1,6 @@
 'use client';
 
+import CompleterRegistreModal from '@/components/registre/CompleterRegistreModal';
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -61,6 +62,9 @@ function RegistreSanitairePageInner() {
   const [dateFin, setDateFin] = useState('');
   const [selected, setSelected] = useState<Acte | null>(null);
   const [showForm, setShowForm] = useState(false);
+  // Compléter depuis les carnets de santé (élevage / association).
+  const [completer, setCompleter] = useState(false);
+  const [rechargement, setRechargement] = useState(0);
   // Propriétaire réel du profil actif (un cogérant a un uid différent du gérant).
   const [ownerUid, setOwnerUid] = useState<string | null>(null);
   useEffect(() => {
@@ -107,7 +111,7 @@ function RegistreSanitairePageInner() {
         setFetching(false);
       }
     })();
-  }, [user, ownerUid, profilSource]);
+  }, [user, ownerUid, profilSource, rechargement]);
 
   async function handleDelete(id: string) {
     if (!confirm('Supprimer cet acte ?')) return;
@@ -173,6 +177,12 @@ function RegistreSanitairePageInner() {
             className="border border-gray-200 hover:border-[#0C5C6C] text-gray-600 hover:text-[#0C5C6C] font-medium px-4 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-1.5">
             🖨️ Imprimer
           </button>
+          {profilSource !== 'pension' && (
+            <button onClick={() => setCompleter(true)}
+              className="border border-[#0C5C6C] text-[#0C5C6C] font-semibold px-4 py-2 rounded-xl text-sm hover:bg-[#0C5C6C]/5">
+              Compléter depuis les carnets
+            </button>
+          )}
           <button onClick={() => setShowForm(true)}
             className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2">
             + Nouvel acte
@@ -305,6 +315,11 @@ function RegistreSanitairePageInner() {
       )}
 
       {/* Formulaire nouvel acte */}
+      {completer && (
+        <CompleterRegistreModal uid={ownerUid ?? user.uid} profileId={activeProfileId || null}
+          onClose={() => setCompleter(false)}
+          onDone={n => { setCompleter(false); setRechargement(x => x + 1); alert(n > 0 ? `${n} soin${n > 1 ? 's' : ''} ajouté${n > 1 ? 's' : ''} au registre.` : 'Le registre était déjà à jour.'); }} />
+      )}
       {showForm && <NouvelActeForm uid={ownerUid ?? user.uid} profileId={activeProfileId || null} profilSource={profilSource} onClose={() => setShowForm(false)} onSaved={(acte) => { setActes((prev) => [acte, ...prev]); setShowForm(false); }} />}
     </div>
   );

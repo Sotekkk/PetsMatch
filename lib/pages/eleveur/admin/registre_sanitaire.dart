@@ -549,6 +549,26 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
               onPressed: _exportPdf,
               tooltip: 'Exporter PDF',
             ),
+          // Compléter depuis les carnets de santé (élevage / association).
+          if (!widget.isPension)
+            IconButton(
+              icon: const Icon(Icons.playlist_add_check_rounded),
+              tooltip: 'Compléter depuis les carnets',
+              onPressed: () async {
+                final n = await showModalBottomSheet<int>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.white,
+                  shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                  builder: (_) => _CompleterRegistreSheet(uid: _uidRegistre, profileId: User_Info.activeProfileId),
+                );
+                if (n == null || !mounted) return;
+                setState(() => _versionListe++);
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+                    n > 0 ? '$n soin${n > 1 ? 's' : ''} ajouté${n > 1 ? 's' : ''} au registre.' : 'Le registre était déjà à jour.',
+                    style: const TextStyle(fontFamily: 'Galey'))));
+              },
+            ),
           Stack(
             alignment: Alignment.topRight,
             children: [
@@ -1527,4 +1547,156 @@ class _NouvelActePageState extends State<_NouvelActePage> {
           isDense: true,
         ),
       );
+}
+
+// ── Compléter le registre depuis les carnets de santé ──────────────────────────
+// Au choix (par défaut les reproducteurs) : nombre de soins du carnet pas encore
+// au registre par animal (simulation), puis ajout des animaux cochés, sans
+// doublon (RPC pm_registre_completer). Miroir site : CompleterRegistreModal.
+class _CompleterRegistreSheet extends StatefulWidget {
+  final String uid;
+  final String profileId;
+  const _CompleterRegistreSheet({required this.uid, required this.profileId});
+  @override
+  State<_CompleterRegistreSheet> createState() => _CompleterRegistreSheetState();
+}
+
+class _CompleterRegistreSheetState extends State<_CompleterRegistreSheet> {
+  static const _teal = Color(0xFF0C5C6C);
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>>? _animaux;
+  final Map<String, int> _aAjouter = {};
+  final Set<String> _coches = {};
+  bool _reproSeuls = true;
+  bool _enCours = false;
+  String? _erreur;
+
+  @override
+  void initState() {
+    super.initState();
+    _charger();
+  }
+
+  Future<void> _charger() async {
+    try {
+      var q = _supa.from('animaux').select('id, nom, espece, reproducteur')
+          .eq('uid_eleveur', widget.uid).or('statut.is.null,statut.eq.present');
+      if (widget.profileId.isNotEmpty) q = q.eq('profile_id', widget.profileId);
+      final liste = List<Map<String, dynamic>>.from(await q.order('nom') as List);
+      for (var i = 0; i < liste.length; i += 100) {
+        final ids = [for (final a in liste.skip(i).take(100)) a['id'].toString()];
+        final r = await _supa.rpc('pm_registre_completer', params: {'p_animal_ids': ids, 'p_simuler': true});
+        for (final x in (r as List)) {
+          _aAjouter[x['id_animal'].toString()] = (x['nb_a_ajouter'] as num?)?.toInt() ?? 0;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _animaux = liste;
+        _coches.addAll([for (final a in liste) if (a['reproducteur'] == true && (_aAjouter[a['id'].toString()] ?? 0) > 0) a['id'].toString()]);
+      });
+    } catch (e) {
+      if (mounted) setState(() { _animaux = const []; _erreur = 'Calcul impossible : $e'; });
+    }
+  }
+
+  List<Map<String, dynamic>> get _visibles =>
+      (_animaux ?? const []).where((a) => !_reproSeuls || a['reproducteur'] == true).toList();
+
+  int get _total => _coches.fold(0, (t, id) => t + (_aAjouter[id] ?? 0));
+
+  Future<void> _ajouter() async {
+    final ids = _coches.where((id) => (_aAjouter[id] ?? 0) > 0).toList();
+    if (ids.isEmpty) return;
+    setState(() { _enCours = true; _erreur = null; });
+    var ajoutes = 0;
+    try {
+      for (var i = 0; i < ids.length; i += 50) {
+        final r = await _supa.rpc('pm_registre_completer',
+            params: {'p_animal_ids': ids.skip(i).take(50).toList(), 'p_simuler': false});
+        for (final x in (r as List)) { ajoutes += (x['nb_a_ajouter'] as num?)?.toInt() ?? 0; }
+      }
+      if (mounted) Navigator.pop(context, ajoutes);
+    } catch (e) {
+      if (mounted) setState(() { _enCours = false; _erreur = 'Ajout interrompu : $e'; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visibles = _visibles;
+    final total = _total;
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.85,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Compléter depuis les carnets',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: _teal)),
+              const SizedBox(height: 6),
+              Text('Vaccins, vermifuges, antiparasitaires, traitements et visites déjà notés au carnet de santé, ajoutés au registre. '
+                  "Un soin déjà au registre (ou saisi à la main le même jour pour le même produit) n'est pas ajouté une seconde fois.",
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: _reproSeuls,
+                onChanged: (v) => setState(() => _reproSeuls = v ?? true),
+                title: const Text('Reproducteurs seulement', style: TextStyle(fontFamily: 'Galey', fontSize: 14)),
+              ),
+              if (_animaux != null && visibles.isNotEmpty)
+                Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                  TextButton(
+                    onPressed: () => setState(() {
+                      _coches..clear()..addAll([for (final a in visibles) if ((_aAjouter[a['id'].toString()] ?? 0) > 0) a['id'].toString()]);
+                    }),
+                    child: const Text('Tout cocher', style: TextStyle(fontFamily: 'Galey')),
+                  ),
+                  TextButton(onPressed: () => setState(_coches.clear),
+                      child: const Text('Tout décocher', style: TextStyle(fontFamily: 'Galey'))),
+                ]),
+            ]),
+          ),
+          Expanded(
+            child: _animaux == null
+                ? const Center(child: Text('Calcul des soins à ajouter…', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)))
+                : visibles.isEmpty
+                    ? const Center(child: Text('Aucun animal.', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)))
+                    : ListView(padding: const EdgeInsets.symmetric(horizontal: 12), children: [
+                        for (final a in visibles)
+                          Builder(builder: (_) {
+                            final id = a['id'].toString();
+                            final n = _aAjouter[id] ?? 0;
+                            return CheckboxListTile(
+                              controlAffinity: ListTileControlAffinity.leading,
+                              value: _coches.contains(id),
+                              onChanged: n == 0 ? null : (v) => setState(() { if (v == true) { _coches.add(id); } else { _coches.remove(id); } }),
+                              title: Text((a['nom'] ?? '').toString().isEmpty ? 'Sans nom' : a['nom'].toString(),
+                                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                              subtitle: Text('${a['espece'] ?? ''}${a['reproducteur'] == true ? ' · reproducteur' : ''}',
+                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                              secondary: Text(n == 0 ? 'Registre à jour' : '$n soin${n > 1 ? 's' : ''} à ajouter',
+                                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+                            );
+                          }),
+                      ]),
+          ),
+          if (_erreur != null)
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(_erreur!, style: const TextStyle(fontFamily: 'Galey', color: Colors.red, fontSize: 12))),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            child: FilledButton(
+              onPressed: _enCours || total == 0 ? null : _ajouter,
+              style: FilledButton.styleFrom(backgroundColor: _teal, minimumSize: const Size(double.infinity, 48)),
+              child: Text(_enCours ? 'Ajout en cours…' : total == 0 ? 'Rien à ajouter' : 'Ajouter $total soin${total > 1 ? 's' : ''} au registre',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
 }
