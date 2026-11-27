@@ -1,5 +1,6 @@
 'use client';
 
+import { contratSupprimable } from '@/components/contrats/SupprimerContrat';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -424,7 +425,7 @@ export default function ContratsAdoptionPage() {
                     className="text-xs font-galey font-semibold text-gray-600 border border-gray-200 px-3 py-1.5 rounded-xl hover:bg-gray-50 transition-colors">
                     PDF
                   </button>
-                  {deleteId === doc.id ? (
+                  {!contratSupprimable(doc.statut) ? null : deleteId === doc.id ? (
                     <div className="flex items-center gap-1">
                       <button onClick={() => handleDelete(doc.id)} className="text-xs text-red-600 font-bold px-2 py-1 rounded hover:bg-red-50">Oui</button>
                       <button onClick={() => setDeleteId(null)} className="text-xs text-gray-400 px-2 py-1">Non</button>

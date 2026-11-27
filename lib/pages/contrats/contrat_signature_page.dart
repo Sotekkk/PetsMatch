@@ -1325,7 +1325,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         actions: [
           if (!widget.isCession && !widget.isCertificatEngagement && !_loading
               && _error == null && _isEleveur
-              && (_doc?['statut'] as String?) != 'signe')
+              // Contrat signé, même en partie : conservé (preuve de l'accord).
+              && !const {'signe', 'partiellement_signe'}.contains(_doc?['statut'] as String?))
             IconButton(
               icon: const Icon(Icons.delete_outline, size: 20),
               tooltip: 'Supprimer ce contrat',

@@ -1,5 +1,6 @@
 'use client';
 
+import SupprimerContrat, { contratSupprimable } from '@/components/contrats/SupprimerContrat';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -166,6 +167,9 @@ export default function PensionContratPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  {doc && (
+                    <SupprimerContrat id={doc.id} statut={doc.statut} libelle={e.proprietaire_nom ?? e.animal_nom} onSupprime={() => load()} />
+                  )}
                   {meta && (
                     <span className={`text-xs font-galey font-bold px-2.5 py-1 rounded-full ${meta.cls}`}>{meta.label}</span>
                   )}

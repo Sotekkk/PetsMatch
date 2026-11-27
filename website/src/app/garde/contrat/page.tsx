@@ -1,5 +1,6 @@
 'use client';
 
+import SupprimerContrat, { contratSupprimable } from '@/components/contrats/SupprimerContrat';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -243,6 +244,9 @@ export default function GardeContratPage() {
                       className="border border-teal-200 text-teal-700 px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-50">
                       Voir le contrat
                     </a>
+                  )}
+                  {c.doc && (
+                    <SupprimerContrat id={c.doc.id} statut={c.doc.statut} libelle={c.nom} onSupprime={() => load()} />
                   )}
                   {/* Page entière déjà réservée au Premium ci-dessus — plus besoin
                       d'un verrou spécifique à ce bouton. */}

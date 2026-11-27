@@ -113,7 +113,7 @@ export default function EducationContratPage() {
 
   /** Supprimer = annuler (le lien de signature ne marche plus) ; jamais un contrat signé. */
   async function supprimerContrat(d: DocRow) {
-    if (d.statut === 'signe') return;
+    if (d.statut === 'signe' || d.statut === 'partiellement_signe') return;
     if (!confirm(`Supprimer le contrat de ${String(d.metadata?.acquereur_nom ?? 'ce client')} ? Le lien de signature ne fonctionnera plus.`)) return;
     const { error } = await supabase.from('documents_animaux')
       .update({ statut: 'annule', cancelled_at: new Date().toISOString() }).eq('id', d.id);
@@ -209,7 +209,7 @@ export default function EducationContratPage() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className={`text-xs font-galey font-bold px-2.5 py-1 rounded-full ${meta.cls}`}>{meta.label}</span>
-                    {d.statut !== 'signe' && (
+                    {d.statut !== 'signe' && d.statut !== 'partiellement_signe' && (
                       <button type="button" title="Supprimer le contrat"
                         onClick={e => { e.preventDefault(); e.stopPropagation(); supprimerContrat(d); }}
                         className="text-xs font-galey font-semibold px-2.5 py-1 rounded-full border border-red-200 text-red-500 hover:bg-red-50">

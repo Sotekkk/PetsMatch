@@ -1,5 +1,6 @@
 'use client';
 
+import SupprimerContrat, { contratSupprimable } from '@/components/contrats/SupprimerContrat';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -196,7 +197,11 @@ export default function SanteContratPage() {
                       ].filter(Boolean).join(' · ')}
                     </p>
                   </div>
-                  <span className={`text-xs font-galey font-bold px-2.5 py-1 rounded-full ${meta.cls}`}>{meta.label}</span>
+                  <span className="flex items-center gap-2">
+                    <span className={`text-xs font-galey font-bold px-2.5 py-1 rounded-full ${meta.cls}`}>{meta.label}</span>
+                    <SupprimerContrat id={d.id} statut={d.statut} libelle={String(d.metadata?.acquereur_nom ?? '') || undefined}
+                      onSupprime={() => setDocs(prev => prev.filter(x => x.id !== d.id))} />
+                  </span>
                 </div>
               </a>
             );

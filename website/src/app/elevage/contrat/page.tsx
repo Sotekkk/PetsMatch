@@ -1,5 +1,6 @@
 'use client';
 
+import { contratSupprimable } from '@/components/contrats/SupprimerContrat';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -784,10 +785,12 @@ export default function ContratsPage() {
                       <LienDocument href={d.url} target="_blank" rel="noopener noreferrer"
                         className="text-xs text-[#0C5C6C] hover:underline font-medium">Voir</LienDocument>
                     )}
-                    <button onClick={() => deleteDoc(d.id, d.titre)} disabled={deleting === d.id}
-                      className="text-xs text-red-400 hover:text-red-600 font-medium disabled:opacity-40">
-                      {deleting === d.id ? '…' : 'Supprimer'}
-                    </button>
+                    {(contratSupprimable(d.statut) || !d.token) && (
+                      <button onClick={() => deleteDoc(d.id, d.titre)} disabled={deleting === d.id}
+                        className="text-xs text-red-400 hover:text-red-600 font-medium disabled:opacity-40">
+                        {deleting === d.id ? '…' : 'Supprimer'}
+                      </button>
+                    )}
                   </div>
                   </div>
 

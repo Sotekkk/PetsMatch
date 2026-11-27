@@ -1,5 +1,6 @@
 'use client';
 
+import SupprimerContrat, { contratSupprimable } from '@/components/contrats/SupprimerContrat';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -89,7 +90,11 @@ export default function MarechalContratPage() {
                 className="block bg-white border border-gray-100 rounded-2xl p-4 shadow-sm space-y-2 hover:border-gray-200 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <p className="font-semibold text-[#1F2A2E] text-sm">{clientNom}</p>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${sm.cls}`}>{sm.label}</span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${sm.cls}`}>{sm.label}</span>
+                    <SupprimerContrat id={doc.id} statut={doc.statut} libelle={clientNom}
+                      onSupprime={() => setDocs(prev => prev.filter(x => x.id !== doc.id))} />
+                  </span>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {doc.animaux && (
