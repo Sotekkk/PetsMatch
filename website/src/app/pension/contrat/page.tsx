@@ -169,10 +169,17 @@ export default function PensionContratPage() {
                       {generating === e.id ? '…' : 'Générer le contrat'}
                     </button>
                   ) : doc.statut === 'brouillon' ? (
-                    <button onClick={() => transmettre(e.id)}
-                      className="bg-teal-700 text-white px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-800">
-                      Envoyer pour signature
-                    </button>
+                    <>
+                      {/* Relire le contrat avant de l'envoyer au client. */}
+                      <a href={`/signer-contrat/${doc.token}`} target="_blank" rel="noopener noreferrer"
+                        className="border border-teal-200 text-teal-700 px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-50">
+                        Voir le contrat
+                      </a>
+                      <button onClick={() => transmettre(e.id)}
+                        className="bg-teal-700 text-white px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-800">
+                        Envoyer pour signature
+                      </button>
+                    </>
                   ) : (
                     <a href={`/signer-contrat/${doc.token}`} target="_blank" rel="noopener noreferrer"
                       className="border border-teal-200 text-teal-700 px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-50">
