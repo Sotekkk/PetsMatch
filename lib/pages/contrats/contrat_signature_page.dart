@@ -28,6 +28,7 @@ import 'package:PetsMatch/widgets/signature_pad.dart';
 import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro, signerEtEnregistrer;
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
+import 'package:PetsMatch/pages/pro/transmission_document.dart' show envoyerDocumentsParEmail;
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -1268,6 +1269,26 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     }
   }
 
+  /// Contrat signé envoyé au client (pièce jointe), compte PetsMatch ou non.
+  Future<void> _envoyerPdfSigne() async {
+    final bytes = _pdfBytes;
+    if (bytes == null) return;
+    final meta = (_doc?['metadata'] as Map?) ?? const {};
+    String v(Object? x) => (x?.toString() ?? '').trim();
+    final email = v(meta['client_email']).isNotEmpty ? v(meta['client_email']) : v(meta['acquereur_email']);
+    final nom = v(meta['client_nom']).isNotEmpty ? v(meta['client_nom']) : v(meta['acquereur_nom']);
+    final titre = v(_doc?['titre']).isEmpty ? 'Contrat' : v(_doc?['titre']);
+    await envoyerDocumentsParEmail(
+      context,
+      pieces: [(type: 'contrat', nomFichier: '${titre.replaceAll(RegExp(r'[^A-Za-z0-9À-ÿ -]+'), '-')}.pdf', bytes: bytes)],
+      animalNom: v(meta['animal_nom']),
+      expediteur: User_Info.nameElevage,
+      emailParDefaut: email.isEmpty ? null : email,
+      destinataireNom: nom.isEmpty ? null : nom,
+      animalId: v(_doc?['animal_id']).isEmpty ? null : v(_doc?['animal_id']),
+    );
+  }
+
   Future<void> _supprimerDocument() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -1331,6 +1352,14 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
               icon: const Icon(Icons.delete_outline, size: 20),
               tooltip: 'Supprimer ce contrat',
               onPressed: _supprimerDocument,
+            ),
+          // Contrat signé : PDF au client par e-mail (avec ou sans compte).
+          if (!widget.isCession && !widget.isCertificatEngagement && !_loading && _error == null && _isEleveur
+              && _doc?['statut'] == 'signe' && _pdfBytes != null)
+            IconButton(
+              icon: const Icon(Icons.forward_to_inbox_outlined, size: 20),
+              tooltip: 'Envoyer le PDF signé par e-mail',
+              onPressed: _envoyerPdfSigne,
             ),
           if (_doc?['token'] != null || _cert?['token_signature'] != null)
             IconButton(

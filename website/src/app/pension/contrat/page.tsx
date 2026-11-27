@@ -10,6 +10,8 @@ import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { usePensionPlan } from '@/lib/use-plan';
 import { sendNotification } from '@/lib/notifications';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
+import { envoyerPdfParEmail } from '@/lib/transmission-document';
+import { pdfContratPensionSigne } from '@/lib/contrat-pension-pdf';
 
 interface Entree {
   id: string;
@@ -28,6 +30,7 @@ interface Doc {
   pension_entree_id: string;
   token: string | null;
   statut: string;
+  metadata?: { client_email?: string | null; client_nom?: string | null; entree_ids?: string[] | null } | null;
 }
 
 const STATUT_META: Record<string, { label: string; cls: string }> = {
@@ -48,6 +51,7 @@ export default function PensionContratPage() {
   const [logements, setLogements] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState<string | null>(null);
+  const [envoiPdf, setEnvoiPdf] = useState<string | null>(null);
   const [arrhesDefaut, setArrhesDefaut] = useState(0);
 
 
@@ -96,7 +100,7 @@ export default function PensionContratPage() {
     if (!user || !doc?.token || !entree) return;
     // Données du contrat rafraîchies + notification au client s'il a un compte.
     const r = await apiFetch('/api/pension/contrat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entreeId, transmettre: true }) });
-    const j = await r.json().catch(() => ({})) as { client_notifie?: boolean };
+    const j = await r.json().catch(() => ({})) as { client_notifie?: boolean; client_email?: string | null; client_nom?: string | null };
     const signingUrl = `${window.location.origin}/signer-contrat/${doc.token}`;
     const contact = entree.proprietaire_contact?.trim();
     if (!j.client_notifie && contact?.includes('@')) {
@@ -111,8 +115,26 @@ export default function PensionContratPage() {
         });
       }
     }
+    // Lien à signer par e-mail, client avec ou sans compte (comme l'appli).
+    const adresse = (j.client_email ?? '').trim();
+    let parEmail = false;
+    if (adresse.includes('@')) {
+      const pensionNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre pension';
+      const m = await apiFetch('/api/contrat/notify-email', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: adresse, client_nom: j.client_nom ?? entree.proprietaire_nom ?? '', pro_nom: pensionNom,
+          titre: `Contrat d'hébergement — ${entree.animal_nom}`, signing_url: signingUrl }),
+      }).catch(() => null);
+      parEmail = !!m?.ok;
+    }
     await navigator.clipboard.writeText(signingUrl).catch(() => {});
-    alert(`Contrat transmis ! Lien copié dans le presse-papiers :\n${signingUrl}`);
+    alert([
+      'Contrat transmis !',
+      j.client_notifie ? "Le client est prévenu dans l'appli." : '',
+      parEmail ? `Lien à signer envoyé par e-mail à ${adresse}.`
+        : adresse ? `L'e-mail à ${adresse} n'a pas pu partir.` : "Aucune adresse e-mail connue pour ce client : envoyez-lui le lien vous-même.",
+      `Lien copié dans le presse-papiers :\n${signingUrl}`,
+    ].filter(Boolean).join('\n'));
     load();
   }
 
@@ -196,10 +218,32 @@ export default function PensionContratPage() {
                       </button>
                     </>
                   ) : (
-                    <a href={`/signer-contrat/${doc.token}`} target="_blank" rel="noopener noreferrer"
-                      className="border border-teal-200 text-teal-700 px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-50">
-                      Voir le contrat
-                    </a>
+                    <>
+                      <a href={`/signer-contrat/${doc.token}`} target="_blank" rel="noopener noreferrer"
+                        className="border border-teal-200 text-teal-700 px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-50">
+                        Voir le contrat
+                      </a>
+                      {/* Contrat signé : PDF au client par e-mail (avec ou sans compte). */}
+                      {doc.statut === 'signe' && (
+                        <button disabled={envoiPdf === doc.id} onClick={async () => {
+                          setEnvoiPdf(doc.id);
+                          try {
+                            const blob = await pdfContratPensionSigne(doc.id);
+                            if (!blob) { alert('Contrat introuvable.'); return; }
+                            await envoyerPdfParEmail(blob, {
+                              type: 'contrat', emailParDefaut: doc.metadata?.client_email ?? null,
+                              destinataireNom: doc.metadata?.client_nom ?? e.proprietaire_nom ?? undefined,
+                              expediteur: userData?.nameElevage || undefined, animalNom: e.animal_nom,
+                              animalId: (e as { animal_id?: string | null }).animal_id ?? null,
+                              nomFichier: `Contrat-hebergement-${(e.animal_nom || 'animal').replace(/[^A-Za-z0-9-]+/g, '-')}.pdf`,
+                            });
+                          } finally { setEnvoiPdf(null); }
+                        }}
+                          className="bg-teal-700 text-white px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-800 disabled:opacity-50">
+                          {envoiPdf === doc.id ? '…' : 'Envoyer le PDF signé'}
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

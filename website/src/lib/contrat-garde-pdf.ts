@@ -75,6 +75,12 @@ export async function pdfContratGardeSigne(docId: string): Promise<Blob | null> 
   const signe = doc.signe_le ? new Date(doc.signe_le).toLocaleDateString('fr-FR') : null;
   if (signe) html = html.replace(/Fait le [0-9/]+/, `Fait le ${signe}`);
 
+  return pdfDepuisHtmlContrat(html);
+}
+
+/** Contrat HTML (/signer-contrat) mis en page texte + signatures, en PDF.
+ *  Partagé par les contrats signés (garde, pension…). */
+export async function pdfDepuisHtmlContrat(html: string): Promise<Blob> {
   const out: Bloc[] = [];
   blocs(new DOMParser().parseFromString(html, 'text/html').body, out);
 

@@ -35,11 +35,12 @@ async function enBase64(blob: Blob): Promise<string> {
  *  [animalId] et sans adresse connue : propriétaire PetsMatch, envoyé à
  *  l'adresse de son compte, résolue par le serveur (jamais affichée). */
 export async function envoyerPdfParEmail(blob: Blob, opts: {
-  type: 'ordonnance' | 'compte_rendu' | 'facture' | 'consignes'; emailParDefaut?: string | null; destinataireNom?: string;
+  type: 'ordonnance' | 'compte_rendu' | 'facture' | 'consignes' | 'contrat'; emailParDefaut?: string | null; destinataireNom?: string;
   expediteur?: string; animalNom?: string; nomFichier: string; animalId?: string | null;
 }): Promise<boolean> {
   if (!opts.emailParDefaut && opts.animalId) {
     const quoi = opts.type === 'ordonnance' ? "l'ordonnance" : opts.type === 'facture' ? 'la facture'
+      : opts.type === 'contrat' ? 'le contrat signé'
       : opts.type === 'consignes' ? 'les consignes après l’intervention' : 'le compte rendu';
     if (!window.confirm(`Envoyer ${quoi} à ${opts.destinataireNom || 'le propriétaire'}, à l’adresse e-mail de son compte PetsMatch ?`)) return false;
     const res = await apiFetch('/api/documents/envoyer-email', {
