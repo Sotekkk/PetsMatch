@@ -78,7 +78,9 @@ class MesAnimauxPage extends StatefulWidget {
   final bool embedded;
   /// Ouvre directement « Ajouter un animal » (raccourci de l'accueil éleveur).
   final bool ouvrirAjout;
-  const MesAnimauxPage({super.key, this.initialTab = 0, this.employeur, this.embedded = false, this.ouvrirAjout = false});
+  /// Ouvre « Bébés » filtré sur cette portée (lien depuis la gestation).
+  final String? porteeId;
+  const MesAnimauxPage({super.key, this.initialTab = 0, this.employeur, this.embedded = false, this.ouvrirAjout = false, this.porteeId});
   @override
   State<MesAnimauxPage> createState() => _MesAnimauxPageState();
 }
@@ -89,8 +91,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   String _filterEspece  = 'tous';
   String _filterSexe    = 'tous';
   String _filterRace     = '';
-  String _presentsSubTab = 'tous'; // 'tous', 'repro', 'bebes'
-  String _selectedPorteeId = ''; // '' = toutes les portées (filtre "Bébés")
+  late String _presentsSubTab = (widget.porteeId ?? '').isNotEmpty ? 'bebes' : 'tous'; // 'tous', 'repro', 'bebes'
+  late String _selectedPorteeId = widget.porteeId ?? ''; // '' = toutes les portées (filtre "Bébés")
   // Filtre "Bébés" : présents (défaut) ou cédés — pour retrouver une portée
   // et ses données après les départs.
   /// Onglet Cédés : tous les animaux, ou bébés regroupés par portée.

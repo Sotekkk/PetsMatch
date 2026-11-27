@@ -1,5 +1,6 @@
 'use client';
 
+import { annulerPortee, apercuAnnulationPortee } from '@/lib/annuler-portee';
 import { profilPourAnimal } from '@/lib/cloisonnement-profils';
 import { poserRappelAgenda } from '@/lib/rappel-agenda';
 import { soinRemplace } from '@/lib/soin-remplace';
@@ -2402,7 +2403,25 @@ function SuiviReproTab({ isMale, espece, race, uidEleveur, animalId, userId, ani
                     })()}
                     {!!r.nb_attendu && <p className="text-xs text-gray-400">{String(r.nb_attendu)} attendu(s){r.nb_nes ? ` · ${String(r.nb_nes)} né(s)` : ''}</p>}
                     {!!r.notes && <p className="text-xs text-gray-400">{String(r.notes)}</p>}
-                    {!!r.portee_id && <p className="text-xs font-semibold text-gray-500 mt-1">Portée créée</p>}
+                    {!!r.portee_id && (
+                      <div className="flex flex-wrap items-center gap-3 mt-1" onClick={ev => ev.stopPropagation()}>
+                        <span className="text-xs font-semibold text-gray-500">Portée créée</span>
+                        <a href={`/mes-animaux?sub=bebes&portee=${encodeURIComponent(String(r.portee_id))}`}
+                          className="text-xs font-bold text-[#0C5C6C] hover:underline">Voir la portée →</a>
+                        {!readOnly && (
+                          <button type="button" className="text-xs text-red-600 hover:underline"
+                            onClick={async () => {
+                              const ap = await apercuAnnulationPortee(r.id);
+                              if (!ap) return;
+                              if (ap.blocage) { window.alert(`Annulation impossible : ${ap.blocage}\nLes fiches des petits sont à modifier une par une.`); return; }
+                              if (!window.confirm(`Annuler la portée ? ${ap.ids.length} fiche${ap.ids.length > 1 ? 's seront supprimées' : ' sera supprimée'} avec tout ce qui y a été saisi (poids, soins…) : ${ap.noms.join(', ')}.\nLa gestation reste, avec la mise bas ; vous pourrez recréer la portée.`)) return;
+                              const erreur = await annulerPortee(r.id);
+                              if (erreur) { window.alert(erreur); return; }
+                              window.location.reload();
+                            }}>Annuler la portée</button>
+                        )}
+                      </div>
+                    )}
                     <p className="text-xs text-[#0C5C6C] mt-1">Modifier →</p>
                   </div>
                   {!readOnly && <button onClick={() => deleteRepro('gestations', r.id)} className="text-red-300 hover:text-red-500 text-lg">×</button>}

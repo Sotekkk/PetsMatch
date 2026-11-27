@@ -31,6 +31,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_form_page.dart';
+import 'package:PetsMatch/utils/annuler_portee.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/reservation_sheet.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
@@ -5748,6 +5749,38 @@ class _ReproListState extends State<_ReproList> {
     if (cree == true) await _refresh();
   }
 
+  /// Erreur de saisie : supprimer les fiches de la portée créée depuis la gestation.
+  Future<void> _annulerPortee(String gestationId) async {
+    final a = await apercuAnnulationPortee(gestationId);
+    if (!mounted || a == null) return;
+    if (a.blocage != null) {
+      await showDialog(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Annulation impossible', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text('${a.blocage}\nLes fiches des petits sont à modifier une par une.', style: const TextStyle(fontFamily: 'Galey')),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+      ));
+      return;
+    }
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Annuler la portée ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: Text('${a.ids.length} fiche${a.ids.length > 1 ? 's' : ''} ${a.ids.length > 1 ? 'seront supprimées' : 'sera supprimée'} '
+          'avec tout ce qui y a été saisi (poids, soins…) : ${a.noms.join(', ')}.\n'
+          'La gestation reste, avec la mise bas ; vous pourrez recréer la portée.', style: const TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Garder')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+          onPressed: () => Navigator.pop(ctx, true), child: const Text('Annuler la portée')),
+      ],
+    ));
+    if (ok != true || !mounted) return;
+    final erreur = await annulerPortee(gestationId);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(erreur ?? 'Portée annulée.',
+        style: const TextStyle(fontFamily: 'Galey'))));
+    await _refresh();
+  }
+
   /// Après l'enregistrement d'une gestation : mise bas saisie → créer la portée ?
   Future<void> _proposerPortee({String? id}) async {
     if (widget.collection != 'gestations' || widget.readOnly || !mounted) return;
@@ -5886,6 +5919,13 @@ class _ReproListState extends State<_ReproList> {
                         await _proposerPortee(id: id);
                       },
                       onCreerPortee: (isGestation && !widget.readOnly && _porteeACreer(d)) ? () => _creerPortee(id) : null,
+                      onVoirPortee: (isGestation && (d['portee_id']?.toString() ?? '').isNotEmpty)
+                          ? () => Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => MesAnimauxPage(porteeId: d['portee_id'].toString())))
+                          : null,
+                      onAnnulerPortee: (isGestation && !widget.readOnly && (d['portee_id']?.toString() ?? '').isNotEmpty)
+                          ? () => _annulerPortee(id)
+                          : null,
                       onConfirmGestation: (isGestation && !alreadyConfirmed && !widget.readOnly)
                           ? () => _confirmGestation(id)
                           : null,
@@ -6391,9 +6431,13 @@ class _SimpleCard extends StatelessWidget {
   final VoidCallback? onConfirmGestation;
   /// Gestation avec mise bas réelle et nés : créer la portée.
   final VoidCallback? onCreerPortee;
+  /// Portée créée : l'ouvrir dans Mes animaux, ou l'annuler (erreur).
+  final VoidCallback? onVoirPortee;
+  final VoidCallback? onAnnulerPortee;
   final bool readOnly;
   const _SimpleCard({required this.data, required this.onDelete, this.onEdit,
-      this.collection, this.onConfirmGestation, this.onCreerPortee, this.readOnly = false});
+      this.collection, this.onConfirmGestation, this.onCreerPortee, this.onVoirPortee, this.onAnnulerPortee,
+      this.readOnly = false});
 
   static const _rose = Color(0xFFD63384);
   /// Mise bas réelle saisie : elle remplace la date prévue (grisée).
@@ -6417,7 +6461,15 @@ class _SimpleCard extends StatelessWidget {
                   : const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF4A7A3A), fontWeight: FontWeight.w600))),
       if (_porteeCreee)
         Padding(padding: const EdgeInsets.only(top: 4),
-          child: Text('Portée créée', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w600))),
+          child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 4, children: [
+            Text('Portée créée', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+            if (onVoirPortee != null)
+              TextButton(onPressed: onVoirPortee,
+                  child: const Text('Voir la portée', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF0C5C6C), fontWeight: FontWeight.w700))),
+            if (onAnnulerPortee != null)
+              TextButton(onPressed: onAnnulerPortee,
+                  child: Text('Annuler la portée', style: TextStyle(fontFamily: 'Galey', color: Colors.red.shade600))),
+          ])),
       if (onCreerPortee != null)
         Padding(padding: const EdgeInsets.only(top: 6),
           child: OutlinedButton.icon(
