@@ -1,5 +1,6 @@
 'use client';
 
+import RappelDernierePrise from '@/components/planning/RappelDernierePrise';
 import { MOMENTS_SEJOUR, momentLabel, cibleLabel, appliquerProtocolesSejour, aujourdhuiIso, rafraichirProtocoleSejour, type PensionCible } from '@/lib/pension-protocoles';
 import { PENSION_ESPECES, cleEspecePension, logementAccepteEspece } from '@/lib/pension-especes';
 import { pensionLogementTypeLabel } from '@/lib/pension-logements';
@@ -2482,6 +2483,7 @@ function ValidateModal({ groupe, uid, profileId, onClose, onValidated }: {
   const [selected, setSelected] = useState<Record<string, boolean>>(
     Object.fromEntries(taches.map(t => [t.id, true]))
   );
+  const [dateRappel, setDateRappel] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   // Soin sanitaire : inscription au carnet de chaque animal + registre (comme l'appli).
@@ -2497,7 +2499,7 @@ function ValidateModal({ groupe, uid, profileId, onClose, onValidated }: {
   const validate = async () => {
     setSaving(true);
     // Fonction partagée avec l'accueil éleveur (lib/carnet-depuis-tache.ts).
-    await validerTachesProtocole(taches.filter(t => selected[t.id]), { uid, profileId, notes, inscrire: sanitaire && inscrire, intervenant: moiIntervenant(userData) });
+    await validerTachesProtocole(taches.filter(t => selected[t.id]), { uid, profileId, notes, inscrire: sanitaire && inscrire, intervenant: moiIntervenant(userData), dateRappel: dateRappel || null });
     onValidated();
   };
 
@@ -2539,6 +2541,9 @@ function ValidateModal({ groupe, uid, profileId, onClose, onValidated }: {
             <input type="checkbox" checked={inscrire} onChange={e => setInscrire(e.target.checked)} className="mt-0.5 accent-green-600 w-4 h-4" />
             <span>Inscrire dans le carnet de santé et le registre sanitaire</span>
           </label>
+        )}
+        {sanitaire && inscrire && (
+          <RappelDernierePrise tacheIds={taches.filter(t => selected[t.id]).map(t => t.id)} value={dateRappel} onChange={setDateRappel} />
         )}
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50">

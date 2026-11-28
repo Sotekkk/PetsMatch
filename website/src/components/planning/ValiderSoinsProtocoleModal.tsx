@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { validerTachesProtocole, type TacheSanitaire } from '@/lib/carnet-depuis-tache';
 import { useAuth } from '@/lib/auth-context';
 import { moiIntervenant } from '@/lib/registre-source';
+import RappelDernierePrise from '@/components/planning/RappelDernierePrise';
 
 export type TacheProtocole = TacheSanitaire & { uid_eleveur?: string | null; animal_nom?: string | null };
 
@@ -18,6 +19,7 @@ export default function ValiderSoinsProtocoleModal({ titre, taches, uid, profile
   const { userData } = useAuth();
   const [inscrire, setInscrire] = useState(true);
   const [notes, setNotes] = useState('');
+  const [dateRappel, setDateRappel] = useState('');
   const [saving, setSaving] = useState(false);
   const [erreur, setErreur] = useState('');
   const nb = taches.filter(t => selected[t.id]).length;
@@ -25,7 +27,7 @@ export default function ValiderSoinsProtocoleModal({ titre, taches, uid, profile
   async function valider() {
     setSaving(true); setErreur('');
     try {
-      await validerTachesProtocole(taches.filter(t => selected[t.id]), { uid, profileId, notes, inscrire, intervenant: moiIntervenant(userData) });
+      await validerTachesProtocole(taches.filter(t => selected[t.id]), { uid, profileId, notes, inscrire, intervenant: moiIntervenant(userData), dateRappel: dateRappel || null });
       onValidated();
     } catch (e) {
       setErreur(`Validation impossible : ${(e as Error).message}`);
@@ -62,6 +64,7 @@ export default function ValiderSoinsProtocoleModal({ titre, taches, uid, profile
           <input type="checkbox" checked={inscrire} onChange={e => setInscrire(e.target.checked)} className="mt-0.5 w-4 h-4 accent-[#0C5C6C]" />
           <span>Inscrire dans le carnet de santé et le registre sanitaire de chaque animal</span>
         </label>
+        {inscrire && <RappelDernierePrise tacheIds={taches.filter(t => selected[t.id]).map(t => t.id)} value={dateRappel} onChange={setDateRappel} />}
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Notes (optionnel)"
           className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
         {erreur && <p className="text-sm text-red-700 bg-red-50 rounded-xl px-3 py-2">{erreur}</p>}

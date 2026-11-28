@@ -110,6 +110,9 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
         isSanitaire(t['type_acte']?.toString() ?? ''));
     // Soin sanitaire : carnet + registre par défaut (décochable).
     bool insertRegistre = true;
+    DateTime? dateRappel;
+    final dernieres = await PlanningService.dernieresDuProtocole(group);
+    if (!mounted) return;
     // Sélection individuelle par animal (tous cochés par défaut)
     final selected = {for (final t in group) t['id'] as String: true};
 
@@ -158,6 +161,8 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
                           style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
                     ]),
                   ),
+                  if (insertRegistre && group.any((t) => selected[t['id'] as String] == true && dernieres.contains(t['id'].toString())))
+                    ChampRappelDernierePrise(valeur: dateRappel, onChanged: (d) => setS(() => dateRappel = d)),
                 ],
               ],
             ),
@@ -185,6 +190,7 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
           notes: notes,
           tacheData: t,
           insertRegistre: insertRegistre,
+          dateRappel: dernieres.contains(t['id'].toString()) ? dateRappel : null,
         );
       }
       ctrl.dispose();

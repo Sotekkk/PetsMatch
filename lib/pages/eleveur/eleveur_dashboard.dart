@@ -210,6 +210,9 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
     final coches = {for (final t in taches) t['id'].toString()};
     var inscrire = true;
     var enCours = false;
+    DateTime? dateRappel;
+    final dernieres = await PlanningService.dernieresDuProtocole(taches);
+    if (!mounted) return;
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -235,6 +238,8 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
                 style: TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
             onChanged: (v) => setM(() => inscrire = v ?? false),
           ),
+          if (inscrire && coches.any(dernieres.contains))
+            ChampRappelDernierePrise(valeur: dateRappel, onChanged: (d) => setM(() => dateRappel = d)),
           const SizedBox(height: 8),
           SizedBox(width: double.infinity, child: FilledButton(
             style: FilledButton.styleFrom(backgroundColor: kDashTeal, padding: const EdgeInsets.symmetric(vertical: 13)),
@@ -244,7 +249,8 @@ class _EleveurDashboardState extends State<EleveurDashboard> {
                 for (final t in taches.where((t) => coches.contains(t['id'].toString()))) {
                   await PlanningService.validerTache(t['id'].toString(), validateurUid: uid,
                       validateurProfileId: User_Info.activeProfileId.isEmpty ? null : User_Info.activeProfileId,
-                      tacheData: t, insertRegistre: inscrire);
+                      tacheData: t, insertRegistre: inscrire,
+                      dateRappel: dernieres.contains(t['id'].toString()) ? dateRappel : null);
                 }
                 if (ctx.mounted) Navigator.pop(ctx, true);
               } catch (e) {

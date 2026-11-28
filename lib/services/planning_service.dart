@@ -1,6 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show poserRappelAgendaSoin;
 import 'package:PetsMatch/utils/protocoles.dart' show perimetreDe, estHorsPriseEnCharge, petitDePortee, animauxPresents, eclaterTranches, appliquerReglagesEtapes;
 
 class PlanningService {
@@ -839,6 +841,8 @@ class PlanningService {
     String? notes,
     required Map<String, dynamic> tacheData,
     bool insertRegistre = false,
+    /// Dernière prise du protocole : date du prochain rappel (carnet + agenda).
+    DateTime? dateRappel,
   }) async {
     await _supa.from('plan_taches').update({
       'statut':           'fait',
@@ -853,17 +857,21 @@ class PlanningService {
       final typeActe = tacheData['type_acte']?.toString() ?? '';
       final animalId = tacheData['animal_id']?.toString();
       if (animalId != null && animalId.isNotEmpty) {
-        final dateActe = DateTime.tryParse(tacheData['date_prevue']?.toString() ?? '') ?? DateTime.now();
-        await RegistreHelper.writeActe(
-          animalId: animalId,
-          typeActe: typeActe,
-          dateActe: dateActe,
-          description: tacheData['label'] ?? '',
-          intervenant: '',
-        );
-        // … et au carnet de santé de l'animal (la case l'annonçait, seul le
-        // registre était rempli). Miroir site : lib/carnet-depuis-tache.ts.
-        await inscrireTacheAuCarnet(tacheData);
+        if (_actesCarnet.contains(typeActe)) {
+          // Carnet de santé ; le registre est rempli par la base à partir du
+          // carnet (une ligne par soin) — l'écrire ici faisait un doublon.
+          // Miroir site : lib/carnet-depuis-tache.ts.
+          await inscrireTacheAuCarnet(tacheData, dateRappel: dateRappel);
+        } else {
+          final dateActe = DateTime.tryParse(tacheData['date_prevue']?.toString() ?? '') ?? DateTime.now();
+          await RegistreHelper.writeActe(
+            animalId: animalId,
+            typeActe: typeActe,
+            dateActe: dateActe,
+            description: tacheData['label'] ?? '',
+            intervenant: '',
+          );
+        }
       }
     }
   }
@@ -871,7 +879,40 @@ class PlanningService {
   /// Inscrit une tâche sanitaire validée (vermifuge, antiparasitaire,
   /// vaccination, traitement) au carnet de l'animal : une seule entrée par
   /// traitement (date de début), même s'il dure plusieurs jours.
-  static Future<void> inscrireTacheAuCarnet(Map<String, dynamic> t) async {
+  static const _actesCarnet = {'vermifuge', 'antiparasitaire', 'vaccination', 'traitement'};
+  static const _avecRappel = {'vermifuge': 'Rappel vermifuge', 'antiparasitaire': 'Rappel antiparasitaire', 'vaccination': 'Rappel vaccin'};
+
+  /// Tâches qui sont la DERNIÈRE prise de leur protocole (plus aucune tâche en
+  /// attente après elles, même plan, même animal) et dont le soin a un rappel.
+  /// Miroir site : dernieresDuProtocole.
+  static Future<Set<String>> dernieresDuProtocole(List<Map<String, dynamic>> taches) async {
+    final res = <String>{};
+    final ids = [for (final t in taches) if (t['id'] != null) t['id'].toString()];
+    if (ids.isEmpty) return res;
+    // Relues en base : les écrans ne chargent pas tous plan_id / type_acte.
+    List<Map<String, dynamic>> lignes;
+    try {
+      lignes = List<Map<String, dynamic>>.from(await _supa.from('plan_taches')
+          .select('id, plan_id, animal_id, date_prevue, type_acte').inFilter('id', ids));
+    } catch (_) { return res; }
+    for (final t in lignes) {
+      if (!_avecRappel.containsKey(t['type_acte']?.toString())) continue;
+      final id = t['id'].toString();
+      final plan = t['plan_id']?.toString() ?? '';
+      if (plan.isEmpty) { res.add(id); continue; }
+      try {
+        var q = _supa.from('plan_taches').select('id').eq('plan_id', plan).eq('statut', 'en_attente')
+            .neq('id', id).gte('date_prevue', t['date_prevue'].toString().substring(0, 10));
+        final animal = t['animal_id']?.toString() ?? '';
+        if (animal.isNotEmpty) q = q.eq('animal_id', animal);
+        final r = await q.limit(1);
+        if ((r as List).isEmpty) res.add(id);
+      } catch (_) {}
+    }
+    return res;
+  }
+
+  static Future<void> inscrireTacheAuCarnet(Map<String, dynamic> t, {DateTime? dateRappel}) async {
     final animalId = t['animal_id']?.toString() ?? '';
     final typeActe = t['type_acte']?.toString() ?? '';
     const tables = {
@@ -896,10 +937,26 @@ class PlanningService {
       final total = (t['total_jours'] as num?)?.toInt() ?? 1;
       final debut = prevue.subtract(Duration(days: jour - 1));
       final dateDebut = '${debut.year}-${debut.month.toString().padLeft(2, '0')}-${debut.day.toString().padLeft(2, '0')}';
-      // Déjà inscrit (autre jour du même traitement) → rien.
+      final libRappel = _avecRappel[typeActe];
+      final rappel = libRappel != null ? dateRappel : null;
+      final rappelIso = rappel == null ? null
+          : '${rappel.year}-${rappel.month.toString().padLeft(2, '0')}-${rappel.day.toString().padLeft(2, '0')}';
+      Future<void> poserRappel() async {
+        if (rappel == null) return;
+        try {
+          await poserRappelAgendaSoin(animalId: animalId, dateRappel: rappel, titre: '$libRappel — $produit');
+        } catch (_) {}
+      }
+      // Déjà inscrit (autre jour du même traitement) → rien, sauf le rappel.
       final deja = await _supa.from(cible.$1).select('id').eq('animal_id', animalId)
           .eq('date', dateDebut).ilike(cible.$2, produit).limit(1);
-      if ((deja as List).isNotEmpty) return;
+      if ((deja as List).isNotEmpty) {
+        if (rappelIso != null) {
+          await _supa.from(cible.$1).update({'date_rappel': rappelIso}).eq('id', deja.first['id']);
+          await poserRappel();
+        }
+        return;
+      }
       final ligne = <String, dynamic>{
         'id': DateTime.now().microsecondsSinceEpoch.toString(),
         'animal_id': animalId,
@@ -909,12 +966,14 @@ class PlanningService {
         if (typeActe == 'traitement' && total > 1)
           'date_fin': debut.add(Duration(days: total - 1)).toIso8601String().substring(0, 10),
         'notes': 'Protocole${total > 1 ? ' — $total jours' : ''}',
+        if (rappelIso != null) 'date_rappel': rappelIso,
       };
       try {
         await _supa.from(cible.$1).insert({...ligne, if (typeActe == 'vermifuge' && total > 1) 'duree_jours': total});
       } catch (_) {
         await _supa.from(cible.$1).insert(ligne); // colonne duree_jours absente (migration)
       }
+      await poserRappel();
     } catch (_) {}
   }
 
@@ -1027,4 +1086,48 @@ class PlanningService {
     'peignage'        => 'Peignage',
     _                 => type,
   };
+}
+
+/// Validation d'une tâche de protocole : à la dernière prise (vermifuge,
+/// antiparasitaire, vaccin), date du prochain rappel, facultative.
+/// Miroir site : RappelDernierePrise.
+class ChampRappelDernierePrise extends StatelessWidget {
+  final DateTime? valeur;
+  final ValueChanged<DateTime?> onChanged;
+  const ChampRappelDernierePrise({super.key, required this.valeur, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    const teal = Color(0xFF0C5C6C);
+    final txt = valeur == null ? 'Choisir une date'
+        : '${valeur!.day.toString().padLeft(2, '0')}/${valeur!.month.toString().padLeft(2, '0')}/${valeur!.year}';
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: teal.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: teal.withValues(alpha: 0.3))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Dernière prise du protocole : prochain rappel',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: teal)),
+        const Text('Facultatif. Le rappel est posé sur le soin du carnet (et dans l\'agenda).',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.black54)),
+        const SizedBox(height: 6),
+        Row(children: [
+          Expanded(child: OutlinedButton.icon(
+            icon: const Icon(Icons.event, size: 18, color: teal),
+            label: Text(txt, style: const TextStyle(fontFamily: 'Galey', color: teal)),
+            onPressed: () async {
+              final now = DateTime.now();
+              final d = await showDatePicker(context: context, locale: const Locale('fr'),
+                  initialDate: valeur ?? now.add(const Duration(days: 90)),
+                  firstDate: now, lastDate: DateTime(now.year + 5));
+              if (d != null) onChanged(d);
+            },
+          )),
+          if (valeur != null)
+            IconButton(tooltip: 'Pas de rappel', icon: const Icon(Icons.close, size: 18), onPressed: () => onChanged(null)),
+        ]),
+      ]),
+    );
+  }
 }
